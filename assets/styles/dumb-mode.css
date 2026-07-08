@@ -71,8 +71,30 @@
 /* Composition rename (pencil) button */
 .dumb-mode .moodboard__title-edit-btn,
 /* Composition toolbar tools (download / save / send enquiry) */
-.dumb-mode .moodboard__tools {
+.dumb-mode .moodboard__tools,
+/* Product detail body (specs, inquire, save, links) */
+.dumb-mode .pdp__body,
+/* Product detail gallery type toggle (Product / Spirit) */
+.dumb-mode .pdp__toggle {
   pointer-events: none !important;
+}
+
+/* -- 6. No animation opening / closing the product detail overlay --- */
+.dumb-mode .product-overlay-enter-active,
+.dumb-mode .product-overlay-leave-active,
+.dumb-mode .product-overlay-enter-active .product-overlay__panel,
+.dumb-mode .product-overlay-leave-active .product-overlay__panel {
+  transition: none !important;
+}
+
+.dumb-mode .product-overlay-enter-from,
+.dumb-mode .product-overlay-leave-to {
+  opacity: 1 !important;
+}
+
+.dumb-mode .product-overlay-enter-from .product-overlay__panel,
+.dumb-mode .product-overlay-leave-to .product-overlay__panel {
+  transform: none !important;
 }
 
 /* Composition items are not scalable: hide the resize handles so there's
