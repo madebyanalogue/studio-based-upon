@@ -215,14 +215,16 @@ useHead(() => ({
 .products {
   padding-bottom: 5rem;
 }
-
+.section {
+  margin:0;
+}
 .products__header {
   padding-bottom: 1rem;
 }
 
 .products__intro {
   max-width: 34rem;
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   color: var(--muted);
 }
 

@@ -29,9 +29,9 @@ defineEmits<{ 'zoom-in': []; 'zoom-out': [] }>()
   align-items: center;
   gap: 0.35rem;
   font-size: var(--text-sm);
-  background: rgba(250, 247, 242, 0.92);
+  /* background: rgba(250, 247, 242, 0.92);
   backdrop-filter: blur(8px);
-  border: 1px solid var(--grid-line);
+  border: 1px solid var(--grid-line); */
   padding: 0.45rem 0.75rem;
 }
 

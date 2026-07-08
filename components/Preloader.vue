@@ -169,16 +169,21 @@ function runSequence() {
     phase.value = 'hold'
   }, statementDone + 200)
 
-  // Reveal the site behind the panel
+  // Intro text + panel fade out
   schedule(() => {
-    revealSite()
-    document.body.classList.remove('homepage-intro-pending')
     phase.value = 'exit'
   }, statementDone + 1400)
 
+  // Once the text has faded, reveal the site so the flow-state
+  // items begin their sequential fade-in behind the fading panel.
+  schedule(() => {
+    revealSite()
+    document.body.classList.remove('homepage-intro-pending')
+  }, statementDone + 1900)
+
   schedule(() => {
     finishPreloader()
-  }, statementDone + 2800)
+  }, statementDone + 3000)
 }
 
 function bootstrap() {
@@ -230,12 +235,12 @@ onUnmounted(() => {
   padding: var(--gutter);
   background: var(--cream);
   overflow: hidden;
-  clip-path: inset(0% 0% 0% 0%);
-  transition: clip-path 1.1s cubic-bezier(0.65, 0, 0.35, 1);
+  opacity: 1;
+  transition: opacity 1s ease;
 }
 
 .preloader--exit .preloader__panel {
-  clip-path: inset(0% 0% 100% 0%);
+  opacity: 0;
 }
 
 /* Screen 1 — logo */
@@ -267,6 +272,11 @@ onUnmounted(() => {
   font-size: clamp(1.25rem, 3vw, 2rem);
   line-height: 1.4;
   color: var(--charcoal);
+  transition: opacity 0.6s ease;
+}
+
+.preloader--exit .preloader__statement {
+  opacity: 0;
 }
 
 .preloader__word {

@@ -33,7 +33,7 @@
                 @keydown.esc.prevent="cancelEdit"
                 @blur="saveName"
               />
-              <h2 v-else class="bucket__title serif-italic">{{ activeMoodboard?.name || 'Composition' }}</h2>
+              <h2 v-else class="bucket__title serif-italic">{{ activeMoodboard?.name || 'Collection' }}</h2>
 
               <div class="bucket__title-actions">
                 <button
@@ -95,7 +95,7 @@
         <footer class="bucket__footer">
           <button type="button" class="btn" @click="sendEnquiry">Send as enquiry</button>
           <button type="button" class="btn btn--filled" @click="onBuildMoodboard">
-            Build moodboard
+            Create Composition
           </button>
         </footer>
 

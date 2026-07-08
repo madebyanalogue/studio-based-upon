@@ -11,7 +11,10 @@
         v-for="entry in layout"
         :key="entry.key"
         class="explore__item"
-        :class="{ 'explore__item--dragging': dragId === entry.key }"
+        :class="{
+          'explore__item--dragging': dragId === entry.key,
+          'explore__item--visible': entry.visible,
+        }"
         :style="{
           left: `${entry.x}px`,
           top: `${entry.y}px`,
@@ -60,6 +63,7 @@ type LayoutEntry = {
   y: number
   size: number
   z: number
+  visible: boolean
 }
 
 const props = defineProps<{
@@ -146,10 +150,37 @@ const regenerate = (fresh = false) => {
       y,
       size,
       z: index + 1,
+      visible: false,
     }
   })
   zCounter = chosen.length
   centrePan()
+  revealSequentially()
+}
+
+/* --- Sequential fade-in, in a random order --- */
+const REVEAL_STEP = 70
+let revealTimers: ReturnType<typeof setTimeout>[] = []
+
+const clearRevealTimers = () => {
+  revealTimers.forEach(clearTimeout)
+  revealTimers = []
+}
+
+const revealSequentially = () => {
+  clearRevealTimers()
+  const order = shuffle(
+    layout.value.map((_, index) => index),
+    Math.random,
+  )
+  order.forEach((idx, n) => {
+    revealTimers.push(
+      setTimeout(() => {
+        const entry = layout.value[idx]
+        if (entry) entry.visible = true
+      }, n * REVEAL_STEP),
+    )
+  })
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -179,13 +210,18 @@ const addRandomElement = () => {
     FIELD.h - size - MARGIN,
   )
   zCounter += 1
-  layout.value.push({
+  const entry: LayoutEntry = {
     key: `${item._id}-${Date.now()}`,
     item,
     x,
     y,
     size,
     z: zCounter,
+    visible: false,
+  }
+  layout.value.push(entry)
+  requestAnimationFrame(() => {
+    entry.visible = true
   })
 }
 
@@ -375,6 +411,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearRevealTimers()
   window.removeEventListener('resize', onResize)
   window.removeEventListener('pointermove', onPanMove)
   window.removeEventListener('pointerup', onPanUp)
@@ -406,24 +443,21 @@ onBeforeUnmount(() => {
 .explore__item {
   position: absolute;
   cursor: grab;
-  transition: transform 0.2s ease;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.explore__item--visible {
+  opacity: 1;
 }
 
 .explore__item--dragging {
   cursor: grabbing;
 }
 
-.explore__item:hover {
-  transform: translateY(-4px);
-}
-
-.explore__item--dragging:hover {
-  transform: none;
-}
-
 .explore__controls {
   position: fixed;
-  bottom: calc(var(--gutter) + 1.5rem);
+  bottom: 30px;
   z-index: 90;
   display: flex;
   align-items: center;
@@ -465,12 +499,12 @@ onBeforeUnmount(() => {
   gap: 0.35rem;
   font-size: var(--text-sm);
   color: var(--charcoal);
-  padding: 0.55rem 1.4rem;
-  border: 1px solid var(--charcoal);
-  border-radius: 999px;
+  padding: 0.4rem 1rem .5em;
+  border-radius: 8px;
   background: rgba(250, 247, 242, 0.92);
   backdrop-filter: blur(8px);
   transition: background 0.2s ease, color 0.2s ease;
+  border-bottom: 1px solid #ddd;
 }
 
 .explore__pill:hover {

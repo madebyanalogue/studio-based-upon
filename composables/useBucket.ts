@@ -17,18 +17,25 @@ const LEGACY_STORAGE_KEY = 'sba-bucket'
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
-const compositionName = (index = 1) =>
-  index === 1 ? 'Composition' : `Composition ${index}`
+const collectionName = (index = 1) =>
+  index === 1 ? 'Collection' : `Collection ${index}`
 
 const migrateMoodboardName = (name: string) => {
-  const match = name.match(/^Moodboard (\d+)$/)
-  if (!match) return name
-  return compositionName(Number(match[1]))
+  const moodboardMatch = name.match(/^Moodboard (\d+)$/)
+  if (moodboardMatch) return collectionName(Number(moodboardMatch[1]))
+
+  const compositionMatch = name.match(/^Composition( (\d+))?$/)
+  if (compositionMatch) {
+    const n = compositionMatch[2] ? Number(compositionMatch[2]) : 1
+    return collectionName(n)
+  }
+
+  return name
 }
 
 const defaultMoodboard = (index = 1): MoodboardBucket => ({
   id: createId(),
-  name: compositionName(index),
+  name: collectionName(index),
   items: [],
 })
 

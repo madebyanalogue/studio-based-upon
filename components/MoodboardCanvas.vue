@@ -36,7 +36,7 @@
               :aria-expanded="switchOpen"
               @click="switchOpen = !switchOpen"
             >
-              <span>{{ activeMoodboard?.name || 'Composition' }}</span>
+              <span>{{ activeMoodboard?.name || 'Collection' }}</span>
               <span
                 v-if="moodboards.length > 1"
                 class="moodboard__switcher-caret"
@@ -127,6 +127,7 @@
             transform: `translate(${item.x}px, ${item.y}px) scale(${item.scale})`,
             transformOrigin: 'top left',
             zIndex: item.z,
+            '--inv-scale': 1 / item.scale,
           }"
           @pointerdown="onPointerDown($event, item.id)"
           @click="bringToFront(item.id)"
@@ -634,7 +635,7 @@ onUnmounted(() => {
   justify-self: center;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .moodboard__switcher-toggle {
@@ -766,7 +767,7 @@ onUnmounted(() => {
 }
 
 .moodboard__item--active {
-  outline: 0.025em solid var(--charcoal);
+  outline: calc(1px * var(--inv-scale, 1)) solid var(--charcoal);
   outline-offset: 0;
 }
 
@@ -927,11 +928,12 @@ onUnmounted(() => {
   border: 1px solid var(--grid-line);
   background: transparent;
   color: var(--charcoal);
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .moodboard__action:hover {
   background: #fff;
+  border-color: #fff;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 

@@ -100,6 +100,11 @@ const onToggle = () => {
 .grid-item {
   position: relative;
   width: 100%;
+  transition: transform 0.3s ease;
+}
+
+.grid-item:hover {
+  transform: scale(1.03);
 }
 
 .grid-item__media {
@@ -112,11 +117,6 @@ const onToggle = () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s ease;
-}
-
-.grid-item:hover .grid-item__media img {
-  transform: scale(1.03);
 }
 
 .grid-item__meta {

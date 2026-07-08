@@ -27,7 +27,7 @@
             aria-label="Open moodboard"
             @click="isOpen = true"
           >
-            <span>{{ activeMoodboard?.name || 'Composition' }}</span>
+            <span>{{ activeMoodboard?.name || 'Collection' }}</span>
             <span class="header__moodboard-count">{{ count }}</span>
           </button>
           <button
@@ -83,7 +83,7 @@ const isActive = (path: string) => {
 
 .header__logo {
   justify-self: start;
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   letter-spacing: 0.01em;
 }
 
@@ -141,7 +141,7 @@ const isActive = (path: string) => {
 .header__moodboard-count {
   min-width: 1.25rem;
   height: 1.25rem;
-  padding: 0 0.25rem;
+  padding: 0.1em 0.25rem;
   display: grid;
   place-items: center;
   border-radius: 999px;
