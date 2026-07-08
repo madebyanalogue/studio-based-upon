@@ -76,7 +76,9 @@
 
         <ul v-else class="bucket__list">
           <li v-for="item in items" :key="item.id" class="bucket__item">
-            <img :src="item.imageUrl" :alt="item.title" class="bucket__thumb" />
+            <span class="bucket__thumb">
+              <span class="bucket__thumb-label">{{ item.itemType }}</span>
+            </span>
             <div class="bucket__info">
               <p class="bucket__name">{{ item.title }}</p>
               <p class="bucket__type">{{ item.itemType }}</p>
@@ -369,9 +371,24 @@ watch(activeMoodboardId, () => {
 
 .bucket__thumb {
   width: var(--bucket-thumb-width);
-  height: var(--bucket-thumb-height);
-  object-fit: cover;
-  /* border: 1px solid var(--grid-line); */
+  height: var(--bucket-thumb-width);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  container-type: inline-size;
+  padding: 8%;
+  text-align: center;
+  overflow: hidden;
+  background: var(--sand);
+}
+
+.bucket__thumb-label {
+  font-size: 15cqi;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  color: var(--charcoal);
+  text-transform: lowercase;
+  opacity: 0.4;
 }
 
 .bucket__name {

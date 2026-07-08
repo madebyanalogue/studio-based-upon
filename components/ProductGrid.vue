@@ -139,10 +139,29 @@ const regenerate = (fresh = false) => {
     : pool.length
   const chosen = pool.slice(0, count)
 
+  // Distribute items across a jittered grid so they spread evenly
+  // rather than clustering with pure random placement.
+  const cols = Math.ceil(Math.sqrt((chosen.length * FIELD.w) / FIELD.h))
+  const rows = Math.ceil(chosen.length / cols)
+  const cellW = (FIELD.w - MARGIN * 2) / cols
+  const cellH = (FIELD.h - MARGIN * 2) / rows
+
+  // Randomise which cell each item lands in for variety between arrangements.
+  const cellOrder = shuffle(
+    Array.from({ length: cols * rows }, (_, i) => i),
+    rng,
+  )
+
   layout.value = chosen.map((item, index) => {
+    const cell = cellOrder[index]
+    const col = cell % cols
+    const row = Math.floor(cell / cols)
     const size = Math.round(150 + rng() * 200)
-    const x = MARGIN + rng() * (FIELD.w - size - MARGIN * 2)
-    const y = MARGIN + rng() * (FIELD.h - size - MARGIN * 2)
+    // Keep the item within its cell, with a little breathing room.
+    const maxX = Math.max(0, cellW - size)
+    const maxY = Math.max(0, cellH - size)
+    const x = MARGIN + col * cellW + rng() * maxX
+    const y = MARGIN + row * cellH + rng() * maxY
     return {
       key: `${item._id}-${index}`,
       item,

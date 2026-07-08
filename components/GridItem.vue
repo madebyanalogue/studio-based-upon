@@ -1,9 +1,5 @@
 <template>
-  <article
-    class="grid-item"
-    @mouseenter="hovered = true"
-    @mouseleave="hovered = false"
-  >
+  <article class="grid-item">
     <component
       :is="linkTag"
       v-bind="linkProps"
@@ -11,20 +7,17 @@
       :aria-label="item.title"
       @click="onOpen"
     >
-      <img :src="imageUrl" :alt="item.title" loading="lazy" draggable="false" />
-    </component>
-
-    <div class="grid-item__meta" :class="{ 'grid-item__meta--visible': hovered || saved }">
+      <span class="grid-item__type-label">{{ typeLabel }}</span>
       <button
         type="button"
         class="grid-item__heart"
         :class="{ 'grid-item__heart--active': saved }"
         :aria-label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
-        @click.stop="onToggle"
+        @click.stop.prevent="onToggle"
       >
         {{ saved ? '♥' : '♡' }}
       </button>
-    </div>
+    </component>
   </article>
 </template>
 
@@ -52,8 +45,9 @@ const props = defineProps<{
 const { requestSave, isSaved } = useBucket()
 const { imageUrl: buildUrl } = useSanityImage()
 const { open } = useProductOverlay()
-const hovered = ref(false)
 const saved = computed(() => isSaved(props.item._id))
+
+const typeLabel = computed(() => props.item.itemType || 'product')
 
 const productSlug = computed(() =>
   props.item.itemType === 'product' && props.item.slug?.current
@@ -108,35 +102,59 @@ const onToggle = () => {
 }
 
 .grid-item__media {
-  display: block;
+  position: relative;
+  display: grid;
+  place-items: center;
+  container-type: inline-size;
   aspect-ratio: 1;
   overflow: hidden;
+  padding: 8%;
+  text-align: center;
+  background: var(--sand);
+  transition: background 0.4s ease;
 }
 
-.grid-item__media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.grid-item:hover .grid-item__media {
+  background: var(--sand);
 }
 
-.grid-item__meta {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+.grid-item__type-label {
+  font-size: 15cqi;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  color: var(--charcoal);
+  text-transform: lowercase;
+  transition: color 0.3s ease;
+  opacity: 0.4;
 }
 
-.grid-item__meta--visible {
-  opacity: 1;
+.grid-item:hover .grid-item__type-label {
+  color: var(--accent);
 }
 
 .grid-item__heart {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
   font-size: 1.1rem;
   line-height: 1;
   color: var(--charcoal);
+  background: rgba(250, 247, 242, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.grid-item__media:hover .grid-item__heart,
+.grid-item__heart--active {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .grid-item__heart--active {

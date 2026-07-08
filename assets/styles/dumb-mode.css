@@ -1,0 +1,99 @@
+/* ------------------------------------------------------------------ *
+ * Dumb mode
+ * ------------------------------------------------------------------ *
+ * A "dumbed down", clunky version of the site enabled via a
+ * `dumb-mode` class on <html> (see plugins/dumb-mode.client.ts).
+ * It strips animation and disables a handful of interactive tools.
+ * Overrides use !important to reliably beat scoped component styles.
+ * ------------------------------------------------------------------ */
+
+/* -- 1. Preloader: no animation, just show the stages ---------------- */
+.dumb-mode .preloader__panel,
+.dumb-mode .preloader__logo,
+.dumb-mode .preloader__statement,
+.dumb-mode .preloader__word,
+.dumb-mode .preloader__space {
+  transition: none !important;
+  transform: none !important;
+}
+
+/* Show each stage instantly rather than fading the logo / statement in
+   word-by-word. The phase timers still step logo -> statement -> exit. */
+.dumb-mode .preloader__logo,
+.dumb-mode .preloader__word,
+.dumb-mode .preloader__space {
+  opacity: 1 !important;
+}
+
+/* -- 2. Flow state: elements just appear, no sequential fade-in ------ */
+.dumb-mode #app,
+.dumb-mode .header,
+.dumb-mode .product-grid {
+  transition: none !important;
+}
+
+.dumb-mode .explore__item {
+  transition: none !important;
+  opacity: 1 !important;
+}
+
+/* -- 3. No page transition ------------------------------------------ */
+.dumb-mode .page-enter-active,
+.dumb-mode .page-leave-active {
+  transition: none !important;
+}
+
+.dumb-mode .page-enter-from,
+.dumb-mode .page-leave-to {
+  opacity: 1 !important;
+}
+
+/* -- 4. No animation on the cart / bucket drawer -------------------- */
+.dumb-mode .bucket__backdrop,
+.dumb-mode .bucket__panel {
+  transition: none !important;
+}
+
+/* -- 5. Disable (pointer-events: none) a set of tools --------------- */
+/* Flow state tools: remix / surprise / save all + zoom controls */
+.dumb-mode .explore__controls,
+.dumb-mode .zoom-controls,
+/* Enquiry form (fields + submit; header close + backdrop stay usable) */
+.dumb-mode .enquiry__body,
+/* Material and colour filters on the products page */
+.dumb-mode .filter-dropdown,
+/* Grid size tools on the products page */
+.dumb-mode .products__grid-size,
+/* Bucket drawer edit / delete actions */
+.dumb-mode .bucket__title-actions,
+/* Composition canvas actions */
+.dumb-mode .moodboard__actions,
+/* Composition rename (pencil) button */
+.dumb-mode .moodboard__title-edit-btn,
+/* Composition toolbar tools (download / save / send enquiry) */
+.dumb-mode .moodboard__tools {
+  pointer-events: none !important;
+}
+
+/* Composition items are not scalable: hide the resize handles so there's
+   no affordance suggesting otherwise (scaling is driven by these handles). */
+.dumb-mode .moodboard__handle {
+  display: none !important;
+}
+
+/* Hide the header "create new moodboard" (+) button. */
+.dumb-mode .header__moodboard-add {
+  display: none !important;
+}
+
+/* Make the disabled tools read as disabled / clunky. */
+.dumb-mode .explore__controls,
+.dumb-mode .zoom-controls,
+.dumb-mode .enquiry__body,
+.dumb-mode .filter-dropdown,
+.dumb-mode .products__grid-size,
+.dumb-mode .bucket__title-actions,
+.dumb-mode .moodboard__actions,
+.dumb-mode .moodboard__tools {
+  opacity: 0.45 !important;
+}
