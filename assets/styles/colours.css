@@ -1,0 +1,25 @@
+:root {
+  --cream: #f4efe6;
+  --warm-white: #faf7f2;
+  --sand: #e8dfd2;
+  --stone: #c4b8a8;
+  --charcoal: #1a1a1a;
+  --muted: #968f8a;
+  --grid-line: rgba(0, 0, 0, 0.06);
+  --accent: #8b7355;
+
+  --background-color: var(--cream);
+  --text-color: var(--charcoal);
+  --header-bg: var(--warm-white);
+  --gutter: 16px;
+  --header-height: 56px;
+  --filter-bar-height: 72px;
+  --bucket-width: min(420px, 100vw);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 24px;
+    --header-height: 64px;
+  }
+}

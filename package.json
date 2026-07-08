@@ -1,0 +1,23 @@
+{
+  "name": "basedupon-nuxt",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@nuxt/image": "^1.7.1",
+    "@nuxtjs/sanity": "^1.13.3",
+    "@sanity/client": "^7.13.2",
+    "@sanity/image-url": "^2.0.2",
+    "html2canvas": "^1.4.1",
+    "nuxt": "^4.2.2",
+    "vite": "^6.3.5"
+  },
+  "devDependencies": {
+    "react-compiler-runtime": "^1.0.0"
+  }
+}
