@@ -335,6 +335,10 @@ watch(activeMoodboardId, () => {
   flex: 1;
   overflow: auto;
   padding: var(--gutter);
+
+  gap: 10px;
+    display: flex;
+    flex-direction: column;
 }
 
 .bucket__empty p {

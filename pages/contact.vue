@@ -12,33 +12,6 @@
     </div>
 
     <form v-else class="enquire__form" @submit.prevent="submit">
-      <div class="enquire__fields">
-        <label class="enquire__field">
-          <span class="enquire__label">Name</span>
-          <input v-model="form.name" type="text" name="name" autocomplete="name" required />
-        </label>
-
-        <label class="enquire__field">
-          <span class="enquire__label">Email</span>
-          <input v-model="form.email" type="email" name="email" autocomplete="email" required />
-        </label>
-
-        <label class="enquire__field">
-          <span class="enquire__label">Telephone</span>
-          <input v-model="form.telephone" type="tel" name="telephone" autocomplete="tel" />
-        </label>
-
-        <label class="enquire__field">
-          <span class="enquire__label">Message</span>
-          <textarea
-            v-model="form.message"
-            name="message"
-            rows="6"
-            placeholder="Tell us about your project…"
-          />
-        </label>
-      </div>
-
       <div class="enquire__moodboards">
         <p class="enquire__label">Include moodboards <span class="enquire__hint">optional</span></p>
 
@@ -73,6 +46,33 @@
             </label>
           </li>
         </ul>
+      </div>
+
+      <div class="enquire__fields">
+        <label class="enquire__field">
+          <span class="enquire__label">Name</span>
+          <input v-model="form.name" type="text" name="name" autocomplete="name" required />
+        </label>
+
+        <label class="enquire__field">
+          <span class="enquire__label">Email</span>
+          <input v-model="form.email" type="email" name="email" autocomplete="email" required />
+        </label>
+
+        <label class="enquire__field">
+          <span class="enquire__label">Telephone</span>
+          <input v-model="form.telephone" type="tel" name="telephone" autocomplete="tel" />
+        </label>
+
+        <label class="enquire__field">
+          <span class="enquire__label">Message</span>
+          <textarea
+            v-model="form.message"
+            name="message"
+            rows="6"
+            placeholder="Tell us about your project…"
+          />
+        </label>
       </div>
 
       <p v-if="error" class="enquire__error" role="alert">{{ error }}</p>

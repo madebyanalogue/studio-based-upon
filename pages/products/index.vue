@@ -1,7 +1,7 @@
 <template>
   <div class="products">
     <section class="products__header section">
-      <h1 class="page-title">Products</h1>
+      <h4 class="page-title">Materials & Forms</h4>
       <p class="products__intro serif-italic">
         A working library of surfaces, textures and forms. Filter, explore, and heart pieces into
         your selection.

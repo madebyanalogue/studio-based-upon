@@ -14,19 +14,48 @@
         </button>
 
         <div ref="switcherRef" class="moodboard__switcher">
-          <button
-            type="button"
-            class="moodboard__switcher-toggle serif-italic"
-            :aria-expanded="switchOpen"
-            @click="switchOpen = !switchOpen"
+          <form
+            v-if="titleEditing"
+            class="moodboard__title-edit"
+            @submit.prevent="saveTitleEdit"
           >
-            <span>{{ activeMoodboard?.name || 'Composition' }}</span>
-            <span
-              v-if="moodboards.length > 1"
-              class="moodboard__switcher-caret"
-              aria-hidden="true"
-            ></span>
-          </button>
+            <input
+              ref="titleInput"
+              v-model="titleDraft"
+              type="text"
+              class="moodboard__title-input serif-italic"
+              aria-label="Composition name"
+              @blur="saveTitleEdit"
+              @keydown.esc="cancelTitleEdit"
+            />
+          </form>
+          <template v-else>
+            <button
+              type="button"
+              class="moodboard__switcher-toggle serif-italic"
+              :aria-expanded="switchOpen"
+              @click="switchOpen = !switchOpen"
+            >
+              <span>{{ activeMoodboard?.name || 'Composition' }}</span>
+              <span
+                v-if="moodboards.length > 1"
+                class="moodboard__switcher-caret"
+                aria-hidden="true"
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="moodboard__title-edit-btn"
+              aria-label="Rename composition"
+              title="Rename composition"
+              @click="startTitleEdit"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 20h4L18.5 9.5a2.121 2.121 0 0 0-3-3L5 17v3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.5" />
+              </svg>
+            </button>
+          </template>
           <div v-if="switchOpen" class="moodboard__switcher-menu">
             <button
               v-for="board in moodboards"
@@ -89,7 +118,10 @@
           class="moodboard__item"
           :class="[
             `moodboard__item--${item.kind}`,
-            { 'moodboard__item--active': activeId === item.id },
+            {
+              'moodboard__item--active': activeId === item.id,
+              'moodboard__item--resizing': resizeState?.id === item.id,
+            },
           ]"
           :style="{
             transform: `translate(${item.x}px, ${item.y}px) scale(${item.scale})`,
@@ -127,6 +159,7 @@
             type="button"
             class="moodboard__remove"
             aria-label="Remove item"
+            :style="{ transform: `scale(${1 / item.scale})` }"
             @pointerdown.stop
             @click.stop="removeItem(item.id)"
           >
@@ -238,6 +271,7 @@ const {
   activeMoodboard,
   activeMoodboardId,
   setActiveMoodboard,
+  renameMoodboard,
 } = useBucket()
 const {
   placements,
@@ -268,6 +302,29 @@ const colourInput = ref<HTMLInputElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const pendingColour = ref('#c8a86b')
 const editingId = ref<string | null>(null)
+const titleEditing = ref(false)
+const titleDraft = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+
+const startTitleEdit = () => {
+  titleDraft.value = activeMoodboard.value?.name || ''
+  titleEditing.value = true
+  switchOpen.value = false
+  nextTick(() => titleInput.value?.focus())
+}
+
+const saveTitleEdit = () => {
+  if (!titleEditing.value) return
+  const next = titleDraft.value.trim()
+  if (next && activeMoodboardId.value) {
+    renameMoodboard(activeMoodboardId.value, next)
+  }
+  titleEditing.value = false
+}
+
+const cancelTitleEdit = () => {
+  titleEditing.value = false
+}
 
 const penMode = ref(false)
 const penColour = ref('#1a1a1a')
@@ -557,8 +614,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 1rem;
   padding: 1rem var(--gutter);
-  border-bottom: 1px solid var(--grid-line);
-  background: var(--warm-white);
+
 }
 
 .moodboard__back {
@@ -576,6 +632,9 @@ onUnmounted(() => {
 .moodboard__switcher {
   position: relative;
   justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .moodboard__switcher-toggle {
@@ -585,6 +644,32 @@ onUnmounted(() => {
   font-size: var(--text-lg);
   color: var(--charcoal);
   transition: color 0.2s ease;
+}
+
+.moodboard__title-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.moodboard__title-edit-btn:hover {
+  color: var(--charcoal);
+}
+
+.moodboard__title-input {
+  font-size: var(--text-lg);
+  color: var(--charcoal);
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--charcoal);
+  padding: 0 0.25rem 0.15rem;
+}
+
+.moodboard__title-input:focus {
+  outline: none;
 }
 
 .moodboard__switcher-toggle:hover {
@@ -681,8 +766,7 @@ onUnmounted(() => {
 }
 
 .moodboard__item--active {
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
-  outline: 1px solid var(--charcoal);
+  outline: 0.025em solid var(--charcoal);
   outline-offset: 0;
 }
 
@@ -692,7 +776,7 @@ onUnmounted(() => {
   width: 12px;
   height: 12px;
   background: #fff;
-  border: 1px solid var(--charcoal);
+  border: 0.075em solid var(--charcoal);
   border-radius: 2px;
   z-index: 10;
 }
@@ -725,14 +809,30 @@ onUnmounted(() => {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border: 1px solid var(--grid-line);
 }
 
 .moodboard__label {
-  display: block;
+  display: none;
   margin-top: 0.5rem;
-  font-size: var(--text-sm);
+  font-size: 10px;
   text-align: center;
+}
+
+.moodboard__item:hover .moodboard__label {
+  display: block;
+}
+
+/* When active (resize mode), keep the title out of flow so it
+   doesn't expand the selection outline / shift the handles. */
+.moodboard__item--active .moodboard__label {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+}
+
+.moodboard__item--resizing .moodboard__label {
+  display: none;
 }
 
 /* Colour card */
@@ -770,7 +870,8 @@ onUnmounted(() => {
 
 .moodboard__text {
   padding: 0.35rem 0.5rem;
-  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-family: monospace;
+  font-size: clamp(0.75rem, 1.25vw, 1rem);
   line-height: 1.25;
   color: var(--charcoal);
   outline: none;

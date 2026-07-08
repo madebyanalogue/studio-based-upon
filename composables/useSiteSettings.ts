@@ -41,20 +41,30 @@ export const useSiteSettings = () => {
   const defaultMenu = {
     items: [
       { _key: '1', text: 'Flow State', path: '/' },
-      { _key: '2', text: 'Products', path: '/products' },
+      { _key: '2', text: 'Materials & Forms', path: '/products' },
       { _key: '3', text: '(Pre)Crafted', path: '/pre-crafted' },
       { _key: '4', text: 'About', path: '/about' },
     ],
   }
 
+  const normalizeMenuItems = (items: { _key?: string; text?: string; path?: string }[] = []) =>
+    items.map((item) =>
+      item.path === '/products' ? { ...item, text: 'Materials & Forms' } : item,
+    )
+
   const headerMenu = computed(() => {
     const menu = settings.value?.headerMenu || defaultMenu
     return {
       ...menu,
-      items: (menu.items || []).filter((item: { path?: string }) => item.path !== '/contact'),
+      items: normalizeMenuItems(
+        (menu.items || []).filter((item: { path?: string }) => item.path !== '/contact'),
+      ),
     }
   })
-  const mobileMenu = computed(() => settings.value?.mobileMenu || settings.value?.headerMenu || defaultMenu)
+  const mobileMenu = computed(() => {
+    const menu = settings.value?.mobileMenu || settings.value?.headerMenu || defaultMenu
+    return { ...menu, items: normalizeMenuItems(menu.items || []) }
+  })
 
   return {
     settings,

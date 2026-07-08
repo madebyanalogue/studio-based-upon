@@ -97,7 +97,7 @@ const isActive = (path: string) => {
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
+  gap: 0.75rem 1.75rem;
 }
 
 .header__nav-link {

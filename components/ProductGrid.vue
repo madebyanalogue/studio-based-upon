@@ -30,16 +30,17 @@
     </div>
 
     <div class="explore__controls explore__controls--left">
-      <button type="button" class="explore__btn" @click="remix">Remix</button>
-      <button type="button" class="explore__btn" @click="addRandomElement">
-        <span class="explore__btn-plus" aria-hidden="true">+</span>
+      <button type="button" class="explore__pill" @click="remix">Remix</button>
+      <button type="button" class="explore__pill" @click="addRandomElement">
         Surprise me
+        <span class="explore__pill-plus" aria-hidden="true">+</span>
       </button>
     </div>
 
     <div class="explore__controls explore__controls--right">
       <button type="button" class="explore__link" @click="saveAllToComposition">
         Save all to composition
+        <span class="explore__link-arrow" aria-hidden="true">→</span>
       </button>
     </div>
 
@@ -268,10 +269,17 @@ const measure = () => {
 const clampPan = () => {
   const scaledW = FIELD.w * scale.value
   const scaledH = FIELD.h * scale.value
-  const minX = Math.min(0, viewW - scaledW)
-  const minY = Math.min(0, viewH - scaledH)
-  pan.x = Math.min(0, Math.max(minX, pan.x))
-  pan.y = Math.min(0, Math.max(minY, pan.y))
+  // When the scaled canvas is smaller than the viewport, centre it.
+  if (scaledW <= viewW) {
+    pan.x = (viewW - scaledW) / 2
+  } else {
+    pan.x = Math.min(0, Math.max(viewW - scaledW, pan.x))
+  }
+  if (scaledH <= viewH) {
+    pan.y = (viewH - scaledH) / 2
+  } else {
+    pan.y = Math.min(0, Math.max(viewH - scaledH, pan.y))
+  }
 }
 
 const centrePan = () => {
@@ -430,10 +438,32 @@ onBeforeUnmount(() => {
   right: var(--gutter);
 }
 
-.explore__btn {
+.explore__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: var(--text-sm);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--charcoal);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.2s ease;
+}
+
+.explore__link-arrow {
+  font-size: 1.05em;
+  line-height: 1;
+}
+
+.explore__link:hover {
+  text-decoration-color: currentColor;
+}
+
+.explore__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--text-sm);
   color: var(--charcoal);
   padding: 0.55rem 1.4rem;
   border: 1px solid var(--charcoal);
@@ -443,32 +473,13 @@ onBeforeUnmount(() => {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.explore__btn:hover {
+.explore__pill:hover {
   background: var(--charcoal);
   color: var(--sand, #faf7f2);
 }
 
-.explore__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.explore__btn-plus {
+.explore__pill-plus {
   font-size: 1.05em;
   line-height: 1;
-}
-
-.explore__link {
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: var(--muted);
-  transition: text-decoration-color 0.2s ease;
-}
-
-.explore__link:hover {
-  text-decoration-color: currentColor;
 }
 </style>
