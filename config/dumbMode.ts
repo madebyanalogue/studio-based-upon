@@ -8,4 +8,4 @@
  * This is only the DEFAULT. It can still be overridden at runtime per
  * browser via `?dumb=0` / `?dumb=1` or `setDumbMode(false)` in the console.
  */
-export const DUMB_MODE_DEFAULT = false
+export const DUMB_MODE_DEFAULT = true
