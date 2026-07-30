@@ -4,6 +4,10 @@ export type BucketItem = {
   imageUrl: string
   itemType: string
   link?: string | null
+  /** Full project gallery when the item comes from a Form / Surface / etc. */
+  imageUrls?: string[]
+  /** Index into imageUrls for the currently shown image. */
+  imageIndex?: number
 }
 
 export type MoodboardBucket = {
@@ -12,22 +16,45 @@ export type MoodboardBucket = {
   items: BucketItem[]
 }
 
+export type SelectionEntry =
+  | { kind: 'item'; item: BucketItem }
+  | { kind: 'undo'; key: string; item: BucketItem }
+
+export type PendingRemoval = {
+  key: string
+  moodboardId: string
+  item: BucketItem
+  index: number
+  seq: number
+}
+
 const STORAGE_KEY = 'sba-moodboards'
 const LEGACY_STORAGE_KEY = 'sba-bucket'
+const UNDO_REMOVE_MS = 5000
+
+const removalTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let removalSeq = 0
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
-const collectionName = (index = 1) =>
-  index === 1 ? 'Collection' : `Collection ${index}`
+const selectionName = (index = 1) =>
+  index === 1 ? 'My Selection' : `Selection ${index}`
 
 const migrateMoodboardName = (name: string) => {
+  if (name === 'Collection' || name === 'My Collection' || name === 'Selection') {
+    return selectionName(1)
+  }
+
+  const collectionMatch = name.match(/^(?:My )?Collection (\d+)$/)
+  if (collectionMatch) return selectionName(Number(collectionMatch[1]))
+
   const moodboardMatch = name.match(/^Moodboard (\d+)$/)
-  if (moodboardMatch) return collectionName(Number(moodboardMatch[1]))
+  if (moodboardMatch) return selectionName(Number(moodboardMatch[1]))
 
   const compositionMatch = name.match(/^Composition( (\d+))?$/)
   if (compositionMatch) {
     const n = compositionMatch[2] ? Number(compositionMatch[2]) : 1
-    return collectionName(n)
+    return selectionName(n)
   }
 
   return name
@@ -35,7 +62,7 @@ const migrateMoodboardName = (name: string) => {
 
 const defaultMoodboard = (index = 1): MoodboardBucket => ({
   id: createId(),
-  name: collectionName(index),
+  name: selectionName(index),
   items: [],
 })
 
@@ -45,6 +72,7 @@ export const useBucket = () => {
   const isOpen = useState('bucket-open', () => false)
   const isMoodboard = useState('bucket-moodboard', () => false)
   const pickerItem = useState<BucketItem | null>('moodboard-picker-item', () => null)
+  const pendingRemovals = useState<PendingRemoval[]>('bucket-pending-removals', () => [])
 
   const activeMoodboard = computed(() => {
     const boards = moodboards.value
@@ -55,6 +83,38 @@ export const useBucket = () => {
   const items = computed(() => activeMoodboard.value?.items ?? [])
 
   const count = computed(() => items.value.length)
+
+  /** Active selection rows: live items + undo placeholders in original slots. */
+  const selectionEntries = computed((): SelectionEntry[] => {
+    const boardId = activeMoodboardId.value
+    const entries: SelectionEntry[] = items.value.map((item) => ({ kind: 'item', item }))
+    if (!boardId) return entries
+
+    const pendings = pendingRemovals.value
+      .filter((p) => p.moodboardId === boardId)
+      .slice()
+      .sort((a, b) => b.index - a.index || b.seq - a.seq)
+
+    for (const pending of pendings) {
+      entries.splice(Math.min(pending.index, entries.length), 0, {
+        kind: 'undo',
+        key: pending.key,
+        item: pending.item,
+      })
+    }
+    return entries
+  })
+
+  const clearRemovalTimer = (key: string) => {
+    const timer = removalTimers.get(key)
+    if (timer) clearTimeout(timer)
+    removalTimers.delete(key)
+  }
+
+  const dismissPendingRemoval = (key: string) => {
+    clearRemovalTimer(key)
+    pendingRemovals.value = pendingRemovals.value.filter((p) => p.key !== key)
+  }
 
   const ensureActive = () => {
     if (!moodboards.value.length) {
@@ -140,7 +200,7 @@ export const useBucket = () => {
     moodboards.value = moodboards.value.map((board) => {
       if (board.id !== moodboardId) return board
       if (board.items.some((i) => i.id === item.id)) return board
-      return { ...board, items: [...board.items, item] }
+      return { ...board, items: [item, ...board.items] }
     })
     persist()
   }
@@ -150,6 +210,14 @@ export const useBucket = () => {
       board.id === moodboardId
         ? { ...board, items: board.items.filter((i) => i.id !== itemId) }
         : board,
+    )
+    for (const pending of pendingRemovals.value) {
+      if (pending.moodboardId === moodboardId && pending.item.id === itemId) {
+        clearRemovalTimer(pending.key)
+      }
+    }
+    pendingRemovals.value = pendingRemovals.value.filter(
+      (p) => !(p.moodboardId === moodboardId && p.item.id === itemId),
     )
     persist()
   }
@@ -163,7 +231,120 @@ export const useBucket = () => {
 
   const removeItem = (id: string) => {
     ensureActive()
-    removeItemFromMoodboard(activeMoodboardId.value!, id)
+    const boardId = activeMoodboardId.value!
+    const board = moodboards.value.find((b) => b.id === boardId)
+    if (!board) return
+    const index = board.items.findIndex((i) => i.id === id)
+    if (index < 0) return
+    const source = board.items[index]
+    const item: BucketItem = {
+      ...source,
+      imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
+    }
+
+    const key = `${boardId}::${id}`
+    dismissPendingRemoval(key)
+
+    // Soft-remove: drop from selection immediately, keep undo slot for 2 minutes
+    moodboards.value = moodboards.value.map((b) =>
+      b.id === boardId ? { ...b, items: b.items.filter((i) => i.id !== id) } : b,
+    )
+    persist()
+
+    pendingRemovals.value = [
+      ...pendingRemovals.value.filter((p) => p.key !== key),
+      { key, moodboardId: boardId, item, index, seq: ++removalSeq },
+    ]
+
+    if (import.meta.client) {
+      removalTimers.set(
+        key,
+        setTimeout(() => dismissPendingRemoval(key), UNDO_REMOVE_MS),
+      )
+    }
+  }
+
+  const undoRemove = (key: string) => {
+    const pending = pendingRemovals.value.find((p) => p.key === key)
+    if (!pending) return
+
+    moodboards.value = moodboards.value.map((board) => {
+      if (board.id !== pending.moodboardId) return board
+      if (board.items.some((i) => i.id === pending.item.id)) return board
+      const next = [...board.items]
+      next.splice(Math.min(pending.index, next.length), 0, pending.item)
+      return { ...board, items: next }
+    })
+    persist()
+    dismissPendingRemoval(key)
+  }
+
+  const cloneItem = (itemId: string) => {
+    ensureActive()
+    const boardId = activeMoodboardId.value
+    if (!boardId) return
+    moodboards.value = moodboards.value.map((board) => {
+      if (board.id !== boardId) return board
+      const index = board.items.findIndex((i) => i.id === itemId)
+      if (index < 0) return board
+      const source = board.items[index]
+      const clone: BucketItem = {
+        ...source,
+        id: `${source.id}-copy-${Date.now()}`,
+        imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
+      }
+      const items = [...board.items]
+      items.splice(index + 1, 0, clone)
+      return { ...board, items }
+    })
+    persist()
+  }
+
+  const cycleItemImage = (itemId: string, direction: 1 | -1) => {
+    moodboards.value = moodboards.value.map((board) => ({
+      ...board,
+      items: board.items.map((item) => {
+        if (item.id !== itemId) return item
+        const urls = item.imageUrls?.filter(Boolean) || []
+        if (urls.length < 2) return item
+        const current =
+          item.imageIndex ?? Math.max(0, urls.indexOf(item.imageUrl))
+        const next = (current + direction + urls.length) % urls.length
+        return {
+          ...item,
+          imageIndex: next,
+          imageUrl: urls[next],
+        }
+      }),
+    }))
+    persist()
+  }
+
+  /** Attach a project gallery to an existing selection item (e.g. after fetch). */
+  const setItemGallery = (
+    itemId: string,
+    imageUrls: string[],
+    imageIndex?: number,
+  ) => {
+    const urls = imageUrls.filter(Boolean)
+    if (urls.length < 2) return
+    moodboards.value = moodboards.value.map((board) => ({
+      ...board,
+      items: board.items.map((item) => {
+        if (item.id !== itemId) return item
+        const idx =
+          typeof imageIndex === 'number'
+            ? imageIndex
+            : Math.max(0, urls.indexOf(item.imageUrl))
+        return {
+          ...item,
+          imageUrls: urls,
+          imageIndex: idx,
+          imageUrl: urls[idx] || item.imageUrl,
+        }
+      }),
+    }))
+    persist()
   }
 
   const toggleInMoodboard = (moodboardId: string, item: BucketItem, openDrawer = false) => {
@@ -196,6 +377,7 @@ export const useBucket = () => {
     ensureActive()
     if (moodboards.value.length > 1) {
       openPicker(item)
+      isOpen.value = true
       return
     }
     toggleInMoodboard(moodboards.value[0].id, item, true)
@@ -213,7 +395,6 @@ export const useBucket = () => {
   }
 
   const openMoodboard = () => {
-    if (!items.value.length) return
     isMoodboard.value = true
     isOpen.value = false
   }
@@ -233,6 +414,7 @@ export const useBucket = () => {
     activeMoodboard,
     activeMoodboardId,
     items,
+    selectionEntries,
     isOpen,
     isMoodboard,
     pickerItem,
@@ -243,6 +425,10 @@ export const useBucket = () => {
     setActiveMoodboard,
     addItem,
     removeItem,
+    undoRemove,
+    cloneItem,
+    cycleItemImage,
+    setItemGallery,
     addItemToMoodboard,
     removeItemFromMoodboard,
     requestSave,

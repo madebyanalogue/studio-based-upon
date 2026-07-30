@@ -8,7 +8,7 @@
         offers a design and fabrication solution, creating additional bespoke elements to resolve the
         unique challenges of each space.
       </p>
-      <p class="tagline serif-italic">The meeting of efficiency and artistry.</p>
+      <p class="tagline  interface">The meeting of efficiency and artistry.</p>
     </div>
   </article>
 </template>

@@ -5,11 +5,11 @@
       class="moodboard-picker"
       role="dialog"
       aria-modal="true"
-      aria-label="Choose moodboard"
+      aria-label="Choose selection"
     >
       <div class="moodboard-picker__backdrop" @click="closePicker" />
       <div class="moodboard-picker__panel">
-        <p class="moodboard-picker__title serif-italic">Add to moodboard</p>
+        <p class="moodboard-picker__title  interface">Add to selection</p>
         <ul class="moodboard-picker__list">
           <li v-for="board in moodboards" :key="board.id">
             <button

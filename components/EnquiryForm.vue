@@ -12,16 +12,22 @@
       <div class="enquiry__panel">
         <header class="enquiry__header">
           <div>
-            <h2 class="enquiry__title serif-italic">Send enquiry</h2>
+            <h2 class="enquiry__title  interface">Send enquiry</h2>
             <p class="enquiry__subtitle">
-              {{ source === 'moodboard' ? 'Your moodboard composition' : 'Your selection' }}
+              {{
+                source === 'moodboard'
+                  ? 'Your board'
+                  : source === 'product'
+                    ? 'Product enquiry'
+                    : 'Your selection'
+              }}
             </p>
           </div>
           <button type="button" class="enquiry__close" aria-label="Close" @click="close">×</button>
         </header>
 
         <div v-if="isSuccess" class="enquiry__success">
-          <p class="enquiry__success-title serif-italic">Thank you</p>
+          <p class="enquiry__success-title  interface">Thank you</p>
           <p>Your enquiry has been sent. We will be in touch shortly.</p>
           <button type="button" class="btn btn--filled" @click="close">Close</button>
         </div>
@@ -30,7 +36,7 @@
           <div class="enquiry__preview">
             <figure v-if="compositionImage" class="enquiry__composition">
               <img :src="compositionImage" alt="Moodboard composition" />
-              <figcaption>Composition preview</figcaption>
+              <figcaption>Board preview</figcaption>
             </figure>
 
             <div v-if="previewItems.length" class="enquiry__grid">
@@ -50,7 +56,7 @@
                   class="enquiry__colour"
                   :style="{ background: item.colour }"
                 />
-                <span v-else-if="item.kind === 'text'" class="enquiry__text serif-italic">
+                <span v-else-if="item.kind === 'text'" class="enquiry__text  interface">
                   {{ item.text || item.title }}
                 </span>
               </div>
@@ -100,6 +106,38 @@
               />
             </label>
 
+            <div class="enquiry__field">
+              <span class="enquiry__label">
+                Attachments <span class="enquiry__hint">optional</span>
+              </span>
+              <label class="enquiry__upload">
+                <input
+                  ref="fileInput"
+                  type="file"
+                  class="sr-only"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx"
+                  @change="onFilesSelected"
+                />
+                <span class="enquiry__upload-btn">Upload files</span>
+                <span class="enquiry__upload-note">Images, PDF or Word · up to 10MB each</span>
+              </label>
+              <ul v-if="attachments.length" class="enquiry__files">
+                <li v-for="file in attachments" :key="file.id" class="enquiry__file">
+                  <span class="enquiry__file-name">{{ file.name }}</span>
+                  <span class="enquiry__file-size">{{ formatSize(file.size) }}</span>
+                  <button
+                    type="button"
+                    class="enquiry__file-remove"
+                    :aria-label="`Remove ${file.name}`"
+                    @click="removeAttachment(file.id)"
+                  >
+                    ×
+                  </button>
+                </li>
+              </ul>
+            </div>
+
             <p v-if="error" class="enquiry__error" role="alert">{{ error }}</p>
 
             <button type="submit" class="btn btn--filled enquiry__send" :disabled="isSubmitting">
@@ -118,13 +156,30 @@ const {
   source,
   previewItems,
   compositionImage,
+  attachments,
   form,
   isSubmitting,
   isSuccess,
   error,
+  addAttachments,
+  removeAttachment,
   close,
   submit,
 } = useEnquiryForm()
+
+const fileInput = ref<HTMLInputElement | null>(null)
+
+const formatSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const onFilesSelected = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (input.files?.length) addAttachments(input.files)
+  input.value = ''
+}
 
 const onKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && isOpen.value) close()
@@ -282,6 +337,13 @@ onUnmounted(() => {
   color: var(--muted);
 }
 
+.enquiry__hint {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
 .enquiry__field input,
 .enquiry__field textarea {
   width: 100%;
@@ -297,6 +359,73 @@ onUnmounted(() => {
 .enquiry__field textarea:focus {
   outline: none;
   border-color: var(--charcoal);
+}
+
+.enquiry__upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  cursor: pointer;
+}
+
+.enquiry__upload-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--grid-line);
+  background: var(--cream);
+  font-size: var(--text-sm);
+  color: var(--charcoal);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.enquiry__upload:hover .enquiry__upload-btn {
+  border-color: var(--charcoal);
+  background: var(--warm-white);
+}
+
+.enquiry__upload-note {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.enquiry__files {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.enquiry__file {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--grid-line);
+  background: var(--cream);
+  font-size: var(--text-sm);
+}
+
+.enquiry__file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--charcoal);
+}
+
+.enquiry__file-size {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.enquiry__file-remove {
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--muted);
 }
 
 .enquiry__error {

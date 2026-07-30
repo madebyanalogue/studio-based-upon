@@ -1,38 +1,60 @@
 <template>
-  <article class="grid-item">
+  <article ref="rootRef" class="grid-item">
     <component
       :is="linkTag"
       v-bind="linkProps"
       class="grid-item__media"
+      :class="{ 'grid-item__media--image': Boolean(activeImage) }"
       :aria-label="item.title"
       @click="onOpen"
     >
-      <span class="grid-item__type-label">{{ typeLabel }}</span>
-      <button
-        type="button"
-        class="grid-item__heart"
-        :class="{ 'grid-item__heart--active': saved }"
-        :aria-label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
+      <img
+        v-if="activeImage"
+        ref="imageRef"
+        class="grid-item__image"
+        :src="activeImage"
+        :alt="item.title"
+        loading="lazy"
+        draggable="false"
+        @load="onImageLoad"
+      />
+      <span v-else class="grid-item__type-label">{{ typeLabel }}</span>
+      <AddButton
+        class="grid-item__add"
+        :active="saved"
+        :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
         @click.stop.prevent="onToggle"
-      >
-        {{ saved ? '♥' : '♡' }}
-      </button>
+      />
+      <ImageCycleArrows
+        v-if="projectImages.length > 1"
+        class="grid-item__cycle"
+        :index="imageIndex"
+        :count="projectImages.length"
+        hide-count
+        boxed
+        @prev="cycle(-1)"
+        @next="cycle(1)"
+      />
     </component>
   </article>
 </template>
 
 <script setup lang="ts">
 import { productPath } from '~/composables/useProductCatalog'
+import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
+import { uniqueImageUrls, randomImageIndex } from '~/composables/productImages'
 
 type GridItemData = {
   _id: string
   title: string
   slug?: { current?: string }
-  itemType?: string
+  category?: string
+  categories?: string[]
   image?: { asset?: { url?: string } }
+  gallery?: { asset?: { url?: string } }[]
+  spiritGallery?: { asset?: { url?: string } }[]
   linkType?: string
   externalUrl?: string
-  project?: { slug?: { current?: string } }
 }
 
 const props = defineProps<{
@@ -42,58 +64,163 @@ const props = defineProps<{
   tileSize?: number
 }>()
 
+const emit = defineEmits<{
+  /** Height grew/shrunk — parent should shift top by -delta so the bottom edge stays put */
+  'bottom-anchor': [{ delta: number }]
+}>()
+
 const { requestSave, isSaved } = useBucket()
 const { imageUrl: buildUrl } = useSanityImage()
-const { open } = useProductOverlay()
+const { open, returnImage } = useProductOverlay()
 const saved = computed(() => isSaved(props.item._id))
+const imageIndex = ref(0)
+const rootRef = ref<HTMLElement | null>(null)
+const imageRef = ref<HTMLImageElement | null>(null)
+let lastHeight = 0
+let anchorOnNextLayout = false
 
-const typeLabel = computed(() => props.item.itemType || 'product')
-
-const productSlug = computed(() =>
-  props.item.itemType === 'product' && props.item.slug?.current
-    ? props.item.slug.current
-    : null,
+watch(
+  returnImage,
+  (value) => {
+    if (value?.productId === props.item._id) {
+      imageIndex.value = value.index
+      anchorOnNextLayout = true
+    }
+  },
 )
+
+const typeLabel = computed(() => {
+  const key = props.item.category || props.item.categories?.[0] || ''
+  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
+  return match?.label || key || props.item.title
+})
+
+const productSlug = computed(() => {
+  if (props.item.linkType !== 'product') return null
+  return props.item.slug?.current || null
+})
 
 const onOpen = (event: MouseEvent) => {
   if (!productSlug.value) return
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
   event.preventDefault()
-  open(productSlug.value)
+  const source =
+    ((event.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null) ||
+    ((event.target as HTMLElement | null)?.closest?.('img') as HTMLElement | null)
+  open(productSlug.value, { source, imageIndex: imageIndex.value })
 }
 
 const href = computed(() => {
   const productLink = productPath({
-    itemType: props.item.itemType,
+    linkType: props.item.linkType,
     slug: props.item.slug,
   })
   if (productLink) return productLink
 
   if (props.item.linkType === 'url' && props.item.externalUrl) return props.item.externalUrl
-  if (props.item.linkType === 'project' && props.item.project?.slug?.current) {
-    return `/work/${props.item.project.slug.current}`
-  }
   return null
 })
 
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
+const projectImages = computed(() => {
+  const assets = [
+    props.item.image,
+    ...(props.item.gallery || []),
+    ...(props.item.spiritGallery || []),
+  ]
+  const hero = props.imageUrl || buildUrl(props.item.image)
+  return uniqueImageUrls(
+    hero,
+    ...assets.map((asset) => (asset ? buildUrl(asset, 1200) : '')),
+  )
+})
+
+const activeImage = computed(
+  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
+)
+
+const randomizeImage = () => {
+  imageIndex.value = randomImageIndex(projectImages.value.length)
+  anchorOnNextLayout = true
+}
+
+onMounted(() => {
+  randomizeImage()
+})
+
+const measureHeight = () => rootRef.value?.offsetHeight || 0
+
+const commitHeight = (anchorBottom: boolean) => {
+  const h = measureHeight()
+  if (!h) return
+  if (anchorBottom && lastHeight > 0) {
+    const delta = h - lastHeight
+    if (Math.abs(delta) > 0.5) emit('bottom-anchor', { delta })
+  }
+  lastHeight = h
+}
+
+const onImageLoad = () => {
+  nextTick(() => {
+    commitHeight(anchorOnNextLayout)
+    anchorOnNextLayout = false
+  })
+}
+
+watch(
+  () => props.item._id,
+  () => {
+    lastHeight = 0
+    anchorOnNextLayout = false
+    randomizeImage()
+  },
+)
+
+watch(projectImages, (urls) => {
+  if (imageIndex.value >= urls.length) randomizeImage()
+})
+
+const cycle = (direction: 1 | -1) => {
+  const count = projectImages.value.length
+  if (count < 2) return
+  lastHeight = measureHeight() || lastHeight
+  anchorOnNextLayout = true
+  imageIndex.value = (imageIndex.value + direction + count) % count
+  nextTick(() => {
+    const img = imageRef.value
+    if (img?.complete) onImageLoad()
+  })
+}
+
 const onToggle = () => {
+  const urls = projectImages.value
+  const idx = imageIndex.value
+  const hero = props.imageUrl || buildUrl(props.item.image)
   requestSave({
     id: props.item._id,
     title: props.item.title,
-    imageUrl: props.imageUrl || buildUrl(props.item.image),
-    itemType: props.item.itemType || 'product',
+    imageUrl: urls[idx] || hero,
+    itemType: typeLabel.value,
     link: href.value,
+    imageUrls: urls.length > 1 ? urls : undefined,
+    imageIndex: urls.length > 1 ? idx : undefined,
   })
 }
+
+onMounted(() => {
+  nextTick(() => {
+    lastHeight = measureHeight()
+  })
+})
 </script>
 
 <style scoped>
 .grid-item {
   position: relative;
   width: 100%;
+  transform-origin: bottom center;
   transition: transform 0.3s ease;
 }
 
@@ -106,7 +233,6 @@ const onToggle = () => {
   display: grid;
   place-items: center;
   container-type: inline-size;
-  aspect-ratio: 1;
   overflow: hidden;
   padding: 8%;
   text-align: center;
@@ -114,8 +240,23 @@ const onToggle = () => {
   transition: background 0.4s ease;
 }
 
+.grid-item__media--image {
+  padding: 0;
+  background: transparent;
+}
+
 .grid-item:hover .grid-item__media {
   background: var(--sand);
+}
+
+.grid-item:hover .grid-item__media--image {
+  background: transparent;
+}
+
+.grid-item__image {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .grid-item__type-label {
@@ -126,38 +267,46 @@ const onToggle = () => {
   text-transform: lowercase;
   transition: color 0.3s ease;
   opacity: 0.4;
+  /* Text-only tiles keep a readable square footprint */
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
 }
 
 .grid-item:hover .grid-item__type-label {
   color: var(--accent);
 }
 
-.grid-item__heart {
+.grid-item__add {
   position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  width: 2rem;
-  height: 2rem;
-  display: grid;
-  place-items: center;
-  font-size: 1.1rem;
-  line-height: 1;
-  color: var(--charcoal);
-  background: rgba(250, 247, 242, 0.85);
-  backdrop-filter: blur(4px);
-  border-radius: 999px;
+  top: var(--thumb-ctrl-inset);
+  right: var(--thumb-ctrl-inset);
   opacity: 0;
   transform: translateY(-4px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.grid-item__media:hover .grid-item__heart,
-.grid-item__heart--active {
+.grid-item:hover .grid-item__add,
+.grid-item__add.add-btn--active {
   opacity: 1;
   transform: translateY(0);
 }
 
-.grid-item__heart--active {
-  color: #000;
+.grid-item__cycle {
+  position: absolute;
+  right: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.grid-item:hover .grid-item__cycle {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 </style>

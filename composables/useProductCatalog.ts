@@ -1,4 +1,4 @@
-import { DEMO_GRID_ITEMS, DEMO_PRODUCTS, type FormalItem } from './demoData'
+import { DEMO_PRODUCTS, type FormalItem } from './demoData'
 
 export type ProductRecord = {
   _id: string
@@ -25,10 +25,10 @@ function slugify(title: string) {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-  products: 'Forms',
-  precrafted: '(Pre)Crafted',
-  materials: 'Surfaces',
-  forms: 'Spirit',
+  forms: 'Forms',
+  surface: 'Surface',
+  spirit: 'Spirit',
+  origin: 'Origin',
 }
 
 const DIMENSION_POOL = [
@@ -82,42 +82,14 @@ function normalizeDemoItem(item: FormalItem): ProductRecord {
     finishes: finishesFrom(item.colours),
     edition: `Unique work. Limited Edition ${100 + hashIndex(item._id, 150)}. Serial Number and Certificate of Authenticity. Year 2026. Hand crafted in London.`,
     image: item.image,
-    description: `Part of the ${typeLabel} collection. A Studio Based Upon ${item.itemType} exploring materiality, surface and the shifting dialogue between texture and light.`,
-  }
-}
-
-function normalizeGridItem(item: (typeof DEMO_GRID_ITEMS)[number]): ProductRecord | null {
-  if (item.itemType !== 'product') return null
-  const slug = item.slug?.current
-  if (!slug) return null
-
-  return {
-    _id: item._id,
-    title: item.title,
-    slug,
-    itemType: item.itemType,
-    series: '(Pre)Crafted',
-    style: `S.${String(hashIndex(item._id, 9) + 1).padStart(2, '0')}`,
-    dimensions: DIMENSION_POOL[hashIndex(item._id, DIMENSION_POOL.length)],
-    comCol: COM_COL_POOL[hashIndex(item._id + 'c', COM_COL_POOL.length)],
-    categories: item.categories,
-    finishes: ['Camona Gold', 'Camona Bronze', 'Camona Silver'],
-    edition: `Unique work. Limited Edition ${100 + hashIndex(item._id, 150)}. Serial Number and Certificate of Authenticity. Year 2026. Hand crafted in London.`,
-    image: item.image,
-    description: `A Studio Based Upon surface exploring ${(item.categories || []).join(', ') || 'materiality and craft'}.`,
+    description: `Part of the ${typeLabel} collection. A Studio Based Upon piece exploring materiality, surface and the shifting dialogue between texture and light.`,
   }
 }
 
 export function getDemoCatalog(): ProductRecord[] {
-  const fromProducts = DEMO_PRODUCTS.filter((i) => i.itemType === 'product').map(normalizeDemoItem)
-  const fromGrid = DEMO_GRID_ITEMS.map(normalizeGridItem).filter(Boolean) as ProductRecord[]
-
-  const bySlug = new Map<string, ProductRecord>()
-  ;[...fromProducts, ...fromGrid].forEach((item) => {
-    bySlug.set(item.slug, item)
-  })
-
-  return Array.from(bySlug.values())
+  return DEMO_PRODUCTS.filter(
+    (i) => i.itemType === 'product' && i.type !== 'precrafted',
+  ).map(normalizeDemoItem)
 }
 
 export function findProductBySlug(slug: string): ProductRecord | null {
@@ -132,12 +104,12 @@ export function getNextProduct(slug: string): ProductRecord | null {
 }
 
 export function productPath(item: {
-  itemType?: string
+  linkType?: string
   slug?: { current?: string } | string
 }) {
-  if (item.itemType && item.itemType !== 'product') return null
+  if (item.linkType !== 'product') return null
   const slug = typeof item.slug === 'string' ? item.slug : item.slug?.current
-  return slug ? `/products/${slug}` : null
+  return slug ? `/materials-and-forms/${slug}` : null
 }
 
 export const useProductCatalog = () => {
@@ -145,7 +117,6 @@ export const useProductCatalog = () => {
     _id,
     title,
     "slug": slug.current,
-    itemType,
     series,
     style,
     dimensions,
@@ -160,11 +131,10 @@ export const useProductCatalog = () => {
     spiritGallery[] { asset-> { url } }
   }`
 
-  const allProductsQuery = `*[_type == "gridItem" && itemType == "product" && defined(slug.current)] | order(orderRank) {
+  const allProductsQuery = `*[_type == "gridItem" && defined(slug.current) && (linkType == "product" || !defined(linkType))] | order(orderRank) {
     _id,
     title,
     "slug": slug.current,
-    itemType,
     description,
     categories,
     image { asset-> { url } }

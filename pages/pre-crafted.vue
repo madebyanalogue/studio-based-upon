@@ -10,7 +10,7 @@
     </header>
 
     <section class="precrafted__block section">
-      <p class="precrafted__eyebrow serif-italic">Origin</p>
+      <p class="precrafted__eyebrow  interface">Origin</p>
       <h2 class="precrafted__heading">Story. Origin. Meaning.</h2>
       <div class="prose">
         <p>
@@ -35,7 +35,7 @@
     </section>
 
     <section class="precrafted__block section">
-      <p class="precrafted__eyebrow serif-italic">Panel+</p>
+      <p class="precrafted__eyebrow  interface">Panel+</p>
       <h2 class="precrafted__heading">Beyond the edge of a panel</h2>
       <div class="prose">
         <p>
@@ -43,7 +43,7 @@
           Upon offers a design and fabrication solution, creating additional bespoke elements to
           resolve the unique challenges of each space.
         </p>
-        <p class="precrafted__tagline serif-italic">The meeting of efficiency and artistry.</p>
+        <p class="precrafted__tagline  interface">The meeting of efficiency and artistry.</p>
       </div>
     </section>
 
@@ -58,7 +58,7 @@
       <h2 class="precrafted__heading">Info</h2>
 
       <div class="precrafted__info-block">
-        <h3 class="precrafted__subheading serif-italic">Panel Sizes &amp; Trade Launch Pricing</h3>
+        <h3 class="precrafted__subheading  interface">Panel Sizes &amp; Trade Launch Pricing</h3>
         <p>
           (Pre)Crafted panels are finished on the front face only and are available in the
           following dimensions:
@@ -77,7 +77,7 @@
       </div>
 
       <div class="precrafted__info-block">
-        <h3 class="precrafted__subheading serif-italic">Lead Times</h3>
+        <h3 class="precrafted__subheading  interface">Lead Times</h3>
         <p>
           Typical lead times are approx. 6–8 weeks (subject to production schedule at the time)
           with larger orders requiring longer to prepare. Please contact us about your project for
@@ -86,7 +86,7 @@
       </div>
 
       <div class="precrafted__info-block">
-        <h3 class="precrafted__subheading serif-italic">Install</h3>
+        <h3 class="precrafted__subheading  interface">Install</h3>
         <p>
           The edges are black to create a shadow gap detail between panels. We recommend a
           mechanical fixing system such as split battens to allow for adjustment during fitting.
@@ -94,7 +94,7 @@
         <p>
           Speak to your appointed contractor to check specific requirements for your project or
           please
-          <NuxtLink to="/contact" class="precrafted__link">contact us</NuxtLink>
+          <NuxtLink to="/enquire" class="precrafted__link">contact us</NuxtLink>
           for further advice.
         </p>
       </div>

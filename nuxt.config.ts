@@ -1,6 +1,5 @@
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
-import { DUMB_MODE_DEFAULT } from './config/dumbMode'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -42,15 +41,13 @@ export default defineNuxtConfig({
     },
   },
   css: [
+    '~/assets/styles/main.css',
     '~/assets/styles/colours.css',
     '~/assets/styles/typography.css',
-    '~/assets/styles/main.css',
-    '~/assets/styles/dumb-mode.css',
   ],
   app: {
     head: {
       title: 'Studio Based Upon',
-      htmlAttrs: DUMB_MODE_DEFAULT ? { class: 'dumb-mode' } : {},
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

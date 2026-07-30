@@ -1,88 +1,217 @@
 <template>
-  <article class="product-card">
-    <component
-      :is="linkTag"
-      v-bind="linkProps"
-      class="product-card__media"
-      :aria-label="item.title"
-      @click="onOpen"
-    >
-      <span class="product-card__type-label">{{ typeLabel }}</span>
-      <button
-        type="button"
-        class="product-card__heart"
-        :class="{ 'product-card__heart--active': saved }"
-        :aria-label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
-        @click.stop.prevent="onToggle"
+  <article class="product-card mono">
+    <div class="product-card__pad">
+      <component
+        :is="linkTag"
+        v-bind="linkProps"
+        class="product-card__media"
+        :class="{
+          'product-card__media--image': Boolean(activeImage),
+          'product-card__media--link': Boolean(href),
+        }"
+        :aria-label="item.title"
+        @click="onOpen"
       >
-        {{ saved ? '♥' : '♡' }}
-      </button>
-    </component>
+        <img
+          v-if="activeImage"
+          class="product-card__image"
+          :src="activeImage"
+          :alt="item.title"
+          loading="lazy"
+          draggable="false"
+        />
+        <span v-else class="product-card__type-label">{{ typeLabel }}</span>
 
-    <component
-      :is="linkTag"
-      v-bind="linkProps"
-      class="product-card__meta"
-      :aria-label="href ? `View ${item.title}` : undefined"
-      @click="onOpen"
-    >
-      <p class="product-card__title serif-italic">{{ item.title }}</p>
-      <p class="product-card__type">{{ item.itemType }}</p>
-    </component>
+        <AddButton
+          class="product-card__add"
+          :active="saved"
+          :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
+          @click.stop.prevent="onToggle"
+        />
+
+        <ImageCycleArrows
+          v-if="projectImages.length > 1"
+          class="product-card__cycle"
+          :index="imageIndex"
+          :count="projectImages.length"
+          hide-count
+          boxed
+          @prev="cycle(-1)"
+          @next="cycle(1)"
+        />
+      </component>
+    </div>
+
+    <div class="product-card__meta">
+      <component
+        :is="linkTag"
+        v-bind="linkProps"
+        class="product-card__meta-link"
+        :aria-label="href ? `View ${item.title}` : undefined"
+        @click="onOpen"
+      >
+        <p class="product-card__title">{{ item.title }}</p>
+        <div class="product-card__type">
+          <span>{{ typeLabel }}</span>
+          <div v-if="orderLabel" class="product-card__sep">/</div>
+          <span v-if="orderLabel" class="product-card__order">{{ orderLabel }}</span>
+        </div>
+      </component>
+    </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import { PRODUCT_TYPE_FILTERS, type FormalItem } from '~/composables/demoData'
 import { productPath } from '~/composables/useProductCatalog'
+import type { LibraryItem } from '~/composables/useLibraryCatalog'
+import { uniqueImageUrls } from '~/composables/productImages'
 
 const props = defineProps<{
-  item: FormalItem
+  item: FormalItem | LibraryItem
   imageUrl: string
+  orderLabel?: string
 }>()
 
 const { requestSave, isSaved } = useBucket()
-const { open } = useProductOverlay()
+const { open, returnImage } = useProductOverlay()
+const { imageUrl: buildUrl } = useSanityImage()
 const saved = computed(() => isSaved(props.item._id))
 
+const imageIndex = ref(0)
+
+watch(
+  returnImage,
+  (value) => {
+    if (value?.productId === props.item._id) {
+      imageIndex.value = value.index
+    }
+  },
+)
+
 const typeLabel = computed(() => {
-  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === props.item.type)
-  if (match) return match.label
-  return props.item.type || props.item.itemType || 'Product'
+  const key =
+    ('category' in props.item && props.item.category) ||
+    props.item.type ||
+    ''
+  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
+  return match?.label || key || 'Item'
 })
 
-const href = computed(() => productPath(props.item))
+const href = computed(() =>
+  productPath({
+    linkType: props.item.linkType,
+    slug: props.item.slug,
+  }),
+)
 const productSlug = computed(() => {
+  if (props.item.linkType !== 'product') return null
   const slug = typeof props.item.slug === 'string' ? props.item.slug : props.item.slug?.current
-  return props.item.itemType === 'product' && slug ? slug : null
+  return slug || null
 })
+
+const projectImages = computed(() => {
+  const item = props.item as LibraryItem
+  const assets = [
+    item.image,
+    ...(item.gallery || []),
+    ...(item.spiritGallery || []),
+  ]
+  return uniqueImageUrls(
+    props.imageUrl,
+    ...assets.map((asset) => (asset ? buildUrl(asset, 1200) : '')),
+  )
+})
+
+const activeImage = computed(
+  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
+)
+
+watch(
+  () => props.item._id,
+  () => {
+    imageIndex.value = 0
+  },
+)
+
+watch(projectImages, (urls) => {
+  if (imageIndex.value >= urls.length) imageIndex.value = 0
+})
+
+const cycle = (direction: 1 | -1) => {
+  const count = projectImages.value.length
+  if (count < 2) return
+  imageIndex.value = (imageIndex.value + direction + count) % count
+}
 
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
 const onOpen = (event: MouseEvent) => {
   if (!productSlug.value) return
-  // Let modified clicks (new tab, etc.) fall through to the link
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
   event.preventDefault()
-  open(productSlug.value)
+  const card = (event.currentTarget as HTMLElement | null)?.closest('.product-card')
+  const source =
+    (card?.querySelector('.product-card__image') as HTMLElement | null) ||
+    ((event.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null)
+  open(productSlug.value, { source, imageIndex: imageIndex.value })
 }
 
 const onToggle = () => {
+  const urls = projectImages.value
+  const idx = imageIndex.value
   requestSave({
     id: props.item._id,
     title: props.item.title,
-    imageUrl: props.imageUrl,
-    itemType: props.item.itemType,
+    imageUrl: urls[idx] || props.imageUrl,
+    itemType: typeLabel.value,
     link: href.value,
+    imageUrls: urls.length > 1 ? urls : undefined,
+    imageIndex: urls.length > 1 ? idx : undefined,
   })
 }
 </script>
 
 <style scoped>
 .product-card {
+  --card-pad: 10px;
+  --title-pad: 15px;
+  --title-pad: 5px 10px 10px;
+  --ui-border-color: transparent;
+  position: relative;
+  min-width: 0;
+  border-right: 1px solid var(--ui-border-color);
+  border-bottom: 1px solid var(--ui-border-color);
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
+}
+
+.product-card:has(.product-card__media--link) {
+  cursor: pointer;
+}
+
+.product-card__pad {
+  position: relative;
+  padding: var(--card-pad);
+}
+
+.product-card__cycle {
+  position: absolute;
+  right: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
+  z-index: 2;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.product-card:hover .product-card__cycle {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .product-card__media {
@@ -90,16 +219,28 @@ const onToggle = () => {
   display: grid;
   place-items: center;
   container-type: inline-size;
-  aspect-ratio: 1;
+  /* aspect-ratio: 1; */
   overflow: hidden;
-  padding: 8%;
   text-align: center;
-  background: var(--sand);
+  border-radius: var(--thumb-radius);
   transition: background 0.4s ease;
+  cursor: inherit;
+}
+
+.product-card__media--image {
+  background: var(--cream);
 }
 
 .product-card:hover .product-card__media {
   background: var(--cream);
+}
+
+.product-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
 }
 
 .product-card__type-label {
@@ -110,59 +251,99 @@ const onToggle = () => {
   text-transform: lowercase;
   transition: color 0.3s ease;
   opacity: 0.4;
+  pointer-events: none;
 }
 
 .product-card:hover .product-card__type-label {
   color: var(--accent);
 }
 
-.product-card__heart {
+.product-card__add {
   position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  width: 2rem;
-  height: 2rem;
-  display: grid;
-  place-items: center;
-  font-size: 1.1rem;
-  line-height: 1;
-  color: var(--charcoal);
-  background: rgba(250, 247, 242, 0.85);
-  backdrop-filter: blur(4px);
-  border-radius: 999px;
+  top: var(--thumb-ctrl-inset);
+  right: var(--thumb-ctrl-inset);
+  z-index: 3;
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(4px);
   transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
 }
 
-.product-card__media:hover .product-card__heart,
-.product-card__heart--active {
+.product-card:hover .product-card__add,
+.product-card__add.add-btn--active {
   opacity: 1;
   transform: translateY(0);
-}
-
-.product-card__heart--active {
-  color: var(--accent);
+  pointer-events: auto;
 }
 
 .product-card__meta {
+  /* position: absolute; */
+  inset: auto 0 0 0;
+  z-index: 1;
+  padding: var(--title-pad);
+  /* opacity: 0; */
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+  border-top: 1px dashed var(--ui-border-color);
+  font-size: var(--text-sm);
+  font-size: clamp(10px,.5cqi, 12px);
+}
+
+.product-card__meta *,
+.product-card__meta-link {
+  pointer-events: none;
+  cursor: inherit;
+}
+
+.product-card:hover .product-card__meta {
+  opacity: 1;
+}
+
+.product-card__meta-link {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 0.6rem;
   color: inherit;
 }
 
 .product-card__title {
   margin: 0;
-  font-size: var(--text-sm);
 }
 
 .product-card__type {
   margin: 0;
-  font-size: var(--text-xs);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
   color: var(--muted);
-  text-transform: capitalize;
+  opacity: 0;
+  transition: opacity 0.5s ease 0.5s;
+}
+.product-card:hover .product-card__type {
+  opacity: 1;
+}
+
+.product-card__sep {
+  flex-shrink: 0;
+  font-style: normal;
+  text-transform: none;
+  line-height: 1;
+}
+
+.product-card__order {
+  /* font-family: var(--handwritten);
+  font-style: normal;
+  text-transform: none;
+  color: var(--handwritten-color);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  display: block;
+  transform: translateY(6%) scale(2.3);
+  padding: 0px 6px; */
+}
+
+.product-card__sep, .product-card__order {
+  display: none;
 }
 </style>

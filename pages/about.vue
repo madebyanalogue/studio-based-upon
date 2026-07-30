@@ -2,7 +2,7 @@
   <article class="section">
     <h1 class="page-title">{{ page?.heroTitle || 'About' }}</h1>
     <p v-if="page?.heroSubtitle" class="prose">{{ page.heroSubtitle }}</p>
-    <p v-if="page?.tagline" class="tagline serif-italic">{{ page.tagline }}</p>
+    <p v-if="page?.tagline" class="tagline  interface">{{ page.tagline }}</p>
     <SanityContent v-if="page?.body?.length" :blocks="page.body" class="prose" />
     <div v-else class="prose fallback">
       <p>

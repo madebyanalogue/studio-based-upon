@@ -1,3 +1,5 @@
+import { resolveLibraryPageFilters } from './demoData'
+
 export const useSiteSettings = () => {
   const query = `*[_type == "siteSettings"][0] {
     title,
@@ -7,6 +9,10 @@ export const useSiteSettings = () => {
     disablePreloader,
     enquiryEmail,
     copyright,
+    libraryFilters[] {
+      filter,
+      label
+    },
     headerMenu-> {
       title,
       items[] { _key, text, path }
@@ -38,32 +44,53 @@ export const useSiteSettings = () => {
     return text.replace(/\[year\]/g, String(new Date().getFullYear()))
   })
 
+  const libraryFilters = computed(() =>
+    resolveLibraryPageFilters(settings.value?.libraryFilters),
+  )
+
   const defaultMenu = {
     items: [
-      { _key: '1', text: 'Flow State', path: '/' },
-      { _key: '2', text: 'Materials & Forms', path: '/products' },
+      { _key: '1', text: 'Discovery', path: '/' },
+      { _key: '2', text: 'Materials & Forms', path: '/materials-and-forms' },
       { _key: '3', text: '(Pre)Crafted', path: '/pre-crafted' },
       { _key: '4', text: 'About', path: '/about' },
+      { _key: '5', text: 'Enquire', path: '/enquire' },
     ],
   }
 
   const normalizeMenuItems = (items: { _key?: string; text?: string; path?: string }[] = []) =>
-    items.map((item) =>
-      item.path === '/products' ? { ...item, text: 'Materials & Forms' } : item,
+    items.map((item) => {
+      if (item.path === '/products' || item.path === '/materials-and-forms') {
+        return { ...item, text: 'Materials & Forms', path: '/materials-and-forms' }
+      }
+      if (item.path === '/' || item.text === 'Flow State') return { ...item, text: 'Discovery' }
+      if (item.path === '/contact') return { ...item, text: 'Enquire', path: '/enquire' }
+      return item
+    })
+
+  const withEnquire = (items: { _key?: string; text?: string; path?: string }[] = []) => {
+    const filtered = items.filter(
+      (item) => item.path !== '/contact' && item.path !== '/enquire',
     )
+    return [
+      ...normalizeMenuItems(filtered),
+      { _key: 'enquire', text: 'Enquire', path: '/enquire' },
+    ]
+  }
 
   const headerMenu = computed(() => {
     const menu = settings.value?.headerMenu || defaultMenu
     return {
       ...menu,
-      items: normalizeMenuItems(
-        (menu.items || []).filter((item: { path?: string }) => item.path !== '/contact'),
-      ),
+      items: withEnquire(menu.items || []),
     }
   })
   const mobileMenu = computed(() => {
     const menu = settings.value?.mobileMenu || settings.value?.headerMenu || defaultMenu
-    return { ...menu, items: normalizeMenuItems(menu.items || []) }
+    return {
+      ...menu,
+      items: withEnquire(menu.items || []),
+    }
   })
 
   return {
@@ -75,6 +102,7 @@ export const useSiteSettings = () => {
     disablePreloader,
     enquiryEmail,
     copyright,
+    libraryFilters,
     headerMenu,
     mobileMenu,
   }

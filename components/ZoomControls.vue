@@ -9,7 +9,7 @@
       -
     </button>
     <span class="zoom-controls__bracket">]</span>
-    <span class="zoom-controls__label serif-italic">{{ label }}</span>
+    <span class="zoom-controls__label  interface">{{ label }}</span>
   </div>
 </template>
 

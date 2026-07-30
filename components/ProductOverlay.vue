@@ -1,7 +1,17 @@
 <template>
   <Teleport to="body">
-    <Transition name="product-overlay">
-      <div v-if="isOpen" class="product-overlay" role="dialog" aria-modal="true" aria-label="Product detail">
+    <Transition
+      :name="pendingFlip || closingFlip ? undefined : 'product-overlay'"
+      :css="!(pendingFlip || closingFlip)"
+    >
+      <div
+        v-if="isOpen"
+        class="product-overlay"
+        :class="{ 'product-overlay--flipping': pendingFlip || closingFlip }"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Product detail"
+      >
         <div class="product-overlay__backdrop" @click="close" />
         <div class="product-overlay__panel">
           <ProductDetail
@@ -18,18 +28,31 @@
 </template>
 
 <script setup lang="ts">
-const { openSlug, isOpen, open, close } = useProductOverlay()
+const { openSlug, isOpen, open, close, syncFromHistory, pendingFlip, closingFlip } =
+  useProductOverlay()
+const { isOpen: bucketOpen, pickerItem, closeDrawer, closePicker } = useBucket()
 
 const onNavigate = (slug: string) => {
   open(slug)
 }
 
 const onKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && isOpen.value) close()
+  if (event.key !== 'Escape' || !isOpen.value) return
+  // Dismiss selection UI first when it sits over the product page
+  if (pickerItem.value) {
+    closePicker()
+    return
+  }
+  if (bucketOpen.value) {
+    closeDrawer()
+    return
+  }
+  close()
 }
 
 const onPopState = () => {
-  if (isOpen.value) close()
+  // Browser Back already restored the previous URL — just dismiss the overlay.
+  if (isOpen.value) syncFromHistory()
 }
 
 onMounted(() => {
@@ -53,8 +76,12 @@ onUnmounted(() => {
 .product-overlay__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(26, 26, 26, 0.35);
-  backdrop-filter: blur(2px);
+  background: rgba(26, 26, 26, 0);
+  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.product-overlay:not(.product-overlay--flipping) .product-overlay__backdrop {
+  background: rgba(26, 26, 26, 0.12);
 }
 
 .product-overlay__panel {
@@ -62,28 +89,23 @@ onUnmounted(() => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
+  background: transparent;
+  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+}
+
+.product-overlay:not(.product-overlay--flipping) .product-overlay__panel {
   background: var(--cream);
 }
 
-/* Slide/fade in over the top */
+/* Soft fade only — Flip owns the image motion */
 .product-overlay-enter-active,
 .product-overlay-leave-active {
-  transition: opacity 0.35s ease;
-}
-
-.product-overlay-enter-active .product-overlay__panel,
-.product-overlay-leave-active .product-overlay__panel {
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.25s ease;
 }
 
 .product-overlay-enter-from,
 .product-overlay-leave-to {
   opacity: 0;
-}
-
-.product-overlay-enter-from .product-overlay__panel,
-.product-overlay-leave-to .product-overlay__panel {
-  transform: translateY(3%);
 }
 </style>

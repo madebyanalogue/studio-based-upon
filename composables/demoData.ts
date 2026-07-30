@@ -1,108 +1,4 @@
-export const DEMO_GRID_ITEMS = [
-  {
-    _id: 'demo-1',
-    title: 'Camona Gold Panel',
-    slug: { current: 'camona-gold-panel' },
-    itemType: 'product',
-    categories: ['surfaces', 'finishes'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=800&h=800&fit=crop' } },
-    linkType: 'product',
-  },
-  {
-    _id: 'demo-2',
-    title: 'Liquid Bronze',
-    itemType: 'material',
-    categories: ['materials', 'finishes'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-3',
-    title: 'Twist Dining Table',
-    slug: { current: 'twist-dining-table' },
-    itemType: 'product',
-    categories: ['furniture'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1617806118233-18e1de247200?w=800&h=800&fit=crop' } },
-    linkType: 'project',
-    project: { slug: { current: 'twist-dining-table' } },
-  },
-  {
-    _id: 'demo-4',
-    title: 'Tramazite',
-    itemType: 'material',
-    categories: ['materials'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1615874959474-d609969a20ed?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-5',
-    title: 'Camona Silver',
-    itemType: 'finish',
-    categories: ['finishes'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-6',
-    title: 'Organic Curve',
-    itemType: 'shape',
-    categories: ['shapes'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-7',
-    title: 'Patina Wall',
-    slug: { current: 'patina-wall' },
-    itemType: 'product',
-    categories: ['surfaces'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1615873968403-89e068629265?w=800&h=800&fit=crop' } },
-    linkType: 'product',
-  },
-  {
-    _id: 'demo-8',
-    title: 'Warm Grey',
-    itemType: 'colour',
-    categories: ['finishes', 'materials'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-9',
-    title: 'Sculptural Console',
-    slug: { current: 'sculptural-console' },
-    itemType: 'product',
-    categories: ['furniture'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1567016432779-094069958ea5?w=800&h=800&fit=crop' } },
-    linkType: 'product',
-  },
-  {
-    _id: 'demo-10',
-    title: 'Glass Inlay',
-    itemType: 'material',
-    categories: ['materials'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1615529328331-f8917597711f?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-11',
-    title: 'Camona Pink Nickel',
-    itemType: 'finish',
-    categories: ['finishes'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-  {
-    _id: 'demo-12',
-    title: 'Linear Relief',
-    itemType: 'shape',
-    categories: ['shapes', 'surfaces'],
-    image: { asset: { url: 'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=800&h=800&fit=crop' } },
-    linkType: 'none',
-  },
-]
-
-export const DEFAULT_FILTERS = ['All', 'Surfaces', 'Furniture', 'Materials', 'Finishes', 'Shapes']
+export const DEFAULT_FILTERS = ['All', 'Forms', 'Surface', 'Spirit', 'Origin']
 
 export const filterKey = (label: string) => label.toLowerCase().replace(/[^a-z]/g, '')
 
@@ -116,6 +12,8 @@ export type FormalItem = {
   slug?: { current?: string }
   itemType: 'product' | 'texture' | 'shape'
   type: string
+  categories?: string[]
+  tags?: string[]
   materials: string[]
   colours: string[]
   image: { asset: { url: string } }
@@ -139,7 +37,8 @@ const TEXTURE_NAMES = [
 
 const SHAPE_NAMES = ['Organic Curve', 'Linear Relief', 'Fractured Plane', 'Undulating Form']
 
-const TYPE_POOL = ['products', 'precrafted'] as const
+const TYPE_POOL = ['forms', 'surface', 'spirit', 'origin'] as const
+const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquidmetal'] as const
 const MATERIAL_POOL = ['gold', 'bronze', 'silver', 'steel', 'glass', 'stone']
 const COLOUR_POOL = ['gold', 'bronze', 'silver', 'pink', 'charcoal', 'ivory']
 
@@ -153,42 +52,61 @@ const pickFrom = (pool: string[], index: number, offset = 0) => {
   return index % 3 === 0 ? [a] : [a, b]
 }
 
-const pickProductType = (index: number) => TYPE_POOL[index % TYPE_POOL.length]
+const pickType = (index: number) => TYPE_POOL[index % TYPE_POOL.length]
+
+const pickFormTags = (index: number, type: string) => {
+  if (type !== 'forms') return []
+  const primary = FORM_TAG_POOL[index % FORM_TAG_POOL.length]
+  const secondary = FORM_TAG_POOL[(index + 2) % FORM_TAG_POOL.length]
+  return index % 2 === 0 ? [primary] : [primary, secondary]
+}
 
 const buildProducts = (): FormalItem[] => {
-  const products: FormalItem[] = PRODUCT_NAMES.map((title, i) => ({
-    _id: `product-${i + 1}`,
-    title,
-    slug: { current: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') },
-    itemType: 'product',
-    type: pickProductType(i),
-    materials: pickFrom(MATERIAL_POOL, i),
-    colours: pickFrom(COLOUR_POOL, i, 1),
-    image: seededImage(`p${i + 1}`),
-    linkType: 'product',
-  }))
+  const products: FormalItem[] = PRODUCT_NAMES.map((title, i) => {
+    const type = pickType(i)
+    return {
+      _id: `product-${i + 1}`,
+      title,
+      slug: { current: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') },
+      itemType: 'product',
+      type,
+      tags: pickFormTags(i, type),
+      materials: pickFrom(MATERIAL_POOL, i),
+      colours: pickFrom(COLOUR_POOL, i, 1),
+      image: seededImage(`p${i + 1}`),
+      linkType: 'product',
+    }
+  })
 
-  const textures: FormalItem[] = TEXTURE_NAMES.map((title, i) => ({
-    _id: `texture-${i + 1}`,
-    title,
-    itemType: 'texture',
-    type: 'materials',
-    materials: pickFrom(MATERIAL_POOL, i + 1),
-    colours: pickFrom(COLOUR_POOL, i + 2),
-    image: seededImage(`t${i + 1}`),
-    linkType: 'none',
-  }))
+  const textures: FormalItem[] = TEXTURE_NAMES.map((title, i) => {
+    const type = pickType(i + 2)
+    return {
+      _id: `texture-${i + 1}`,
+      title,
+      itemType: 'texture',
+      type,
+      tags: pickFormTags(i + 2, type),
+      materials: pickFrom(MATERIAL_POOL, i + 1),
+      colours: pickFrom(COLOUR_POOL, i + 2),
+      image: seededImage(`t${i + 1}`),
+      linkType: 'none',
+    }
+  })
 
-  const shapes: FormalItem[] = SHAPE_NAMES.map((title, i) => ({
-    _id: `shape-${i + 1}`,
-    title,
-    itemType: 'shape',
-    type: 'forms',
-    materials: pickFrom(MATERIAL_POOL, i + 4),
-    colours: pickFrom(COLOUR_POOL, i + 3),
-    image: seededImage(`s${i + 1}`),
-    linkType: 'none',
-  }))
+  const shapes: FormalItem[] = SHAPE_NAMES.map((title, i) => {
+    const type = pickType(i + 1)
+    return {
+      _id: `shape-${i + 1}`,
+      title,
+      itemType: 'shape',
+      type,
+      tags: pickFormTags(i + 1, type),
+      materials: pickFrom(MATERIAL_POOL, i + 4),
+      colours: pickFrom(COLOUR_POOL, i + 3),
+      image: seededImage(`s${i + 1}`),
+      linkType: 'none',
+    }
+  })
 
   // Interleave so textures/shapes are mixed into the product-heavy bucket
   const mixed: FormalItem[] = []
@@ -212,11 +130,81 @@ const buildProducts = (): FormalItem[] => {
 export const DEMO_PRODUCTS: FormalItem[] = buildProducts()
 
 export const PRODUCT_TYPE_FILTERS = [
-  { label: 'Forms', value: 'products' },
-  { label: '(Pre)Crafted', value: 'precrafted' },
-  { label: 'Surfaces', value: 'materials' },
-  { label: 'Spirit', value: 'forms' },
+  { label: 'Forms', value: 'forms' },
+  { label: 'Surface', value: 'surface' },
+  { label: 'Spirit', value: 'spirit' },
+  { label: 'Origin', value: 'origin' },
 ]
+
+export const PRODUCT_FORM_TAG_FILTERS = [
+  { label: 'Furniture', value: 'furniture' },
+  { label: 'Interior', value: 'interior' },
+  { label: 'Tramazite', value: 'tramazite' },
+  { label: 'Liquid Metal', value: 'liquidmetal' },
+]
+
+/** Default Materials & Forms chip row (mix of tags + types, no Forms). */
+export const DEFAULT_LIBRARY_PAGE_FILTERS = [
+  { kind: 'tag' as const, value: 'furniture', label: 'Furniture' },
+  { kind: 'tag' as const, value: 'tramazite', label: 'Tramazite' },
+  { kind: 'tag' as const, value: 'interior', label: 'Interior' },
+  { kind: 'type' as const, value: 'origin', label: 'Origin' },
+  { kind: 'tag' as const, value: 'liquidmetal', label: 'Liquid Metal' },
+  { kind: 'type' as const, value: 'spirit', label: 'Spirit' },
+]
+
+export type LibraryPageFilter = {
+  kind: 'type' | 'tag'
+  value: string
+  label: string
+}
+
+export const parseLibraryFilterKey = (key: string): { kind: 'type' | 'tag'; value: string } | null => {
+  const [kind, value] = String(key || '').split(':')
+  if ((kind !== 'type' && kind !== 'tag') || !value) return null
+  return { kind, value }
+}
+
+export const libraryFilterKey = (filter: Pick<LibraryPageFilter, 'kind' | 'value'>) =>
+  `${filter.kind}:${filter.value}`
+
+export const resolveLibraryPageFilters = (
+  entries?: { filter?: string; label?: string }[] | null,
+): LibraryPageFilter[] => {
+  if (!Array.isArray(entries) || !entries.length) return DEFAULT_LIBRARY_PAGE_FILTERS
+
+  const resolved = entries
+    .map((entry) => {
+      const parsed = parseLibraryFilterKey(entry.filter || '')
+      if (!parsed) return null
+      const defaults = [
+        ...PRODUCT_TYPE_FILTERS.map((f) => ({ ...f, kind: 'type' as const })),
+        ...PRODUCT_FORM_TAG_FILTERS.map((f) => ({ ...f, kind: 'tag' as const })),
+      ]
+      const match = defaults.find((f) => f.kind === parsed.kind && f.value === parsed.value)
+      return {
+        kind: parsed.kind,
+        value: parsed.value,
+        label: entry.label?.trim() || match?.label || parsed.value,
+      }
+    })
+    .filter(Boolean) as LibraryPageFilter[]
+
+  return resolved.length ? resolved : DEFAULT_LIBRARY_PAGE_FILTERS
+}
+
+export const isPrecraftedItem = (item: {
+  type?: string
+  series?: string
+  categories?: string[]
+}) => {
+  if (item.type === 'precrafted') return true
+  if (item.series === '(Pre)Crafted' || item.series === 'precrafted') return true
+  return (item.categories || []).some((c) => {
+    const key = c.toLowerCase().replace(/[^a-z]/g, '')
+    return key === 'precrafted'
+  })
+}
 
 export const PRODUCT_MATERIAL_FILTERS = [
   { label: 'Gold', value: 'gold' },

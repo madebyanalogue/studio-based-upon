@@ -8,10 +8,14 @@
       aria-label="Moodboard composer"
     >
       <header class="moodboard__toolbar">
-        <button type="button" class="btn moodboard__back" @click="onClose">
-          <span class="moodboard__back-arrow" aria-hidden="true">←</span>
-          Back to site
-        </button>
+        <div class="moodboard__nav">
+          <button type="button" class="btn moodboard__back" @click="onSaveAndClose">
+            Save and Close
+          </button>
+          <button type="button" class="btn moodboard__cancel" @click="onCancelEdits">
+            Cancel edits
+          </button>
+        </div>
 
         <div ref="switcherRef" class="moodboard__switcher">
           <form
@@ -23,8 +27,8 @@
               ref="titleInput"
               v-model="titleDraft"
               type="text"
-              class="moodboard__title-input serif-italic"
-              aria-label="Composition name"
+              class="moodboard__title-input  interface"
+              aria-label="Board name"
               @blur="saveTitleEdit"
               @keydown.esc="cancelTitleEdit"
             />
@@ -32,13 +36,13 @@
           <template v-else>
             <button
               type="button"
-              class="moodboard__switcher-toggle serif-italic"
+              class="moodboard__switcher-toggle  interface"
               :aria-expanded="switchOpen"
               @click="switchOpen = !switchOpen"
             >
-              <span>{{ activeMoodboard?.name || 'Collection' }}</span>
+              <span>{{ activeBoard?.name || activeMoodboard?.name || 'My Board 1' }}</span>
               <span
-                v-if="moodboards.length > 1"
+                v-if="boards.length > 1"
                 class="moodboard__switcher-caret"
                 aria-hidden="true"
               ></span>
@@ -46,8 +50,8 @@
             <button
               type="button"
               class="moodboard__title-edit-btn"
-              aria-label="Rename composition"
-              title="Rename composition"
+              aria-label="Rename board"
+              title="Rename board"
               @click="startTitleEdit"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -56,14 +60,14 @@
               </svg>
             </button>
           </template>
-          <div v-if="switchOpen" class="moodboard__switcher-menu">
+          <div v-if="switchOpen && boards.length > 1" class="moodboard__switcher-menu">
             <button
-              v-for="board in moodboards"
+              v-for="board in boards"
               :key="board.id"
               type="button"
               class="moodboard__switcher-option"
-              :class="{ 'moodboard__switcher-option--active': board.id === activeMoodboardId }"
-              @click="switchMoodboard(board.id)"
+              :class="{ 'moodboard__switcher-option--active': board.id === activeBoardId }"
+              @click="switchSavedBoard(board.id)"
             >
               {{ board.name }}
             </button>
@@ -72,44 +76,115 @@
 
         <div class="moodboard__tools">
           <button type="button" class="btn" @click="downloadScreenshot">Download screenshot</button>
-          <button type="button" class="btn" @click="saveComposition">Save composition</button>
           <button type="button" class="btn btn--filled" @click="sendEnquiry">Send as enquiry</button>
         </div>
       </header>
 
-      <div
-        ref="canvasEl"
-        class="moodboard__canvas grid-bg"
-        :class="{ 'moodboard__canvas--drawing': penMode }"
-        @click.self="clearActive"
-      >
+      <div class="moodboard__workspace">
+        <MoodboardLibraryPanel
+          :open="libraryOpen"
+          @close="libraryOpen = false"
+          @select="onLibrarySelect"
+        />
+
+        <div
+          ref="canvasEl"
+          class="moodboard__canvas grid-bg"
+          :class="{ 'moodboard__canvas--drawing': isDrawing }"
+          @click.self="clearActive"
+        >
         <svg
           class="moodboard__draw-layer"
-          :class="{ 'moodboard__draw-layer--active': penMode }"
-          @pointerdown="onDrawStart"
+          :class="{ 'moodboard__draw-layer--active': isDrawing }"
+          @pointerdown="onDrawLayerPointerDown"
           @pointermove="onDrawMove"
           @pointerup="onDrawEnd"
           @pointerleave="onDrawEnd"
         >
-          <polyline
-            v-for="stroke in strokes"
-            :key="stroke.id"
-            :points="pointsToAttr(stroke.points)"
-            :stroke="stroke.color"
-            :stroke-width="stroke.width"
-            fill="none"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <polyline
-            v-if="currentStroke && currentStroke.points.length"
-            :points="pointsToAttr(currentStroke.points)"
-            :stroke="currentStroke.color"
-            :stroke-width="currentStroke.width"
-            fill="none"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
+          <template v-for="stroke in strokes" :key="stroke.id">
+            <g
+              v-if="stroke.kind === 'arrow' && stroke.points.length >= 2"
+              class="moodboard__arrow"
+              :class="{ 'moodboard__arrow--active': activeStrokeId === stroke.id }"
+              :data-arrow-id="stroke.id"
+            >
+              <line
+                class="moodboard__arrow-hit"
+                :x1="stroke.points[0].x"
+                :y1="stroke.points[0].y"
+                :x2="stroke.points[1].x"
+                :y2="stroke.points[1].y"
+                stroke="transparent"
+                stroke-width="18"
+                stroke-linecap="round"
+                @pointerdown.stop="onArrowSelect($event, stroke.id)"
+              />
+              <line
+                class="moodboard__arrow-line"
+                :x1="stroke.points[0].x"
+                :y1="stroke.points[0].y"
+                :x2="arrowLineEnd(stroke.points[0], stroke.points[1], stroke.width).x"
+                :y2="arrowLineEnd(stroke.points[0], stroke.points[1], stroke.width).y"
+                :stroke="stroke.color"
+                :stroke-width="stroke.width"
+                stroke-linecap="round"
+                pointer-events="none"
+              />
+              <polygon
+                :points="arrowHeadAttr(stroke.points[0], stroke.points[1], stroke.width)"
+                :fill="stroke.color"
+                pointer-events="none"
+              />
+              <template v-if="activeStrokeId === stroke.id">
+                <circle
+                  v-for="(point, endIndex) in stroke.points.slice(0, 2)"
+                  :key="`${stroke.id}-h-${endIndex}`"
+                  class="moodboard__arrow-handle"
+                  :cx="point.x"
+                  :cy="point.y"
+                  r="7"
+                  data-arrow-handle="true"
+                  @pointerdown.stop="onArrowHandleStart($event, stroke.id, endIndex === 0 ? 0 : 1)"
+                />
+              </template>
+            </g>
+            <polyline
+              v-else
+              :points="pointsToAttr(stroke.points)"
+              :stroke="stroke.color"
+              :stroke-width="stroke.width"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              pointer-events="none"
+            />
+          </template>
+          <template v-if="currentStroke && currentStroke.points.length">
+            <g v-if="currentStroke.kind === 'arrow' && currentStroke.points.length >= 2">
+              <line
+                :x1="currentStroke.points[0].x"
+                :y1="currentStroke.points[0].y"
+                :x2="arrowLineEnd(currentStroke.points[0], currentStroke.points[1], currentStroke.width).x"
+                :y2="arrowLineEnd(currentStroke.points[0], currentStroke.points[1], currentStroke.width).y"
+                :stroke="currentStroke.color"
+                :stroke-width="currentStroke.width"
+                stroke-linecap="round"
+              />
+              <polygon
+                :points="arrowHeadAttr(currentStroke.points[0], currentStroke.points[1], currentStroke.width)"
+                :fill="currentStroke.color"
+              />
+            </g>
+            <polyline
+              v-else-if="currentStroke.kind !== 'arrow'"
+              :points="pointsToAttr(currentStroke.points)"
+              :stroke="currentStroke.color"
+              :stroke-width="currentStroke.width"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </template>
         </svg>
 
         <div
@@ -134,7 +209,16 @@
         >
           <template v-if="item.kind === 'image'">
             <img :src="item.imageUrl" :alt="item.title" draggable="false" />
-            <span class="moodboard__label serif-italic">{{ item.title }}</span>
+            <span class="moodboard__label  interface">{{ item.title }}</span>
+            <ImageCycleArrows
+              v-if="(item.imageUrls?.length || 0) > 1"
+              class="moodboard__cycle"
+              :style="{ transform: `translateX(-50%) scale(${1 / item.scale})` }"
+              :index="item.imageIndex ?? 0"
+              :count="item.imageUrls?.length || 0"
+              @prev="cycleItemImage(item.id, -1)"
+              @next="cycleItemImage(item.id, 1)"
+            />
           </template>
 
           <template v-else-if="item.kind === 'colour'">
@@ -146,7 +230,7 @@
 
           <template v-else-if="item.kind === 'text'">
             <div
-              class="moodboard__text serif-italic"
+              class="moodboard__text  interface"
               :data-editing="item.id"
               :contenteditable="editingId === item.id"
               @dblclick="startEditing(item.id)"
@@ -155,6 +239,18 @@
               @pointerdown="onTextPointerDown($event, item.id)"
             >{{ item.text }}</div>
           </template>
+
+          <button
+            type="button"
+            class="moodboard__clone"
+            aria-label="Clone item"
+            title="Clone"
+            :style="{ transform: `scale(${1 / item.scale})` }"
+            @pointerdown.stop
+            @click.stop="cloneItem(item.id)"
+          >
+            Clone
+          </button>
 
           <button
             type="button"
@@ -179,8 +275,22 @@
           </template>
         </div>
       </div>
+      </div>
 
       <div class="moodboard__actions">
+        <button
+          type="button"
+          class="moodboard__action"
+          :class="{ 'moodboard__action--active': libraryOpen }"
+          :aria-pressed="libraryOpen"
+          aria-label="Open library"
+          title="Library"
+          @click="toggleLibrary"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H11l2 2h5.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+          </svg>
+        </button>
         <button
           type="button"
           class="moodboard__action"
@@ -215,20 +325,34 @@
         <button
           type="button"
           class="moodboard__action"
-          :class="{ 'moodboard__action--active': penMode }"
-          :aria-pressed="penMode"
+          :class="{ 'moodboard__action--active': drawTool === 'pen' }"
+          :aria-pressed="drawTool === 'pen'"
           aria-label="Draw"
           title="Draw"
-          @click="togglePen"
+          @click="toggleDrawTool('pen')"
         >
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 20h9" />
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
           </svg>
         </button>
+        <button
+          type="button"
+          class="moodboard__action"
+          :class="{ 'moodboard__action--active': drawTool === 'arrow' }"
+          :aria-pressed="drawTool === 'arrow'"
+          aria-label="Draw arrow"
+          title="Draw arrow"
+          @click="toggleDrawTool('arrow')"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14" />
+            <path d="m13 6 6 6-6 6" />
+          </svg>
+        </button>
       </div>
 
-      <div v-if="penMode" class="moodboard__pen-bar">
+      <div v-if="drawTool === 'pen'" class="moodboard__pen-bar">
         <label class="moodboard__pen-swatch" :style="{ background: penColour }" title="Pen colour">
           <input type="color" v-model="penColour" class="moodboard__colour-input" />
         </label>
@@ -265,33 +389,50 @@
 </template>
 
 <script setup lang="ts">
+import { uniqueImageUrls } from '~/composables/productImages'
+
 const {
   isMoodboard,
   closeMoodboard,
-  moodboards,
   activeMoodboard,
   activeMoodboardId,
-  setActiveMoodboard,
   renameMoodboard,
 } = useBucket()
+const {
+  boards,
+  activeBoard,
+  activeBoardId,
+  setActiveBoard,
+  saveActiveBoard,
+  updateBoard,
+  renameBoard,
+} = useBoards()
 const {
   placements,
   strokes,
   activeId,
+  activeStrokeId,
   bringToFront,
   updatePosition,
   updateScale,
   clearActive,
   addColour,
   addImage,
+  cycleItemImage,
   addStroke,
+  updateStrokePoints,
+  removeStroke,
   clearStrokes,
+  selectStroke,
   addText,
   updateText,
   removeItem,
-  initFromBucket,
+  cloneItem,
+  loadBoard,
+  snapshot,
 } = useMoodboard()
 const { openFromMoodboard } = useEnquiryForm()
+const { imageUrl: buildLibraryUrl } = useSanityImage()
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br'
 const corners: Corner[] = ['tl', 'tr', 'bl', 'br']
@@ -308,7 +449,7 @@ const titleDraft = ref('')
 const titleInput = ref<HTMLInputElement | null>(null)
 
 const startTitleEdit = () => {
-  titleDraft.value = activeMoodboard.value?.name || ''
+  titleDraft.value = activeBoard.value?.name || activeMoodboard.value?.name || ''
   titleEditing.value = true
   switchOpen.value = false
   nextTick(() => titleInput.value?.focus())
@@ -317,8 +458,9 @@ const startTitleEdit = () => {
 const saveTitleEdit = () => {
   if (!titleEditing.value) return
   const next = titleDraft.value.trim()
-  if (next && activeMoodboardId.value) {
-    renameMoodboard(activeMoodboardId.value, next)
+  if (next) {
+    if (activeBoardId.value) renameBoard(activeBoardId.value, next)
+    else if (activeMoodboardId.value) renameMoodboard(activeMoodboardId.value, next)
   }
   titleEditing.value = false
 }
@@ -327,10 +469,21 @@ const cancelTitleEdit = () => {
   titleEditing.value = false
 }
 
-const penMode = ref(false)
+type DrawTool = 'pen' | 'arrow'
+const ARROW_COLOR = '#1a1a1a'
+const ARROW_WIDTH = 3
+const drawTool = ref<DrawTool | null>(null)
+const isDrawing = computed(() => drawTool.value !== null)
+const libraryOpen = ref(false)
 const penColour = ref('#1a1a1a')
 const penWidth = ref(4)
-const currentStroke = ref<{ color: string; width: number; points: { x: number; y: number }[] } | null>(null)
+const currentStroke = ref<{
+  kind: 'freehand' | 'arrow'
+  color: string
+  width: number
+  points: { x: number; y: number }[]
+} | null>(null)
+const arrowHandleDrag = ref<{ id: string; end: 0 | 1 } | null>(null)
 const dragState = ref<{ id: string; offsetX: number; offsetY: number } | null>(null)
 const resizeState = ref<{
   id: string
@@ -341,19 +494,82 @@ const resizeState = ref<{
   corner: Corner
 } | null>(null)
 
-const onClose = () => {
+type OpenSnapshot = {
+  boardId: string | null
+  name: string
+  placements: ReturnType<typeof snapshot>['placements']
+  strokes: ReturnType<typeof snapshot>['strokes']
+}
+
+const openSnapshot = ref<OpenSnapshot | null>(null)
+
+// Module-level so revert can finish after this dialog unmounts.
+let cancelRevertTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(
+  isMoodboard,
+  (open) => {
+    if (!open) return
+    if (cancelRevertTimer) {
+      clearTimeout(cancelRevertTimer)
+      cancelRevertTimer = null
+    }
+    const state = snapshot()
+    openSnapshot.value = {
+      boardId: activeBoardId.value,
+      name: activeBoard.value?.name || activeMoodboard.value?.name || 'My Board 1',
+      placements: state.placements,
+      strokes: state.strokes,
+    }
+  },
+  { immediate: true },
+)
+
+const onSaveAndClose = () => {
+  if (cancelRevertTimer) {
+    clearTimeout(cancelRevertTimer)
+    cancelRevertTimer = null
+  }
+  saveActiveBoard(placements.value, strokes.value)
   switchOpen.value = false
   closeMoodboard()
 }
 
-const switchMoodboard = (id: string) => {
-  if (id === activeMoodboardId.value) {
+const onCancelEdits = () => {
+  const snap = openSnapshot.value
+  const revert = updateBoard
+  const restore = loadBoard
+  switchOpen.value = false
+  closeMoodboard()
+
+  // Revert after the composer has left the page.
+  if (cancelRevertTimer) clearTimeout(cancelRevertTimer)
+  cancelRevertTimer = setTimeout(() => {
+    cancelRevertTimer = null
+    if (!snap) return
+    if (snap.boardId) {
+      revert(snap.boardId, {
+        name: snap.name,
+        placements: snap.placements,
+        strokes: snap.strokes,
+      })
+    }
+    restore(snap.placements, snap.strokes)
+  }, 350)
+}
+
+const switchSavedBoard = (id: string) => {
+  if (id === activeBoardId.value) {
     switchOpen.value = false
     return
   }
-  setActiveMoodboard(id)
-  const board = moodboards.value.find((b) => b.id === id)
-  if (board) initFromBucket(board.items)
+  // Persist current canvas before switching.
+  if (activeBoardId.value) {
+    saveActiveBoard(placements.value, strokes.value)
+  }
+  setActiveBoard(id)
+  const board = boards.value.find((b) => b.id === id)
+  if (board) loadBoard(board.placements, board.strokes)
   switchOpen.value = false
   clearActive()
 }
@@ -396,13 +612,86 @@ const onImageSelected = (event: Event) => {
   input.value = ''
 }
 
-const togglePen = () => {
-  penMode.value = !penMode.value
-  if (penMode.value) clearActive()
+const toggleLibrary = () => {
+  libraryOpen.value = !libraryOpen.value
+  if (libraryOpen.value) {
+    drawTool.value = null
+    currentStroke.value = null
+  }
 }
 
-const pointsToAttr = (points: { x: number; y: number }[]) =>
+const LIBRARY_PLACEHOLDER =
+  `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400"><rect width="400" height="400" rx="112" fill="#ddd6c8"/></svg>',
+  )}`
+
+const onLibrarySelect = (item: {
+  title: string
+  image?: { asset?: { url?: string } }
+  gallery?: { asset?: { url?: string } }[]
+  spiritGallery?: { asset?: { url?: string } }[]
+}) => {
+  const assets = [item.image, ...(item.gallery || []), ...(item.spiritGallery || [])]
+  const urls = uniqueImageUrls(
+    ...assets.map((asset) => (asset ? buildLibraryUrl(asset, 1200) : '')),
+  )
+  const url = urls[0] || item.image?.asset?.url
+  const isSample = !url || url.includes('picsum.photos')
+  if (isSample) {
+    addImage(LIBRARY_PLACEHOLDER, item.title)
+    return
+  }
+  addImage(url, item.title, {
+    imageUrls: urls.length > 1 ? urls : undefined,
+    imageIndex: 0,
+  })
+}
+
+const toggleDrawTool = (tool: DrawTool) => {
+  drawTool.value = drawTool.value === tool ? null : tool
+  if (drawTool.value) {
+    clearActive()
+    libraryOpen.value = false
+  }
+  currentStroke.value = null
+  arrowHandleDrag.value = null
+}
+
+type Point = { x: number; y: number }
+
+const pointsToAttr = (points: Point[]) =>
   points.map((p) => `${p.x},${p.y}`).join(' ')
+
+const arrowHeadSize = (width: number) => ({
+  length: Math.max(12, width * 4),
+  width: Math.max(8, width * 2.5),
+})
+
+const arrowLineEnd = (from: Point, to: Point, strokeWidth: number): Point => {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const len = Math.hypot(dx, dy) || 1
+  const { length } = arrowHeadSize(strokeWidth)
+  if (len <= length) return { ...from }
+  return {
+    x: to.x - (dx / len) * length,
+    y: to.y - (dy / len) * length,
+  }
+}
+
+const arrowHeadAttr = (from: Point, to: Point, strokeWidth: number) => {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+  const { length, width } = arrowHeadSize(strokeWidth)
+  const bx = to.x - ux * length
+  const by = to.y - uy * length
+  const px = -uy * width
+  const py = ux * width
+  return `${to.x},${to.y} ${bx + px},${by + py} ${bx - px},${by - py}`
+}
 
 const drawPoint = (event: PointerEvent) => {
   const rect = canvasEl.value?.getBoundingClientRect()
@@ -410,33 +699,93 @@ const drawPoint = (event: PointerEvent) => {
   return { x: event.clientX - rect.left, y: event.clientY - rect.top }
 }
 
-const onDrawStart = (event: PointerEvent) => {
-  if (!penMode.value) return
+const onArrowSelect = (_event: PointerEvent, id: string) => {
+  selectStroke(id)
+  currentStroke.value = null
+}
+
+const onArrowHandleStart = (event: PointerEvent, id: string, end: 0 | 1) => {
   event.preventDefault()
-  ;(event.target as HTMLElement).setPointerCapture?.(event.pointerId)
+  selectStroke(id)
+  arrowHandleDrag.value = { id, end }
+  ;(event.target as Element).setPointerCapture?.(event.pointerId)
+}
+
+const onDrawLayerPointerDown = (event: PointerEvent) => {
+  if (!drawTool.value) return
+  if ((event.target as Element).closest?.('[data-arrow-id], [data-arrow-handle]')) {
+    return
+  }
+  event.preventDefault()
+  selectStroke(null)
+  ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
+  const point = drawPoint(event)
+  const isArrow = drawTool.value === 'arrow'
   currentStroke.value = {
-    color: penColour.value,
-    width: penWidth.value,
-    points: [drawPoint(event)],
+    kind: isArrow ? 'arrow' : 'freehand',
+    color: isArrow ? ARROW_COLOR : penColour.value,
+    width: isArrow ? ARROW_WIDTH : penWidth.value,
+    points: isArrow ? [point, point] : [point],
   }
 }
 
 const onDrawMove = (event: PointerEvent) => {
-  if (!penMode.value || !currentStroke.value) return
-  currentStroke.value.points.push(drawPoint(event))
+  if (arrowHandleDrag.value) {
+    const { id, end } = arrowHandleDrag.value
+    const stroke = strokes.value.find((s) => s.id === id)
+    if (!stroke || stroke.points.length < 2) return
+    const point = drawPoint(event)
+    const next = stroke.points.map((p) => ({ ...p }))
+    next[end] = point
+    updateStrokePoints(id, next)
+    return
+  }
+  if (!drawTool.value || !currentStroke.value) return
+  const point = drawPoint(event)
+  if (currentStroke.value.kind === 'arrow') {
+    currentStroke.value.points = [currentStroke.value.points[0], point]
+    return
+  }
+  currentStroke.value.points.push(point)
 }
 
 const onDrawEnd = () => {
+  if (arrowHandleDrag.value) {
+    arrowHandleDrag.value = null
+    return
+  }
   if (!currentStroke.value) return
-  if (currentStroke.value.points.length > 1) {
+  const stroke = currentStroke.value
+  const [start, end] = stroke.points
+  const worthSaving =
+    stroke.kind === 'arrow'
+      ? Boolean(start && end && Math.hypot(end.x - start.x, end.y - start.y) > 4)
+      : stroke.points.length > 1
+
+  if (worthSaving) {
+    const id = `stroke-${Date.now()}-${Math.round(Math.random() * 1000)}`
     addStroke({
-      id: `stroke-${Date.now()}-${Math.round(Math.random() * 1000)}`,
-      color: currentStroke.value.color,
-      width: currentStroke.value.width,
-      points: currentStroke.value.points,
+      id,
+      kind: stroke.kind,
+      color: stroke.color,
+      width: stroke.width,
+      points: stroke.points,
     })
+    if (stroke.kind === 'arrow') selectStroke(id)
   }
   currentStroke.value = null
+}
+
+const onKeyDown = (event: KeyboardEvent) => {
+  if (editingId.value || titleEditing.value) return
+  const target = event.target as HTMLElement | null
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    return
+  }
+  if ((event.key === 'Delete' || event.key === 'Backspace') && activeStrokeId.value) {
+    event.preventDefault()
+    removeStroke(activeStrokeId.value)
+  }
 }
 
 const onAddText = () => {
@@ -517,6 +866,20 @@ const onPointerMove = (event: PointerEvent) => {
   if (!canvasEl.value) return
   const canvasRect = canvasEl.value.getBoundingClientRect()
 
+  if (arrowHandleDrag.value) {
+    const { id, end } = arrowHandleDrag.value
+    const stroke = strokes.value.find((s) => s.id === id)
+    if (!stroke || stroke.points.length < 2) return
+    const point = {
+      x: event.clientX - canvasRect.left,
+      y: event.clientY - canvasRect.top,
+    }
+    const next = stroke.points.map((p) => ({ ...p }))
+    next[end] = point
+    updateStrokePoints(id, next)
+    return
+  }
+
   if (resizeState.value) {
     const { id, corner, anchorX, anchorY, baseW, baseH } = resizeState.value
     const px = event.clientX - canvasRect.left
@@ -543,6 +906,7 @@ const onPointerMove = (event: PointerEvent) => {
 const onPointerUp = () => {
   dragState.value = null
   resizeState.value = null
+  arrowHandleDrag.value = null
 }
 
 const downloadScreenshot = async () => {
@@ -556,15 +920,6 @@ const downloadScreenshot = async () => {
   link.download = 'studio-based-upon-moodboard.png'
   link.href = canvas.toDataURL('image/png')
   link.click()
-}
-
-const saveComposition = () => {
-  if (!import.meta.client) return
-  const payload = {
-    savedAt: new Date().toISOString(),
-    placements: placements.value,
-  }
-  localStorage.setItem('sba-moodboard-composition', JSON.stringify(payload))
 }
 
 const sendEnquiry = async () => {
@@ -589,12 +944,15 @@ const sendEnquiry = async () => {
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('keydown', onKeyDown)
   document.addEventListener('click', onDocumentClick)
 })
 
 onUnmounted(() => {
+  // Keep cancelRevertTimer alive so discard can finish after this dialog unmounts.
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('click', onDocumentClick)
 })
 </script>
@@ -618,16 +976,25 @@ onUnmounted(() => {
 
 }
 
-.moodboard__back {
+.moodboard__nav {
   justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.moodboard__back-arrow {
-  font-size: 1.1rem;
-  line-height: 1;
+.moodboard__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.moodboard__cancel {
+  opacity: 0.7;
+}
+
+.moodboard__cancel:hover {
+  opacity: 1;
 }
 
 .moodboard__switcher {
@@ -730,6 +1097,14 @@ onUnmounted(() => {
   gap: 0.5rem;
 }
 
+.moodboard__workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .moodboard__canvas {
   position: relative;
   flex: 1;
@@ -751,8 +1126,26 @@ onUnmounted(() => {
   cursor: crosshair;
 }
 
+.moodboard__arrow-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.moodboard__arrow-handle {
+  pointer-events: auto;
+  fill: #fff;
+  stroke: var(--charcoal);
+  stroke-width: 1.5;
+  cursor: grab;
+}
+
+.moodboard__arrow-handle:active {
+  cursor: grabbing;
+}
+
 .moodboard__canvas--drawing .moodboard__item {
   cursor: crosshair;
+  pointer-events: none;
 }
 
 .moodboard__item {
@@ -817,6 +1210,14 @@ onUnmounted(() => {
   margin-top: 0.5rem;
   font-size: 10px;
   text-align: center;
+}
+
+.moodboard__cycle {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 3;
+  transform-origin: center bottom;
 }
 
 .moodboard__item:hover .moodboard__label {
@@ -886,7 +1287,29 @@ onUnmounted(() => {
   box-shadow: 0 0 0 1px var(--grid-line);
 }
 
-/* Remove button */
+/* Clone + remove */
+.moodboard__clone {
+  position: absolute;
+  top: -0.6rem;
+  right: 1.15rem;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--charcoal);
+  background: var(--warm-white);
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .moodboard__remove {
   position: absolute;
   top: -0.6rem;
@@ -905,7 +1328,10 @@ onUnmounted(() => {
   transition: opacity 0.15s ease;
 }
 
-.moodboard__item:hover .moodboard__remove {
+.moodboard__item:hover .moodboard__clone,
+.moodboard__item:hover .moodboard__remove,
+.moodboard__item--active .moodboard__clone,
+.moodboard__item--active .moodboard__remove {
   opacity: 1;
 }
 
@@ -1016,7 +1442,7 @@ onUnmounted(() => {
     text-align: center;
   }
 
-  .moodboard__back,
+  .moodboard__nav,
   .moodboard__switcher,
   .moodboard__tools {
     justify-self: center;

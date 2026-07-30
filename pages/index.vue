@@ -1,26 +1,14 @@
 <template>
   <div>
     <section v-if="page?.introText" class="home-intro section">
-      <p class="home-intro__text serif-italic">{{ page.introText }}</p>
+      <p class="home-intro__text  interface">{{ page.introText }}</p>
     </section>
-    <ProductGrid :items="gridItems" :filter-labels="page?.filterLabels" />
+    <ProductGrid :items="discoveryItems" :filter-labels="filterLabels" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { DEMO_GRID_ITEMS } from '~/composables/demoData'
-
-const gridQuery = `*[_type == "gridItem"] | order(orderRank) {
-  _id,
-  title,
-  slug,
-  itemType,
-  categories,
-  image { asset-> { _id, url } },
-  linkType,
-  externalUrl,
-  project->{ slug }
-}`
+import { discoveryFilterLabels } from '~/composables/useLibraryCatalog'
 
 const homeQuery = `*[_type == "homePage"][0] {
   seoTitle,
@@ -29,21 +17,20 @@ const homeQuery = `*[_type == "homePage"][0] {
   filterLabels
 }`
 
-const [{ data: homeData }, { data: gridData }] = await Promise.all([
-  useAsyncData('homePage', () =>
-    $fetch('/api/sanity/query', { method: 'POST', body: { query: homeQuery } })
-      .then((r: { result?: unknown }) => r?.result ?? null)
-      .catch(() => null),
-  ),
-  useAsyncData('gridItems', () =>
-    $fetch('/api/sanity/query', { method: 'POST', body: { query: gridQuery } })
-      .then((r: { result?: unknown }) => r?.result ?? null)
-      .catch(() => null),
-  ),
-])
+const { discoveryItems } = await useLibraryCatalog()
+
+const { data: homeData } = await useAsyncData('homePage', () =>
+  $fetch('/api/sanity/query', { method: 'POST', body: { query: homeQuery } })
+    .then((r: { result?: unknown }) => r?.result ?? null)
+    .catch(() => null),
+)
 
 const page = computed(() => homeData.value)
-const gridItems = computed(() => (Array.isArray(gridData.value) && gridData.value.length ? gridData.value : DEMO_GRID_ITEMS))
+const filterLabels = computed(() =>
+  Array.isArray(page.value?.filterLabels) && page.value.filterLabels.length
+    ? page.value.filterLabels
+    : discoveryFilterLabels,
+)
 
 useHead(() => ({
   title: page.value?.seoTitle || 'Studio Based Upon',

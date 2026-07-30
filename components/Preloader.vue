@@ -9,7 +9,7 @@
       <!-- Screen 1: logo, fades in then out -->
       <div
         v-if="phase === 'logo-in' || phase === 'logo-out'"
-        class="preloader__logo serif-italic"
+        class="preloader__logo  interface"
         :class="{ 'preloader__logo--visible': phase === 'logo-in' }"
       >
         <span v-if="logo" class="preloader__logo-svg" v-html="logo" />
@@ -19,7 +19,7 @@
       <!-- Screen 2: intro statement, word by word -->
       <p
         v-else-if="phase === 'statement' || phase === 'hold' || phase === 'exit'"
-        class="preloader__statement serif-italic"
+        class="preloader__statement  interface"
       >
         <template v-for="(word, index) in words" :key="index">
           <span

@@ -1,141 +1,162 @@
 <template>
-  <article v-if="product" class="pdp" :class="{ 'pdp--standalone': standalone }">
-    <div class="pdp__gallery">
-      <div class="pdp__gallery-scroll">
-        <figure
-          v-for="(src, i) in activeGallery"
-          :key="`${galleryMode}-${i}`"
-          class="pdp__figure"
-        >
-          <img
-            :src="src"
-            :alt="`${product.title} — ${galleryMode === 'spirit' ? 'spirit' : 'product'} image ${i + 1}`"
-            class="pdp__image"
-            loading="lazy"
-          />
-        </figure>
-        <p v-if="!activeGallery.length" class="pdp__gallery-empty serif-italic">
-          No {{ galleryMode === 'spirit' ? 'spirit' : 'product' }} images available.
-        </p>
-      </div>
-
-      <div class="pdp__gallery-float">
-        <div class="pdp__toggle" role="group" aria-label="Gallery type">
-          <button
-            type="button"
-            class="pdp__toggle-btn serif-italic"
-            :class="{ 'pdp__toggle-btn--active': galleryMode === 'product' }"
-            :aria-pressed="galleryMode === 'product'"
-            @click="galleryMode = 'product'"
-          >
-            Product
-          </button>
-          <button
-            type="button"
-            class="pdp__toggle-btn serif-italic"
-            :class="{ 'pdp__toggle-btn--active': galleryMode === 'spirit' }"
-            :aria-pressed="galleryMode === 'spirit'"
-            @click="galleryMode = 'spirit'"
-          >
-            Spirit
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="pdp__details">
+  <article
+    v-if="product"
+    class="pdp"
+    :class="{
+      'pdp--standalone': standalone,
+      'pdp--ready': contentReady,
+      'pdp--sides': sidesVisible,
+    }"
+  >
+    <aside class="pdp__col pdp__col--left">
       <div class="pdp__toolbar">
-        <button type="button" class="pdp__close serif-italic" @click="$emit('close')">Close</button>
-
-        <div class="pdp__meta serif-italic">
+        <button type="button" class="pdp__close  interface" @click="$emit('close')">Close</button>
+        <div class="pdp__meta  interface">
           <span class="pdp__meta-label">Style</span>
           <span class="pdp__meta-value">{{ product.series || 'Objects' }}</span>
         </div>
       </div>
 
       <div class="pdp__body">
-      <h1 class="pdp__title serif-italic">{{ product.title }}</h1>
+        <h1 class="pdp__title  interface">{{ product.title }}</h1>
 
-      <dl class="pdp__specs">
-        <div v-if="product.style" class="pdp__spec">
-          <dt class="serif-italic">Style</dt>
-          <dd>{{ product.style }}</dd>
-        </div>
-        <div v-if="product.dimensions" class="pdp__spec">
-          <dt class="serif-italic">Dimensions</dt>
-          <dd>{{ product.dimensions }}</dd>
-        </div>
-        <div v-if="product.comCol" class="pdp__spec">
-          <dt class="serif-italic">COM / COL</dt>
-          <dd>{{ product.comCol }}</dd>
-        </div>
-        <div v-if="materials.length" class="pdp__spec pdp__spec--toggle">
-          <dt class="serif-italic">Materials</dt>
-          <dd>
-            <button type="button" class="pdp__disclosure" @click="showMaterials = !showMaterials">
-              Options <span class="pdp__disclosure-mark">{{ showMaterials ? '−' : '+' }}</span>
-            </button>
-          </dd>
-          <ul v-if="showMaterials" class="pdp__options">
-            <li v-for="material in materials" :key="material">{{ material }}</li>
-          </ul>
-        </div>
-      </dl>
+        <dl class="pdp__specs">
+          <div v-if="product.style" class="pdp__spec">
+            <dt class="serif-italic">Style</dt>
+            <dd>{{ product.style }}</dd>
+          </div>
+          <div v-if="product.dimensions" class="pdp__spec">
+            <dt class="serif-italic">Dimensions</dt>
+            <dd>{{ product.dimensions }}</dd>
+          </div>
+          <div v-if="product.comCol" class="pdp__spec">
+            <dt class="serif-italic">COM / COL</dt>
+            <dd>{{ product.comCol }}</dd>
+          </div>
+          <div v-if="materials.length" class="pdp__spec pdp__spec--toggle">
+            <dt class="serif-italic">Materials</dt>
+            <dd>
+              <button type="button" class="pdp__disclosure" @click="showMaterials = !showMaterials">
+                Options <span class="pdp__disclosure-mark">{{ showMaterials ? '−' : '+' }}</span>
+              </button>
+            </dd>
+            <ul v-if="showMaterials" class="pdp__options">
+              <li v-for="material in materials" :key="material">{{ material }}</li>
+            </ul>
+          </div>
+        </dl>
+      </div>
+    </aside>
 
-      <button type="button" class="pdp__inquire" @click="sendEnquiry">Inquire About Product</button>
-
-      <button
-        type="button"
-        class="pdp__save"
-        :class="{ 'pdp__save--active': saved }"
-        @click="onToggleHeart"
+    <div class="pdp__col pdp__col--center">
+      <div
+        ref="stageRef"
+        class="pdp__stage"
+        :class="{
+          'pdp__stage--expanded': imageExpanded,
+          'pdp__stage--fit-height': imageExpanded && zoomFit === 'height',
+          'pdp__stage--fit-width': imageExpanded && zoomFit === 'width',
+        }"
       >
-        {{ saved ? 'Saved to Moodboard' : 'Save to Moodboard' }}
-      </button>
+        <figure v-if="activeEntry" class="pdp__hero">
+          <div class="pdp__hero-frame">
+            <img
+              ref="heroRef"
+              :key="activeEntry.id"
+              :src="activeEntry.src"
+              :alt="`${product.title} — image ${selectedIndex + 1}`"
+              class="pdp__hero-image"
+              @load="onHeroLoad"
+              @click.stop="onHeroClick"
+            />
+            <AddButton
+              class="pdp__add"
+              :active="isSaved(product._id)"
+              :label="isSaved(product._id) ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
+              @click.stop="onToggleImage(activeEntry, selectedIndex)"
+            />
+          </div>
 
-      <div class="pdp__links">
-        <button type="button" class="pdp__link serif-italic" @click="downloadSpec">
-          Download Spec Sheet
-        </button>
-        <button
-          v-if="product.finishes?.length"
-          type="button"
-          class="pdp__link serif-italic"
-          @click="showFinishes = !showFinishes"
-        >
-          Finishes
-        </button>
-      </div>
+          <div
+            v-if="galleryEntries.length > 1"
+            class="pdp__thumbs"
+            :class="{ 'pdp__thumbs--visible': galleryVisible }"
+          >
+            <button
+              v-for="(entry, i) in galleryEntries"
+              :key="entry.id"
+              type="button"
+              class="pdp__thumb"
+              :class="{ 'pdp__thumb--active': i === selectedIndex }"
+              :aria-label="`Show image ${i + 1}`"
+              :aria-current="i === selectedIndex ? 'true' : undefined"
+              @click.stop="selectImage(i)"
+            >
+              <img :src="entry.src" alt="" loading="lazy" draggable="false" />
+            </button>
+          </div>
+        </figure>
 
-      <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
-        <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
-      </ul>
-
-      <section v-if="product.description || product.edition" class="pdp__info">
-        <h2 class="pdp__info-heading serif-italic">info</h2>
-        <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
-        <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
-      </section>
-
-      <div v-if="nextProduct" class="pdp__next">
-        <button type="button" class="pdp__next-label serif-italic" @click="goToNext">
-          Next Product
-        </button>
-        <button type="button" class="pdp__next-media" @click="goToNext">
-          <img :src="nextImageUrl" :alt="nextProduct.title" />
-        </button>
-      </div>
+        <p v-else class="pdp__gallery-empty interface">
+          No images available.
+        </p>
       </div>
     </div>
+
+    <aside class="pdp__col pdp__col--right">
+      <div class="pdp__body pdp__body--right">
+        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
+
+        <button type="button" class="pdp__save" @click="onMoreLikeThis">
+          More Like This
+        </button>
+
+        <div class="pdp__links">
+          <button type="button" class="pdp__link  interface" @click="downloadSpec">
+            Download Spec Sheet
+          </button>
+          <button
+            v-if="product.finishes?.length"
+            type="button"
+            class="pdp__link  interface"
+            @click="showFinishes = !showFinishes"
+          >
+            Finishes
+          </button>
+        </div>
+
+        <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
+          <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
+        </ul>
+
+        <section v-if="product.description || product.edition" class="pdp__info">
+          <h2 class="pdp__info-heading  interface">info</h2>
+          <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
+          <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
+        </section>
+
+        <div v-if="nextProduct" class="pdp__next">
+          <button type="button" class="pdp__next-label  interface" @click="goToNext">
+            Next Product
+          </button>
+          <button type="button" class="pdp__next-media" @click="goToNext">
+            <img :src="nextImageUrl" :alt="nextProduct.title" />
+          </button>
+        </div>
+      </div>
+    </aside>
   </article>
 
   <div v-else class="pdp pdp--missing">
     <h1 class="page-title">Product not found</h1>
-    <button type="button" class="pdp__link serif-italic" @click="$emit('close')">Close</button>
+    <button type="button" class="pdp__link  interface" @click="$emit('close')">Close</button>
   </div>
 </template>
 
 <script setup lang="ts">
+import gsap from 'gsap'
+import { Flip } from 'gsap/Flip'
+
 const props = withDefaults(
   defineProps<{
     slug: string
@@ -152,19 +173,35 @@ const emit = defineEmits<{
 const { fetchProduct, getNextProduct } = useProductCatalog()
 const { imageUrl } = useSanityImage()
 const { requestSave, isSaved } = useBucket()
-const { enquiryEmail } = useSiteSettings()
+const { close, finishClose, getFlipSource, clearPendingFlip, closingFlip, openImageIndex, setReturnImage } =
+  useProductOverlay()
+const { setAffinity } = useDiscoveryAffinity()
+const { openFromProduct } = useEnquiryForm()
+const router = useRouter()
 
 const { data: product, refresh } = await useAsyncData(
   () => `product-detail-${props.slug}`,
   () => fetchProduct(props.slug),
 )
 
-const galleryMode = ref<'product' | 'spirit'>('product')
 const showMaterials = ref(false)
 const showFinishes = ref(false)
+const heroRef = ref<HTMLImageElement | null>(null)
+const stageRef = ref<HTMLElement | null>(null)
+const contentReady = ref(false)
+const sidesVisible = ref(false)
+const galleryVisible = ref(false)
+const flipStarted = ref(false)
+const flipCloseStarted = ref(false)
+const selectedIndex = ref(openImageIndex.value)
+const imageExpanded = ref(false)
+/** Expanded layout: fill container height (landscape) or full width with vertical scroll (tall). */
+const zoomFit = ref<'width' | 'height'>('width')
 
-const productImages = computed(() => {
-  if (!product.value) return [] as string[]
+type GalleryEntry = { id: string; src: string }
+
+const galleryEntries = computed((): GalleryEntry[] => {
+  if (!product.value) return []
 
   const urls: string[] = []
   const hero = imageUrl(product.value.image, 1800)
@@ -177,17 +214,6 @@ const productImages = computed(() => {
     })
   }
 
-  if (urls.length === 1 && hero) {
-    return [hero, hero, hero, hero]
-  }
-
-  return urls
-})
-
-const spiritImages = computed(() => {
-  if (!product.value) return [] as string[]
-
-  const urls: string[] = []
   if (product.value.spiritGallery?.length) {
     product.value.spiritGallery.forEach((img) => {
       const url = imageUrl(img, 1800)
@@ -195,16 +221,125 @@ const spiritImages = computed(() => {
     })
   }
 
-  if (urls.length) return urls
-
-  // Fallback so the toggle is always meaningful until spirit imagery is set in the CMS
-  const seed = product.value.slug || product.value._id
-  return [1, 2, 3].map((n) => `https://picsum.photos/seed/sba-spirit-${seed}-${n}/1200/1500?grayscale`)
+  return urls.map((src, i) => ({
+    id: `${product.value!._id}-img-${i}`,
+    src,
+  }))
 })
 
-const activeGallery = computed(() =>
-  galleryMode.value === 'spirit' ? spiritImages.value : productImages.value,
+const activeEntry = computed(
+  () => galleryEntries.value[selectedIndex.value] || galleryEntries.value[0] || null,
 )
+
+watch(galleryEntries, (entries) => {
+  if (!entries.length) {
+    selectedIndex.value = 0
+    return
+  }
+  if (selectedIndex.value >= entries.length) selectedIndex.value = 0
+})
+
+const selectImage = (index: number) => {
+  if (index < 0 || index >= galleryEntries.value.length) return
+  selectedIndex.value = index
+  imageExpanded.value = false
+}
+
+const cycleImage = (direction: 1 | -1) => {
+  const count = galleryEntries.value.length
+  if (count < 2) return
+  selectedIndex.value = (selectedIndex.value + direction + count) % count
+}
+
+let wheelLocked = false
+let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
+let expandCloseBound: ((event: MouseEvent) => void) | null = null
+
+const clearExpandCloseListener = () => {
+  if (!expandCloseBound || !import.meta.client) return
+  window.removeEventListener('click', expandCloseBound, true)
+  window.removeEventListener('click', expandCloseBound)
+  expandCloseBound = null
+}
+
+const collapseImage = () => {
+  imageExpanded.value = false
+  clearExpandCloseListener()
+}
+
+const updateZoomFit = () => {
+  const stage = stageRef.value
+  const img = heroRef.value
+  if (!stage || !img?.naturalWidth || !img.naturalHeight) {
+    zoomFit.value = 'width'
+    return
+  }
+  const stageW = stage.clientWidth
+  const stageH = stage.clientHeight
+  if (!stageW || !stageH) {
+    zoomFit.value = 'width'
+    return
+  }
+  // If the image at full stage width would be shorter than the stage, fill height instead
+  const heightAtFullWidth = stageW * (img.naturalHeight / img.naturalWidth)
+  zoomFit.value = heightAtFullWidth < stageH ? 'height' : 'width'
+}
+
+const expandImage = async () => {
+  imageExpanded.value = true
+  clearExpandCloseListener()
+  await nextTick()
+  const img = heroRef.value
+  if (img && !img.complete) await waitForImage(img)
+  updateZoomFit()
+  if (!import.meta.client) return
+  // Attach after this click finishes so it doesn't immediately collapse
+  requestAnimationFrame(() => {
+    expandCloseBound = () => {
+      collapseImage()
+    }
+    window.addEventListener('click', expandCloseBound)
+  })
+}
+
+const onHeroClick = () => {
+  if (imageExpanded.value) collapseImage()
+  else void expandImage()
+}
+
+const onStageWheel = (event: WheelEvent) => {
+  if (imageExpanded.value) return
+  if (galleryEntries.value.length < 2) return
+  event.preventDefault()
+  if (wheelLocked) return
+  if (Math.abs(event.deltaY) < 2 && Math.abs(event.deltaX) < 2) return
+
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+  if (!delta) return
+
+  wheelLocked = true
+  cycleImage(delta > 0 ? 1 : -1)
+  if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
+  wheelUnlockTimer = setTimeout(() => {
+    wheelLocked = false
+    wheelUnlockTimer = null
+  }, 420)
+}
+
+onMounted(() => {
+  // Cached image may already be complete before @load fires
+  nextTick(() => {
+    stageRef.value?.addEventListener('wheel', onStageWheel, { passive: false })
+    if (heroRef.value?.complete) void runFlipOpen()
+    else if (!activeEntry.value) revealWithoutFlip()
+  })
+})
+
+onUnmounted(() => {
+  stageRef.value?.removeEventListener('wheel', onStageWheel)
+  clearExpandCloseListener()
+  if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
+})
 
 const materials = computed(() =>
   [...(product.value?.materials || product.value?.categories || [])]
@@ -216,30 +351,52 @@ const nextProduct = computed(() => (product.value ? getNextProduct(product.value
 const nextImageUrl = computed(() =>
   nextProduct.value ? imageUrl(nextProduct.value.image, 900) : '',
 )
-const saved = computed(() => (product.value ? isSaved(product.value._id) : false))
 
 const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const onToggleHeart = () => {
-  const heartImage = productImages.value[0]
-  if (!product.value || !heartImage) return
+const onToggleImage = (entry: GalleryEntry, index: number) => {
+  if (!product.value) return
+  const urls = galleryEntries.value.map((g) => g.src)
   requestSave({
     id: product.value._id,
     title: product.value.title,
-    imageUrl: heartImage,
-    itemType: product.value.itemType || 'product',
-    link: `/products/${product.value.slug}`,
+    imageUrl: entry.src,
+    itemType: product.value.series || 'item',
+    link: `/materials-and-forms/${product.value.slug}`,
+    imageUrls: urls.length > 1 ? urls : undefined,
+    imageIndex: urls.length > 1 ? index : undefined,
   })
+}
+
+const onMoreLikeThis = async () => {
+  if (!product.value) return
+  const categories = [
+    ...(product.value.categories || []),
+    ...(product.value.materials || []),
+  ]
+  setAffinity(categories.length ? categories : ['surfaces'], product.value._id)
+  finishClose()
+  emit('close')
+  if (import.meta.client) {
+    window.history.replaceState({}, '', '/')
+  }
+  if (router.currentRoute.value.path !== '/') {
+    await navigateTo('/')
+  }
 }
 
 const sendEnquiry = () => {
   if (!product.value) return
-  const body = encodeURIComponent(
-    `Enquiry from Studio Based Upon\n\nProduct: ${product.value.title}\nURL: ${window.location.href}`,
-  )
-  window.location.href = `mailto:${enquiryEmail.value}?subject=${encodeURIComponent(`Enquiry — ${product.value.title}`)}&body=${body}`
+  const image =
+    activeEntry.value?.src || imageUrl(product.value.image, 900) || undefined
+  openFromProduct({
+    id: product.value._id,
+    title: product.value.title,
+    imageUrl: image,
+    slug: product.value.slug,
+  })
 }
 
 const downloadSpec = () => {
@@ -267,13 +424,204 @@ const downloadSpec = () => {
   URL.revokeObjectURL(url)
 }
 
+const revealWithoutFlip = () => {
+  clearPendingFlip()
+  contentReady.value = true
+  sidesVisible.value = true
+  galleryVisible.value = true
+}
+
+const waitForImage = (img: HTMLImageElement) => {
+  if (img.complete && img.naturalWidth > 0) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    img.addEventListener('load', () => resolve(), { once: true })
+    img.addEventListener('error', () => resolve(), { once: true })
+  })
+}
+
+const runFlipOpen = async () => {
+  if (flipStarted.value || !import.meta.client) return
+  flipStarted.value = true
+
+  const source = getFlipSource()
+  const hero = heroRef.value
+
+  if (!source || !hero) {
+    revealWithoutFlip()
+    return
+  }
+
+  await waitForImage(hero)
+  await nextTick()
+
+  // Hide hero first so we don't flash the final size before Flip
+  gsap.set(hero, { visibility: 'hidden' })
+  await nextTick()
+  void hero.offsetWidth
+
+  const from = source.getBoundingClientRect()
+  const to = hero.getBoundingClientRect()
+
+  if (from.width < 2 || to.width < 2) {
+    gsap.set(hero, { visibility: 'visible' })
+    revealWithoutFlip()
+    return
+  }
+
+  // Fixed flyer on body so overflow clipping can't hide the Flip
+  const flyer = document.createElement('img')
+  flyer.src = (source as HTMLImageElement).currentSrc || (source as HTMLImageElement).src || hero.src
+  flyer.alt = ''
+  flyer.setAttribute('aria-hidden', 'true')
+  Object.assign(flyer.style, {
+    position: 'fixed',
+    top: `${from.top}px`,
+    left: `${from.left}px`,
+    width: `${from.width}px`,
+    height: `${from.height}px`,
+    margin: '0',
+    objectFit: 'cover',
+    zIndex: '500',
+    pointerEvents: 'none',
+    borderRadius: getComputedStyle(source).borderRadius,
+  })
+  document.body.appendChild(flyer)
+
+  gsap.set(source, { opacity: 0 })
+
+  const state = Flip.getState(flyer)
+
+  gsap.set(flyer, {
+    top: to.top,
+    left: to.left,
+    width: to.width,
+    height: to.height,
+    borderRadius: '0px',
+    objectFit: 'contain',
+  })
+
+  // Snappy expand with a soft landing
+  Flip.from(state, {
+    duration: 0.55,
+    ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    onComplete: () => {
+      flyer.remove()
+      gsap.set(hero, { visibility: 'visible' })
+      gsap.set(source, { clearProps: 'opacity' })
+      contentReady.value = true
+      sidesVisible.value = true
+      clearPendingFlip()
+    },
+  })
+
+  gsap.delayedCall(0.4, () => {
+    galleryVisible.value = true
+  })
+}
+
+const runFlipClose = async () => {
+  if (!import.meta.client || flipCloseStarted.value) return
+  flipCloseStarted.value = true
+
+  const source = getFlipSource()
+  const hero = heroRef.value
+
+  if (!source || !hero || !document.contains(source) || !product.value) {
+    finishClose()
+    return
+  }
+
+  // Push the currently selected gallery image back onto the grid thumb
+  setReturnImage(product.value._id, selectedIndex.value)
+  await nextTick()
+  if (source instanceof HTMLImageElement) {
+    await waitForImage(source)
+  }
+  await nextTick()
+
+  contentReady.value = false
+  sidesVisible.value = false
+  galleryVisible.value = false
+  await nextTick()
+
+  const from = hero.getBoundingClientRect()
+  const to = source.getBoundingClientRect()
+
+  if (from.width < 2 || to.width < 2) {
+    gsap.set(source, { clearProps: 'opacity' })
+    finishClose()
+    return
+  }
+
+  gsap.set(hero, { visibility: 'hidden' })
+  gsap.set(source, { opacity: 0 })
+
+  const flyer = document.createElement('img')
+  flyer.src = hero.currentSrc || hero.src
+  flyer.alt = ''
+  flyer.setAttribute('aria-hidden', 'true')
+  Object.assign(flyer.style, {
+    position: 'fixed',
+    top: `${from.top}px`,
+    left: `${from.left}px`,
+    width: `${from.width}px`,
+    height: `${from.height}px`,
+    margin: '0',
+    objectFit: 'contain',
+    zIndex: '500',
+    pointerEvents: 'none',
+    borderRadius: '0px',
+  })
+  document.body.appendChild(flyer)
+
+  const state = Flip.getState(flyer)
+
+  gsap.set(flyer, {
+    top: to.top,
+    left: to.left,
+    width: to.width,
+    height: to.height,
+    borderRadius: getComputedStyle(source).borderRadius,
+    objectFit: 'cover',
+  })
+
+  Flip.from(state, {
+    duration: 0.5,
+    ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    onComplete: () => {
+      flyer.remove()
+      gsap.set(source, { clearProps: 'opacity' })
+      finishClose()
+    },
+  })
+}
+
+const onHeroLoad = () => {
+  if (imageExpanded.value) updateZoomFit()
+  if (!flipStarted.value) void runFlipOpen()
+}
+
+watch(closingFlip, (closing) => {
+  if (closing) void runFlipClose()
+})
+
 watch(
   () => props.slug,
   () => {
-    galleryMode.value = 'product'
     showMaterials.value = false
     showFinishes.value = false
+    flipStarted.value = false
+    flipCloseStarted.value = false
+    contentReady.value = false
+    sidesVisible.value = false
+    galleryVisible.value = false
+    selectedIndex.value = openImageIndex.value
+    imageExpanded.value = false
+    clearExpandCloseListener()
     refresh()
+    nextTick(() => {
+      if (heroRef.value?.complete) void runFlipOpen()
+    })
   },
 )
 </script>
@@ -281,8 +629,13 @@ watch(
 <style scoped>
 .pdp {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 300px 1fr 300px;
   height: 100dvh;
+  background: transparent;
+  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp--ready {
   background: var(--cream);
 }
 
@@ -300,69 +653,207 @@ watch(
   padding: 4rem var(--gutter);
 }
 
-.pdp__gallery {
-  position: relative;
+.pdp__col {
+  min-width: 0;
   height: 100%;
   overflow-y: auto;
+}
+
+.pdp__col--left,
+.pdp__col--right {
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp--sides .pdp__col--left,
+.pdp--sides .pdp__col--right {
+  opacity: 1;
+}
+
+.pdp__col--left {
   border-right: 1px solid var(--grid-line);
 }
 
-.pdp__gallery-scroll {
+.pdp__col--right {
+  border-left: 1px solid var(--grid-line);
+}
+
+.pdp__col--center {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  background: var(--grid-line);
+  overflow: hidden;
+  align-items: stretch;
 }
 
-.pdp__gallery-float {
-  position: sticky;
-  bottom: 1.5rem;
-  z-index: 6;
+.pdp__stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-height: 100%;
   display: flex;
-  justify-content: center;
-  margin-top: -4.5rem;
-  padding: 0 var(--gutter);
-  pointer-events: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  padding: 1.25rem var(--gutter) 1.5rem;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
 }
 
-.pdp__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.3rem;
-  background: var(--warm-white);
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+.pdp__stage--expanded {
+  padding: 0;
+}
+
+.pdp__stage--fit-width {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.pdp__stage--fit-height {
+  overflow: hidden;
+}
+
+.pdp__hero {
+  position: relative;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  container-type: size;
+}
+
+.pdp__stage--fit-width .pdp__hero {
+  display: block;
+  height: auto;
+  max-height: none;
+  container-type: normal;
+}
+
+.pdp__stage--fit-height .pdp__hero {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  max-height: 100%;
+  container-type: normal;
+}
+
+.pdp__hero-frame {
+  position: relative;
+  display: inline-grid;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.pdp__stage--fit-width .pdp__hero-frame {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+}
+
+.pdp__stage--fit-height .pdp__hero-frame {
+  display: inline-grid;
+  width: auto;
+  height: 100%;
+  max-width: none;
+  max-height: 100%;
+}
+
+.pdp__hero-image {
+  display: block;
+  max-width: 100cqw;
+  max-height: 100cqh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-in;
+  will-change: transform;
+}
+
+.pdp__stage--fit-width .pdp__hero-image {
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-out;
+}
+
+.pdp__stage--fit-height .pdp__hero-image {
+  max-width: none;
+  max-height: none;
+  width: auto;
+  height: 100%;
+  object-fit: contain;
+  cursor: zoom-out;
+}
+
+.pdp__stage--expanded .pdp__thumbs {
+  display: none;
+}
+
+.pdp__thumbs {
+  position: absolute;
+  left: 50%;
+  bottom: var(--thumb-ctrl-inset, 4px);
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-width: calc(100% - 2rem);
+  padding: 0.35rem;
+  transform: translateX(-50%) translateY(0.75rem);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp__thumbs--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
 
-.pdp__toggle-btn {
-  padding: 0.5rem 1.15rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  border-radius: 999px;
-  transition: color 0.2s ease, background 0.2s ease;
+.pdp__thumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--thumb-radius);
+  background: var(--warm-white);
+  overflow: hidden;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.2s ease, border-color 0.2s ease;
 }
 
-.pdp__toggle-btn:hover {
-  color: var(--charcoal);
+.pdp__thumb:hover {
+  border-color: var(--charcoal);
 }
 
-.pdp__toggle-btn--active {
-  color: var(--warm-white);
-  background: var(--charcoal);
+.pdp__thumb--active {
+  border-color: var(--charcoal);
+  border-width: 2px;
+}
+
+.pdp__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .pdp__gallery-empty {
-  padding: 2rem var(--gutter);
+  padding: 2rem 0;
   color: var(--muted);
-  background: var(--cream);
-}
-
-.pdp__details {
-  height: 100%;
-  overflow-y: auto;
 }
 
 .pdp__toolbar {
@@ -388,7 +879,7 @@ watch(
 
 .pdp__meta {
   display: inline-flex;
-  gap: 1rem;
+  gap: 0.75rem;
   font-size: var(--text-sm);
   color: var(--charcoal);
 }
@@ -397,39 +888,43 @@ watch(
   color: var(--muted);
 }
 
-.pdp__figure {
-  margin: 0;
-  width: 100%;
-  background: var(--warm-white);
+.pdp__add {
+  position: absolute;
+  top: var(--thumb-ctrl-inset);
+  right: var(--thumb-ctrl-inset);
+  z-index: 2;
+  transition: transform 0.2s ease;
 }
 
-.pdp__image {
-  display: block;
-  width: 100%;
-  height: auto;
+.pdp__add:hover {
+  /* transform: scale(1.06); */
 }
 
 .pdp__body {
   width: 100%;
-  padding: 2.5rem var(--gutter) 5rem;
+  padding: 1.5rem var(--gutter) 4rem;
+}
+
+.pdp__body--right {
+  padding-top: 2.5rem;
 }
 
 .pdp__title {
-  margin: 0 0 2rem;
-  font-size: clamp(2.5rem, 7vw, 5rem);
-  line-height: 1.02;
+  margin: 0 0 1.5rem;
+  font-size: clamp(1.75rem, 2.4vw, 2.75rem);
+  line-height: 1.05;
 }
 
 .pdp__specs {
-  margin: 0 0 2.5rem;
+  margin: 0;
 }
 
 .pdp__spec {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: baseline;
-  gap: 1rem;
-  padding: 1rem 0;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
   border-top: 1px solid var(--grid-line);
 }
 
@@ -438,13 +933,13 @@ watch(
 }
 
 .pdp__spec dt {
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   color: var(--charcoal);
 }
 
 .pdp__spec dd {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   color: var(--charcoal);
   text-align: right;
 }
@@ -452,8 +947,8 @@ watch(
 .pdp__disclosure {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: var(--text-lg);
+  gap: 0.5rem;
+  font-size: var(--text-sm);
   color: var(--charcoal);
 }
 
@@ -465,21 +960,22 @@ watch(
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  margin: 0.75rem 0 0;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 0;
   padding: 0;
   list-style: none;
   color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .pdp__inquire {
   display: block;
   width: 100%;
-  padding: 1.15rem 1rem;
-  margin-bottom: 1rem;
+  padding: 1rem 0.85rem;
+  margin-bottom: 0.75rem;
   background: var(--charcoal);
   color: var(--cream);
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   transition: opacity 0.2s ease;
 }
 
@@ -490,30 +986,29 @@ watch(
 .pdp__save {
   display: block;
   width: 100%;
-  padding: 1.15rem 1rem;
-  margin-bottom: 2rem;
+  padding: 1rem 0.85rem;
+  margin-bottom: 1.5rem;
   border: 1px solid var(--charcoal);
   color: var(--charcoal);
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.pdp__save:hover,
-.pdp__save--active {
+.pdp__save:hover {
   background: var(--charcoal);
   color: var(--cream);
 }
 
 .pdp__links {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
   padding-bottom: 0.5rem;
 }
 
 .pdp__link {
-  font-size: var(--text-lg);
+  font-size: var(--text-sm);
   color: var(--charcoal);
   text-decoration: underline;
   text-underline-offset: 5px;
@@ -527,50 +1022,48 @@ watch(
 .pdp__finishes {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem 1.5rem;
+  gap: 0.5rem 1rem;
   margin: 1rem 0 0;
   padding: 0;
   list-style: none;
   color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .pdp__info {
-  margin-top: 3.5rem;
-  padding-top: 2rem;
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
   border-top: 1px solid var(--grid-line);
 }
 
 .pdp__info-heading {
-  margin: 0 0 1.5rem;
-  font-size: var(--text-lg);
+  margin: 0 0 1rem;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 
 .pdp__info-text {
-  margin: 0 0 1.25rem;
-  max-width: 44rem;
-  font-size: var(--text-lg);
+  margin: 0 0 1rem;
+  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--charcoal);
 }
 
 .pdp__next {
-  margin-top: 4rem;
+  margin-top: 3rem;
   text-align: center;
 }
 
 .pdp__next-label {
   display: inline-block;
-  margin-bottom: 1.5rem;
-  font-size: var(--text-lg);
+  margin-bottom: 1rem;
+  font-size: var(--text-sm);
   color: var(--charcoal);
 }
 
 .pdp__next-media {
   display: block;
-  width: min(320px, 60%);
-  margin: 0 auto;
+  width: 100%;
   aspect-ratio: 1;
   background: var(--warm-white);
 }
@@ -581,22 +1074,43 @@ watch(
   object-fit: cover;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .pdp,
   .pdp--standalone {
-    display: block;
+    display: flex;
+    flex-direction: column;
     height: auto;
+    min-height: 100dvh;
   }
 
-  .pdp__gallery,
-  .pdp__details {
-    height: auto;
-    overflow-y: visible;
+  .pdp--standalone {
+    min-height: calc(100dvh - var(--header-height));
   }
 
-  .pdp__gallery {
-    border-right: none;
+  .pdp__col {
+    height: auto;
+    overflow: visible;
+  }
+
+  .pdp__col--left,
+  .pdp__col--right {
+    border: none;
+  }
+
+  .pdp__col--center {
+    order: -1;
+  }
+
+  .pdp__stage {
+    min-height: 55dvh;
+  }
+
+  .pdp__col--left {
     border-bottom: 1px solid var(--grid-line);
+  }
+
+  .pdp__col--right {
+    border-top: 1px solid var(--grid-line);
   }
 }
 </style>

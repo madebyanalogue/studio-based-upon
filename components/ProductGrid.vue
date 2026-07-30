@@ -28,21 +28,18 @@
           :item="entry.item"
           :tile-size="entry.size"
           :image-url="getItemImage(entry.item)"
+          @bottom-anchor="onBottomAnchor(entry, $event)"
         />
       </div>
     </div>
 
     <div class="explore__controls explore__controls--left">
-      <button type="button" class="explore__pill" @click="remix">Remix</button>
-      <button type="button" class="explore__pill" @click="addRandomElement">
-        Surprise me
-        <span class="explore__pill-plus" aria-hidden="true">+</span>
-      </button>
+      <button type="button" class="explore__pill" @click="surrender">Surrender</button>
     </div>
 
     <div class="explore__controls explore__controls--right">
       <button type="button" class="explore__link" @click="saveAllToComposition">
-        Save all to composition
+        Save to Board
         <span class="explore__link-arrow" aria-hidden="true">→</span>
       </button>
     </div>
@@ -52,19 +49,29 @@
 </template>
 
 <script setup lang="ts">
-import { DEFAULT_FILTERS, filterKey, DEMO_GRID_ITEMS } from '~/composables/demoData'
+import { DEFAULT_FILTERS, filterKey, isPrecraftedItem } from '~/composables/demoData'
+import { productPath } from '~/composables/useProductCatalog'
+import { toDiscoveryItem, demoLibraryItems } from '~/composables/useLibraryCatalog'
+import {
+  useDiscoveryCanvas,
+  type DiscoveryLayoutEntry,
+} from '~/composables/useDiscoveryCanvas'
 
-type GridItemData = (typeof DEMO_GRID_ITEMS)[number]
-
-type LayoutEntry = {
-  key: string
-  item: GridItemData
-  x: number
-  y: number
-  size: number
-  z: number
-  visible: boolean
+type GridItemData = {
+  _id: string
+  title: string
+  slug?: { current?: string }
+  itemType?: string
+  category?: string
+  categories?: string[]
+  materials?: string[]
+  colours?: string[]
+  image?: { asset?: { url?: string } }
+  linkType?: string
+  externalUrl?: string
 }
+
+type LayoutEntry = DiscoveryLayoutEntry
 
 const props = defineProps<{
   items?: GridItemData[]
@@ -75,10 +82,22 @@ const props = defineProps<{
 const { imageUrl } = useSanityImage()
 const { zoomIn, zoomOut, zoomLabel, zoom } = useGridZoom()
 const { activeMoodboard, addItemToMoodboard, openMoodboard } = useBucket()
-const { initFromBucket } = useMoodboard()
+const { initFromBucket, snapshot } = useMoodboard()
+const { createBoard } = useBoards()
+const { affinity, clearAffinity } = useDiscoveryAffinity()
+const {
+  layout,
+  pan,
+  seed,
+  zCounter,
+  activeFilter,
+} = useDiscoveryCanvas()
 
 const filters = computed(() => (props.filterLabels?.length ? props.filterLabels : DEFAULT_FILTERS))
-const activeFilter = ref(props.defaultFilter || filters.value[0] || 'All')
+
+if (!layout.value.length && props.defaultFilter && activeFilter.value === 'All') {
+  activeFilter.value = props.defaultFilter
+}
 
 watch(filters, (next) => {
   if (!next.includes(activeFilter.value)) {
@@ -86,9 +105,12 @@ watch(filters, (next) => {
   }
 })
 
+
 const gridItems = computed(() => {
-  if (props.items?.length) return props.items
-  return DEMO_GRID_ITEMS
+  const source = props.items?.length
+    ? props.items
+    : (demoLibraryItems().map(toDiscoveryItem) as GridItemData[])
+  return source.filter((item) => !isPrecraftedItem(item))
 })
 
 const visibleItems = computed(() => {
@@ -97,13 +119,22 @@ const visibleItems = computed(() => {
   return gridItems.value.filter((item) => (item.categories || []).includes(key))
 })
 
+const poolForAffinity = (categories: string[], excludeId?: string) => {
+  const cats = new Set(categories.map((c) => c.toLowerCase()))
+  const similar = visibleItems.value.filter((item) => {
+    if (excludeId && item._id === excludeId) return false
+    const itemCats = [
+      ...(item.categories || []),
+      ...((item as { materials?: string[] }).materials || []),
+    ]
+    return itemCats.some((c) => cats.has(c.toLowerCase()))
+  })
+  return similar.length ? similar : visibleItems.value.filter((item) => item._id !== excludeId)
+}
+
 /* ---- Virtual field bigger than the viewport so you can explore beyond it ---- */
 const FIELD = { w: 2600, h: 1800 }
 const MARGIN = 80
-
-const layout = ref<LayoutEntry[]>([])
-let zCounter = 1
-let seed = 1
 
 const mulberry = (a: number) => () => {
   a |= 0
@@ -122,31 +153,12 @@ const shuffle = <T,>(arr: T[], rng: () => number) => {
   return out
 }
 
-const regenerate = (fresh = false) => {
-  if (fresh) seed = Math.floor(Math.random() * 1_000_000) + 1
-  const rng = mulberry(seed)
-  const pool = shuffle(visibleItems.value, rng)
-  if (!pool.length) {
-    layout.value = []
-    return
-  }
-
-  // A random subset so "Surprise me" produces a genuinely new arrangement.
-  const maxCount = Math.min(pool.length, 22)
-  const minCount = Math.min(pool.length, 8)
-  const count = fresh
-    ? Math.max(minCount, Math.round(minCount + rng() * (maxCount - minCount)))
-    : pool.length
-  const chosen = pool.slice(0, count)
-
-  // Distribute items across a jittered grid so they spread evenly
-  // rather than clustering with pure random placement.
+const placeItems = (chosen: GridItemData[], rng: () => number) => {
   const cols = Math.ceil(Math.sqrt((chosen.length * FIELD.w) / FIELD.h))
   const rows = Math.ceil(chosen.length / cols)
   const cellW = (FIELD.w - MARGIN * 2) / cols
   const cellH = (FIELD.h - MARGIN * 2) / rows
 
-  // Randomise which cell each item lands in for variety between arrangements.
   const cellOrder = shuffle(
     Array.from({ length: cols * rows }, (_, i) => i),
     rng,
@@ -157,13 +169,12 @@ const regenerate = (fresh = false) => {
     const col = cell % cols
     const row = Math.floor(cell / cols)
     const size = Math.round(150 + rng() * 200)
-    // Keep the item within its cell, with a little breathing room.
     const maxX = Math.max(0, cellW - size)
     const maxY = Math.max(0, cellH - size)
     const x = MARGIN + col * cellW + rng() * maxX
     const y = MARGIN + row * cellH + rng() * maxY
     return {
-      key: `${item._id}-${index}`,
+      key: `${item._id}-${index}-${Date.now() % 100000}`,
       item,
       x,
       y,
@@ -172,9 +183,44 @@ const regenerate = (fresh = false) => {
       visible: false,
     }
   })
-  zCounter = chosen.length
+  zCounter.value = chosen.length
   centrePan()
   revealSequentially()
+}
+
+const regenerate = (
+  fresh = false,
+  excludeIds: Set<string> = new Set(),
+  preferred?: { categories: string[]; excludeId?: string },
+) => {
+  if (fresh) seed.value = Math.floor(Math.random() * 1_000_000) + 1
+  const rng = mulberry(seed.value)
+
+  let pool = preferred?.categories?.length
+    ? poolForAffinity(preferred.categories, preferred.excludeId)
+    : visibleItems.value
+
+  if (excludeIds.size) {
+    const unseen = pool.filter((item) => !excludeIds.has(item._id))
+    if (unseen.length >= Math.min(8, pool.length)) {
+      pool = unseen
+    }
+  }
+
+  pool = shuffle(pool, rng)
+  if (!pool.length) {
+    layout.value = []
+    return
+  }
+
+  const maxCount = Math.min(pool.length, 22)
+  const minCount = Math.min(pool.length, 8)
+  const count = fresh
+    ? Math.max(minCount, Math.round(minCount + rng() * (maxCount - minCount)))
+    : Math.min(pool.length, maxCount)
+  const chosen = pool.slice(0, count)
+
+  placeItems(chosen, rng)
 }
 
 /* --- Sequential fade-in, in a random order --- */
@@ -202,49 +248,13 @@ const revealSequentially = () => {
   })
 }
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value))
-
-// Remix = a whole new arrangement with a fresh set of items.
-const remix = () => regenerate(true)
-
-// Surprise me = drop a single new random element near the current view.
-const addRandomElement = () => {
-  const pool = visibleItems.value
-  if (!pool.length) return
-  measure()
-  const item = pool[Math.floor(Math.random() * pool.length)]
-  const size = Math.round(150 + Math.random() * 200)
-  const centreX = (viewW / 2 - pan.x) / scale.value
-  const centreY = (viewH / 2 - pan.y) / scale.value
-  const jitter = 220
-  const x = clamp(
-    centreX - size / 2 + (Math.random() * jitter - jitter / 2),
-    MARGIN,
-    FIELD.w - size - MARGIN,
-  )
-  const y = clamp(
-    centreY - size / 2 + (Math.random() * jitter - jitter / 2),
-    MARGIN,
-    FIELD.h - size - MARGIN,
-  )
-  zCounter += 1
-  const entry: LayoutEntry = {
-    key: `${item._id}-${Date.now()}`,
-    item,
-    x,
-    y,
-    size,
-    z: zCounter,
-    visible: false,
-  }
-  layout.value.push(entry)
-  requestAnimationFrame(() => {
-    entry.visible = true
-  })
+// Surrender = replace the canvas with a fresh random set, excluding items currently in view.
+const surrender = () => {
+  const seen = new Set<string>(layout.value.map((entry) => entry.item._id))
+  regenerate(true, seen)
 }
 
-// Save all the items currently on the canvas into the moodboard composition.
+// Save all the items currently on the canvas into the active selection / board.
 const saveAllToComposition = () => {
   const board = activeMoodboard.value
   if (!board || !layout.value.length) return
@@ -253,18 +263,26 @@ const saveAllToComposition = () => {
       id: entry.item._id,
       title: entry.item.title,
       imageUrl: getItemImage(entry.item),
-      itemType: entry.item.itemType || 'product',
-      link: null,
+      itemType: entry.item.categories?.[0] || entry.item.category || 'item',
+      link: productPath(entry.item),
     })
   })
   const refreshed = activeMoodboard.value
-  if (refreshed?.items.length) {
-    initFromBucket(refreshed.items)
-    openMoodboard()
-  }
+  if (!refreshed?.items.length) return
+  initFromBucket(refreshed.items)
+  const { placements, strokes } = snapshot()
+  createBoard(placements, strokes)
+  openMoodboard()
 }
 
-watch(visibleItems, () => regenerate(false))
+watch(
+  affinity,
+  (next) => {
+    if (!next?.categories?.length) return
+    regenerate(true, new Set(), next)
+    clearAffinity()
+  },
+)
 
 // Zoom scales the whole canvas, keeping the current viewport centre focal.
 watch(zoom, (next, prev) => {
@@ -272,10 +290,10 @@ watch(zoom, (next, prev) => {
   measure()
   const s0 = prev / 100
   const s1 = next / 100
-  const focalX = (viewW / 2 - pan.x) / s0
-  const focalY = (viewH / 2 - pan.y) / s0
-  pan.x = viewW / 2 - focalX * s1
-  pan.y = viewH / 2 - focalY * s1
+  const focalX = (viewW / 2 - pan.value.x) / s0
+  const focalY = (viewH / 2 - pan.value.y) / s0
+  pan.value.x = viewW / 2 - focalX * s1
+  pan.value.y = viewH / 2 - focalY * s1
   clampPan()
 })
 
@@ -283,7 +301,6 @@ const getItemImage = (item: GridItemData) => imageUrl(item.image, 700)
 
 /* ---------------------------- Pan + drag state ---------------------------- */
 const viewport = ref<HTMLElement | null>(null)
-const pan = reactive({ x: 0, y: 0 })
 const isPanning = ref(false)
 const dragId = ref<string | null>(null)
 
@@ -307,11 +324,17 @@ let dragOriginY = 0
 
 const scale = computed(() => zoom.value / 100)
 
+/** Keep tile bottom fixed when cycled images change height */
+const onBottomAnchor = (entry: LayoutEntry, payload: { delta: number }) => {
+  // delta is layout height (offsetHeight) in canvas space — same units as entry.y
+  entry.y -= payload.delta
+}
+
 const canvasStyle = computed(() => ({
   width: `${FIELD.w}px`,
   height: `${FIELD.h}px`,
   transformOrigin: '0 0',
-  transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale.value})`,
+  transform: `translate(${pan.value.x}px, ${pan.value.y}px) scale(${scale.value})`,
 }))
 
 const measure = () => {
@@ -326,21 +349,21 @@ const clampPan = () => {
   const scaledH = FIELD.h * scale.value
   // When the scaled canvas is smaller than the viewport, centre it.
   if (scaledW <= viewW) {
-    pan.x = (viewW - scaledW) / 2
+    pan.value.x = (viewW - scaledW) / 2
   } else {
-    pan.x = Math.min(0, Math.max(viewW - scaledW, pan.x))
+    pan.value.x = Math.min(0, Math.max(viewW - scaledW, pan.value.x))
   }
   if (scaledH <= viewH) {
-    pan.y = (viewH - scaledH) / 2
+    pan.value.y = (viewH - scaledH) / 2
   } else {
-    pan.y = Math.min(0, Math.max(viewH - scaledH, pan.y))
+    pan.value.y = Math.min(0, Math.max(viewH - scaledH, pan.value.y))
   }
 }
 
 const centrePan = () => {
   measure()
-  pan.x = (viewW - FIELD.w * scale.value) / 2
-  pan.y = (viewH - FIELD.h * scale.value) / 2
+  pan.value.x = (viewW - FIELD.w * scale.value) / 2
+  pan.value.y = (viewH - FIELD.h * scale.value) / 2
   clampPan()
 }
 
@@ -354,16 +377,16 @@ const onCanvasPointerDown = (event: PointerEvent) => {
   panPointerId = event.pointerId
   panStartX = event.clientX
   panStartY = event.clientY
-  panOriginX = pan.x
-  panOriginY = pan.y
+  panOriginX = pan.value.x
+  panOriginY = pan.value.y
   window.addEventListener('pointermove', onPanMove)
   window.addEventListener('pointerup', onPanUp)
 }
 
 const onPanMove = (event: PointerEvent) => {
   if (event.pointerId !== panPointerId) return
-  pan.x = panOriginX + (event.clientX - panStartX)
-  pan.y = panOriginY + (event.clientY - panStartY)
+  pan.value.x = panOriginX + (event.clientX - panStartX)
+  pan.value.y = panOriginY + (event.clientY - panStartY)
   clampPan()
 }
 
@@ -377,8 +400,8 @@ const onPanUp = () => {
 const onItemPointerDown = (event: PointerEvent, entry: LayoutEntry) => {
   if (event.button !== 0) return
   // Bring to front on any interaction.
-  zCounter += 1
-  entry.z = zCounter
+  zCounter.value += 1
+  entry.z = zCounter.value
 
   dragEntry = entry
   dragId.value = entry.key
@@ -424,9 +447,43 @@ const onResize = () => {
   clampPan()
 }
 
+const restoreSession = () => {
+  const byId = new Map(gridItems.value.map((item) => [item._id, item]))
+  layout.value = layout.value.map((entry) => {
+    const fresh = byId.get(entry.item._id)
+    return {
+      ...entry,
+      item: fresh ? { ...entry.item, ...fresh } : entry.item,
+      visible: true,
+    }
+  })
+  measure()
+  clampPan()
+}
+
 onMounted(() => {
-  regenerate(false)
+  if (affinity.value?.categories?.length) {
+    regenerate(true, new Set(), affinity.value)
+    clearAffinity()
+  } else if (layout.value.length) {
+    restoreSession()
+  } else if (visibleItems.value.length) {
+    regenerate(false)
+  }
   window.addEventListener('resize', onResize)
+})
+
+// Items may arrive after mount (async catalog) — seed once if still empty,
+// or refresh images on an existing session once Sanity data lands.
+watch(visibleItems, (items) => {
+  if (!items.length) return
+  if (!layout.value.length) {
+    if (affinity.value?.categories?.length) return
+    regenerate(false)
+    return
+  }
+  const needsImages = layout.value.some((entry) => !entry.item.image?.asset?.url)
+  if (needsImages) restoreSession()
 })
 
 onBeforeUnmount(() => {
@@ -529,10 +586,5 @@ onBeforeUnmount(() => {
 .explore__pill:hover {
   background: var(--charcoal);
   color: var(--sand, #faf7f2);
-}
-
-.explore__pill-plus {
-  font-size: 1.05em;
-  line-height: 1;
 }
 </style>
