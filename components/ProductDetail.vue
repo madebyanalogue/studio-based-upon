@@ -268,6 +268,7 @@ const collapseImage = () => {
 }
 
 const updateZoomFit = () => {
+  if (!imageExpanded.value) return
   const stage = stageRef.value
   const img = heroRef.value
   if (!stage || !img?.naturalWidth || !img.naturalHeight) {
@@ -333,10 +334,12 @@ onMounted(() => {
     if (heroRef.value?.complete) void runFlipOpen()
     else if (!activeEntry.value) revealWithoutFlip()
   })
+  window.addEventListener('resize', updateZoomFit)
 })
 
 onUnmounted(() => {
   stageRef.value?.removeEventListener('wheel', onStageWheel)
+  window.removeEventListener('resize', updateZoomFit)
   clearExpandCloseListener()
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
 })
@@ -537,7 +540,13 @@ const runFlipClose = async () => {
   if (source instanceof HTMLImageElement) {
     await waitForImage(source)
   }
+  // Let GridItem commitHeight → bottom-anchor → ProductGrid shift entry.y
+  // before capturing the Flip destination (otherwise the tile stays top-anchored).
   await nextTick()
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
 
   contentReady.value = false
   sidesVisible.value = false
@@ -710,6 +719,9 @@ watch(
 
 .pdp__stage--fit-height {
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pdp__hero {
@@ -737,6 +749,7 @@ watch(
 .pdp__stage--fit-height .pdp__hero {
   display: grid;
   place-items: center;
+  width: 100%;
   height: 100%;
   max-height: 100%;
   container-type: normal;
@@ -757,11 +770,12 @@ watch(
 }
 
 .pdp__stage--fit-height .pdp__hero-frame {
-  display: inline-grid;
-  width: auto;
+  display: block;
+  width: fit-content;
   height: 100%;
   max-width: none;
   max-height: 100%;
+  margin-inline: auto;
 }
 
 .pdp__hero-image {
@@ -785,12 +799,14 @@ watch(
 }
 
 .pdp__stage--fit-height .pdp__hero-image {
+  display: block;
   max-width: none;
   max-height: none;
   width: auto;
   height: 100%;
   object-fit: contain;
   cursor: zoom-out;
+  margin-inline: auto;
 }
 
 .pdp__stage--expanded .pdp__thumbs {

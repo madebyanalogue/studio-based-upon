@@ -82,10 +82,16 @@ let anchorOnNextLayout = false
 watch(
   returnImage,
   (value) => {
-    if (value?.productId === props.item._id) {
-      imageIndex.value = value.index
-      anchorOnNextLayout = true
-    }
+    if (value?.productId !== props.item._id) return
+    if (imageIndex.value === value.index) return
+    // Capture height before src swap so Flip-close can bottom-anchor like cycle()
+    lastHeight = measureHeight() || lastHeight
+    imageIndex.value = value.index
+    anchorOnNextLayout = true
+    nextTick(() => {
+      const img = imageRef.value
+      if (img?.complete) onImageLoad()
+    })
   },
 )
 
