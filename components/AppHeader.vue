@@ -68,7 +68,6 @@
         </div>
 
         <div
-          v-if="false"
           ref="selectionsRef"
           class="header__boards header__selections"
         >
@@ -223,9 +222,11 @@ onBeforeUnmount(() => {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
+  right: var(--bucket-push);
   z-index: 100;
-  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    right var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .header__inner {

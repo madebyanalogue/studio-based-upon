@@ -1,8 +1,8 @@
 <template>
   <div class="products">
     <section class="products__header section">
-      <h4 class="page-title">Materials & Forms</h4>
-      <p class="products__intro">A library of forms, materials, colour, elements of origin, series and spirit imagery, filtered by category. Heart pieces into your selection.</p>
+      <h4 class="page-title">{{ pageTitle }}</h4>
+      <p v-if="pageDescription" class="products__intro">{{ pageDescription }}</p>
     </section>
 
     <div class="products__controls">
@@ -155,6 +155,42 @@ type LibraryPrefs = {
 const { items } = await useLibraryCatalog()
 const { imageUrl } = useSanityImage()
 const { libraryFilters: pageFilters } = useSiteSettings()
+
+const pageQuery = `*[_type == "materialsAndFormsPage"][0] {
+  seoTitle,
+  seoDescription,
+  heroTitle,
+  heroSubtitle
+}`
+
+const { data: pageData } = await useAsyncData('materialsAndFormsPage', () =>
+  $fetch('/api/sanity/query', { method: 'POST', body: { query: pageQuery } })
+    .then((r: { result?: unknown }) => r?.result ?? null)
+    .catch(() => null),
+)
+
+const pageTitle = computed(
+  () =>
+    (pageData.value as { heroTitle?: string } | null)?.heroTitle ||
+    'Materials & Forms',
+)
+const pageDescription = computed(
+  () =>
+    (pageData.value as { heroSubtitle?: string } | null)?.heroSubtitle ||
+    'A library of forms, materials, colour, elements of origin, series and spirit imagery, filtered by category. Heart pieces into your selection.',
+)
+
+useHead(() => {
+  const page = pageData.value as
+    | { seoTitle?: string; seoDescription?: string }
+    | null
+  return {
+    title: page?.seoTitle || pageTitle.value,
+    meta: page?.seoDescription
+      ? [{ name: 'description', content: page.seoDescription }]
+      : [],
+  }
+})
 
 const cardImage = (item: FormalItem) => imageUrl(item.image, 900)
 const filterKey = libraryFilterKey

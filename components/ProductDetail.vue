@@ -11,14 +11,17 @@
     <aside class="pdp__col pdp__col--left">
       <div class="pdp__toolbar">
         <button type="button" class="pdp__close  interface" @click="$emit('close')">Close</button>
-        <div class="pdp__meta  interface">
-          <span class="pdp__meta-label">Style</span>
-          <span class="pdp__meta-value">{{ product.series || 'Objects' }}</span>
+        <div class="pdp__meta interface">
+          <span>{{ typeLabel }}</span>
+          <template v-if="orderLabel">
+            <span class="pdp__meta-sep" aria-hidden="true">/</span>
+            <span class="pdp__meta-order">{{ orderLabel }}</span>
+          </template>
         </div>
       </div>
 
       <div class="pdp__body">
-        <h1 class="pdp__title  interface">{{ product.title }}</h1>
+        <h1 class="pdp__title">{{ product.title }}</h1>
 
         <dl class="pdp__specs">
           <div v-if="product.style" class="pdp__spec">
@@ -45,6 +48,46 @@
             </ul>
           </div>
         </dl>
+
+        <div class="pdp__actions">
+          <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
+          <button type="button" class="pdp__save" @click="onMoreLikeThis">
+            More Like This
+          </button>
+        </div>
+
+        <div class="pdp__links">
+          <button type="button" class="pdp__link  interface" @click="downloadSpec">
+            Download Spec Sheet
+          </button>
+          <button
+            v-if="product.finishes?.length"
+            type="button"
+            class="pdp__link  interface"
+            @click="showFinishes = !showFinishes"
+          >
+            Finishes
+          </button>
+        </div>
+
+        <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
+          <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
+        </ul>
+
+        <section v-if="product.description || product.edition" class="pdp__info">
+          <h2 class="pdp__info-heading  interface">info</h2>
+          <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
+          <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
+        </section>
+
+        <div v-if="nextProduct" class="pdp__next">
+          <button type="button" class="pdp__next-label  interface" @click="goToNext">
+            Next Product
+          </button>
+          <button type="button" class="pdp__next-media" @click="goToNext">
+            <img :src="nextImageUrl" :alt="nextProduct.title" />
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -103,48 +146,8 @@
       </div>
     </div>
 
-    <aside class="pdp__col pdp__col--right">
-      <div class="pdp__body pdp__body--right">
-        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
-
-        <button type="button" class="pdp__save" @click="onMoreLikeThis">
-          More Like This
-        </button>
-
-        <div class="pdp__links">
-          <button type="button" class="pdp__link  interface" @click="downloadSpec">
-            Download Spec Sheet
-          </button>
-          <button
-            v-if="product.finishes?.length"
-            type="button"
-            class="pdp__link  interface"
-            @click="showFinishes = !showFinishes"
-          >
-            Finishes
-          </button>
-        </div>
-
-        <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
-          <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
-        </ul>
-
-        <section v-if="product.description || product.edition" class="pdp__info">
-          <h2 class="pdp__info-heading  interface">info</h2>
-          <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
-          <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
-        </section>
-
-        <div v-if="nextProduct" class="pdp__next">
-          <button type="button" class="pdp__next-label  interface" @click="goToNext">
-            Next Product
-          </button>
-          <button type="button" class="pdp__next-media" @click="goToNext">
-            <img :src="nextImageUrl" :alt="nextProduct.title" />
-          </button>
-        </div>
-      </div>
-    </aside>
+    <!-- Reserved for the cart panel (same --side-column-width) -->
+    <aside class="pdp__col pdp__col--right" aria-hidden="true" />
   </article>
 
   <div v-else class="pdp pdp--missing">
@@ -156,6 +159,7 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
+import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 
 const props = withDefaults(
   defineProps<{
@@ -177,12 +181,37 @@ const { close, finishClose, getFlipSource, clearPendingFlip, closingFlip, openIm
   useProductOverlay()
 const { setAffinity } = useDiscoveryAffinity()
 const { openFromProduct } = useEnquiryForm()
+const { items: libraryItems } = await useLibraryCatalog()
 const router = useRouter()
 
 const { data: product, refresh } = await useAsyncData(
   () => `product-detail-${props.slug}`,
   () => fetchProduct(props.slug),
 )
+
+const libraryItem = computed(() =>
+  libraryItems.value.find((item) => item._id === product.value?._id),
+)
+
+const typeLabel = computed(() => {
+  const key =
+    libraryItem.value?.category ||
+    libraryItem.value?.type ||
+    product.value?.series ||
+    ''
+  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
+  return match?.label || key || 'Item'
+})
+
+/** 1-based index in the Materials & Forms catalog, matching ProductCard. */
+const orderLabel = computed(() => {
+  if (!product.value) return ''
+  const list = libraryItems.value
+  const index = list.findIndex((item) => item._id === product.value!._id)
+  if (index < 0) return ''
+  const digits = Math.max(2, String(list.length).length)
+  return String(index + 1).padStart(digits, '0')
+})
 
 const showMaterials = ref(false)
 const showFinishes = ref(false)
@@ -505,7 +534,7 @@ const runFlipOpen = async () => {
 
   // Snappy expand with a soft landing
   Flip.from(state, {
-    duration: 0.55,
+    duration: 0.32,
     ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
     onComplete: () => {
       flyer.remove()
@@ -517,7 +546,7 @@ const runFlipOpen = async () => {
     },
   })
 
-  gsap.delayedCall(0.4, () => {
+  gsap.delayedCall(0.22, () => {
     galleryVisible.value = true
   })
 }
@@ -595,7 +624,7 @@ const runFlipClose = async () => {
   })
 
   Flip.from(state, {
-    duration: 0.5,
+    duration: 0.28,
     ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
     onComplete: () => {
       flyer.remove()
@@ -638,7 +667,7 @@ watch(
 <style scoped>
 .pdp {
   display: grid;
-  grid-template-columns: 300px 1fr 300px;
+  grid-template-columns: var(--side-column-width) 1fr var(--side-column-width);
   height: 100dvh;
   background: transparent;
   transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
@@ -666,6 +695,8 @@ watch(
   min-width: 0;
   height: 100%;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .pdp__col--left,
@@ -747,12 +778,15 @@ watch(
 }
 
 .pdp__stage--fit-height .pdp__hero {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
   max-height: 100%;
+  min-height: 0;
   container-type: normal;
+  /* Frame is absolutely centered; stage clips horizontal overflow */
+  overflow: visible;
 }
 
 .pdp__hero-frame {
@@ -769,13 +803,19 @@ watch(
   max-height: none;
 }
 
+/* Pin frame to hero height so landscape zoom can't grow past it.
+   Width comes from the image aspect ratio; stage overflow clips sides. */
 .pdp__stage--fit-height .pdp__hero-frame {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
   display: block;
-  width: fit-content;
   height: 100%;
-  max-width: none;
   max-height: 100%;
-  margin-inline: auto;
+  width: auto;
+  max-width: none;
+  margin: 0;
 }
 
 .pdp__hero-image {
@@ -801,12 +841,11 @@ watch(
 .pdp__stage--fit-height .pdp__hero-image {
   display: block;
   max-width: none;
-  max-height: none;
+  max-height: 100%;
   width: auto;
   height: 100%;
   object-fit: contain;
   cursor: zoom-out;
-  margin-inline: auto;
 }
 
 .pdp__stage--expanded .pdp__thumbs {
@@ -895,12 +934,18 @@ watch(
 
 .pdp__meta {
   display: inline-flex;
-  gap: 0.75rem;
+  align-items: baseline;
+  gap: 0.35rem;
   font-size: var(--text-sm);
   color: var(--charcoal);
 }
 
-.pdp__meta-label {
+.pdp__meta-sep {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.pdp__meta-order {
   color: var(--muted);
 }
 
@@ -919,20 +964,18 @@ watch(
 .pdp__body {
   width: 100%;
   padding: 1.5rem var(--gutter) 4rem;
-}
-
-.pdp__body--right {
-  padding-top: 2.5rem;
+  flex: 1;
 }
 
 .pdp__title {
   margin: 0 0 1.5rem;
-  font-size: clamp(1.75rem, 2.4vw, 2.75rem);
-  line-height: 1.05;
+  font-family: var(--font-serif);
+  font-size: var(--text-2xl);
+  line-height: 1.2;
 }
 
 .pdp__specs {
-  margin: 0;
+  margin: 0 0 1.5rem;
 }
 
 .pdp__spec {
@@ -984,11 +1027,17 @@ watch(
   font-size: var(--text-sm);
 }
 
+.pdp__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
 .pdp__inquire {
   display: block;
   width: 100%;
   padding: 1rem 0.85rem;
-  margin-bottom: 0.75rem;
   background: var(--charcoal);
   color: var(--cream);
   font-size: var(--text-sm);
@@ -1003,7 +1052,6 @@ watch(
   display: block;
   width: 100%;
   padding: 1rem 0.85rem;
-  margin-bottom: 1.5rem;
   border: 1px solid var(--charcoal);
   color: var(--charcoal);
   font-size: var(--text-sm);
@@ -1126,7 +1174,7 @@ watch(
   }
 
   .pdp__col--right {
-    border-top: 1px solid var(--grid-line);
+    display: none;
   }
 }
 </style>

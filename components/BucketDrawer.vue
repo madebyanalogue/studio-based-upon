@@ -3,13 +3,17 @@
     <div
       v-if="!isMoodboard"
       class="bucket"
-      :class="{ 'bucket--open': isOpen }"
+      :class="{
+        'bucket--open': isOpen,
+        'bucket--over-product': productOpen,
+        'bucket--push': isOpen && !productOpen,
+      }"
       :aria-hidden="isOpen ? 'false' : 'true'"
     >
       <div class="bucket__backdrop" @click="closeDrawer" />
 
       <div class="bucket__dock">
-        <aside class="bucket__rail" aria-label="Selections">
+        <aside class="bucket__rail" aria-hidden="true" hidden>
           <div class="bucket__rail-list" role="list">
             <button
               v-for="board in moodboards"
@@ -58,7 +62,7 @@
                   @keydown.esc.prevent="cancelEdit"
                   @blur="saveName"
                 />
-                <h2 v-else class="bucket__title  interface">{{ activeMoodboard?.name || 'My Selection' }}</h2>
+                <h2 v-else class="bucket__title serif">{{ activeMoodboard?.name || 'My Selection' }}</h2>
 
                 <div class="bucket__title-actions">
                   <button
@@ -236,6 +240,7 @@ const {
   renameMoodboard,
   deleteMoodboard,
 } = useBucket()
+const { isOpen: productOpen } = useProductOverlay()
 const { initFromBucket, snapshot } = useMoodboard()
 const { createBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
@@ -289,6 +294,22 @@ const hydrateGalleries = async () => {
 
 watch(isOpen, (open) => {
   if (open) void hydrateGalleries()
+})
+
+const syncBucketPush = () => {
+  if (!import.meta.client) return
+  document.documentElement.classList.toggle(
+    'bucket-push',
+    Boolean(isOpen.value && !productOpen.value),
+  )
+}
+
+watch([isOpen, productOpen], syncBucketPush, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (import.meta.client) {
+    document.documentElement.classList.remove('bucket-push')
+  }
 })
 
 const openBoard = (id: string) => {
@@ -357,7 +378,7 @@ watch(activeMoodboardId, () => {
 
 <style scoped>
 .bucket {
-  --rail-width: 2.15rem;
+  --rail-width: var(--bucket-rail-width);
   --bucket-close-ms: 0.4s;
   position: fixed;
   inset: 0;
@@ -389,16 +410,29 @@ watch(activeMoodboardId, () => {
   pointer-events: auto;
 }
 
+/* On the PDP the cart fills the reserved right column — no dimming overlay */
+.bucket--over-product .bucket__backdrop {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Grid pages: cart pushes content instead of overlaying — no dim */
+.bucket--push .bucket__backdrop {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .bucket__dock {
   position: absolute;
-  top: var(--dock-gutter);
-  right: var(--dock-gutter);
-  bottom: var(--dock-gutter);
+  top: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: row;
   align-items: stretch;
   max-width: 100%;
-  transform: translateX(calc(100% - var(--rail-width) + var(--dock-gutter)));
+  /* Closed: fully off-screen (rail is hidden; open via My Selections in the header) */
+  transform: translateX(100%);
   transition: transform var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
   box-shadow: none;
@@ -410,18 +444,7 @@ watch(activeMoodboardId, () => {
 }
 
 .bucket__rail {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0;
-  width: var(--rail-width);
-  flex: 0 0 var(--rail-width);
-  max-height: 100%;
-  padding: 1rem 0;
-  pointer-events: auto;
+  display: none;
 }
 
 .bucket__rail-list {
@@ -541,13 +564,13 @@ watch(activeMoodboardId, () => {
 
 .bucket__panel {
   position: relative;
-  width: var(--bucket-width);
-  max-width: calc(100vw - var(--rail-width));
+  width: var(--side-column-width);
+  max-width: 100vw;
   height: 100%;
   display: flex;
   flex-direction: column;
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 10px;
+  border-radius: 0;
   overflow: hidden;
   pointer-events: none;
   backdrop-filter: blur(50px);
@@ -737,13 +760,14 @@ watch(activeMoodboardId, () => {
 .bucket__thumb-image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
   pointer-events: none;
 }
 
 .bucket__thumb:has(.bucket__thumb-image) {
   padding: 0;
+  background: var(--sand);
 }
 
 .bucket__thumb--undo {

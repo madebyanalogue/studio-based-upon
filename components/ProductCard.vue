@@ -228,11 +228,11 @@ const onToggle = () => {
 }
 
 .product-card__media--image {
-  background: var(--cream);
+  /* background: var(--cream); */
 }
 
 .product-card:hover .product-card__media {
-  background: var(--cream);
+  /* background: var(--cream); */
 }
 
 .product-card__image {

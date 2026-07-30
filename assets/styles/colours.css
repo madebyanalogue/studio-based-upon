@@ -5,7 +5,17 @@
   --gutter: 16px;
   --header-height: 56px;
   --filter-bar-height: 72px;
-  --bucket-width: min(420px, 100vw);
+  /* Shared width: cart panel + PDP side columns */
+  --side-column-width: 375px;
+  --bucket-width: var(--side-column-width);
+  --bucket-rail-width: 2.15rem;
+  --bucket-close-ms: 0.4s;
+  /* 0 when closed; set to cart footprint when open (pushes page content) */
+  --bucket-push: 0px;
+}
+
+html.bucket-push {
+  --bucket-push: var(--side-column-width);
 }
 
 @media (min-width: 768px) {

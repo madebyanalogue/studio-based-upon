@@ -545,7 +545,8 @@ onBeforeUnmount(() => {
 }
 
 .explore__controls--right {
-  right: var(--gutter);
+  right: calc(var(--gutter) + var(--bucket-push));
+  transition: right var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .explore__link {

@@ -23,7 +23,7 @@ defineEmits<{ 'zoom-in': []; 'zoom-out': [] }>()
   position: fixed;
   left: 50%;
   bottom: var(--gutter);
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% - var(--bucket-push) / 2));
   z-index: 90;
   display: flex;
   align-items: center;
@@ -33,6 +33,7 @@ defineEmits<{ 'zoom-in': []; 'zoom-out': [] }>()
   backdrop-filter: blur(8px);
   border: 1px solid var(--grid-line); */
   padding: 0.45rem 0.75rem;
+  transition: transform var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .zoom-controls__btn {
