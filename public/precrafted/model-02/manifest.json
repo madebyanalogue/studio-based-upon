@@ -4,5 +4,7 @@
   "frameCount": 193,
   "pattern": "/precrafted/model-02/frame-%03d.webp",
   "poster": "/precrafted/model-02/frame-001.webp",
-  "source": "precrafted-scene-2.mp4"
+  "source": "precrafted-scene-2.mp4",
+  "width": 1664,
+  "height": 1248
 }
