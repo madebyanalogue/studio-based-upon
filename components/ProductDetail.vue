@@ -54,6 +54,14 @@
           <button type="button" class="pdp__save" @click="onMoreLikeThis">
             More Like This
           </button>
+          <button
+            type="button"
+            class="pdp__save"
+            :class="{ 'pdp__save--active': isCurrentImageSaved }"
+            @click="onAddToSelection"
+          >
+            {{ isCurrentImageSaved ? 'Remove from My Selection' : 'Add to My Selection' }}
+          </button>
         </div>
 
         <div class="pdp__links">
@@ -436,6 +444,11 @@ const isCurrentImageSaved = computed(() => {
   return isSaved(product.value._id, index)
 })
 
+const onAddToSelection = () => {
+  if (!activeEntry.value) return
+  onToggleImage(activeEntry.value, selectedIndex.value)
+}
+
 const onMoreLikeThis = async () => {
   if (!product.value) return
   const categories = [
@@ -738,6 +751,8 @@ watch(
 .pdp__col--right {
   opacity: 0;
   transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Side columns are not dismiss targets — never inherit the stage close cursor */
+  cursor: auto;
 }
 
 .pdp--sides .pdp__col--left,
@@ -776,7 +791,9 @@ watch(
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
-:global(html.dark) .pdp__stage {
+/* Fully global selector — `:global(html.dark) .pdp__stage` was compiling to
+   `html.dark { cursor: … }` and painting the close cursor site-wide. */
+:global(html.dark .pdp__stage) {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f2ecdf' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
@@ -891,7 +908,8 @@ watch(
   cursor: zoom-out;
 }
 
-.pdp__stage--expanded .pdp__thumbs {
+.pdp__stage--expanded .pdp__thumbs,
+.pdp__stage--expanded .pdp__add {
   display: none;
 }
 
@@ -1110,9 +1128,14 @@ watch(
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.pdp__save:hover {
+.pdp__save:hover,
+.pdp__save--active {
   background: var(--charcoal);
   color: var(--cream);
+}
+
+.pdp__save--active:hover {
+  opacity: 0.9;
 }
 
 .pdp__links {

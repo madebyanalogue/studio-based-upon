@@ -380,10 +380,15 @@ const query = `*[_type == "preCraftedPage"][0] {
   }
 }`
 
-const { data: page } = await useAsyncData('preCraftedPage', () =>
-  $fetch('/api/sanity/query', { method: 'POST', body: { query } })
-    .then((r: { result?: unknown }) => r?.result ?? null)
-    .catch(() => null),
+const { data: page } = await useAsyncData(
+  'preCraftedPage-v2',
+  () =>
+    $fetch('/api/sanity/query', {
+      method: 'POST',
+      body: { query, useCdn: false },
+    })
+      .then((r: { result?: unknown }) => r?.result ?? null)
+      .catch(() => null),
 )
 
 const { imageUrl } = useSanityImage()

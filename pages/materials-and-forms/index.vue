@@ -258,7 +258,7 @@ const flipModes = [
   { id: 'default' as const, label: 'Default' },
   { id: 'stagger' as const, label: 'Stagger' },
 ]
-const flipMode = ref<FlipMode>('default')
+const flipMode = ref<FlipMode>('stagger')
 const visibleIds = ref<Set<string>>(new Set())
 const visibleCount = computed(() => visibleIds.value.size)
 let filterTransitionsReady = false
@@ -349,8 +349,8 @@ const transitionFilter = async (nextIds: Set<string>) => {
 
   gridAnimating.value = true
 
-  const FADE_OUT = 0.7
-  const FADE_IN = 0.85
+  const FADE_OUT = 0.4
+  const FADE_IN = 0.4
   const BEAT = 120
 
   // 1) Obvious fade-out for items leaving the filter.
