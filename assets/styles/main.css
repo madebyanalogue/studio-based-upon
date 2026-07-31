@@ -48,6 +48,8 @@ a {
 
 button {
   font-family: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
   color: inherit;
   background: none;
   border: none;

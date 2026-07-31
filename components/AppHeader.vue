@@ -75,7 +75,7 @@
             type="button"
             class="header__moodboard  interface"
             :class="{ 'header__moodboard--empty': selectionsEmpty }"
-            :aria-expanded="selectionsOpen"
+            :aria-expanded="isOpen || selectionsOpen"
             aria-haspopup="listbox"
             aria-label="Open my selections"
             @click="toggleSelections"
@@ -130,6 +130,7 @@ const {
   moodboards,
   setActiveMoodboard,
   openMoodboard,
+  closeDrawer,
 } = useBucket()
 const {
   boards,
@@ -171,8 +172,14 @@ const onToggleBoards = () => {
 }
 
 const toggleSelections = () => {
-  selectionsOpen.value = !selectionsOpen.value
-  if (selectionsOpen.value) closeDropdown()
+  closeDropdown()
+  if (isOpen.value) {
+    closeDrawer()
+    closeSelections()
+    return
+  }
+  isOpen.value = true
+  selectionsOpen.value = true
 }
 
 const closeSelections = () => {

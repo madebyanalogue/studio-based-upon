@@ -6,7 +6,7 @@
   --header-height: 56px;
   --filter-bar-height: 72px;
   /* Shared width: cart panel + PDP side columns */
-  --side-column-width: 375px;
+  --side-column-width: 320px;
   --bucket-width: var(--side-column-width);
   --bucket-rail-width: 2.15rem;
   --bucket-close-ms: 0.4s;

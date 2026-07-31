@@ -114,8 +114,8 @@
             />
             <AddButton
               class="pdp__add"
-              :active="isSaved(product._id)"
-              :label="isSaved(product._id) ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
+              :active="isCurrentImageSaved"
+              :label="isCurrentImageSaved ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
               @click.stop="onToggleImage(activeEntry, selectedIndex)"
             />
           </div>
@@ -402,6 +402,12 @@ const onToggleImage = (entry: GalleryEntry, index: number) => {
   })
 }
 
+const isCurrentImageSaved = computed(() => {
+  if (!product.value) return false
+  const index = galleryEntries.value.length > 1 ? selectedIndex.value : undefined
+  return isSaved(product.value._id, index)
+})
+
 const onMoreLikeThis = async () => {
   if (!product.value) return
   const categories = [
@@ -670,6 +676,7 @@ watch(
   grid-template-columns: var(--side-column-width) 1fr var(--side-column-width);
   height: 100dvh;
   background: transparent;
+  border-top: 1px solid var(--grid-line);
   transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -971,7 +978,7 @@ watch(
   margin: 0 0 1.5rem;
   font-family: var(--font-serif);
   font-size: var(--text-2xl);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .pdp__specs {

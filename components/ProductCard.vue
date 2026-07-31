@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
 import { PRODUCT_TYPE_FILTERS, type FormalItem } from '~/composables/demoData'
-import { productPath } from '~/composables/useProductCatalog'
+import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import type { LibraryItem } from '~/composables/useLibraryCatalog'
 import { uniqueImageUrls } from '~/composables/productImages'
 
@@ -76,7 +76,10 @@ const props = defineProps<{
 const { requestSave, isSaved } = useBucket()
 const { open, returnImage } = useProductOverlay()
 const { imageUrl: buildUrl } = useSanityImage()
-const saved = computed(() => isSaved(props.item._id))
+const saved = computed(() => {
+  const index = projectImages.value.length > 1 ? imageIndex.value : undefined
+  return isSaved(props.item._id, index)
+})
 
 const imageIndex = ref(0)
 
@@ -100,15 +103,26 @@ const typeLabel = computed(() => {
 
 const href = computed(() =>
   productPath({
+    _id: props.item._id,
     linkType: props.item.linkType,
     slug: props.item.slug,
+    category:
+      ('category' in props.item && props.item.category) ||
+      props.item.type ||
+      undefined,
   }),
 )
-const productSlug = computed(() => {
-  if (props.item.linkType !== 'product') return null
-  const slug = typeof props.item.slug === 'string' ? props.item.slug : props.item.slug?.current
-  return slug || null
-})
+const productSlug = computed(() =>
+  resolveProductSlug({
+    _id: props.item._id,
+    linkType: props.item.linkType,
+    slug: props.item.slug,
+    category:
+      ('category' in props.item && props.item.category) ||
+      props.item.type ||
+      undefined,
+  }),
+)
 
 const projectImages = computed(() => {
   const item = props.item as LibraryItem
@@ -281,6 +295,7 @@ const onToggle = () => {
   inset: auto 0 0 0;
   z-index: 1;
   padding: var(--title-pad);
+  min-width: 0;
   /* opacity: 0; */
   transition: opacity 0.25s ease;
   pointer-events: none;
@@ -304,15 +319,22 @@ const onToggle = () => {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
+  min-width: 0;
   color: inherit;
 }
 
 .product-card__title {
   margin: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .product-card__type {
   margin: 0;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;

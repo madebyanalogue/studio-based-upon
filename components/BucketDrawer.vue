@@ -6,7 +6,7 @@
       :class="{
         'bucket--open': isOpen,
         'bucket--over-product': productOpen,
-        'bucket--push': isOpen && !productOpen,
+        'bucket--push': isOpen,
       }"
       :aria-hidden="isOpen ? 'false' : 'true'"
     >
@@ -49,20 +49,52 @@
           aria-label="Saved products"
         >
           <header class="bucket__header">
-            <div class="bucket__header-text">
+            <div class="bucket__toolbar">
+              <div class="bucket__tabs" role="tablist" aria-label="Cart views">
+                <button
+                  type="button"
+                  class="bucket__tab interface"
+                  :class="{ 'bucket__tab--active': panelTab === 'selections' }"
+                  role="tab"
+                  :aria-selected="panelTab === 'selections'"
+                  @click="panelTab = 'selections'"
+                >
+                  Selections
+                </button>
+                <span class="bucket__tab-divider" aria-hidden="true" />
+                <button
+                  type="button"
+                  class="bucket__tab interface"
+                  :class="{ 'bucket__tab--active': panelTab === 'boards' }"
+                  role="tab"
+                  :aria-selected="panelTab === 'boards'"
+                  @click="panelTab = 'boards'"
+                >
+                  Boards
+                </button>
+                <span class="bucket__tab-divider" aria-hidden="true" />
+              </div>
+              <button type="button" class="bucket__close interface" @click="closeDrawer">
+                Close
+              </button>
+            </div>
+
+            <div v-if="panelTab === 'selections'" class="bucket__selection">
               <div class="bucket__title-row">
                 <input
                   v-if="isEditing"
                   ref="titleInput"
                   v-model="editName"
                   type="text"
-                  class="bucket__title-input  interface"
+                  class="bucket__title-input interface"
                   aria-label="Selection name"
                   @keydown.enter.prevent="saveName"
                   @keydown.esc.prevent="cancelEdit"
                   @blur="saveName"
                 />
-                <h2 v-else class="bucket__title serif">{{ activeMoodboard?.name || 'My Selection' }}</h2>
+                <h3 v-else class="bucket__title interface">
+                  {{ activeMoodboard?.name || 'My Selection' }}
+                </h3>
 
                 <div class="bucket__title-actions">
                   <button
@@ -95,21 +127,21 @@
                 {{ items.length }} {{ items.length === 1 ? 'item' : 'items' }} in this selection
               </p>
             </div>
-            <button type="button" class="bucket__close" aria-label="Close" @click="closeDrawer">×</button>
           </header>
 
-          <div v-if="!selectionEntries.length" class="bucket__empty">
-            <p class="bucket__empty-title  interface">Nothing saved yet</p>
-            <p>Heart items from the grid to collect surfaces, materials and finishes here.</p>
-          </div>
+          <template v-if="panelTab === 'selections'">
+            <div v-if="!selectionEntries.length" class="bucket__empty">
+              <p class="bucket__empty-title  interface">Nothing saved yet</p>
+              <p>Heart items from the grid to collect surfaces, materials and finishes here.</p>
+            </div>
 
-          <ul v-else class="bucket__list">
-            <li
-              v-for="entry in selectionEntries"
-              :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
-              class="bucket__item"
-              :class="{ 'bucket__item--undo': entry.kind === 'undo' }"
-            >
+            <ul v-else class="bucket__list">
+              <li
+                v-for="entry in selectionEntries"
+                :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
+                class="bucket__item"
+                :class="{ 'bucket__item--undo': entry.kind === 'undo' }"
+              >
               <div v-if="entry.kind === 'undo'" class="bucket__item-main">
                 <div class="bucket__thumb bucket__thumb--undo">
                   <button
@@ -121,7 +153,6 @@
                   </button>
                   <span class="bucket__undo-progress" aria-hidden="true" />
                 </div>
-                <p class="bucket__name interface">{{ entry.item.title }}</p>
               </div>
 
               <div v-else class="bucket__item-main">
@@ -174,42 +205,60 @@
                     @next="cycleItemImage(entry.item.id, 1)"
                   />
                 </div>
-
-                <button
-                  v-if="productSlug(entry.item)"
-                  type="button"
-                  class="bucket__info bucket__info--link"
-                  @click="openProduct(entry.item, $event)"
-                >
-                  <p class="bucket__name interface">{{ entry.item.title }}</p>
-                </button>
-                <div v-else class="bucket__info">
-                  <p class="bucket__name interface">{{ entry.item.title }}</p>
-                </div>
               </div>
             </li>
           </ul>
 
-          <footer class="bucket__footer">
-            <button type="button" class="btn" @click="sendEnquiry">Send as enquiry</button>
-            <button type="button" class="btn btn--filled" @click="onBuildMoodboard">
-              Create Board
-            </button>
-          </footer>
+            <footer class="bucket__footer">
+              <button type="button" class="btn" @click="sendEnquiry">Send as enquiry</button>
+              <button type="button" class="btn btn--filled" @click="onBuildMoodboard">
+                Create Board
+              </button>
+            </footer>
 
-          <div v-if="confirmingDelete" class="bucket__confirm" role="dialog" aria-modal="true" aria-label="Delete selection">
-            <div class="bucket__confirm-box">
-              <p class="bucket__confirm-title  interface">Delete this selection?</p>
-              <p class="bucket__confirm-text">
-                “{{ activeMoodboard?.name || 'My Selection' }}” and its {{ items.length }}
-                {{ items.length === 1 ? 'item' : 'items' }} will be permanently removed.
-              </p>
-              <div class="bucket__confirm-actions">
-                <button type="button" class="btn" @click="confirmingDelete = false">Cancel</button>
-                <button type="button" class="btn btn--filled" @click="onDeleteMoodboard">Delete</button>
+            <div v-if="confirmingDelete" class="bucket__confirm" role="dialog" aria-modal="true" aria-label="Delete selection">
+              <div class="bucket__confirm-box">
+                <p class="bucket__confirm-title  interface">Delete this selection?</p>
+                <p class="bucket__confirm-text">
+                  “{{ activeMoodboard?.name || 'My Selection' }}” and its {{ items.length }}
+                  {{ items.length === 1 ? 'item' : 'items' }} will be permanently removed.
+                </p>
+                <div class="bucket__confirm-actions">
+                  <button type="button" class="btn" @click="confirmingDelete = false">Cancel</button>
+                  <button type="button" class="btn btn--filled" @click="onDeleteMoodboard">Delete</button>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
+
+          <template v-else>
+            <div v-if="!boards.length" class="bucket__empty">
+              <p class="bucket__empty-title interface">No boards yet</p>
+              <p>Create a board from a selection to arrange pieces on the canvas.</p>
+            </div>
+            <ul v-else class="bucket__list bucket__list--boards">
+              <li v-for="board in boards" :key="board.id" class="bucket__item">
+                <button
+                  type="button"
+                  class="bucket__board-row"
+                  :class="{ 'bucket__board-row--active': board.id === activeBoardId }"
+                  @click="openSavedBoard(board.id)"
+                >
+                  <span class="bucket__board-meta">
+                    <span class="bucket__board-name interface">{{ board.name }}</span>
+                    <span class="bucket__board-count">{{ board.placements.length }}</span>
+                  </span>
+                  <span v-if="board.preview" class="bucket__board-thumb">
+                    <img
+                      :src="board.preview"
+                      :alt="`${board.name} preview`"
+                      class="bucket__board-preview"
+                    />
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </template>
         </aside>
       </div>
     </div>
@@ -241,13 +290,14 @@ const {
   deleteMoodboard,
 } = useBucket()
 const { isOpen: productOpen } = useProductOverlay()
-const { initFromBucket, snapshot } = useMoodboard()
-const { createBoard } = useBoards()
+const { initFromBucket, snapshot, loadBoard } = useMoodboard()
+const { createBoard, boards, activeBoardId, setActiveBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
 const { open } = useProductOverlay()
 const { fetchProduct } = useProductCatalog()
 const { imageUrl: buildUrl } = useSanityImage()
 
+const panelTab = ref<'selections' | 'boards'>('selections')
 const isEditing = ref(false)
 const editName = ref('')
 const confirmingDelete = ref(false)
@@ -298,13 +348,12 @@ watch(isOpen, (open) => {
 
 const syncBucketPush = () => {
   if (!import.meta.client) return
-  document.documentElement.classList.toggle(
-    'bucket-push',
-    Boolean(isOpen.value && !productOpen.value),
-  )
+  // Keep the grid inset while the cart is open — including over the PDP —
+  // so opening/closing a product doesn't reflow the page back to full width.
+  document.documentElement.classList.toggle('bucket-push', Boolean(isOpen.value))
 }
 
-watch([isOpen, productOpen], syncBucketPush, { immediate: true })
+watch(isOpen, syncBucketPush, { immediate: true })
 
 onBeforeUnmount(() => {
   if (import.meta.client) {
@@ -315,6 +364,15 @@ onBeforeUnmount(() => {
 const openBoard = (id: string) => {
   setActiveMoodboard(id)
   isOpen.value = true
+}
+
+const openSavedBoard = (id: string) => {
+  const board = boards.value.find((b) => b.id === id)
+  if (!board) return
+  setActiveBoard(id)
+  loadBoard(board.placements, board.strokes)
+  closeDrawer()
+  openMoodboard()
 }
 
 const onNew = () => {
@@ -328,7 +386,6 @@ const openProduct = (item: BucketItem, event?: MouseEvent) => {
     ((event?.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null) ||
     null
   open(slug, { source })
-  closeDrawer()
 }
 
 const startEdit = () => {
@@ -584,16 +641,60 @@ watch(activeMoodboardId, () => {
 
 .bucket__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.25rem var(--gutter);
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.bucket__toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: transparent;
   border-bottom: 1px solid var(--grid-line);
 }
 
-.bucket__header-text {
-  flex: 1;
+.bucket__tabs {
+  display: flex;
+  align-items: stretch;
   min-width: 0;
+}
+
+.bucket__tab {
+  padding: 1rem var(--gutter);
+  font-size: var(--text-sm);
+  color: var(--slate);
+  transition: color 0.2s ease;
+}
+
+.bucket__tab:hover {
+  color: var(--charcoal);
+}
+
+.bucket__tab--active {
+  color: var(--charcoal);
+}
+
+.bucket__tab-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--grid-line);
+  flex-shrink: 0;
+}
+
+.bucket__close {
+  margin-left: auto;
+  padding: 1rem var(--gutter);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  color: var(--charcoal);
+  white-space: nowrap;
+}
+
+.bucket__selection {
+  padding: 1rem var(--gutter);
+  border-bottom: 1px solid var(--grid-line);
 }
 
 .bucket__title-row {
@@ -604,7 +705,7 @@ watch(activeMoodboardId, () => {
 
 .bucket__title {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-sm);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -618,7 +719,7 @@ watch(activeMoodboardId, () => {
   margin: 0;
   padding: 0.1rem 0.35rem;
   font: inherit;
-  font-size: var(--text-xl);
+  font-size: var(--text-sm);
   color: var(--charcoal);
   background: var(--cream);
   border: 1px solid var(--grid-line);
@@ -635,6 +736,7 @@ watch(activeMoodboardId, () => {
   align-items: center;
   gap: 0.15rem;
   margin-left: auto;
+  margin:-10px 0px;
 }
 
 .bucket__icon-btn {
@@ -653,14 +755,9 @@ watch(activeMoodboardId, () => {
 }
 
 .bucket__subtitle {
-  margin: 0.35rem 0 0;
+  margin: 1rem 0 0;
   font-size: var(--text-sm);
   color: var(--muted);
-}
-
-.bucket__close {
-  font-size: 1.75rem;
-  line-height: 1;
 }
 
 .bucket__empty,
@@ -692,6 +789,65 @@ watch(activeMoodboardId, () => {
   gap: 1rem;
 }
 
+.bucket__list--boards {
+  gap: 0;
+}
+
+.bucket__board-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--grid-line);
+  color: var(--charcoal);
+  text-align: left;
+  transition: color 0.2s ease;
+}
+
+.bucket__board-row:hover,
+.bucket__board-row--active {
+  color: var(--accent);
+}
+
+.bucket__board-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.bucket__board-name {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bucket__board-count {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.bucket__board-thumb {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background: var(--sand);
+}
+
+.bucket__board-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
 .bucket__item {
   display: block;
 }
@@ -707,26 +863,39 @@ watch(activeMoodboardId, () => {
 .bucket__thumb {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 1.35;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
+  display: block;
   container-type: inline-size;
-  padding: 8%;
   text-align: center;
   overflow: hidden;
   border-radius: var(--thumb-radius);
+  /* background: var(--sand); */
 }
 
 .bucket__thumb-hit {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: block;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+}
+
+.bucket__thumb-image {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  object-fit: contain;
+  object-position: left;
+  display: block;
+  pointer-events: none;
 }
 
 .bucket__thumb-ctrl {
@@ -755,19 +924,6 @@ watch(activeMoodboardId, () => {
 .bucket__thumb-ctrl--cycle {
   right: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
-}
-
-.bucket__thumb-image {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-  pointer-events: none;
-}
-
-.bucket__thumb:has(.bucket__thumb-image) {
-  padding: 0;
-  background: var(--sand);
 }
 
 .bucket__thumb--undo {
@@ -820,6 +976,11 @@ watch(activeMoodboardId, () => {
 }
 
 .bucket__thumb-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 8%;
   font-size: 15cqi;
   line-height: 0.95;
   letter-spacing: -0.02em;

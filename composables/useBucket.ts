@@ -10,6 +10,16 @@ export type BucketItem = {
   imageIndex?: number
 }
 
+/** Stable cart id — product + image index so multiple gallery frames can be saved. */
+export const bucketItemId = (productId: string, imageIndex?: number) => {
+  const base = productId.includes('::') ? productId.split('::')[0] : productId
+  return typeof imageIndex === 'number' && imageIndex >= 0
+    ? `${base}::${imageIndex}`
+    : base
+}
+
+export const productIdFromBucketId = (itemId: string) => itemId.split('::')[0]
+
 export type MoodboardBucket = {
   id: string
   name: string
@@ -358,12 +368,19 @@ export const useBucket = () => {
     }
   }
 
-  const isSavedIn = (moodboardId: string, itemId: string) =>
-    moodboards.value
-      .find((b) => b.id === moodboardId)
-      ?.items.some((i) => i.id === itemId) ?? false
+  const isSavedIn = (moodboardId: string, itemId: string, imageIndex?: number) => {
+    const entryId = bucketItemId(itemId, imageIndex)
+    return (
+      moodboards.value
+        .find((b) => b.id === moodboardId)
+        ?.items.some((i) => i.id === entryId) ?? false
+    )
+  }
 
-  const isSaved = (id: string) => moodboards.value.some((b) => b.items.some((i) => i.id === id))
+  const isSaved = (id: string, imageIndex?: number) => {
+    const entryId = bucketItemId(id, imageIndex)
+    return moodboards.value.some((b) => b.items.some((i) => i.id === entryId))
+  }
 
   const openPicker = (item: BucketItem) => {
     pickerItem.value = item
@@ -373,20 +390,37 @@ export const useBucket = () => {
     pickerItem.value = null
   }
 
+  const normalizeBucketItem = (item: BucketItem): BucketItem => {
+    const baseId = productIdFromBucketId(item.id)
+    const index =
+      typeof item.imageIndex === 'number'
+        ? item.imageIndex
+        : item.imageUrls && item.imageUrls.length > 1
+          ? Math.max(0, item.imageUrls.indexOf(item.imageUrl))
+          : undefined
+    return {
+      ...item,
+      id: bucketItemId(baseId, index),
+      imageIndex: index,
+    }
+  }
+
   const requestSave = (item: BucketItem) => {
     ensureActive()
+    const normalized = normalizeBucketItem(item)
     if (moodboards.value.length > 1) {
-      openPicker(item)
+      openPicker(normalized)
       isOpen.value = true
       return
     }
-    toggleInMoodboard(moodboards.value[0].id, item, true)
+    toggleInMoodboard(moodboards.value[0].id, normalized, true)
   }
 
   const selectMoodboardForItem = (moodboardId: string) => {
     if (!pickerItem.value) return
-    const wasSaved = isSavedIn(moodboardId, pickerItem.value.id)
-    toggleInMoodboard(moodboardId, pickerItem.value)
+    const item = normalizeBucketItem(pickerItem.value)
+    const wasSaved = isSavedIn(moodboardId, item.id)
+    toggleInMoodboard(moodboardId, item)
     if (!wasSaved) {
       activeMoodboardId.value = moodboardId
       isOpen.value = true

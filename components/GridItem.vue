@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { productPath } from '~/composables/useProductCatalog'
+import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { uniqueImageUrls, randomImageIndex } from '~/composables/productImages'
 
@@ -72,7 +72,10 @@ const emit = defineEmits<{
 const { requestSave, isSaved } = useBucket()
 const { imageUrl: buildUrl } = useSanityImage()
 const { open, returnImage } = useProductOverlay()
-const saved = computed(() => isSaved(props.item._id))
+const saved = computed(() => {
+  const index = projectImages.value.length > 1 ? imageIndex.value : undefined
+  return isSaved(props.item._id, index)
+})
 const imageIndex = ref(0)
 const rootRef = ref<HTMLElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
@@ -101,10 +104,14 @@ const typeLabel = computed(() => {
   return match?.label || key || props.item.title
 })
 
-const productSlug = computed(() => {
-  if (props.item.linkType !== 'product') return null
-  return props.item.slug?.current || null
-})
+const productSlug = computed(() =>
+  resolveProductSlug({
+    _id: props.item._id,
+    linkType: props.item.linkType,
+    slug: props.item.slug,
+    category: props.item.category,
+  }),
+)
 
 const onOpen = (event: MouseEvent) => {
   if (!productSlug.value) return
@@ -118,8 +125,10 @@ const onOpen = (event: MouseEvent) => {
 
 const href = computed(() => {
   const productLink = productPath({
+    _id: props.item._id,
     linkType: props.item.linkType,
     slug: props.item.slug,
+    category: props.item.category,
   })
   if (productLink) return productLink
 

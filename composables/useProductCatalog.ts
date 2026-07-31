@@ -93,7 +93,14 @@ export function getDemoCatalog(): ProductRecord[] {
 }
 
 export function findProductBySlug(slug: string): ProductRecord | null {
-  return getDemoCatalog().find((p) => p.slug === slug) ?? null
+  const fromCatalog = getDemoCatalog().find((p) => p.slug === slug || p._id === slug)
+  if (fromCatalog) return fromCatalog
+
+  // Demo textures / shapes (incl. Origin) are excluded from getDemoCatalog
+  const fromLibrary = DEMO_PRODUCTS.find(
+    (item) => item._id === slug || item.slug?.current === slug,
+  )
+  return fromLibrary ? normalizeDemoItem(fromLibrary) : null
 }
 
 export function getNextProduct(slug: string): ProductRecord | null {
@@ -103,20 +110,44 @@ export function getNextProduct(slug: string): ProductRecord | null {
   return catalog[(index + 1) % catalog.length]
 }
 
-export function productPath(item: {
+export type ProductLinkItem = {
+  _id?: string
   linkType?: string
   slug?: { current?: string } | string
-}) {
-  if (item.linkType !== 'product') return null
+  category?: string
+  type?: string
+}
+
+/** Categories that open the product overlay even when linkType is "none". */
+const DETAIL_LINK_TYPES = new Set(['spirit', 'origin'])
+
+export function productSlug(item: ProductLinkItem): string | null {
+  if (item.linkType === 'url') return null
+
   const slug = typeof item.slug === 'string' ? item.slug : item.slug?.current
+  const category = String(item.category || item.type || '').toLowerCase()
+  const opensDetail =
+    item.linkType === 'product' ||
+    !item.linkType ||
+    DETAIL_LINK_TYPES.has(category)
+
+  if (!opensDetail) return null
+
+  // Spirit / Origin often ship without a Sanity slug — fall back to document id.
+  return slug || item._id || null
+}
+
+export function productPath(item: ProductLinkItem) {
+  const slug = productSlug(item)
   return slug ? `/materials-and-forms/${slug}` : null
 }
 
 export const useProductCatalog = () => {
-  const productQuery = `*[_type == "gridItem" && slug.current == $slug][0] {
+  const productQuery = `*[_type == "gridItem" && (slug.current == $slug || _id == $slug)][0] {
     _id,
     title,
-    "slug": slug.current,
+    "slug": coalesce(slug.current, _id),
+    category,
     series,
     style,
     dimensions,
@@ -131,10 +162,11 @@ export const useProductCatalog = () => {
     spiritGallery[] { asset-> { url } }
   }`
 
-  const allProductsQuery = `*[_type == "gridItem" && defined(slug.current) && (linkType == "product" || !defined(linkType))] | order(orderRank) {
+  const allProductsQuery = `*[_type == "gridItem" && (defined(slug.current) || category in ["spirit", "origin"]) && (linkType == "product" || !defined(linkType) || linkType == "none" || category in ["spirit", "origin"])] | order(orderRank) {
     _id,
     title,
-    "slug": slug.current,
+    "slug": coalesce(slug.current, _id),
+    category,
     description,
     categories,
     image { asset-> { url } }
@@ -147,7 +179,12 @@ export const useProductCatalog = () => {
         body: { query: productQuery, params: { slug } },
       }) as { result?: ProductRecord | null }
 
-      if (result?.result?.slug) return result.result
+      if (result?.result?._id) {
+        return {
+          ...result.result,
+          slug: result.result.slug || slug,
+        }
+      }
     } catch {
       // fall through to demo data
     }
@@ -178,6 +215,7 @@ export const useProductCatalog = () => {
     findProductBySlug,
     getNextProduct,
     productPath,
+    productSlug,
     getDemoCatalog,
   }
 }

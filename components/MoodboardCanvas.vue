@@ -525,12 +525,13 @@ watch(
   { immediate: true },
 )
 
-const onSaveAndClose = () => {
+const onSaveAndClose = async () => {
   if (cancelRevertTimer) {
     clearTimeout(cancelRevertTimer)
     cancelRevertTimer = null
   }
-  saveActiveBoard(placements.value, strokes.value)
+  const preview = await captureBoardPreview()
+  saveActiveBoard(placements.value, strokes.value, preview || undefined)
   switchOpen.value = false
   closeMoodboard()
 }
@@ -558,14 +559,15 @@ const onCancelEdits = () => {
   }, 350)
 }
 
-const switchSavedBoard = (id: string) => {
+const switchSavedBoard = async (id: string) => {
   if (id === activeBoardId.value) {
     switchOpen.value = false
     return
   }
   // Persist current canvas before switching.
   if (activeBoardId.value) {
-    saveActiveBoard(placements.value, strokes.value)
+    const preview = await captureBoardPreview()
+    saveActiveBoard(placements.value, strokes.value, preview || undefined)
   }
   setActiveBoard(id)
   const board = boards.value.find((b) => b.id === id)
@@ -913,13 +915,34 @@ const downloadScreenshot = async () => {
   if (!canvasEl.value || !import.meta.client) return
   const { default: html2canvas } = await import('html2canvas')
   const canvas = await html2canvas(canvasEl.value, {
-    backgroundColor: '#f4efe6',
+    backgroundColor: '#f2ecdf',
     scale: 2,
+    useCORS: true,
+    logging: false,
   })
   const link = document.createElement('a')
   link.download = 'studio-based-upon-moodboard.png'
   link.href = canvas.toDataURL('image/png')
   link.click()
+}
+
+/** Compact JPEG for board list thumbnails (kept small for localStorage). */
+const captureBoardPreview = async () => {
+  if (!canvasEl.value || !import.meta.client) return null
+  clearActive()
+  await nextTick()
+  try {
+    const { default: html2canvas } = await import('html2canvas')
+    const canvas = await html2canvas(canvasEl.value, {
+      backgroundColor: '#f2ecdf',
+      scale: 0.45,
+      useCORS: true,
+      logging: false,
+    })
+    return canvas.toDataURL('image/jpeg', 0.72)
+  } catch {
+    return null
+  }
 }
 
 const sendEnquiry = async () => {
@@ -932,8 +955,10 @@ const sendEnquiry = async () => {
   if (canvasEl.value) {
     const { default: html2canvas } = await import('html2canvas')
     const canvas = await html2canvas(canvasEl.value, {
-      backgroundColor: '#f4efe6',
+      backgroundColor: '#f2ecdf',
       scale: 1,
+      useCORS: true,
+      logging: false,
     })
     screenshot = canvas.toDataURL('image/png')
   }

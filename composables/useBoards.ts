@@ -5,6 +5,8 @@ export type SavedBoard = {
   name: string
   placements: MoodboardItem[]
   strokes: MoodboardStroke[]
+  /** JPEG data URL thumbnail of the canvas (captured on save/close). */
+  preview?: string
   updatedAt: string
 }
 
@@ -94,12 +96,14 @@ export const useBoards = () => {
     placements: MoodboardItem[],
     strokes: MoodboardStroke[] = [],
     name?: string,
+    preview?: string,
   ) => {
     const board: SavedBoard = {
       id: createId(),
       name: name?.trim() || boardName(boards.value.length + 1),
       placements: clone(placements),
       strokes: clone(strokes),
+      preview: preview || undefined,
       updatedAt: new Date().toISOString(),
     }
     boards.value = [...boards.value, board]
@@ -110,7 +114,7 @@ export const useBoards = () => {
 
   const updateBoard = (
     id: string,
-    patch: Partial<Pick<SavedBoard, 'name' | 'placements' | 'strokes'>>,
+    patch: Partial<Pick<SavedBoard, 'name' | 'placements' | 'strokes' | 'preview'>>,
   ) => {
     boards.value = boards.value.map((board) => {
       if (board.id !== id) return board
@@ -119,6 +123,7 @@ export const useBoards = () => {
         ...patch,
         placements: patch.placements ? clone(patch.placements) : board.placements,
         strokes: patch.strokes ? clone(patch.strokes) : board.strokes,
+        preview: patch.preview !== undefined ? patch.preview : board.preview,
         updatedAt: new Date().toISOString(),
       }
     })
@@ -128,12 +133,17 @@ export const useBoards = () => {
   const saveActiveBoard = (
     placements: MoodboardItem[],
     strokes: MoodboardStroke[] = [],
+    preview?: string,
   ) => {
     if (activeBoardId.value) {
-      updateBoard(activeBoardId.value, { placements, strokes })
+      updateBoard(activeBoardId.value, {
+        placements,
+        strokes,
+        ...(preview !== undefined ? { preview } : {}),
+      })
       return activeBoardId.value
     }
-    return createBoard(placements, strokes).id
+    return createBoard(placements, strokes, undefined, preview).id
   }
 
   const renameBoard = (id: string, name: string) => {
