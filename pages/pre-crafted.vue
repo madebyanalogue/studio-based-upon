@@ -7,150 +7,102 @@
       :class="{ 'precrafted-h--single': !scrollEnabled }"
     >
       <div ref="pinRef" class="precrafted-h__pin">
-        <div ref="titleRef" class="precrafted-h__title-panel">
-          <div class="precrafted-h__title-inner">
-            <h1 class="page-title">{{ page?.heroTitle || '(Pre)Crafted' }}</h1>
-            <p class="precrafted-h__lede">
-              (Pre)Crafted transforms architectural spaces at scale, creating one flowing
-              installation every time. Vast proportions and unique, unrepeated panels enable
-              entire spaces to be crafted with bespoke architectural purity.
-            </p>
-          </div>
-        </div>
-
         <div ref="trackRef" class="precrafted-h__track">
-          <div class="precrafted-h__spacer" aria-hidden="true" />
-
           <div ref="itemsRef" class="precrafted-h__items">
-            <figure
-              v-if="sequencePrimary"
-              class="precrafted-h__item precrafted-h__item--media precrafted-h__item--media-full"
-            >
-              <PrecraftedScrubGallery
-                :entries="[sequencePrimary]"
-                :progress="scrubProgress"
-              />
-            </figure>
+            <template v-for="section in trackSections" :key="section.id">
+              <figure
+                v-if="section.kind === 'video'"
+                class="precrafted-h__item precrafted-h__item--media"
+                :class="`precrafted-h__item--align-${section.align}`"
+                :data-scrub-id="section.id"
+                :style="mediaStyle(section)"
+              >
+                <PrecraftedScrubGallery
+                  :entries="[section.entry]"
+                  :progress="itemProgress(section.id)"
+                />
+              </figure>
 
-            <section class="precrafted-h__item precrafted-h__item--text">
-              <div class="precrafted-h__text-inner">
-                <p class="precrafted__eyebrow interface">Origin</p>
-                <h2 class="precrafted__heading">Story. Origin. Meaning.</h2>
-                <div class="prose">
-                  <p>
-                    Over two decades, Based Upon has combined material experimentation with an
-                    archive of textures, patterns and details gathered on journeys in landscape.
+              <section
+                v-else-if="section.kind === 'text'"
+                class="precrafted-h__item precrafted-h__item--text"
+                :class="{ 'precrafted-h__item--intro': section.variant === 'intro' }"
+              >
+                <div class="precrafted-h__text-inner">
+                  <p v-if="section.eyebrow" class="precrafted__eyebrow interface">
+                    {{ section.eyebrow }}
                   </p>
-                  <p>
-                    Now, this material alchemy is available through Studio Based Upon in
-                    (Pre)Crafted form.
-                  </p>
+                  <h1 v-if="section.variant === 'intro'" class="page-title">
+                    {{ section.title }}
+                  </h1>
+                  <h2 v-else class="precrafted__heading">{{ section.title }}</h2>
+                  <SanityContent
+                    v-if="section.body?.length"
+                    :blocks="section.body"
+                    class="prose"
+                    :class="{ 'precrafted-h__lede': section.variant === 'intro' }"
+                  />
                 </div>
-              </div>
-            </section>
+              </section>
 
-            <section class="precrafted-h__item precrafted-h__item--text">
-              <div class="precrafted-h__text-inner">
-                <h2 class="precrafted__heading">Materiality in dialogue with light</h2>
-                <div class="prose">
-                  <p>
-                    Tones, depths and textures subtly transform as light engages with the surface.
-                    From the natural transitions of daylight to the precision of artificial
-                    illumination, each (Pre)Crafted panel holds not one expression, but many.
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <figure
-              v-if="sequenceSecondary"
-              class="precrafted-h__item precrafted-h__item--media precrafted-h__item--media-secondary"
-            >
-              <PrecraftedScrubGallery
-                :entries="[sequenceSecondary]"
-                :progress="scrubProgress"
-              />
-            </figure>
-
-            <section class="precrafted-h__item precrafted-h__item--text">
-              <div class="precrafted-h__text-inner">
-                <p class="precrafted__eyebrow interface">Panel+</p>
-                <h2 class="precrafted__heading">Beyond the edge of a panel</h2>
-                <div class="prose">
-                  <p>
-                    Panel+ reflects our commitment beyond the edge of a panel. With Panel+, Studio
-                    Based Upon offers a design and fabrication solution, creating additional
-                    bespoke elements to resolve the unique challenges of each space.
-                  </p>
-                  <p class="precrafted__tagline interface">
-                    The meeting of efficiency and artistry.
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <section class="precrafted-h__item precrafted-h__item--text">
-              <div class="precrafted-h__text-inner">
-                <h2 class="precrafted__heading">Finishes</h2>
-                <ul class="precrafted__finishes">
-                  <li v-for="finish in finishes" :key="finish">{{ finish }}</li>
-                </ul>
-              </div>
-            </section>
-
-            <section class="precrafted-h__item precrafted-h__item--text precrafted-h__item--info">
-              <div class="precrafted-h__text-inner">
-                <h2 class="precrafted__heading">Info</h2>
-
-                <div class="precrafted__info-block">
-                  <h3 class="precrafted__subheading interface">
-                    Panel Sizes &amp; Trade Launch Pricing
-                  </h3>
-                  <p>
-                    (Pre)Crafted panels are finished on the front face only and are available in
-                    the following dimensions:
-                  </p>
-                  <ul class="precrafted__pricing">
-                    <li v-for="(panel, i) in panelSizes" :key="i">
-                      <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
-                      <span class="precrafted__price">{{ panel.price }}</span>
-                    </li>
+              <section
+                v-else-if="section.kind === 'finishes'"
+                class="precrafted-h__item precrafted-h__item--text"
+              >
+                <div class="precrafted-h__text-inner">
+                  <h2 class="precrafted__heading">{{ section.title }}</h2>
+                  <ul class="precrafted__finishes">
+                    <li v-for="finish in section.items" :key="finish">{{ finish }}</li>
                   </ul>
-                  <p class="precrafted__note">
-                    All prices are exc. VAT, delivery &amp; installation.
-                  </p>
-                  <p class="precrafted__note">
-                    Prices stated are for approx. 30no panel orders. We will honour this volume
-                    pricing of £995m² for any volume ordered during our trade launch. Pricing valid
-                    until May 2026.
-                  </p>
                 </div>
+              </section>
 
-                <div class="precrafted__info-block">
-                  <h3 class="precrafted__subheading interface">Lead Times</h3>
-                  <p>
-                    Typical lead times are approx. 6–8 weeks (subject to production schedule at the
-                    time) with larger orders requiring longer to prepare. Please contact us about
-                    your project for more specific timings.
-                  </p>
-                </div>
+              <section
+                v-else-if="section.kind === 'info'"
+                class="precrafted-h__item precrafted-h__item--text precrafted-h__item--info"
+              >
+                <div class="precrafted-h__text-inner">
+                  <h2 class="precrafted__heading">{{ section.title }}</h2>
 
-                <div class="precrafted__info-block">
-                  <h3 class="precrafted__subheading interface">Install</h3>
-                  <p>
-                    The edges are black to create a shadow gap detail between panels. We recommend
-                    a mechanical fixing system such as split battens to allow for adjustment during
-                    fitting.
-                  </p>
-                  <p>
-                    Speak to your appointed contractor to check specific requirements for your
-                    project or please
-                    <NuxtLink to="/enquire" class="precrafted__link">contact us</NuxtLink>
-                    for further advice.
-                  </p>
+                  <div class="precrafted__info-block">
+                    <h3 class="precrafted__subheading interface">
+                      {{ section.pricingHeading }}
+                    </h3>
+                    <p v-if="section.pricingIntro">{{ section.pricingIntro }}</p>
+                    <ul class="precrafted__pricing">
+                      <li v-for="(panel, i) in panelSizes" :key="i">
+                        <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
+                        <span class="precrafted__price">{{ panel.price }}</span>
+                      </li>
+                    </ul>
+                    <p
+                      v-for="(note, i) in section.pricingNotes"
+                      :key="`note-${i}`"
+                      class="precrafted__note"
+                    >
+                      {{ note }}
+                    </p>
+                  </div>
+
+                  <div class="precrafted__info-block">
+                    <h3 class="precrafted__subheading interface">
+                      {{ section.leadTimesHeading }}
+                    </h3>
+                    <p>{{ section.leadTimes }}</p>
+                  </div>
+
+                  <div class="precrafted__info-block">
+                    <h3 class="precrafted__subheading interface">
+                      {{ section.installHeading }}
+                    </h3>
+                    <SanityContent
+                      v-if="section.installNotes?.length"
+                      :blocks="section.installNotes"
+                    />
+                  </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            </template>
           </div>
         </div>
       </div>
@@ -158,130 +110,93 @@
 
     <!-- Mobile: vertical stack -->
     <div class="precrafted-m">
-      <header class="precrafted-m__hero">
-        <h1 class="page-title">{{ page?.heroTitle || '(Pre)Crafted' }}</h1>
-        <p class="precrafted-h__lede">
-          (Pre)Crafted transforms architectural spaces at scale, creating one flowing
-          installation every time. Vast proportions and unique, unrepeated panels enable entire
-          spaces to be crafted with bespoke architectural purity.
-        </p>
-      </header>
+      <template v-for="section in trackSections" :key="`m-${section.id}`">
+        <div
+          v-if="section.kind === 'video'"
+          class="precrafted-m__media"
+          :data-scrub-id="section.id"
+          :style="mobileMediaStyle(section)"
+        >
+          <PrecraftedScrubGallery
+            :entries="[section.entry]"
+            :progress="itemProgress(section.id)"
+          />
+        </div>
 
-      <div v-if="sequencePrimary" class="precrafted-m__media precrafted-m__media--full">
-        <PrecraftedScrubGallery
-          :entries="[sequencePrimary]"
-          :progress="mobileScrubProgress"
-        />
-      </div>
-
-      <section class="precrafted-m__text">
-        <div class="precrafted-m__text-inner">
-          <p class="precrafted__eyebrow interface">Origin</p>
-          <h2 class="precrafted__heading">Story. Origin. Meaning.</h2>
-          <div class="prose">
-            <p>
-              Over two decades, Based Upon has combined material experimentation with an archive of
-              textures, patterns and details gathered on journeys in landscape.
+        <section
+          v-else-if="section.kind === 'text'"
+          class="precrafted-m__text"
+          :class="{ 'precrafted-m__text--intro': section.variant === 'intro' }"
+        >
+          <div class="precrafted-m__text-inner">
+            <p v-if="section.eyebrow" class="precrafted__eyebrow interface">
+              {{ section.eyebrow }}
             </p>
-            <p>
-              Now, this material alchemy is available through Studio Based Upon in (Pre)Crafted
-              form.
-            </p>
+            <h1 v-if="section.variant === 'intro'" class="page-title">
+              {{ section.title }}
+            </h1>
+            <h2 v-else class="precrafted__heading">{{ section.title }}</h2>
+            <SanityContent
+              v-if="section.body?.length"
+              :blocks="section.body"
+              class="prose"
+              :class="{ 'precrafted-h__lede': section.variant === 'intro' }"
+            />
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="precrafted-m__text">
-        <div class="precrafted-m__text-inner">
-          <h2 class="precrafted__heading">Materiality in dialogue with light</h2>
-          <div class="prose">
-            <p>
-              Tones, depths and textures subtly transform as light engages with the surface. From
-              the natural transitions of daylight to the precision of artificial illumination, each
-              (Pre)Crafted panel holds not one expression, but many.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <div v-if="sequenceSecondary" class="precrafted-m__media precrafted-m__media--secondary">
-        <PrecraftedScrubGallery
-          :entries="[sequenceSecondary]"
-          :progress="mobileScrubProgress"
-        />
-      </div>
-
-      <section class="precrafted-m__text">
-        <div class="precrafted-m__text-inner">
-          <p class="precrafted__eyebrow interface">Panel+</p>
-          <h2 class="precrafted__heading">Beyond the edge of a panel</h2>
-          <div class="prose">
-            <p>
-              Panel+ reflects our commitment beyond the edge of a panel. With Panel+, Studio Based
-              Upon offers a design and fabrication solution, creating additional bespoke elements
-              to resolve the unique challenges of each space.
-            </p>
-            <p class="precrafted__tagline interface">The meeting of efficiency and artistry.</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="precrafted-m__text">
-        <div class="precrafted-m__text-inner">
-          <h2 class="precrafted__heading">Finishes</h2>
-          <ul class="precrafted__finishes">
-            <li v-for="finish in finishes" :key="finish">{{ finish }}</li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="precrafted-m__text precrafted-m__text--info">
-        <div class="precrafted-m__text-inner">
-          <h2 class="precrafted__heading">Info</h2>
-
-          <div class="precrafted__info-block">
-            <h3 class="precrafted__subheading interface">Panel Sizes &amp; Trade Launch Pricing</h3>
-            <p>
-              (Pre)Crafted panels are finished on the front face only and are available in the
-              following dimensions:
-            </p>
-            <ul class="precrafted__pricing">
-              <li v-for="(panel, i) in panelSizes" :key="i">
-                <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
-                <span class="precrafted__price">{{ panel.price }}</span>
-              </li>
+        <section
+          v-else-if="section.kind === 'finishes'"
+          class="precrafted-m__text"
+        >
+          <div class="precrafted-m__text-inner">
+            <h2 class="precrafted__heading">{{ section.title }}</h2>
+            <ul class="precrafted__finishes">
+              <li v-for="finish in section.items" :key="finish">{{ finish }}</li>
             </ul>
-            <p class="precrafted__note">All prices are exc. VAT, delivery &amp; installation.</p>
-            <p class="precrafted__note">
-              Prices stated are for approx. 30no panel orders. We will honour this volume pricing of
-              £995m² for any volume ordered during our trade launch. Pricing valid until May 2026.
-            </p>
           </div>
+        </section>
 
-          <div class="precrafted__info-block">
-            <h3 class="precrafted__subheading interface">Lead Times</h3>
-            <p>
-              Typical lead times are approx. 6–8 weeks (subject to production schedule at the time)
-              with larger orders requiring longer to prepare. Please contact us about your project
-              for more specific timings.
-            </p>
-          </div>
+        <section
+          v-else-if="section.kind === 'info'"
+          class="precrafted-m__text precrafted-m__text--info"
+        >
+          <div class="precrafted-m__text-inner">
+            <h2 class="precrafted__heading">{{ section.title }}</h2>
 
-          <div class="precrafted__info-block">
-            <h3 class="precrafted__subheading interface">Install</h3>
-            <p>
-              The edges are black to create a shadow gap detail between panels. We recommend a
-              mechanical fixing system such as split battens to allow for adjustment during fitting.
-            </p>
-            <p>
-              Speak to your appointed contractor to check specific requirements for your project or
-              please
-              <NuxtLink to="/enquire" class="precrafted__link">contact us</NuxtLink>
-              for further advice.
-            </p>
+            <div class="precrafted__info-block">
+              <h3 class="precrafted__subheading interface">{{ section.pricingHeading }}</h3>
+              <p v-if="section.pricingIntro">{{ section.pricingIntro }}</p>
+              <ul class="precrafted__pricing">
+                <li v-for="(panel, i) in panelSizes" :key="i">
+                  <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
+                  <span class="precrafted__price">{{ panel.price }}</span>
+                </li>
+              </ul>
+              <p
+                v-for="(note, i) in section.pricingNotes"
+                :key="`m-note-${i}`"
+                class="precrafted__note"
+              >
+                {{ note }}
+              </p>
+            </div>
+
+            <div class="precrafted__info-block">
+              <h3 class="precrafted__subheading interface">{{ section.leadTimesHeading }}</h3>
+              <p>{{ section.leadTimes }}</p>
+            </div>
+
+            <div class="precrafted__info-block">
+              <h3 class="precrafted__subheading interface">{{ section.installHeading }}</h3>
+              <SanityContent
+                v-if="section.installNotes?.length"
+                :blocks="section.installNotes"
+              />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </template>
     </div>
   </article>
 </template>
@@ -289,39 +204,179 @@
 <script setup lang="ts">
 import type { ScrubGalleryEntry } from '~/components/PrecraftedScrubGallery.vue'
 
-type GalleryItem = {
-  title?: string
-  poster?: { asset?: { url?: string; _ref?: string; _id?: string } }
-  frames?: Array<{ asset?: { url?: string; _ref?: string; _id?: string } }>
+type PortableBlock = {
+  _key?: string
+  _type: string
+  children?: Array<{ text?: string; marks?: string[] }>
 }
 
-const makeLocalSequence = (
-  id: string,
-  title: string,
-  folder: string,
-  frameCount: number,
-): ScrubGalleryEntry => ({
-  id,
-  title,
-  poster: `/precrafted/${folder}/frame-001.webp`,
-  frames: Array.from({ length: frameCount }, (_, i) => {
-    const n = String(i + 1).padStart(3, '0')
-    return `/precrafted/${folder}/frame-${n}.webp`
-  }),
+type VideoHeight = number | 'below-header'
+
+type VideoTrackSection = {
+  id: string
+  kind: 'video'
+  heightPercent: VideoHeight
+  align: 'top' | 'middle' | 'bottom'
+  entry: ScrubGalleryEntry
+}
+
+type TextTrackSection = {
+  id: string
+  kind: 'text'
+  eyebrow?: string
+  title: string
+  body: PortableBlock[]
+  variant?: 'default' | 'intro'
+}
+
+type FinishesTrackSection = {
+  id: string
+  kind: 'finishes'
+  title: string
+  items: string[]
+}
+
+type InfoTrackSection = {
+  id: string
+  kind: 'info'
+  title: string
+  pricingHeading: string
+  pricingIntro: string
+  pricingNotes: string[]
+  leadTimesHeading: string
+  leadTimes: string
+  installHeading: string
+  installNotes: PortableBlock[]
+}
+
+type TrackSection =
+  | VideoTrackSection
+  | TextTrackSection
+  | FinishesTrackSection
+  | InfoTrackSection
+
+const block = (key: string, text: string): PortableBlock => ({
+  _key: key,
+  _type: 'block',
+  children: [{ text, marks: [] }],
 })
 
-const LOCAL_PRIMARY = makeLocalSequence('local-model-01', 'Model 01', 'model-01', 145)
-const LOCAL_SECONDARY = makeLocalSequence('local-model-02', 'Wider Scene', 'model-02', 193)
+const DEFAULT_SECTIONS: TrackSection[] = [
+  {
+    id: 'text-intro',
+    kind: 'text',
+    variant: 'intro',
+    title: '(Pre)Crafted',
+    body: [
+      block(
+        'intro1',
+        '(Pre)Crafted transforms architectural spaces at scale, creating one flowing installation every time. Vast proportions and unique, unrepeated panels enable entire spaces to be crafted with bespoke architectural purity.',
+      ),
+    ],
+  },
+  {
+    id: 'text-origin',
+    kind: 'text',
+    eyebrow: 'Origin',
+    title: 'Story. Origin. Meaning.',
+    body: [
+      block(
+        'o1',
+        'Over two decades, Based Upon has combined material experimentation with an archive of textures, patterns and details gathered on journeys in landscape.',
+      ),
+      block(
+        'o2',
+        'Now, this material alchemy is available through Studio Based Upon in (Pre)Crafted form.',
+      ),
+    ],
+  },
+  {
+    id: 'text-light',
+    kind: 'text',
+    title: 'Materiality in dialogue with light',
+    body: [
+      block(
+        'l1',
+        'Tones, depths and textures subtly transform as light engages with the surface. From the natural transitions of daylight to the precision of artificial illumination, each (Pre)Crafted panel holds not one expression, but many.',
+      ),
+    ],
+  },
+  {
+    id: 'text-panel-plus',
+    kind: 'text',
+    eyebrow: 'Panel+',
+    title: 'Beyond the edge of a panel',
+    body: [
+      block(
+        'p1',
+        'Panel+ reflects our commitment beyond the edge of a panel. With Panel+, Studio Based Upon offers a design and fabrication solution, creating additional bespoke elements to resolve the unique challenges of each space.',
+      ),
+      block('p2', 'The meeting of efficiency and artistry.'),
+    ],
+  },
+  {
+    id: 'finishes',
+    kind: 'finishes',
+    title: 'Finishes',
+    items: ['Camona Gold', 'Camona Bronze', 'Camona Pink Nickel', 'Camona Silver'],
+  },
+  {
+    id: 'info',
+    kind: 'info',
+    title: 'Info',
+    pricingHeading: 'Panel Sizes & Trade Launch Pricing',
+    pricingIntro:
+      '(Pre)Crafted panels are finished on the front face only and are available in the following dimensions:',
+    pricingNotes: [
+      'All prices are exc. VAT, delivery & installation.',
+      'Prices stated are for approx. 30no panel orders. We will honour this volume pricing of £995m² for any volume ordered during our trade launch. Pricing valid until May 2026.',
+    ],
+    leadTimesHeading: 'Lead Times',
+    leadTimes:
+      'Typical lead times are approx. 6–8 weeks (subject to production schedule at the time) with larger orders requiring longer to prepare. Please contact us about your project for more specific timings.',
+    installHeading: 'Install',
+    installNotes: [
+      block(
+        'i1',
+        'The edges are black to create a shadow gap detail between panels. We recommend a mechanical fixing system such as split battens to allow for adjustment during fitting.',
+      ),
+      block(
+        'i2',
+        'Speak to your appointed contractor to check specific requirements for your project or please contact us for further advice.',
+      ),
+    ],
+  },
+]
 
 const query = `*[_type == "preCraftedPage"][0] {
   seoTitle,
   heroTitle,
   heroSubtitle,
   panelSizes[] { dimensions, price },
-  gallery[] {
+  sections[] {
+    _key,
+    _type,
+    eyebrow,
     title,
-    poster { asset->{ url } },
-    frames[] { asset->{ url } }
+    body,
+    variant,
+    items,
+    pricingHeading,
+    pricingIntro,
+    pricingNotes,
+    leadTimesHeading,
+    leadTimes,
+    installHeading,
+    installNotes,
+    heightPercent,
+    align,
+    scrubVideo { asset->{ url, originalFilename } },
+    poster {
+      asset->{
+        url,
+        metadata { dimensions { width, height } }
+      }
+    }
   }
 }`
 
@@ -342,42 +397,133 @@ const panelSizes = computed(() =>
   page.value?.panelSizes?.length ? page.value.panelSizes : DEFAULT_PANEL_SIZES,
 )
 
-const finishes = ['Camona Gold', 'Camona Bronze', 'Camona Pink Nickel', 'Camona Silver']
+function clampHeight(value: unknown, fallback: VideoHeight = 100): VideoHeight {
+  if (value === 'below-header') return 'below-header'
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(100, Math.max(1, Math.round(n)))
+}
 
-const sanitySequences = computed((): ScrubGalleryEntry[] => {
-  const items = (page.value?.gallery || []) as GalleryItem[]
-  return items
-    .map((item, i) => {
-      const frames = (item.frames || [])
-        .map((frame) => imageUrl(frame, 1200))
-        .filter(Boolean)
-      if (frames.length < 2) return null
-      return {
-        id: `precrafted-sequence-${i}`,
-        frames,
-        poster: imageUrl(item.poster, 400) || frames[0],
-        title: item.title,
+function mediaHeightCss(height: VideoHeight) {
+  if (height === 'below-header') return 'calc(100% - var(--header-height))'
+  return `${height}%`
+}
+
+function mobileMediaStyle(section: VideoTrackSection) {
+  if (section.heightPercent === 'below-header') {
+    return { height: 'calc(100dvh - var(--header-height))' }
+  }
+  const h = section.heightPercent
+  return { height: `min(${h * 0.7}dvh, ${h * 5.6}px)` }
+}
+
+function mapSanitySections(raw: unknown[]): TrackSection[] {
+  return raw
+    .map((item: any, index: number): TrackSection | null => {
+      const id = item?._key || `section-${index}`
+      if (item?._type === 'precraftedVideoSection') {
+        const title = item.title || 'Video'
+        const video = item.scrubVideo?.asset?.url || ''
+        if (!video) return null
+        return {
+          id,
+          kind: 'video',
+          heightPercent: clampHeight(item.heightPercent, 100),
+          align: item.align === 'top' || item.align === 'middle' ? item.align : 'bottom',
+          entry: {
+            id,
+            title,
+            video,
+            poster: imageUrl(item.poster, 1200) || '',
+          },
+        }
       }
+      if (item?._type === 'precraftedTextSection') {
+        if (!item.title) return null
+        return {
+          id,
+          kind: 'text',
+          eyebrow: item.eyebrow || undefined,
+          title: item.title,
+          body: Array.isArray(item.body) ? item.body : [],
+          variant: item.variant === 'intro' ? 'intro' : 'default',
+        }
+      }
+      if (item?._type === 'precraftedFinishesSection') {
+        const items = (item.items || []).filter(Boolean)
+        if (!items.length) return null
+        return {
+          id,
+          kind: 'finishes',
+          title: item.title || 'Finishes',
+          items,
+        }
+      }
+      if (item?._type === 'precraftedInfoSection') {
+        return {
+          id,
+          kind: 'info',
+          title: item.title || 'Info',
+          pricingHeading: item.pricingHeading || 'Panel Sizes & Trade Launch Pricing',
+          pricingIntro: item.pricingIntro || '',
+          pricingNotes: Array.isArray(item.pricingNotes) ? item.pricingNotes.filter(Boolean) : [],
+          leadTimesHeading: item.leadTimesHeading || 'Lead Times',
+          leadTimes: item.leadTimes || '',
+          installHeading: item.installHeading || 'Install',
+          installNotes: Array.isArray(item.installNotes) ? item.installNotes : [],
+        }
+      }
+      return null
     })
-    .filter((entry): entry is ScrubGalleryEntry => Boolean(entry))
+    .filter((section): section is TrackSection => Boolean(section))
+}
+
+const trackSections = computed((): TrackSection[] => {
+  const fromSanity = Array.isArray(page.value?.sections)
+    ? mapSanitySections(page.value.sections)
+    : []
+  return fromSanity.length ? fromSanity : DEFAULT_SECTIONS
 })
 
-const sequencePrimary = computed(
-  () => sanitySequences.value[0] || LOCAL_PRIMARY,
-)
-
-const sequenceSecondary = computed(
-  () => sanitySequences.value[1] || LOCAL_SECONDARY,
-)
+function mediaStyle(section: VideoTrackSection) {
+  return {
+    height: mediaHeightCss(section.heightPercent),
+  }
+}
 
 const sectionRef = ref<HTMLElement | null>(null)
 const pinRef = ref<HTMLElement | null>(null)
 const trackRef = ref<HTMLElement | null>(null)
-const titleRef = ref<HTMLElement | null>(null)
 const itemsRef = ref<HTMLElement | null>(null)
 
-const scrubProgress = ref(0)
-const mobileScrubProgress = ref<number | null>(null)
+const scrubProgressById = ref<Record<string, number>>({})
+
+function itemProgress(id: string) {
+  return scrubProgressById.value[id] ?? 0
+}
+
+/** Map an element's travel across the viewport to 0–1 scrub progress. */
+function progressForElement(el: Element) {
+  const rect = el.getBoundingClientRect()
+  const vw = window.innerWidth || 1
+  const start = vw
+  const end = -rect.width
+  const span = start - end || 1
+  return Math.min(1, Math.max(0, (start - rect.left) / span))
+}
+
+function syncScrubProgresses() {
+  if (!import.meta.client) return
+  const root = isDesktop.value ? itemsRef.value : document.querySelector('.precrafted-m')
+  if (!root) return
+  const next: Record<string, number> = { ...scrubProgressById.value }
+  root.querySelectorAll<HTMLElement>('[data-scrub-id]').forEach((el) => {
+    const id = el.dataset.scrubId
+    if (!id) return
+    next[id] = progressForElement(el)
+  })
+  scrubProgressById.value = next
+}
 
 const isDesktop = ref(false)
 let desktopMediaQuery: MediaQueryList | null = null
@@ -393,12 +539,11 @@ useHorizontalGalleryScroll({
   sectionRef,
   pinRef,
   trackRef,
-  titleRef,
   itemsRef,
-  hasTitle: computed(() => true),
+  hasTitle: computed(() => false),
   enabled: scrollEnabled,
-  onProgress: (progress) => {
-    scrubProgress.value = progress
+  onProgress: () => {
+    syncScrubProgresses()
   },
 })
 
@@ -406,17 +551,13 @@ async function setupMobileScrub() {
   if (!import.meta.client || isDesktop.value) {
     mobileScrollTrigger?.kill()
     mobileScrollTrigger = null
-    mobileScrubProgress.value = null
     return
   }
 
   const mediaEls = Array.from(
     document.querySelectorAll('.precrafted-m__media'),
   ) as HTMLElement[]
-  if (!mediaEls.length) {
-    mobileScrubProgress.value = null
-    return
-  }
+  if (!mediaEls.length) return
 
   const { default: gsap } = await import('gsap')
   const { ScrollTrigger } = await import('gsap/ScrollTrigger')
@@ -428,13 +569,14 @@ async function setupMobileScrub() {
   mobileScrollTrigger = ScrollTrigger.create({
     trigger: first,
     endTrigger: last,
-    start: 'top 80%',
-    end: 'bottom 20%',
+    start: 'top bottom',
+    end: 'bottom top',
     scrub: true,
-    onUpdate: (self) => {
-      mobileScrubProgress.value = self.progress
+    onUpdate: () => {
+      syncScrubProgresses()
     },
   })
+  syncScrubProgresses()
 }
 
 onMounted(() => {
@@ -448,6 +590,10 @@ onMounted(() => {
 
 watch(isDesktop, () => {
   setupMobileScrub()
+})
+
+watch(trackSections, () => {
+  nextTick(() => setupMobileScrub())
 })
 
 onUnmounted(() => {
@@ -464,8 +610,7 @@ useHead(() => ({
 <style scoped>
 .precrafted {
   --precrafted-gap: calc(var(--gutter) * 2.5);
-  --precrafted-track-height: calc(100dvh - var(--header-height));
-  --precrafted-intro-width: calc(42vw - var(--precrafted-gap));
+  --precrafted-track-height: 100dvh;
 }
 
 /* —— Desktop horizontal —— */
@@ -487,38 +632,13 @@ useHead(() => ({
   height: 100%;
   box-sizing: border-box;
   will-change: transform;
-}
-
-.precrafted-h__title-panel {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  z-index: 0;
-  width: 42vw;
-  max-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: var(--gutter);
-  pointer-events: none;
-}
-
-.precrafted-h__title-inner {
-  max-width: 28rem;
-  width: 100%;
+  padding-left: var(--gutter);
 }
 
 .precrafted-h__lede {
   margin: 0.75rem 0 0;
   font-size: var(--text-xl);
   line-height: 1.4;
-}
-
-.precrafted-h__spacer {
-  flex: 0 0 var(--precrafted-intro-width);
-  width: var(--precrafted-intro-width);
-  height: 100%;
-  pointer-events: none;
 }
 
 .precrafted-h__items {
@@ -540,34 +660,36 @@ useHead(() => ({
 .precrafted-h__item--media {
   display: flex;
   flex-direction: column;
+  width: auto;
   padding: 0;
   background: transparent;
 }
 
-.precrafted-h__item--media-full {
-  height: 100%;
-  width: auto;
-  aspect-ratio: 3 / 4;
+.precrafted-h__item--align-top {
+  align-self: flex-start;
 }
 
-.precrafted-h__item--media-secondary {
-  height: 90%;
-  width: auto;
-  aspect-ratio: 4 / 3;
+.precrafted-h__item--align-middle {
+  align-self: center;
+}
+
+.precrafted-h__item--align-bottom {
   align-self: flex-end;
 }
 
-.precrafted-h__item--media :deep(.scrub-gallery) {
-  width: 100%;
+.precrafted-h__item--media :deep(.scrub-gallery),
+.precrafted-h__item--media :deep(.scrub-gallery__stage) {
+  width: auto;
   height: 100%;
   padding: 0;
 }
 
 .precrafted-h__item--media :deep(.scrub-gallery__frame) {
-  max-height: none;
-  width: 100%;
+  width: auto;
   height: 100%;
-  object-fit: cover;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
   background: transparent;
 }
 
@@ -602,14 +724,6 @@ useHead(() => ({
   margin-inline: auto;
 }
 
-.precrafted-h__item--text .precrafted__heading {
-  text-align: center;
-}
-
-.precrafted-h__item--text .precrafted__eyebrow {
-  text-align: center;
-}
-
 .precrafted-h__item--text .precrafted__finishes {
   grid-template-columns: 1fr;
   max-width: 16rem;
@@ -627,20 +741,22 @@ useHead(() => ({
   padding: calc(var(--header-height) + 2rem) var(--gutter) 5rem;
 }
 
-.precrafted-m__hero {
-  padding-bottom: 1rem;
-}
-
 .precrafted-m__media {
-  margin: 1.5rem 0;
+  margin: 1.5rem auto;
+  width: fit-content;
+  max-width: 100%;
 }
 
-.precrafted-m__media--full {
-  height: min(70dvh, 560px);
+.precrafted-m__media :deep(.scrub-gallery),
+.precrafted-m__media :deep(.scrub-gallery__stage) {
+  width: auto;
+  height: 100%;
 }
 
-.precrafted-m__media--secondary {
-  height: min(52.5dvh, 420px);
+.precrafted-m__media :deep(.scrub-gallery__frame) {
+  width: auto;
+  height: 100%;
+  object-fit: contain;
 }
 
 .precrafted-m__text {
@@ -681,11 +797,6 @@ useHead(() => ({
   margin: 0 0 0.75rem;
 }
 
-.precrafted__tagline {
-  font-size: var(--text-lg);
-  color: var(--charcoal);
-}
-
 .precrafted__finishes {
   list-style: none;
   margin: 0;
@@ -700,7 +811,6 @@ useHead(() => ({
   padding: 1rem 1.25rem;
   border: 1px solid var(--grid-line);
   font-family: var(--font-serif);
-  font-style: italic;
 }
 
 .precrafted__info-block {
@@ -735,7 +845,6 @@ useHead(() => ({
 
 .precrafted__dimensions {
   font-family: var(--font-serif);
-  font-style: italic;
 }
 
 .precrafted__note {

@@ -1,9 +1,23 @@
 <template>
   <div v-if="entries.length" class="scrub-gallery">
     <figure class="scrub-gallery__stage">
+      <video
+        v-if="activeVideoSrc"
+        ref="videoRef"
+        class="scrub-gallery__frame scrub-gallery__video"
+        :src="activeVideoSrc"
+        :poster="activeEntry?.poster || undefined"
+        muted
+        playsinline
+        preload="auto"
+        disablepictureinpicture
+        @loadedmetadata="onVideoMeta"
+        @seeked="onVideoSeeked"
+      />
       <img
+        v-else-if="activeEntry?.poster"
         class="scrub-gallery__frame"
-        :src="activeFrameSrc"
+        :src="activeEntry.poster"
         :alt="activeEntry?.title || 'Scrub preview'"
         draggable="false"
       />
@@ -40,8 +54,8 @@
 <script setup lang="ts">
 export type ScrubGalleryEntry = {
   id: string
-  /** Ordered frame URLs for scroll / pointer scrubbing. */
-  frames: string[]
+  /** Scrub video — scroll progress seeks `currentTime`. */
+  video: string
   poster: string
   title?: string
 }
@@ -49,19 +63,21 @@ export type ScrubGalleryEntry = {
 const props = defineProps<{
   entries: ScrubGalleryEntry[]
   /**
-   * When set (0–1), drives the frame sequence from scroll.
+   * When set (0–1), drives the sequence from scroll.
    * When null/undefined, falls back to pointer scrubbing.
    */
   progress?: number | null
 }>()
 
 const selectedIndex = ref(0)
-const frameIndex = ref(0)
 const thumbsVisible = ref(false)
+const videoRef = ref<HTMLVideoElement | null>(null)
 let rafId = 0
-let pendingFrame = 0
+let pendingTime = 0
 let scrubBound = false
-const preloaded = new Set<string>()
+let videoReady = false
+let isSeeking = false
+let hasPendingSeek = false
 
 const scrollDriven = computed(
   () => typeof props.progress === 'number' && Number.isFinite(props.progress),
@@ -71,41 +87,78 @@ const activeEntry = computed(
   () => props.entries[selectedIndex.value] || props.entries[0] || null,
 )
 
-const activeFrameSrc = computed(() => {
-  const frames = activeEntry.value?.frames || []
-  if (!frames.length) return activeEntry.value?.poster || ''
-  const i = Math.min(frameIndex.value, frames.length - 1)
-  return frames[Math.max(0, i)] || frames[0]
-})
+const activeVideoSrc = computed(() => activeEntry.value?.video || '')
 
-const preloadFrames = (frames: string[]) => {
-  if (!import.meta.client) return
-  for (const src of frames) {
-    if (!src || preloaded.has(src)) continue
-    preloaded.add(src)
-    const img = new Image()
-    img.decoding = 'async'
-    img.src = src
+const seekVideo = (progress: number) => {
+  const video = videoRef.value
+  if (!video || !videoReady || !Number.isFinite(video.duration) || video.duration <= 0) {
+    return
   }
-}
-
-const applyFrameFromProgress = (progress: number) => {
-  const frames = activeEntry.value?.frames
-  if (!frames?.length || !import.meta.client) return
   const clamped = Math.min(1, Math.max(0, progress))
-  pendingFrame = Math.round(clamped * (frames.length - 1))
+  // Quantize to ~24fps so tiny scroll noise doesn't thrash seeks.
+  const frameDuration = 1 / 24
+  const rawTime = clamped * Math.max(0, video.duration - frameDuration)
+  const nextTime = Math.round(rawTime / frameDuration) * frameDuration
+  if (Math.abs(nextTime - pendingTime) < frameDuration * 0.4 && !hasPendingSeek) {
+    return
+  }
+  pendingTime = nextTime
+  hasPendingSeek = true
   if (rafId) return
   rafId = requestAnimationFrame(() => {
     rafId = 0
-    frameIndex.value = pendingFrame
+    flushSeek()
   })
+}
+
+const flushSeek = () => {
+  const el = videoRef.value
+  if (!el || !hasPendingSeek) return
+  if (isSeeking) return
+  if (Math.abs(el.currentTime - pendingTime) < 0.0005) {
+    hasPendingSeek = false
+    return
+  }
+  try {
+    el.pause()
+    isSeeking = true
+    hasPendingSeek = false
+    el.currentTime = pendingTime
+  } catch {
+    isSeeking = false
+  }
+}
+
+const onVideoSeeked = () => {
+  isSeeking = false
+  if (hasPendingSeek) flushSeek()
+}
+
+const applyProgress = (progress: number) => {
+  if (!import.meta.client || !activeVideoSrc.value) return
+  seekVideo(progress)
+}
+
+const onVideoMeta = () => {
+  videoReady = true
+  isSeeking = false
+  const video = videoRef.value
+  if (video) {
+    video.pause()
+    if (scrollDriven.value && typeof props.progress === 'number') {
+      seekVideo(props.progress)
+    } else {
+      video.currentTime = 0
+    }
+  }
 }
 
 watch(
   activeEntry,
-  (entry) => {
-    if (!scrollDriven.value) frameIndex.value = 0
-    if (entry?.frames?.length) preloadFrames(entry.frames)
+  () => {
+    videoReady = false
+    isSeeking = false
+    hasPendingSeek = false
   },
   { immediate: true },
 )
@@ -118,9 +171,6 @@ watch(
       return
     }
     if (selectedIndex.value >= entries.length) selectedIndex.value = 0
-    entries.forEach((entry, i) => {
-      if (i !== selectedIndex.value) preloadFrames(entry.frames)
-    })
   },
 )
 
@@ -128,7 +178,7 @@ watch(
   () => props.progress,
   (progress) => {
     if (typeof progress !== 'number' || !Number.isFinite(progress)) return
-    applyFrameFromProgress(progress)
+    applyProgress(progress)
   },
   { immediate: true },
 )
@@ -142,28 +192,19 @@ const selectEntry = (index: number) => {
   if (index < 0 || index >= props.entries.length) return
   selectedIndex.value = index
   if (scrollDriven.value && typeof props.progress === 'number') {
-    applyFrameFromProgress(props.progress)
-  } else {
-    frameIndex.value = 0
+    applyProgress(props.progress)
   }
 }
 
 const scheduleScrub = (clientX: number, clientY: number) => {
   if (scrollDriven.value) return
-  const frames = activeEntry.value?.frames
-  if (!frames?.length || !import.meta.client) return
   const width = window.innerWidth || 1
   const height = window.innerHeight || 1
   const progress = Math.min(
     1,
     Math.max(0, (clientX / width + clientY / height) / 2),
   )
-  pendingFrame = Math.round(progress * (frames.length - 1))
-  if (rafId) return
-  rafId = requestAnimationFrame(() => {
-    rafId = 0
-    frameIndex.value = pendingFrame
-  })
+  applyProgress(progress)
 }
 
 const onPointerMove = (event: PointerEvent) => {
@@ -213,7 +254,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  width: auto;
   height: 100%;
   min-height: 0;
 }
@@ -221,7 +262,7 @@ onBeforeUnmount(() => {
 .scrub-gallery__stage {
   position: relative;
   margin: 0;
-  width: 100%;
+  width: auto;
   height: 100%;
   max-height: 100%;
   display: flex;
@@ -231,13 +272,17 @@ onBeforeUnmount(() => {
 
 .scrub-gallery__frame {
   display: block;
-  width: 100%;
+  width: auto;
   height: 100%;
   max-height: 100%;
   object-fit: contain;
   background: var(--sand);
   pointer-events: none;
   user-select: none;
+}
+
+.scrub-gallery__video {
+  background: transparent;
 }
 
 .scrub-gallery__thumbs {

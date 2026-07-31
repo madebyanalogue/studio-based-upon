@@ -33,14 +33,6 @@ function getGsapModules() {
   return gsapModulesPromise
 }
 
-function getHeaderOffset() {
-  if (typeof window === 'undefined') return 0
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue('--header-height')
-    .trim()
-  return Number.parseFloat(value) || 0
-}
-
 function resetPinSpacerWidth(trigger: { pin?: HTMLElement | null } | null) {
   const pin = trigger?.pin
   if (!pin) return
@@ -212,7 +204,7 @@ export function useHorizontalGalleryScroll({
       const timeline = gsap.timeline({
         scrollTrigger: {
           trigger: section,
-          start: () => `top top+=${getHeaderOffset()}`,
+          start: 'top top',
           end: () => `+=${measureLayout().totalScroll}`,
           pin,
           scrub: true,

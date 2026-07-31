@@ -100,6 +100,7 @@
           'pdp__stage--fit-height': imageExpanded && zoomFit === 'height',
           'pdp__stage--fit-width': imageExpanded && zoomFit === 'width',
         }"
+        :data-lenis-prevent="imageExpanded && zoomFit === 'width' ? '' : undefined"
         @click="onStageClick"
       >
         <figure v-if="activeEntry" class="pdp__hero">
