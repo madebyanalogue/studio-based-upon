@@ -261,15 +261,25 @@ type GalleryItem = {
   frames?: Array<{ asset?: { url?: string; _ref?: string; _id?: string } }>
 }
 
-const LOCAL_MODEL_01: ScrubGalleryEntry = {
-  id: 'local-model-01',
-  title: 'Model 01',
-  poster: '/precrafted/model-01/frame-001.webp',
-  frames: Array.from({ length: 145 }, (_, i) => {
+const makeLocalSequence = (
+  id: string,
+  title: string,
+  folder: string,
+  frameCount: number,
+): ScrubGalleryEntry => ({
+  id,
+  title,
+  poster: `/precrafted/${folder}/frame-001.webp`,
+  frames: Array.from({ length: frameCount }, (_, i) => {
     const n = String(i + 1).padStart(3, '0')
-    return `/precrafted/model-01/frame-${n}.webp`
+    return `/precrafted/${folder}/frame-${n}.webp`
   }),
-}
+})
+
+const LOCAL_SEQUENCES: ScrubGalleryEntry[] = [
+  makeLocalSequence('local-model-01', 'Model 01', 'model-01', 145),
+  makeLocalSequence('local-model-02', 'Wider Scene', 'model-02', 193),
+]
 
 const query = `*[_type == "preCraftedPage"][0] {
   seoTitle,
@@ -319,7 +329,8 @@ const galleryEntries = computed((): ScrubGalleryEntry[] => {
     })
     .filter((entry): entry is ScrubGalleryEntry => Boolean(entry))
 
-  return fromSanity.length ? fromSanity : [LOCAL_MODEL_01]
+  // Prefer Sanity frame sequences when present; otherwise use local extracts.
+  return fromSanity.length ? fromSanity : LOCAL_SEQUENCES
 })
 
 const sectionRef = ref<HTMLElement | null>(null)
