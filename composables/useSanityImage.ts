@@ -41,5 +41,24 @@ export const useSanityImage = () => {
     return getImageSrc(source.asset)
   }
 
-  return { getImageSrc, imageUrl }
+  /** Resolve a Sanity file asset (e.g. uploaded video) to a CDN URL. */
+  const fileUrl = (
+    source: { asset?: { _ref?: string; _id?: string; url?: string } } | null | undefined,
+  ) => {
+    if (!source?.asset) return ''
+    if (source.asset.url) return source.asset.url
+
+    const ref = source.asset._ref || source.asset._id
+    if (!ref) return ''
+
+    const match = String(ref).match(/^file-([a-zA-Z0-9]+)-([a-zA-Z0-9]+)$/)
+    if (match) {
+      const [, assetId, ext] = match
+      return `https://cdn.sanity.io/files/${PROJECT_ID}/${DATASET}/${assetId}.${ext}`
+    }
+
+    return ''
+  }
+
+  return { getImageSrc, imageUrl, fileUrl }
 }

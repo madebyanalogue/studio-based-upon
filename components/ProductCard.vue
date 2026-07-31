@@ -189,14 +189,11 @@ const onToggle = () => {
 
 <style scoped>
 .product-card {
-  --card-pad: 10px;
-  --title-pad: 15px;
-  --title-pad: 5px 10px 10px;
   --ui-border-color: transparent;
   position: relative;
   min-width: 0;
-  border-right: 1px solid var(--ui-border-color);
-  border-bottom: 1px solid var(--ui-border-color);
+  /* border-right: 1px solid var(--ui-border-color);
+  border-bottom: 1px solid var(--ui-border-color); */
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

@@ -37,20 +37,12 @@
       <button type="button" class="explore__pill" @click="surrender">Surrender</button>
     </div>
 
-    <div class="explore__controls explore__controls--right">
-      <button type="button" class="explore__link" @click="saveAllToComposition">
-        Save to Board
-        <span class="explore__link-arrow" aria-hidden="true">→</span>
-      </button>
-    </div>
-
     <ZoomControls :label="zoomLabel" @zoom-in="zoomIn" @zoom-out="zoomOut" />
   </section>
 </template>
 
 <script setup lang="ts">
 import { DEFAULT_FILTERS, filterKey, isPrecraftedItem } from '~/composables/demoData'
-import { productPath } from '~/composables/useProductCatalog'
 import { toDiscoveryItem, demoLibraryItems } from '~/composables/useLibraryCatalog'
 import {
   useDiscoveryCanvas,
@@ -81,9 +73,6 @@ const props = defineProps<{
 
 const { imageUrl } = useSanityImage()
 const { zoomIn, zoomOut, zoomLabel, zoom } = useGridZoom()
-const { activeMoodboard, addItemToMoodboard, openMoodboard } = useBucket()
-const { initFromBucket, snapshot } = useMoodboard()
-const { createBoard } = useBoards()
 const { affinity, clearAffinity } = useDiscoveryAffinity()
 const {
   layout,
@@ -252,27 +241,6 @@ const revealSequentially = () => {
 const surrender = () => {
   const seen = new Set<string>(layout.value.map((entry) => entry.item._id))
   regenerate(true, seen)
-}
-
-// Save all the items currently on the canvas into the active selection / board.
-const saveAllToComposition = () => {
-  const board = activeMoodboard.value
-  if (!board || !layout.value.length) return
-  layout.value.forEach((entry) => {
-    addItemToMoodboard(board.id, {
-      id: entry.item._id,
-      title: entry.item.title,
-      imageUrl: getItemImage(entry.item),
-      itemType: entry.item.categories?.[0] || entry.item.category || 'item',
-      link: productPath(entry.item),
-    })
-  })
-  const refreshed = activeMoodboard.value
-  if (!refreshed?.items.length) return
-  initFromBucket(refreshed.items)
-  const { placements, strokes } = snapshot()
-  createBoard(placements, strokes)
-  openMoodboard()
 }
 
 watch(
@@ -542,32 +510,6 @@ onBeforeUnmount(() => {
 
 .explore__controls--left {
   left: var(--gutter);
-}
-
-.explore__controls--right {
-  right: calc(var(--gutter) + var(--bucket-push));
-  transition: right var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.explore__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: transparent;
-  transition: text-decoration-color 0.2s ease;
-}
-
-.explore__link-arrow {
-  font-size: 1.05em;
-  line-height: 1;
-}
-
-.explore__link:hover {
-  text-decoration-color: currentColor;
 }
 
 .explore__pill {

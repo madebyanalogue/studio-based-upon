@@ -67,6 +67,7 @@ export default defineNuxtConfig({
   },
   vite: {
     optimizeDeps: {
+      include: ['three'],
       exclude: [
         '@sanity/visual-editing',
         '@sanity/ui',

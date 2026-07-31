@@ -28,6 +28,11 @@
   --thumb-radius: 2px;
   --undo-remove-ms: 5s;
 
+
+  --card-pad: 10px;
+  --title-pad: 15px;
+  --title-pad: 5px 10px 10px;
+
   color-scheme: light;
 }
 

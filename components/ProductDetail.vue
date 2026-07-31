@@ -100,6 +100,7 @@
           'pdp__stage--fit-height': imageExpanded && zoomFit === 'height',
           'pdp__stage--fit-width': imageExpanded && zoomFit === 'width',
         }"
+        @click="onStageClick"
       >
         <figure v-if="activeEntry" class="pdp__hero">
           <div class="pdp__hero-frame">
@@ -337,6 +338,15 @@ const onHeroClick = () => {
   else void expandImage()
 }
 
+/** Close PDP when clicking empty stage chrome (not the image / thumbs / controls). */
+const onStageClick = (event: MouseEvent) => {
+  if (imageExpanded.value) return
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('.pdp__hero-frame, .pdp__thumbs, .pdp__add, button, a')) return
+  emit('close')
+}
+
 const onStageWheel = (event: WheelEvent) => {
   if (imageExpanded.value) return
   if (galleryEntries.value.length < 2) return
@@ -356,6 +366,21 @@ const onStageWheel = (event: WheelEvent) => {
   }, 420)
 }
 
+const onGalleryKeydown = (event: KeyboardEvent) => {
+  if (galleryEntries.value.length < 2) return
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault()
+    cycleImage(1)
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    cycleImage(-1)
+  }
+}
+
 onMounted(() => {
   // Cached image may already be complete before @load fires
   nextTick(() => {
@@ -364,11 +389,13 @@ onMounted(() => {
     else if (!activeEntry.value) revealWithoutFlip()
   })
   window.addEventListener('resize', updateZoomFit)
+  window.addEventListener('keydown', onGalleryKeydown)
 })
 
 onUnmounted(() => {
   stageRef.value?.removeEventListener('wheel', onStageWheel)
   window.removeEventListener('resize', updateZoomFit)
+  window.removeEventListener('keydown', onGalleryKeydown)
   clearExpandCloseListener()
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
 })
@@ -744,10 +771,17 @@ watch(
   padding: 1.25rem var(--gutter) 1.5rem;
   box-sizing: border-box;
   overscroll-behavior: contain;
+  /* X cursor over empty stage / hero chrome; image resets below */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
+}
+
+:global(html.dark) .pdp__stage {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f2ecdf' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
 .pdp__stage--expanded {
   padding: 0;
+  cursor: default;
 }
 
 .pdp__stage--fit-width {
@@ -801,6 +835,7 @@ watch(
   display: inline-grid;
   max-width: 100%;
   max-height: 100%;
+  cursor: default;
 }
 
 .pdp__stage--fit-width .pdp__hero-frame {
@@ -961,7 +996,16 @@ watch(
   top: var(--thumb-ctrl-inset);
   right: var(--thumb-ctrl-inset);
   z-index: 2;
-  transition: transform 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.25s ease,
+    transform 0.2s ease;
+}
+
+.pdp--ready .pdp__add {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .pdp__add:hover {

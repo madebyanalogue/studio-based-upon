@@ -97,38 +97,58 @@
         <div class="products__grid-size" role="group" aria-label="Grid size">
           <button
             v-for="size in gridSizes"
-            :key="size"
+            :key="size.columns"
             type="button"
-            class="grid-size-btn"
-            :class="{ 'grid-size-btn--active': columns === size }"
-            :aria-pressed="columns === size"
-            :aria-label="`Show ${size} columns`"
-            @click="columns = size"
+            class="grid-size-btn interface"
+            :class="{ 'grid-size-btn--active': columns === size.columns }"
+            :aria-pressed="columns === size.columns"
+            :aria-label="size.ariaLabel"
+            :disabled="gridAnimating"
+            @click="setColumns(size.columns)"
           >
-            <span class="grid-size-btn__icon" :style="{ '--dots': size }">
-              <span v-for="n in size * size" :key="n" />
-            </span>
+            {{ size.label }}
+          </button>
+        </div>
+
+        <div class="products__flip-mode" role="group" aria-label="Grid transition style">
+          <button
+            v-for="mode in flipModes"
+            :key="mode.id"
+            type="button"
+            class="flip-mode-btn interface"
+            :class="{ 'flip-mode-btn--active': flipMode === mode.id }"
+            :aria-pressed="flipMode === mode.id"
+            :disabled="gridAnimating"
+            @click="flipMode = mode.id"
+          >
+            {{ mode.label }}
           </button>
         </div>
       </div>
     </div>
 
     <section class="products__grid-wrap section section--wide">
-      <p class="products__count">{{ filteredItems.length }} items</p>
+      <p class="products__count">{{ visibleCount }} items</p>
       <div
+        ref="gridEl"
         class="products__grid"
-        :class="{ 'products__grid--revealed': gridRevealed }"
+        :class="{
+          'products__grid--revealed': gridRevealed,
+          'products__grid--animating': gridAnimating,
+        }"
         :style="{ '--columns': columns }"
       >
         <ProductCard
-          v-for="item in filteredItems"
+          v-for="item in items"
           :key="item._id"
+          :class="{ 'is-filtered-out': visibleIds.size > 0 && !visibleIds.has(item._id) }"
           :item="item"
           :image-url="cardImage(item)"
           :order-label="orderLabel(item._id)"
+          :data-flip-id="item._id"
         />
       </div>
-      <p v-if="!filteredItems.length" class="products__empty">
+      <p v-if="!visibleCount" class="products__empty">
         No items match those filters.
       </p>
     </section>
@@ -136,6 +156,8 @@
 </template>
 
 <script setup lang="ts">
+import gsap from 'gsap'
+import { Flip } from 'gsap/Flip'
 import {
   PRODUCT_MATERIAL_FILTERS,
   PRODUCT_COLOUR_FILTERS,
@@ -197,7 +219,15 @@ const filterKey = libraryFilterKey
 
 const materialFilters = PRODUCT_MATERIAL_FILTERS
 const colourFilters = PRODUCT_COLOUR_FILTERS
-const gridSizes = [3, 4, 5, 6]
+/** Column counts — Wide ≈ Codrops demo 75% (10 cols). */
+const gridSizes = [
+  { columns: 3, label: '3', ariaLabel: 'Show 3 columns' },
+  { columns: 4, label: '4', ariaLabel: 'Show 4 columns' },
+  { columns: 5, label: '5', ariaLabel: 'Show 5 columns' },
+  { columns: 6, label: '6', ariaLabel: 'Show 6 columns' },
+  { columns: 10, label: 'Wide', ariaLabel: 'Wide grid, 10 columns' },
+] as const
+const allowedColumns = gridSizes.map((s) => s.columns)
 
 const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
   default: () => ({
@@ -216,8 +246,191 @@ const activeMaterials = ref<string[]>([...(prefs.value.materials || [])])
 const activeColours = ref<string[]>([...(prefs.value.colours || [])])
 const searchQuery = ref(prefs.value.search || '')
 const columns = ref(
-  gridSizes.includes(prefs.value.columns) ? prefs.value.columns : 4,
+  allowedColumns.includes(prefs.value.columns as (typeof allowedColumns)[number])
+    ? prefs.value.columns
+    : 4,
 )
+const gridEl = ref<HTMLElement | null>(null)
+const gridAnimating = ref(false)
+
+type FlipMode = 'default' | 'stagger'
+const flipModes = [
+  { id: 'default' as const, label: 'Default' },
+  { id: 'stagger' as const, label: 'Stagger' },
+]
+const flipMode = ref<FlipMode>('default')
+const visibleIds = ref<Set<string>>(new Set())
+const visibleCount = computed(() => visibleIds.value.size)
+let filterTransitionsReady = false
+let searchFlipTimer: ReturnType<typeof setTimeout> | null = null
+
+const flipStagger = () =>
+  flipMode.value === 'stagger'
+    ? { amount: 0.3, from: 'random' as const }
+    : undefined
+
+const gridCards = () =>
+  gridEl.value?.querySelectorAll<HTMLElement>('.product-card') ?? []
+
+const visibleGridCards = () =>
+  gridEl.value?.querySelectorAll<HTMLElement>('.product-card:not(.is-filtered-out)') ??
+  []
+
+const setColumns = async (size: number) => {
+  if (!import.meta.client || gridAnimating.value || size === columns.value) return
+
+  // Mobile layout ignores --columns — skip Flip.
+  if (window.matchMedia('(max-width: 767px)').matches) {
+    columns.value = size
+    return
+  }
+
+  const cards = visibleGridCards()
+  if (!cards.length) {
+    columns.value = size
+    return
+  }
+
+  gridAnimating.value = true
+  const state = Flip.getState(cards)
+  columns.value = size
+  await nextTick()
+
+  if (flipMode.value === 'stagger') {
+    Flip.from(state, {
+      absolute: true,
+      duration: 1,
+      ease: 'expo.inOut',
+      stagger: flipStagger(),
+      onComplete: () => {
+        gridAnimating.value = false
+      },
+    })
+    return
+  }
+
+  Flip.from(state, {
+    duration: 0.8,
+    ease: 'expo.inOut',
+    onComplete: () => {
+      gridAnimating.value = false
+    },
+  })
+}
+
+const transitionFilter = async (nextIds: Set<string>) => {
+  if (!import.meta.client || !filterTransitionsReady) {
+    visibleIds.value = nextIds
+    return
+  }
+
+  const same =
+    nextIds.size === visibleIds.value.size &&
+    [...nextIds].every((id) => visibleIds.value.has(id))
+  if (same) return
+
+  if (gridAnimating.value) {
+    visibleIds.value = nextIds
+    return
+  }
+
+  if (!gridEl.value || window.matchMedia('(max-width: 767px)').matches) {
+    visibleIds.value = nextIds
+    return
+  }
+
+  const prevIds = visibleIds.value
+  const leavingIds = [...prevIds].filter((id) => !nextIds.has(id))
+  const enteringIds = [...nextIds].filter((id) => !prevIds.has(id))
+  const cardById = (id: string) =>
+    gridEl.value?.querySelector<HTMLElement>(
+      `.product-card[data-flip-id="${CSS.escape(id)}"]`,
+    ) ?? null
+
+  gridAnimating.value = true
+
+  const FADE_OUT = 0.7
+  const FADE_IN = 0.85
+  const BEAT = 120
+
+  // 1) Obvious fade-out for items leaving the filter.
+  const leavingEls = leavingIds.map(cardById).filter(Boolean) as HTMLElement[]
+  if (leavingEls.length) {
+    await gsap.to(leavingEls, {
+      autoAlpha: 0,
+      duration: FADE_OUT,
+      ease: 'power2.out',
+    })
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, BEAT)
+    })
+  }
+
+  // 2) Hide entrants before they re-enter the flow so they never flash opaque.
+  const enteringEls = enteringIds.map(cardById).filter(Boolean) as HTMLElement[]
+  if (enteringEls.length) gsap.set(enteringEls, { autoAlpha: 0 })
+
+  // Capture positions of items that stay, then apply the new visibility set.
+  const stayingEls = [...prevIds]
+    .filter((id) => nextIds.has(id))
+    .map(cardById)
+    .filter(Boolean) as HTMLElement[]
+
+  const state = Flip.getState(stayingEls.length ? stayingEls : gridCards())
+  visibleIds.value = nextIds
+  await nextTick()
+
+  // Re-assert after display:none is cleared — first paint must stay invisible.
+  if (enteringEls.length) gsap.set(enteringEls, { autoAlpha: 0 })
+
+  // Clear leftover visibility on leavers for a clean later re-entry.
+  for (const id of leavingIds) {
+    const el = cardById(id)
+    if (el) gsap.set(el, { clearProps: 'opacity,visibility' })
+  }
+
+  const finish = () => {
+    gridAnimating.value = false
+  }
+
+  const afterRearrange = async () => {
+    if (!enteringEls.length) {
+      finish()
+      return
+    }
+
+    // Same beat as after fade-out, then a softer mirrored fade-in.
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, BEAT)
+    })
+
+    gsap.to(enteringEls, {
+      autoAlpha: 1,
+      duration: FADE_IN,
+      ease: 'power2.inOut',
+      onComplete: () => {
+        gsap.set(enteringEls, { clearProps: 'opacity,visibility' })
+        finish()
+      },
+    })
+  }
+
+  if (!stayingEls.length) {
+    // Nothing to rearrange — just reveal entrants.
+    void afterRearrange()
+    return
+  }
+
+  Flip.from(state, {
+    absolute: true,
+    duration: flipMode.value === 'stagger' ? 1 : 0.75,
+    ease: 'expo.inOut',
+    stagger: flipStagger(),
+    onComplete: () => {
+      void afterRearrange()
+    },
+  })
+}
 
 watch(
   [activeFilter, activeMaterials, activeColours, searchQuery, columns],
@@ -257,6 +470,11 @@ const onDocumentClick = (event: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
+  visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
+  // Allow one frame so initial filter state paints without a Flip.
+  requestAnimationFrame(() => {
+    filterTransitionsReady = true
+  })
   revealTimer = setTimeout(() => {
     gridRevealed.value = true
   }, 1000)
@@ -265,6 +483,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   if (revealTimer) clearTimeout(revealTimer)
+  if (searchFlipTimer) clearTimeout(searchFlipTimer)
+  if (import.meta.client && gridEl.value) {
+    Flip.killFlipsOf(gridEl.value.querySelectorAll('.product-card'))
+  }
 })
 
 const activeFilters = {
@@ -316,6 +538,40 @@ const filteredItems = computed(() => {
     return pageMatch && materialMatch && colourMatch && searchMatch
   })
 })
+
+const filteredIdSet = computed(
+  () => new Set(filteredItems.value.map((item) => item._id)),
+)
+
+// Seed visibility before first paint of client filters.
+if (!visibleIds.value.size && filteredItems.value.length) {
+  visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
+}
+
+watch(
+  [activeFilter, activeMaterials, activeColours],
+  () => {
+    void transitionFilter(filteredIdSet.value)
+  },
+  { deep: true },
+)
+
+watch(searchQuery, () => {
+  if (searchFlipTimer) clearTimeout(searchFlipTimer)
+  searchFlipTimer = setTimeout(() => {
+    void transitionFilter(filteredIdSet.value)
+  }, 220)
+})
+
+watch(
+  items,
+  () => {
+    if (!filterTransitionsReady) {
+      visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
+    }
+  },
+  { deep: true },
+)
 
 /** 1-based index in Sanity `order(orderRank)` catalog, with leading zeros. */
 const orderById = computed(() => {
@@ -509,36 +765,62 @@ useHead(() => ({
 .products__grid-size {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.15rem;
 }
 
 .grid-size-btn {
   display: grid;
   place-items: center;
-  padding: 0.25rem;
+  min-width: 1.75rem;
+  padding: 0.3rem 0.45rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  transition: color 0.2s ease;
 }
 
-.grid-size-btn__icon {
-  display: grid;
-  grid-template-columns: repeat(var(--dots), 1fr);
-  grid-auto-rows: 1fr;
-  gap: 2px;
-  width: 1.1rem;
-  aspect-ratio: 1;
+.grid-size-btn:last-child {
+  min-width: auto;
+  padding-inline: 0.55rem;
 }
 
-.grid-size-btn__icon span {
-  aspect-ratio: 1;
-  background: var(--muted);
-  transition: background 0.2s ease;
+.grid-size-btn:hover:not(:disabled) {
+  color: var(--charcoal);
 }
 
-.grid-size-btn:hover .grid-size-btn__icon span {
-  background: var(--charcoal);
+.grid-size-btn--active {
+  color: var(--charcoal);
 }
 
-.grid-size-btn--active .grid-size-btn__icon span {
-  background: var(--charcoal);
+.grid-size-btn:disabled {
+  cursor: default;
+}
+
+.products__flip-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--ui-border-color);
+}
+
+.flip-mode-btn {
+  padding: 0.3rem 0.5rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.flip-mode-btn:hover:not(:disabled) {
+  color: var(--charcoal);
+}
+
+.flip-mode-btn--active {
+  color: var(--charcoal);
+}
+
+.flip-mode-btn:disabled {
+  cursor: default;
 }
 
 .products__grid-wrap {
@@ -556,15 +838,21 @@ useHead(() => ({
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0;
-  margin: 0 var(--gutter);
-  border-top: 1px solid var(--ui-border-color);
-  border-left: 1px solid var(--ui-border-color);
+  margin: 0 calc(var(--gutter) - var(--card-pad));
   opacity: 0;
   transition: opacity 0.85s ease;
 }
 
 .products__grid--revealed {
   opacity: 1;
+}
+
+.products__grid--animating {
+  pointer-events: none;
+}
+
+.products__grid :deep(.product-card.is-filtered-out) {
+  display: none !important;
 }
 
 .products__empty {
@@ -579,7 +867,8 @@ useHead(() => ({
 }
 
 @media (max-width: 767px) {
-  .products__grid-size {
+  .products__grid-size,
+  .products__flip-mode {
     display: none;
   }
 }

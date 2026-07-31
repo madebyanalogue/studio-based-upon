@@ -38,7 +38,7 @@ const TEXTURE_NAMES = [
 const SHAPE_NAMES = ['Organic Curve', 'Linear Relief', 'Fractured Plane', 'Undulating Form']
 
 const TYPE_POOL = ['forms', 'surface', 'spirit', 'origin'] as const
-const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquidmetal'] as const
+const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquidmetal', 'landscapes'] as const
 const MATERIAL_POOL = ['gold', 'bronze', 'silver', 'steel', 'glass', 'stone']
 const COLOUR_POOL = ['gold', 'bronze', 'silver', 'pink', 'charcoal', 'ivory']
 
@@ -141,6 +141,7 @@ export const PRODUCT_FORM_TAG_FILTERS = [
   { label: 'Interior', value: 'interior' },
   { label: 'Tramazite', value: 'tramazite' },
   { label: 'Liquid Metal', value: 'liquidmetal' },
+  { label: 'Landscapes', value: 'landscapes' },
 ]
 
 /** Default Materials & Forms chip row (mix of tags + types, no Forms). */

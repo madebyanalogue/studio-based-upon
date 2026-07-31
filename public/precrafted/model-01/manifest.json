@@ -1,0 +1,7 @@
+{
+  "id": "model-01",
+  "title": "Model 01",
+  "frameCount": 145,
+  "pattern": "/precrafted/model-01/frame-%03d.webp",
+  "poster": "/precrafted/model-01/frame-001.webp"
+}
