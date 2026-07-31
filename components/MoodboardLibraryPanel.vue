@@ -163,7 +163,7 @@ const groups = computed(() =>
 }
 
 .library-panel__close:hover {
-  background: #fff;
+  background: var(--elevated-bg);
   border-color: var(--grid-line);
 }
 

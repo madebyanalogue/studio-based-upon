@@ -25,6 +25,16 @@
       </nav>
 
       <div class="header__actions">
+        <button
+          type="button"
+          class="header__theme interface"
+          :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+          :aria-pressed="isDark"
+          @click="toggleTheme"
+        >
+          {{ isDark ? 'Light' : 'Dark' }}
+        </button>
+
         <div
           v-if="boardCount"
           ref="boardsRef"
@@ -142,6 +152,7 @@ const {
   closeDropdown,
 } = useBoards()
 const { loadBoard } = useMoodboard()
+const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
 const boardsRef = ref<HTMLElement | null>(null)
@@ -289,6 +300,16 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
 }
 
+.header__theme {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.header__theme:hover {
+  color: var(--charcoal);
+}
+
 .header__boards {
   position: relative;
 }
@@ -315,7 +336,7 @@ onBeforeUnmount(() => {
   background: var(--warm-white);
   border: 1px solid var(--grid-line);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 32px var(--shadow-color);
 }
 
 .header__boards-option {

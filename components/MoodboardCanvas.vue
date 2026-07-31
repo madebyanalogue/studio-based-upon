@@ -1158,7 +1158,7 @@ onUnmounted(() => {
 
 .moodboard__arrow-handle {
   pointer-events: auto;
-  fill: #fff;
+  fill: var(--elevated-bg);
   stroke: var(--charcoal);
   stroke-width: 1.5;
   cursor: grab;
@@ -1194,7 +1194,7 @@ onUnmounted(() => {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: #fff;
+  background: var(--elevated-bg);
   border: 0.075em solid var(--charcoal);
   border-radius: 2px;
   z-index: 10;
@@ -1308,7 +1308,7 @@ onUnmounted(() => {
 
 .moodboard__text[contenteditable='true'] {
   cursor: text;
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--panel-bg);
   box-shadow: 0 0 0 1px var(--grid-line);
 }
 
@@ -1383,9 +1383,9 @@ onUnmounted(() => {
 }
 
 .moodboard__action:hover {
-  background: #fff;
-  border-color: #fff;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background: var(--elevated-bg);
+  border-color: var(--elevated-bg);
+  box-shadow: 0 8px 24px var(--shadow-color);
 }
 
 .moodboard__action--active {

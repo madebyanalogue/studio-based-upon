@@ -371,7 +371,7 @@ const openSavedBoard = (id: string) => {
   if (!board) return
   setActiveBoard(id)
   loadBoard(board.placements, board.strokes)
-  closeDrawer()
+  // openMoodboard remembers that the cart was open and restores it on close
   openMoodboard()
 }
 
@@ -626,7 +626,7 @@ watch(activeMoodboardId, () => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--panel-bg);
   border-radius: 0;
   overflow: hidden;
   pointer-events: none;

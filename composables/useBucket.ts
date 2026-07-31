@@ -81,6 +81,7 @@ export const useBucket = () => {
   const activeMoodboardId = useState<string | null>('active-moodboard-id', () => null)
   const isOpen = useState('bucket-open', () => false)
   const isMoodboard = useState('bucket-moodboard', () => false)
+  const reopenCartAfterMoodboard = useState('bucket-reopen-after-moodboard', () => false)
   const pickerItem = useState<BucketItem | null>('moodboard-picker-item', () => null)
   const pendingRemovals = useState<PendingRemoval[]>('bucket-pending-removals', () => [])
 
@@ -429,12 +430,18 @@ export const useBucket = () => {
   }
 
   const openMoodboard = () => {
+    // Remember cart state so closing the board can restore it.
+    reopenCartAfterMoodboard.value = isOpen.value
     isMoodboard.value = true
     isOpen.value = false
   }
 
   const closeMoodboard = () => {
     isMoodboard.value = false
+    if (reopenCartAfterMoodboard.value) {
+      isOpen.value = true
+      reopenCartAfterMoodboard.value = false
+    }
   }
 
   const closeDrawer = () => {

@@ -18,6 +18,30 @@ html.bucket-push {
   --bucket-push: var(--side-column-width);
 }
 
+/* Dark mode — warm charcoal surfaces, cream text (inverted light palette) */
+html.dark {
+  color-scheme: dark;
+
+  --cream: #161412;
+  --warm-white: #1f1c18;
+  --sand: #2a2621;
+  --stone: #6b635a;
+  --charcoal: #f2ecdf;
+  --black: #faf7f2;
+  --slate: #c8c0b6;
+  --muted: #9a9188;
+  --accent: #c4a574;
+  --grid-line: rgba(255, 255, 255, 0.07);
+  --handwritten-color: var(--charcoal);
+  --ui-border-color: rgba(255, 255, 255, 0.14);
+  --panel-bg: rgba(31, 28, 24, 0.88);
+  --elevated-bg: #2a2621;
+  --shadow-color: rgba(0, 0, 0, 0.45);
+
+  --thumb-ctrl-color: var(--charcoal);
+  --thumb-ctrl-bg: var(--elevated-bg);
+}
+
 @media (min-width: 768px) {
   :root {
     --gutter: 24px;

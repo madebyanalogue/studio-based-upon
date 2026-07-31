@@ -1,5 +1,5 @@
 :root {
-  /* Colour palette */
+  /* Colour palette — light (default) */
   --cream: #f2ecdf;
   --warm-white: #faf7f2;
   --sand: #e8dfd2;
@@ -12,6 +12,9 @@
   --grid-line: rgba(0, 0, 0, 0.06);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
+  --panel-bg: rgba(255, 255, 255, 0.8);
+  --elevated-bg: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.1);
 
   --bucket-thumb-width: 130px;
   --dock-gutter: 0px;
@@ -20,10 +23,12 @@
   --thumb-ctrl-inset: 4px;
   --thumb-ctrl-size: 23px;
   --thumb-ctrl-color: var(--black);
-  --thumb-ctrl-bg: #fff;
+  --thumb-ctrl-bg: var(--elevated-bg);
   --thumb-ctrl-blend: normal;
   --thumb-radius: 2px;
   --undo-remove-ms: 5s;
+
+  color-scheme: light;
 }
 
 *,

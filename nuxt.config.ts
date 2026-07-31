@@ -52,6 +52,13 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
+      // Apply stored theme before CSS paints to avoid a light→dark flash.
+      script: [
+        {
+          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`,
+          tagPosition: 'head',
+        },
+      ],
     },
     pageTransition: { name: 'page', mode: 'out-in' },
   },
