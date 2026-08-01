@@ -27,105 +27,106 @@
       <div class="header__actions">
         <button
           type="button"
-          class="header__theme interface"
+          class="header__icon-btn"
+          :class="{ 'header__icon-btn--tooltip-hidden': hiddenTooltip === 'theme' }"
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
           :aria-pressed="isDark"
-          @click="toggleTheme"
+          @click="onThemeClick"
+          @mouseleave="clearTooltipHide('theme')"
         >
-          {{ isDark ? 'Light' : 'Dark' }}
+          <!-- Sun when dark (switch to light); moon when light (switch to dark) -->
+          <svg
+            v-if="isDark"
+            class="header__icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
+          </svg>
+          <svg
+            v-else
+            class="header__icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
+          </svg>
+          <span class="header__tooltip interface" aria-hidden="true">
+            {{ isDark ? 'Light' : 'Dark' }}
+          </span>
         </button>
 
-        <div
-          v-if="boardCount"
-          ref="boardsRef"
-          class="header__boards"
+        <button
+          type="button"
+          class="header__icon-btn"
+          :class="{
+            'header__icon-btn--active': isOpen && panelTab === 'boards',
+            'header__icon-btn--tooltip-hidden': hiddenTooltip === 'boards',
+          }"
+          aria-label="Open boards"
+          @click="onBoardsClick"
+          @mouseleave="clearTooltipHide('boards')"
         >
-          <button
-            type="button"
-            class="header__moodboard  interface"
-            :aria-expanded="boardsOpen"
-            aria-haspopup="listbox"
-            aria-label="Open my boards"
-            @click="onToggleBoards"
+          <svg
+            class="header__icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <span>My Boards</span>
-            <span class="header__moodboard-count">{{ boardCount }}</span>
-            <span class="header__boards-caret" aria-hidden="true" />
-          </button>
+            <rect x="3.5" y="3.5" width="7" height="7" rx="1" />
+            <rect x="13.5" y="3.5" width="7" height="7" rx="1" />
+            <rect x="3.5" y="13.5" width="7" height="7" rx="1" />
+            <rect x="13.5" y="13.5" width="7" height="7" rx="1" />
+          </svg>
+          <span class="header__tooltip interface" aria-hidden="true">Boards</span>
+        </button>
 
-          <div
-            v-if="boardsOpen"
-            class="header__boards-menu"
-            role="listbox"
-            aria-label="Saved boards"
-          >
-            <button
-              v-for="board in boards"
-              :key="board.id"
-              type="button"
-              class="header__boards-option"
-              :class="{ 'header__boards-option--active': board.id === activeBoardId }"
-              role="option"
-              :aria-selected="board.id === activeBoardId"
-              @click="openBoard(board.id)"
-            >
-              <span class="header__boards-option-name">{{ board.name }}</span>
-              <span class="header__boards-option-count">
-                {{ board.placements.length }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div
-          ref="selectionsRef"
-          class="header__boards header__selections"
+        <button
+          type="button"
+          class="header__icon-btn"
+          :class="{
+            'header__icon-btn--active': isOpen && panelTab === 'selections',
+            'header__icon-btn--tooltip-hidden': hiddenTooltip === 'selections',
+          }"
+          aria-label="Open selections"
+          @click="onSelectionsClick"
+          @mouseleave="clearTooltipHide('selections')"
         >
-          <button
-            type="button"
-            class="header__moodboard  interface"
-            :class="{ 'header__moodboard--empty': selectionsEmpty }"
-            :aria-expanded="isOpen || selectionsOpen"
-            aria-haspopup="listbox"
-            aria-label="Open my selections"
-            @click="toggleSelections"
+          <svg
+            class="header__icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <span>My Selections</span>
-            <span class="header__moodboard-count">{{ selectionCount }}</span>
-            <span class="header__boards-caret" aria-hidden="true" />
-          </button>
+            <path
+              d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
+            />
+          </svg>
+          <span class="header__tooltip interface" aria-hidden="true">Selections</span>
+        </button>
 
-          <div
-            v-if="selectionsOpen"
-            class="header__boards-menu"
-            role="listbox"
-            aria-label="Saved selections"
-          >
-            <button
-              v-for="board in moodboards"
-              :key="board.id"
-              type="button"
-              class="header__boards-option"
-              :class="{ 'header__boards-option--active': board.id === activeMoodboard?.id }"
-              role="option"
-              :aria-selected="board.id === activeMoodboard?.id"
-              @click="openSelection(board.id)"
-            >
-              <span class="header__boards-option-name">{{ board.name }}</span>
-              <span class="header__boards-option-count">
-                {{ board.items.length }}
-              </span>
-            </button>
-            <button
-              type="button"
-              class="header__boards-new"
-              @click="onNewSelection"
-            >
-              New Selection +
-            </button>
-          </div>
-        </div>
-
+        <NuxtLink to="/enquire" class="header__enquire interface">
+          Enquire
+        </NuxtLink>
       </div>
     </div>
   </header>
@@ -133,106 +134,48 @@
 
 <script setup lang="ts">
 const { logo, headerMenu } = useSiteSettings()
-const {
-  isOpen,
-  activeMoodboard,
-  createMoodboard,
-  moodboards,
-  setActiveMoodboard,
-  openMoodboard,
-  closeDrawer,
-} = useBucket()
-const {
-  boards,
-  boardCount,
-  boardsOpen,
-  activeBoardId,
-  setActiveBoard,
-  toggleDropdown,
-  closeDropdown,
-} = useBoards()
-const { loadBoard } = useMoodboard()
+const { isOpen, panelTab, openDrawer, closeDrawer } = useBucket()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
-const boardsRef = ref<HTMLElement | null>(null)
-const selectionsRef = ref<HTMLElement | null>(null)
-const selectionsOpen = ref(false)
-const selectionCount = computed(() => moodboards.value.length)
-const selectionsEmpty = computed(() =>
-  moodboards.value.every((board) => board.items.length === 0),
-)
+type TooltipId = 'theme' | 'boards' | 'selections'
+const hiddenTooltip = ref<TooltipId | null>(null)
+
+const hideTooltip = (id: TooltipId) => {
+  hiddenTooltip.value = id
+}
+
+const clearTooltipHide = (id: TooltipId) => {
+  if (hiddenTooltip.value === id) hiddenTooltip.value = null
+}
 
 const isActive = (path: string) => {
   if (path === '/') return route.path === '/'
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
-const openBoard = (id: string) => {
-  const board = boards.value.find((b) => b.id === id)
-  if (!board) return
-  setActiveBoard(id)
-  loadBoard(board.placements, board.strokes)
-  closeDropdown()
-  openMoodboard()
+const onThemeClick = () => {
+  hideTooltip('theme')
+  toggleTheme()
 }
 
-const onToggleBoards = () => {
-  toggleDropdown()
-  if (boardsOpen.value) closeSelections()
-}
-
-const toggleSelections = () => {
-  closeDropdown()
-  if (isOpen.value) {
+const onBoardsClick = () => {
+  hideTooltip('boards')
+  if (isOpen.value && panelTab.value === 'boards') {
     closeDrawer()
-    closeSelections()
     return
   }
-  isOpen.value = true
-  selectionsOpen.value = true
+  openDrawer('boards')
 }
 
-const closeSelections = () => {
-  selectionsOpen.value = false
-}
-
-const openSelection = (id: string) => {
-  setActiveMoodboard(id)
-  closeSelections()
-  isOpen.value = true
-}
-
-const onNewSelection = () => {
-  closeSelections()
-  createMoodboard()
-}
-
-const onDocumentClick = (event: MouseEvent) => {
-  const target = event.target as Node
-  if (boardsOpen.value && !boardsRef.value?.contains(target)) {
-    closeDropdown()
+const onSelectionsClick = () => {
+  hideTooltip('selections')
+  if (isOpen.value && panelTab.value === 'selections') {
+    closeDrawer()
+    return
   }
-  if (selectionsOpen.value && !selectionsRef.value?.contains(target)) {
-    closeSelections()
-  }
+  openDrawer('selections')
 }
-
-const onKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'Escape') return
-  if (boardsOpen.value) closeDropdown()
-  if (selectionsOpen.value) closeSelections()
-}
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  window.addEventListener('keydown', onKeydown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  window.removeEventListener('keydown', onKeydown)
-})
 </script>
 
 <style scoped>
@@ -240,11 +183,10 @@ onBeforeUnmount(() => {
   position: fixed;
   top: 0;
   left: 0;
-  right: var(--bucket-push);
+  right: 0;
   z-index: 100;
-  transition:
-    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
-    right var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+  background: transparent;
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .header__inner {
@@ -297,133 +239,75 @@ onBeforeUnmount(() => {
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.35rem;
 }
 
-.header__theme {
-  font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
-}
-
-.header__theme:hover {
-  color: var(--charcoal);
-}
-
-.header__boards {
+.header__icon-btn {
   position: relative;
-}
-
-.header__boards-caret {
-  width: 0;
-  height: 0;
-  margin-left: 0.15rem;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid currentColor;
-  opacity: 0.55;
-}
-
-.header__boards-menu {
-  position: absolute;
-  top: calc(100% + 0.65rem);
-  right: 0;
-  z-index: 120;
-  min-width: 12rem;
-  display: flex;
-  flex-direction: column;
-  padding: 0.4rem;
-  background: var(--warm-white);
-  border: 1px solid var(--grid-line);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px var(--shadow-color);
-}
-
-.header__boards-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.55rem 0.65rem;
-  border-radius: 8px;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  text-align: left;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-
-.header__boards-option:hover,
-.header__boards-option--active {
-  color: var(--charcoal);
-  background: var(--cream);
-}
-
-.header__boards-option-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.header__boards-option-count {
-  flex: none;
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.header__boards-new {
-  margin-top: 0.25rem;
-  padding: 0.65rem 0.65rem 0.55rem;
-  border-top: 1px solid var(--grid-line);
-  border-radius: 0 0 8px 8px;
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  text-align: left;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-
-.header__boards-new:hover {
-  background: var(--cream);
-}
-
-.header__moodboard {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  transition: color 0.2s ease;
-}
-
-.header__moodboard:hover {
-  color: var(--accent);
-}
-
-.header__moodboard-count {
-  min-width: 1.25rem;
-  height: 1.25rem;
-  padding: 0.1em 0.25rem;
   display: grid;
   place-items: center;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: var(--charcoal);
-  color: var(--warm-white);
-  font-family: var(--font-sans);
-  font-style: normal;
-  font-size: 0.7rem;
+  width: 2rem;
+  height: 2rem;
+  color: var(--muted);
+  transition: color 0.2s ease;
 }
 
-.header__moodboard--empty .header__moodboard-count {
-  background: transparent;
-  border-color: var(--muted);
-  color: var(--muted);
+.header__icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.header__icon-btn:hover,
+.header__icon-btn--active {
+  color: var(--charcoal);
+}
+
+.header__tooltip {
+  position: absolute;
+  top: calc(100% + 0.4rem + 5px);
+  left: 50%;
+  z-index: 2;
+  padding: 0.35rem 0.55rem;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
+  white-space: nowrap;
+  background: var(--elevated-bg);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.header__icon-btn:hover .header__tooltip,
+.header__icon-btn:focus-visible .header__tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.header__icon-btn--active .header__tooltip,
+.header__icon-btn--tooltip-hidden .header__tooltip,
+.header__icon-btn--active:hover .header__tooltip,
+.header__icon-btn--tooltip-hidden:hover .header__tooltip,
+.header__icon-btn--active:focus-visible .header__tooltip,
+.header__icon-btn--tooltip-hidden:focus-visible .header__tooltip {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-2px);
 }
 
 .header__enquire {
-  padding: 0.45rem 0.9rem;
+  margin-left: 0.35rem;
+  padding: 8px 13px;
+  border-radius: 6px;
   font-size: var(--text-sm);
+  color: var(--warm-white);
+  background: var(--charcoal);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.header__enquire:hover {
+  background: var(--accent);
 }
 
 @media (max-width: 767px) {
@@ -441,11 +325,6 @@ onBeforeUnmount(() => {
   }
 
   .header__nav-link {
-    font-size: var(--text-xs);
-  }
-
-  .header__enquire {
-    padding: 0.4rem 0.65rem;
     font-size: var(--text-xs);
   }
 }

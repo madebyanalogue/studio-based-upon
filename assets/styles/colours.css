@@ -5,17 +5,27 @@
   --gutter: 16px;
   --header-height: 56px;
   --filter-bar-height: 72px;
-  /* Shared width: cart panel + PDP side columns */
+  /* PDP side columns */
   --side-column-width: 320px;
-  --bucket-width: var(--side-column-width);
   --bucket-rail-width: 2.15rem;
   --bucket-close-ms: 0.4s;
+  /* Shared light/dark surface fade (header, PDP, overlay) */
+  --theme-ms: 0.4s;
+  --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Bottom cart: panel height = header + list pad (top+bottom) + item row */
+  --bucket-item-height: 150px;
+  --bucket-list-pad: 1em;
+  /* Matches toolbar: 1rem pad top/bottom + .interface line-height + border */
+  --bucket-header-height: calc(2rem + (12px * 1.3) + 1px);
+  --bucket-height: calc(
+    var(--bucket-header-height) + (var(--bucket-list-pad) * 2) + var(--bucket-item-height)
+  );
   /* 0 when closed; set to cart footprint when open (pushes page content) */
   --bucket-push: 0px;
 }
 
 html.bucket-push {
-  --bucket-push: var(--side-column-width);
+  --bucket-push: var(--bucket-height);
 }
 
 /* Dark mode — warm charcoal surfaces, cream text (inverted light palette) */

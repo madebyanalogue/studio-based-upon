@@ -80,6 +80,7 @@ export const useBucket = () => {
   const moodboards = useState<MoodboardBucket[]>('moodboards', () => [defaultMoodboard()])
   const activeMoodboardId = useState<string | null>('active-moodboard-id', () => null)
   const isOpen = useState('bucket-open', () => false)
+  const panelTab = useState<'selections' | 'boards'>('bucket-panel-tab', () => 'selections')
   const isMoodboard = useState('bucket-moodboard', () => false)
   const reopenCartAfterMoodboard = useState('bucket-reopen-after-moodboard', () => false)
   const pickerItem = useState<BucketItem | null>('moodboard-picker-item', () => null)
@@ -448,6 +449,11 @@ export const useBucket = () => {
     isOpen.value = false
   }
 
+  const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
+    panelTab.value = tab
+    isOpen.value = true
+  }
+
   onMounted(hydrate)
 
   return {
@@ -457,6 +463,7 @@ export const useBucket = () => {
     items,
     selectionEntries,
     isOpen,
+    panelTab,
     isMoodboard,
     pickerItem,
     count,
@@ -481,5 +488,6 @@ export const useBucket = () => {
     openMoodboard,
     closeMoodboard,
     closeDrawer,
+    openDrawer,
   }
 }

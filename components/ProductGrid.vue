@@ -265,7 +265,7 @@ watch(zoom, (next, prev) => {
   clampPan()
 })
 
-const getItemImage = (item: GridItemData) => imageUrl(item.image, 700)
+const getItemImage = (item: GridItemData) => imageUrl(item.image, 900)
 
 /* ---------------------------- Pan + drag state ---------------------------- */
 const viewport = ref<HTMLElement | null>(null)

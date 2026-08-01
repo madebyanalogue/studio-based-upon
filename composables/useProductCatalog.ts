@@ -1,5 +1,13 @@
 import { DEMO_PRODUCTS, type FormalItem } from './demoData'
 
+export type RelatedProduct = {
+  _id: string
+  title: string
+  slug: string
+  category?: string
+  image?: { asset?: { url?: string } }
+}
+
 export type ProductRecord = {
   _id: string
   title: string
@@ -7,6 +15,7 @@ export type ProductRecord = {
   itemType?: string
   style?: string
   series?: string
+  category?: string
   dimensions?: string
   comCol?: string
   finishes?: string[]
@@ -15,9 +24,12 @@ export type ProductRecord = {
   categories?: string[]
   materials?: string[]
   colours?: string[]
+  tags?: string[]
   image?: { asset?: { url?: string } }
   gallery?: { asset?: { url?: string } }[]
   spiritGallery?: { asset?: { url?: string } }[]
+  /** Manual related picks from Sanity; empty → auto-match in the PDP */
+  related?: RelatedProduct[]
 }
 
 function slugify(title: string) {
@@ -156,10 +168,19 @@ export const useProductCatalog = () => {
     edition,
     description,
     categories,
+    tags,
     materials,
+    colours,
     image { asset-> { url } },
     gallery[] { asset-> { url } },
-    spiritGallery[] { asset-> { url } }
+    spiritGallery[] { asset-> { url } },
+    related[]->{
+      _id,
+      title,
+      "slug": coalesce(slug.current, _id),
+      category,
+      image { asset-> { url } }
+    }
   }`
 
   const allProductsQuery = `*[_type == "gridItem" && (defined(slug.current) || category in ["spirit", "origin"]) && (linkType == "product" || !defined(linkType) || linkType == "none" || category in ["spirit", "origin"])] | order(orderRank) {

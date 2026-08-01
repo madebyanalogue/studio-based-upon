@@ -20,6 +20,10 @@
                 <PrecraftedScrubGallery
                   :entries="[section.entry]"
                   :progress="itemProgress(section.id)"
+                  :scrub-active="isDesktop && activeScrubId === section.id"
+                  :loaded-src="isDesktop ? loadedSrcById[section.id] : null"
+                  :load-progress="loadProgressById[section.id] ?? 0"
+                  :is-loading="isDesktop && loadingVideoId === section.id"
                 />
               </figure>
 
@@ -120,6 +124,10 @@
           <PrecraftedScrubGallery
             :entries="[section.entry]"
             :progress="itemProgress(section.id)"
+            :scrub-active="!isDesktop && activeScrubId === section.id"
+            :loaded-src="!isDesktop ? loadedSrcById[section.id] : null"
+            :load-progress="loadProgressById[section.id] ?? 0"
+            :is-loading="!isDesktop && loadingVideoId === section.id"
           />
         </div>
 
@@ -370,6 +378,7 @@ const query = `*[_type == "preCraftedPage"][0] {
     installNotes,
     heightPercent,
     align,
+    cloudflareVideoUrl,
     scrubVideo { asset->{ url, originalFilename } },
     poster {
       asset->{
@@ -381,7 +390,7 @@ const query = `*[_type == "preCraftedPage"][0] {
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v2',
+  'preCraftedPage-v4',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -428,7 +437,9 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
       const id = item?._key || `section-${index}`
       if (item?._type === 'precraftedVideoSection') {
         const title = item.title || 'Video'
-        const video = item.scrubVideo?.asset?.url || ''
+        const cloudflareUrl =
+          typeof item.cloudflareVideoUrl === 'string' ? item.cloudflareVideoUrl.trim() : ''
+        const video = cloudflareUrl || item.scrubVideo?.asset?.url || ''
         if (!video) return null
         return {
           id,
@@ -490,6 +501,100 @@ const trackSections = computed((): TrackSection[] => {
   return fromSanity.length ? fromSanity : DEFAULT_SECTIONS
 })
 
+const videoSections = computed(() =>
+  trackSections.value.filter(
+    (section): section is VideoTrackSection => section.kind === 'video',
+  ),
+)
+
+const loadedSrcById = ref<Record<string, string>>({})
+const loadProgressById = ref<Record<string, number>>({})
+const loadingVideoId = ref<string | null>(null)
+const objectUrls: string[] = []
+let loadQueueToken = 0
+
+async function fetchVideoBlob(
+  url: string,
+  onProgress: (progress: number) => void,
+): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Failed to load video (${response.status})`)
+
+  const total = Number(response.headers.get('content-length') || 0)
+  if (!response.body) {
+    const blob = await response.blob()
+    onProgress(1)
+    const objectUrl = URL.createObjectURL(blob)
+    objectUrls.push(objectUrl)
+    return objectUrl
+  }
+
+  const reader = response.body.getReader()
+  const chunks: BlobPart[] = []
+  let received = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    chunks.push(value.slice())
+    received += value.length
+    if (total > 0) onProgress(received / total)
+    else onProgress(Math.min(0.95, received / (28 * 1024 * 1024)))
+  }
+
+  onProgress(1)
+  const blob = new Blob(chunks, { type: 'video/mp4' })
+  const objectUrl = URL.createObjectURL(blob)
+  objectUrls.push(objectUrl)
+  return objectUrl
+}
+
+async function loadVideosSequentially() {
+  if (!import.meta.client) return
+  const token = ++loadQueueToken
+  const queue = videoSections.value
+
+  for (const section of queue) {
+    if (token !== loadQueueToken) return
+    if (loadedSrcById.value[section.id]) continue
+
+    loadingVideoId.value = section.id
+    loadProgressById.value = {
+      ...loadProgressById.value,
+      [section.id]: loadProgressById.value[section.id] ?? 0,
+    }
+
+    try {
+      const objectUrl = await fetchVideoBlob(section.entry.video, (progress) => {
+        if (token !== loadQueueToken) return
+        loadProgressById.value = {
+          ...loadProgressById.value,
+          [section.id]: progress,
+        }
+      })
+      if (token !== loadQueueToken) return
+      loadedSrcById.value = {
+        ...loadedSrcById.value,
+        [section.id]: objectUrl,
+      }
+    } catch (error) {
+      console.warn(`Failed to preload ${section.entry.title || section.id}`, error)
+      // Fall back to direct URL so the clip can still attempt to play.
+      loadedSrcById.value = {
+        ...loadedSrcById.value,
+        [section.id]: section.entry.video,
+      }
+      loadProgressById.value = {
+        ...loadProgressById.value,
+        [section.id]: 1,
+      }
+    }
+  }
+
+  if (token === loadQueueToken) loadingVideoId.value = null
+}
+
 function mediaStyle(section: VideoTrackSection) {
   return {
     height: mediaHeightCss(section.heightPercent),
@@ -502,8 +607,12 @@ const trackRef = ref<HTMLElement | null>(null)
 const itemsRef = ref<HTMLElement | null>(null)
 
 const scrubProgressById = ref<Record<string, number>>({})
+/** Only the most on-screen clip is scrubbed; others freeze to avoid dual-decode jank. */
+const activeScrubId = ref<string | null>(null)
 
 function itemProgress(id: string) {
+  // Hold scrub at 0 until this clip has fully loaded.
+  if (!loadedSrcById.value[id]) return 0
   return scrubProgressById.value[id] ?? 0
 }
 
@@ -517,17 +626,50 @@ function progressForElement(el: Element) {
   return Math.min(1, Math.max(0, (start - rect.left) / span))
 }
 
+function visibleScore(el: Element) {
+  const rect = el.getBoundingClientRect()
+  const vw = window.innerWidth || 1
+  const vh = window.innerHeight || 1
+  const visibleW = Math.max(0, Math.min(rect.right, vw) - Math.max(rect.left, 0))
+  const visibleH = Math.max(0, Math.min(rect.bottom, vh) - Math.max(rect.top, 0))
+  if (visibleW <= 0 || visibleH <= 0) return -Infinity
+  const centerX = (rect.left + rect.right) / 2
+  const centerY = (rect.top + rect.bottom) / 2
+  const dist = Math.hypot(centerX - vw / 2, centerY - vh / 2)
+  // Prefer larger on-screen area, then closer to viewport centre.
+  return visibleW * visibleH - dist
+}
+
 function syncScrubProgresses() {
   if (!import.meta.client) return
   const root = isDesktop.value ? itemsRef.value : document.querySelector('.precrafted-m')
   if (!root) return
-  const next: Record<string, number> = { ...scrubProgressById.value }
+
+  let bestId: string | null = null
+  let bestScore = -Infinity
+  const measured: Record<string, number> = {}
+
   root.querySelectorAll<HTMLElement>('[data-scrub-id]').forEach((el) => {
     const id = el.dataset.scrubId
-    if (!id) return
-    next[id] = progressForElement(el)
+    if (!id || !loadedSrcById.value[id]) return
+    measured[id] = progressForElement(el)
+    const score = visibleScore(el)
+    if (score > bestScore) {
+      bestScore = score
+      bestId = id
+    }
   })
-  scrubProgressById.value = next
+
+  activeScrubId.value = bestId
+
+  if (!bestId || measured[bestId] === undefined) return
+
+  // Only tick the active clip — frozen neighbours keep their last frame.
+  if (scrubProgressById.value[bestId] === measured[bestId]) return
+  scrubProgressById.value = {
+    ...scrubProgressById.value,
+    [bestId]: measured[bestId],
+  }
 }
 
 const isDesktop = ref(false)
@@ -591,6 +733,7 @@ onMounted(() => {
   syncDesktop()
   desktopMediaQuery.addEventListener('change', syncDesktop)
   setupMobileScrub()
+  loadVideosSequentially()
 })
 
 watch(isDesktop, () => {
@@ -598,13 +741,19 @@ watch(isDesktop, () => {
 })
 
 watch(trackSections, () => {
-  nextTick(() => setupMobileScrub())
+  nextTick(() => {
+    setupMobileScrub()
+    loadVideosSequentially()
+  })
 })
 
 onUnmounted(() => {
+  loadQueueToken += 1
   desktopMediaQuery?.removeEventListener('change', syncDesktop)
   mobileScrollTrigger?.kill()
   mobileScrollTrigger = null
+  for (const url of objectUrls) URL.revokeObjectURL(url)
+  objectUrls.length = 0
 })
 
 useHead(() => ({
@@ -644,6 +793,7 @@ useHead(() => ({
   margin: 0.75rem 0 0;
   font-size: var(--text-xl);
   line-height: 1.4;
+  font-family: var(--serif);
 }
 
 .precrafted-h__items {
@@ -714,6 +864,12 @@ useHead(() => ({
   max-width: 22rem;
   text-align: center;
 }
+
+.precrafted-h__item--intro .precrafted-h__text-inner {
+  max-width: 50rem;
+  text-align: left;
+}
+
 
 .precrafted-h__item--info {
   overflow-y: auto;

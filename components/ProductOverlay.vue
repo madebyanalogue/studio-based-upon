@@ -11,12 +11,12 @@
         role="dialog"
         aria-modal="true"
         aria-label="Product detail"
+        data-lenis-prevent
       >
         <div class="product-overlay__backdrop" @click="close" />
         <div class="product-overlay__panel">
           <ProductDetail
             v-if="openSlug"
-            :key="openSlug"
             :slug="openSlug"
             @close="close"
             @navigate="onNavigate"
@@ -69,15 +69,19 @@ onUnmounted(() => {
 <style scoped>
 .product-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: calc(100dvh - var(--bucket-push));
   z-index: 250;
+  transition: height var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .product-overlay__backdrop {
   position: absolute;
   inset: 0;
   background: rgba(26, 26, 26, 0);
-  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background var(--theme-ms) var(--theme-ease);
 }
 
 .product-overlay:not(.product-overlay--flipping) .product-overlay__backdrop {
@@ -91,7 +95,7 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: transparent;
-  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+  transition: background var(--theme-ms) var(--theme-ease);
 }
 
 .product-overlay:not(.product-overlay--flipping) .product-overlay__panel {

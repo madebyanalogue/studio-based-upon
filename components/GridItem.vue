@@ -6,6 +6,8 @@
       class="grid-item__media"
       :class="{ 'grid-item__media--image': Boolean(activeImage) }"
       :aria-label="item.title"
+      @pointerenter="prefetchActiveHero"
+      @focusin="prefetchActiveHero"
       @click="onOpen"
     >
       <img
@@ -43,6 +45,7 @@
 import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { uniqueImageUrls, randomImageIndex } from '~/composables/productImages'
+import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 type GridItemData = {
   _id: string
@@ -70,7 +73,7 @@ const emit = defineEmits<{
 }>()
 
 const { requestSave, isSaved } = useBucket()
-const { imageUrl: buildUrl } = useSanityImage()
+const { imageUrl: buildUrl, prefetchImage } = useSanityImage()
 const { open, returnImage } = useProductOverlay()
 const saved = computed(() => {
   const index = projectImages.value.length > 1 ? imageIndex.value : undefined
@@ -113,6 +116,42 @@ const productSlug = computed(() =>
   }),
 )
 
+const imageAssets = computed(() => [
+  props.item.image,
+  ...(props.item.gallery || []),
+  ...(props.item.spiritGallery || []),
+])
+
+const projectImages = computed(() => {
+  const thumb = props.imageUrl || buildUrl(props.item.image, IMAGE_WIDTH.thumb)
+  return uniqueImageUrls(
+    thumb,
+    ...imageAssets.value.map((asset) =>
+      asset ? buildUrl(asset, IMAGE_WIDTH.thumb) : '',
+    ),
+  )
+})
+
+const heroImages = computed(() =>
+  uniqueImageUrls(
+    ...imageAssets.value.map((asset) =>
+      asset ? buildUrl(asset, IMAGE_WIDTH.hero) : '',
+    ),
+  ),
+)
+
+const activeImage = computed(
+  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
+)
+
+const activeHeroImage = computed(
+  () => heroImages.value[imageIndex.value] || activeImage.value || '',
+)
+
+const prefetchActiveHero = () => {
+  if (activeHeroImage.value) void prefetchImage(activeHeroImage.value)
+}
+
 const onOpen = (event: MouseEvent) => {
   if (!productSlug.value) return
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
@@ -120,7 +159,13 @@ const onOpen = (event: MouseEvent) => {
   const source =
     ((event.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null) ||
     ((event.target as HTMLElement | null)?.closest?.('img') as HTMLElement | null)
-  open(productSlug.value, { source, imageIndex: imageIndex.value })
+  const flipSrc = activeHeroImage.value
+  if (flipSrc) void prefetchImage(flipSrc)
+  open(productSlug.value, {
+    source,
+    imageIndex: imageIndex.value,
+    flipSrc: flipSrc || null,
+  })
 }
 
 const href = computed(() => {
@@ -138,23 +183,6 @@ const href = computed(() => {
 
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
-
-const projectImages = computed(() => {
-  const assets = [
-    props.item.image,
-    ...(props.item.gallery || []),
-    ...(props.item.spiritGallery || []),
-  ]
-  const hero = props.imageUrl || buildUrl(props.item.image)
-  return uniqueImageUrls(
-    hero,
-    ...assets.map((asset) => (asset ? buildUrl(asset, 1200) : '')),
-  )
-})
-
-const activeImage = computed(
-  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
-)
 
 const randomizeImage = () => {
   imageIndex.value = randomImageIndex(projectImages.value.length)

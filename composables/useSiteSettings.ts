@@ -54,42 +54,32 @@ export const useSiteSettings = () => {
       { _key: '2', text: 'Materials & Forms', path: '/materials-and-forms' },
       { _key: '3', text: '(Pre)Crafted', path: '/pre-crafted' },
       { _key: '4', text: 'About', path: '/about' },
-      { _key: '5', text: 'Enquire', path: '/enquire' },
     ],
   }
 
   const normalizeMenuItems = (items: { _key?: string; text?: string; path?: string }[] = []) =>
-    items.map((item) => {
-      if (item.path === '/products' || item.path === '/materials-and-forms') {
-        return { ...item, text: 'Materials & Forms', path: '/materials-and-forms' }
-      }
-      if (item.path === '/' || item.text === 'Flow State') return { ...item, text: 'Discovery' }
-      if (item.path === '/contact') return { ...item, text: 'Enquire', path: '/enquire' }
-      return item
-    })
-
-  const withEnquire = (items: { _key?: string; text?: string; path?: string }[] = []) => {
-    const filtered = items.filter(
-      (item) => item.path !== '/contact' && item.path !== '/enquire',
-    )
-    return [
-      ...normalizeMenuItems(filtered),
-      { _key: 'enquire', text: 'Enquire', path: '/enquire' },
-    ]
-  }
+    items
+      .filter((item) => item.path !== '/contact' && item.path !== '/enquire')
+      .map((item) => {
+        if (item.path === '/products' || item.path === '/materials-and-forms') {
+          return { ...item, text: 'Materials & Forms', path: '/materials-and-forms' }
+        }
+        if (item.path === '/' || item.text === 'Flow State') return { ...item, text: 'Discovery' }
+        return item
+      })
 
   const headerMenu = computed(() => {
     const menu = settings.value?.headerMenu || defaultMenu
     return {
       ...menu,
-      items: withEnquire(menu.items || []),
+      items: normalizeMenuItems(menu.items || []),
     }
   })
   const mobileMenu = computed(() => {
     const menu = settings.value?.mobileMenu || settings.value?.headerMenu || defaultMenu
     return {
       ...menu,
-      items: withEnquire(menu.items || []),
+      items: normalizeMenuItems(menu.items || []),
     }
   })
 

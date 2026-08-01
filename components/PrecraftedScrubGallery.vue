@@ -1,26 +1,42 @@
 <template>
   <div v-if="entries.length" class="scrub-gallery">
     <figure class="scrub-gallery__stage">
+      <img
+        v-if="activeEntry?.poster"
+        class="scrub-gallery__frame scrub-gallery__poster"
+        :class="{ 'scrub-gallery__poster--hidden': scrubReady }"
+        :src="activeEntry.poster"
+        :alt="activeEntry?.title || 'Scrub preview'"
+        draggable="false"
+      />
+
       <video
-        v-if="activeVideoSrc"
+        v-if="resolvedVideoSrc"
         ref="videoRef"
         class="scrub-gallery__frame scrub-gallery__video"
-        :src="activeVideoSrc"
-        :poster="activeEntry?.poster || undefined"
+        :class="{
+          'scrub-gallery__video--ready': scrubReady,
+          'scrub-gallery__video--solo': !activeEntry?.poster,
+        }"
+        :src="resolvedVideoSrc"
         muted
         playsinline
         preload="auto"
         disablepictureinpicture
         @loadedmetadata="onVideoMeta"
-        @seeked="onVideoSeeked"
+        @canplaythrough="onVideoReady"
       />
-      <img
-        v-else-if="activeEntry?.poster"
-        class="scrub-gallery__frame"
-        :src="activeEntry.poster"
-        :alt="activeEntry?.title || 'Scrub preview'"
-        draggable="false"
-      />
+
+      <div
+        v-if="showLoadingLine"
+        class="scrub-gallery__load"
+        aria-hidden="true"
+      >
+        <span
+          class="scrub-gallery__load-line"
+          :style="{ transform: `scaleX(${Math.min(1, Math.max(0, loadProgress))})` }"
+        />
+      </div>
     </figure>
 
     <div
@@ -60,24 +76,42 @@ export type ScrubGalleryEntry = {
   title?: string
 }
 
-const props = defineProps<{
-  entries: ScrubGalleryEntry[]
-  /**
-   * When set (0–1), drives the sequence from scroll.
-   * When null/undefined, falls back to pointer scrubbing.
-   */
-  progress?: number | null
+const props = withDefaults(
+  defineProps<{
+    entries: ScrubGalleryEntry[]
+    /**
+     * When set (0–1), drives the sequence from scroll.
+     * When null/undefined, falls back to pointer scrubbing.
+     */
+    progress?: number | null
+    /** When false, freeze the current frame (avoids dual-video seek jank). */
+    scrubActive?: boolean
+    /** Remote/blob URL to use once the page has loaded this clip. */
+    loadedSrc?: string | null
+    /** 0–1 download progress for the loading line. */
+    loadProgress?: number
+    /** Show the bottom-right loading line. */
+    isLoading?: boolean
+  }>(),
+  {
+    scrubActive: true,
+  },
+)
+
+const emit = defineEmits<{
+  ready: []
 }>()
 
 const selectedIndex = ref(0)
 const thumbsVisible = ref(false)
 const videoRef = ref<HTMLVideoElement | null>(null)
-let rafId = 0
-let pendingTime = 0
+const videoDuration = ref(0)
+const mediaReady = ref(false)
 let scrubBound = false
-let videoReady = false
-let isSeeking = false
-let hasPendingSeek = false
+let readyEmitted = false
+let seekInFlight = false
+let pendingSeekTime: number | null = null
+let seekedHandler: (() => void) | null = null
 
 const scrollDriven = computed(
   () => typeof props.progress === 'number' && Number.isFinite(props.progress),
@@ -87,78 +121,142 @@ const activeEntry = computed(
   () => props.entries[selectedIndex.value] || props.entries[0] || null,
 )
 
-const activeVideoSrc = computed(() => activeEntry.value?.video || '')
+const resolvedVideoSrc = computed(() => props.loadedSrc || '')
 
-const seekVideo = (progress: number) => {
+const scrubReady = computed(() => Boolean(resolvedVideoSrc.value) && mediaReady.value)
+
+const canSeek = computed(() => scrubReady.value && props.scrubActive !== false)
+
+const showLoadingLine = computed(
+  () => Boolean(props.isLoading) && !scrubReady.value,
+)
+
+const loadProgress = computed(() =>
+  typeof props.loadProgress === 'number' && Number.isFinite(props.loadProgress)
+    ? props.loadProgress
+    : 0,
+)
+
+function clearSeekQueue() {
   const video = videoRef.value
-  if (!video || !videoReady || !Number.isFinite(video.duration) || video.duration <= 0) {
-    return
+  if (video && seekedHandler) {
+    video.removeEventListener('seeked', seekedHandler)
   }
-  const clamped = Math.min(1, Math.max(0, progress))
-  // Quantize to ~24fps so tiny scroll noise doesn't thrash seeks.
-  const frameDuration = 1 / 24
-  const rawTime = clamped * Math.max(0, video.duration - frameDuration)
-  const nextTime = Math.round(rawTime / frameDuration) * frameDuration
-  if (Math.abs(nextTime - pendingTime) < frameDuration * 0.4 && !hasPendingSeek) {
-    return
-  }
-  pendingTime = nextTime
-  hasPendingSeek = true
-  if (rafId) return
-  rafId = requestAnimationFrame(() => {
-    rafId = 0
-    flushSeek()
-  })
+  seekedHandler = null
+  seekInFlight = false
+  pendingSeekTime = null
 }
 
-const flushSeek = () => {
-  const el = videoRef.value
-  if (!el || !hasPendingSeek) return
-  if (isSeeking) return
-  if (Math.abs(el.currentTime - pendingTime) < 0.0005) {
-    hasPendingSeek = false
-    return
-  }
+function flushSeek(time: number) {
+  const video = videoRef.value
+  if (!video || !videoDuration.value) return
+
   try {
-    el.pause()
-    isSeeking = true
-    hasPendingSeek = false
-    el.currentTime = pendingTime
+    video.pause()
   } catch {
-    isSeeking = false
+    // ignore
+  }
+
+  if (Math.abs(video.currentTime - time) <= 0.01) {
+    if (pendingSeekTime !== null) {
+      const next = pendingSeekTime
+      pendingSeekTime = null
+      flushSeek(next)
+    }
+    return
+  }
+
+  seekInFlight = true
+  seekedHandler = () => {
+    const el = videoRef.value
+    if (el && seekedHandler) el.removeEventListener('seeked', seekedHandler)
+    seekedHandler = null
+    seekInFlight = false
+    if (pendingSeekTime === null) return
+    const next = pendingSeekTime
+    pendingSeekTime = null
+    flushSeek(next)
+  }
+  video.addEventListener('seeked', seekedHandler)
+
+  try {
+    video.currentTime = time
+  } catch {
+    clearSeekQueue()
   }
 }
 
-const onVideoSeeked = () => {
-  isSeeking = false
-  if (hasPendingSeek) flushSeek()
+/** Pause + set currentTime; coalesce seeks until the previous one finishes. */
+function seekToProgress(progress: number) {
+  if (!canSeek.value) return
+  const video = videoRef.value
+  if (!video || !videoDuration.value) return
+  const clamped = Math.min(Math.max(progress, 0), 1)
+  const time = clamped * videoDuration.value
+
+  if (seekInFlight) {
+    pendingSeekTime = time
+    return
+  }
+  flushSeek(time)
 }
 
 const applyProgress = (progress: number) => {
-  if (!import.meta.client || !activeVideoSrc.value) return
-  seekVideo(progress)
+  if (!import.meta.client || !resolvedVideoSrc.value || !canSeek.value) return
+  seekToProgress(progress)
+}
+
+function markMediaReady() {
+  const video = videoRef.value
+  if (!video) return
+  videoDuration.value = video.duration || 0
+  video.pause()
+  if (!mediaReady.value) {
+    mediaReady.value = true
+    if (canSeek.value && typeof props.progress === 'number') {
+      seekToProgress(props.progress)
+    } else if (canSeek.value) {
+      seekToProgress(0)
+    }
+  }
+  if (!readyEmitted) {
+    readyEmitted = true
+    emit('ready')
+  }
 }
 
 const onVideoMeta = () => {
-  videoReady = true
-  isSeeking = false
   const video = videoRef.value
-  if (video) {
-    video.pause()
-    if (scrollDriven.value && typeof props.progress === 'number') {
-      seekVideo(props.progress)
-    } else {
-      video.currentTime = 0
-    }
+  if (!video) return
+  videoDuration.value = video.duration || 0
+  video.pause()
+  // Blob sources are fully local — metadata is enough to seek safely.
+  if (resolvedVideoSrc.value.startsWith('blob:')) {
+    markMediaReady()
   }
 }
+
+const onVideoReady = () => {
+  markMediaReady()
+}
+
+watch(
+  () => props.loadedSrc,
+  () => {
+    clearSeekQueue()
+    mediaReady.value = false
+    videoDuration.value = 0
+    readyEmitted = false
+  },
+)
 
 watch(
   activeEntry,
   () => {
-    videoReady = false
-    isSeeking = false
-    hasPendingSeek = false
+    clearSeekQueue()
+    mediaReady.value = false
+    videoDuration.value = 0
+    readyEmitted = false
   },
   { immediate: true },
 )
@@ -183,21 +281,46 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => props.scrubActive,
+  (active) => {
+    if (!active) {
+      clearSeekQueue()
+      return
+    }
+    if (typeof props.progress === 'number') applyProgress(props.progress)
+  },
+)
+
+watch(scrubReady, (ready) => {
+  if (ready && canSeek.value && typeof props.progress === 'number') {
+    applyProgress(props.progress)
+  }
+})
+
 watch(scrollDriven, (driven) => {
   if (driven) unbindScrub()
-  else bindScrub()
+  else if (scrubReady.value) bindScrub()
+})
+
+watch(scrubReady, (ready) => {
+  if (!ready) {
+    unbindScrub()
+    return
+  }
+  if (!scrollDriven.value) bindScrub()
 })
 
 const selectEntry = (index: number) => {
   if (index < 0 || index >= props.entries.length) return
   selectedIndex.value = index
-  if (scrollDriven.value && typeof props.progress === 'number') {
+  if (canSeek.value && typeof props.progress === 'number') {
     applyProgress(props.progress)
   }
 }
 
 const scheduleScrub = (clientX: number, clientY: number) => {
-  if (scrollDriven.value) return
+  if (scrollDriven.value || !canSeek.value) return
   const width = window.innerWidth || 1
   const height = window.innerHeight || 1
   const progress = Math.min(
@@ -218,7 +341,7 @@ const onTouchMove = (event: TouchEvent) => {
 }
 
 const bindScrub = () => {
-  if (!import.meta.client || scrubBound || scrollDriven.value) return
+  if (!import.meta.client || scrubBound || scrollDriven.value || !scrubReady.value) return
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   window.addEventListener('touchmove', onTouchMove, { passive: true })
   scrubBound = true
@@ -229,20 +352,16 @@ const unbindScrub = () => {
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('touchmove', onTouchMove)
   scrubBound = false
-  if (rafId) {
-    cancelAnimationFrame(rafId)
-    rafId = 0
-  }
 }
 
 onMounted(() => {
-  if (!scrollDriven.value) bindScrub()
   requestAnimationFrame(() => {
     thumbsVisible.value = true
   })
 })
 
 onBeforeUnmount(() => {
+  clearSeekQueue()
   unbindScrub()
 })
 </script>
@@ -281,8 +400,61 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.scrub-gallery__poster {
+  position: relative;
+  z-index: 1;
+  transition: opacity 0.35s ease;
+}
+
+.scrub-gallery__poster--hidden {
+  opacity: 0;
+}
+
 .scrub-gallery__video {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 0;
+  width: auto;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
   background: transparent;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.35s ease;
+}
+
+.scrub-gallery__video--ready {
+  z-index: 2;
+  opacity: 1;
+}
+
+.scrub-gallery__video--solo {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+}
+
+.scrub-gallery__load {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2;
+  width: 2.75rem;
+  height: 1px;
+  pointer-events: none;
+}
+
+.scrub-gallery__load-line {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--charcoal);
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
 }
 
 .scrub-gallery__thumbs {

@@ -10,6 +10,8 @@
           'product-card__media--link': Boolean(href),
         }"
         :aria-label="item.title"
+        @pointerenter="prefetchActiveHero"
+        @focusin="prefetchActiveHero"
         @click="onOpen"
       >
         <img
@@ -66,6 +68,7 @@ import { PRODUCT_TYPE_FILTERS, type FormalItem } from '~/composables/demoData'
 import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import type { LibraryItem } from '~/composables/useLibraryCatalog'
 import { uniqueImageUrls } from '~/composables/productImages'
+import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 const props = defineProps<{
   item: FormalItem | LibraryItem
@@ -75,7 +78,7 @@ const props = defineProps<{
 
 const { requestSave, isSaved } = useBucket()
 const { open, returnImage } = useProductOverlay()
-const { imageUrl: buildUrl } = useSanityImage()
+const { imageUrl: buildUrl, prefetchImage } = useSanityImage()
 const saved = computed(() => {
   const index = projectImages.value.length > 1 ? imageIndex.value : undefined
   return isSaved(props.item._id, index)
@@ -124,22 +127,45 @@ const productSlug = computed(() =>
   }),
 )
 
-const projectImages = computed(() => {
+const imageAssets = computed(() => {
   const item = props.item as LibraryItem
-  const assets = [
+  return [
     item.image,
     ...(item.gallery || []),
     ...(item.spiritGallery || []),
   ]
-  return uniqueImageUrls(
-    props.imageUrl,
-    ...assets.map((asset) => (asset ? buildUrl(asset, 1200) : '')),
-  )
 })
+
+/** Grid display — thumb tier */
+const projectImages = computed(() =>
+  uniqueImageUrls(
+    props.imageUrl,
+    ...imageAssets.value.map((asset) =>
+      asset ? buildUrl(asset, IMAGE_WIDTH.thumb) : '',
+    ),
+  ),
+)
+
+/** Hero tier for Flip flyer / PDP handoff */
+const heroImages = computed(() =>
+  uniqueImageUrls(
+    ...imageAssets.value.map((asset) =>
+      asset ? buildUrl(asset, IMAGE_WIDTH.hero) : '',
+    ),
+  ),
+)
 
 const activeImage = computed(
   () => projectImages.value[imageIndex.value] || props.imageUrl || '',
 )
+
+const activeHeroImage = computed(
+  () => heroImages.value[imageIndex.value] || activeImage.value || '',
+)
+
+const prefetchActiveHero = () => {
+  if (activeHeroImage.value) void prefetchImage(activeHeroImage.value)
+}
 
 watch(
   () => props.item._id,
@@ -169,7 +195,13 @@ const onOpen = (event: MouseEvent) => {
   const source =
     (card?.querySelector('.product-card__image') as HTMLElement | null) ||
     ((event.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null)
-  open(productSlug.value, { source, imageIndex: imageIndex.value })
+  const flipSrc = activeHeroImage.value
+  if (flipSrc) void prefetchImage(flipSrc)
+  open(productSlug.value, {
+    source,
+    imageIndex: imageIndex.value,
+    flipSrc: flipSrc || null,
+  })
 }
 
 const onToggle = () => {
@@ -197,10 +229,6 @@ const onToggle = () => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-}
-
-.product-card:has(.product-card__media--link) {
-  cursor: pointer;
 }
 
 .product-card__pad {
@@ -235,7 +263,10 @@ const onToggle = () => {
   text-align: center;
   border-radius: var(--thumb-radius);
   transition: background 0.4s ease;
-  cursor: inherit;
+}
+
+.product-card__media--link {
+  cursor: pointer;
 }
 
 .product-card__media--image {

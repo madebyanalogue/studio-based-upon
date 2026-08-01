@@ -5,6 +5,8 @@ export type ProductOverlayOpenOptions = {
   source?: HTMLElement | null
   /** Gallery index visible on the grid when opening */
   imageIndex?: number
+  /** Prefetched hero-sized URL for a sharp Flip flyer (falls back to source src) */
+  flipSrc?: string | null
 }
 
 export type ProductReturnImage = {
@@ -14,6 +16,7 @@ export type ProductReturnImage = {
 
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null
+let flipImageUrl: string | null = null
 
 export const useProductOverlay = () => {
   const openSlug = useState<string | null>('product-overlay-slug', () => null)
@@ -36,9 +39,11 @@ export const useProductOverlay = () => {
 
       if (options.source) {
         flipSourceEl = options.source
+        flipImageUrl = options.flipSrc || null
         pendingFlip.value = true
       } else {
         flipSourceEl = null
+        flipImageUrl = null
         pendingFlip.value = false
       }
       closingFlip.value = false
@@ -49,6 +54,7 @@ export const useProductOverlay = () => {
       returnImage.value = null
     } else if (!alreadyOpen) {
       flipSourceEl = null
+      flipImageUrl = null
       pendingFlip.value = false
       closingFlip.value = false
       openImageIndex.value = 0
@@ -64,18 +70,22 @@ export const useProductOverlay = () => {
       if (alreadyOpen) {
         window.history.replaceState(state, '', url)
         flipSourceEl = null
+        flipImageUrl = null
         pendingFlip.value = false
         closingFlip.value = false
         openImageIndex.value = 0
       } else {
         window.history.pushState(state, '', url)
+        lockPageScroll()
       }
-      document.documentElement.style.overflow = 'hidden'
     }
   }
 
   /** Source thumb for open + close Flip — kept until finishClose */
   const getFlipSource = () => flipSourceEl
+
+  /** Hero-tier URL preferred for the Flip flyer when prefetched */
+  const getFlipImageUrl = () => flipImageUrl
 
   const clearPendingFlip = () => {
     pendingFlip.value = false
@@ -91,12 +101,13 @@ export const useProductOverlay = () => {
     const target = returnUrl.value || '/'
     returnUrl.value = null
     flipSourceEl = null
+    flipImageUrl = null
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
 
     if (import.meta.client) {
-      document.documentElement.style.overflow = ''
+      unlockPageScroll()
 
       if (window.history.state?.productOverlay) {
         window.history.back()
@@ -139,11 +150,12 @@ export const useProductOverlay = () => {
     if (!openSlug.value) return
     openSlug.value = null
     flipSourceEl = null
+    flipImageUrl = null
     pendingFlip.value = false
     closingFlip.value = false
     returnUrl.value = null
     if (import.meta.client) {
-      document.documentElement.style.overflow = ''
+      unlockPageScroll()
     }
   }
 
@@ -155,6 +167,7 @@ export const useProductOverlay = () => {
     finishClose,
     syncFromHistory,
     getFlipSource,
+    getFlipImageUrl,
     clearPendingFlip,
     pendingFlip,
     closingFlip,

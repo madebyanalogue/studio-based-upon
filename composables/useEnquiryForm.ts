@@ -87,6 +87,7 @@ export const useEnquiryForm = () => {
       kind: 'image',
       imageUrl: item.imageUrl,
     }))
+    if (!isOpen.value) lockPageScroll()
     isOpen.value = true
   }
 
@@ -105,6 +106,7 @@ export const useEnquiryForm = () => {
       colour: item.colour,
       text: item.text,
     }))
+    if (!isOpen.value) lockPageScroll()
     isOpen.value = true
   }
 
@@ -128,15 +130,18 @@ export const useEnquiryForm = () => {
     form.value.message = product.slug
       ? `Enquiry about ${product.title} (/materials-and-forms/${product.slug})`
       : `Enquiry about ${product.title}`
+    if (!isOpen.value) lockPageScroll()
     isOpen.value = true
   }
 
   const close = () => {
+    const wasOpen = isOpen.value
     isOpen.value = false
     reset()
     previewItems.value = []
     compositionImage.value = null
     source.value = null
+    if (wasOpen) unlockPageScroll()
   }
 
   const addAttachments = (files: FileList | File[]) => {

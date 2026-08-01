@@ -319,11 +319,12 @@ onBeforeUnmount(() => {
 
 .infinite-discover__controls {
   position: fixed;
-  bottom: 30px;
+  bottom: calc(30px + var(--bucket-push));
   z-index: 90;
   display: flex;
   align-items: center;
   gap: 1rem;
+  transition: bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .infinite-discover__controls--left {
@@ -331,8 +332,7 @@ onBeforeUnmount(() => {
 }
 
 .infinite-discover__controls--right {
-  right: calc(var(--gutter) + var(--bucket-push));
-  transition: right var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+  right: var(--gutter);
 }
 
 .infinite-discover__hint {

@@ -6,6 +6,7 @@
       role="dialog"
       aria-modal="true"
       aria-label="Send enquiry"
+      data-lenis-prevent
     >
       <div class="enquiry__backdrop" @click="close" />
 

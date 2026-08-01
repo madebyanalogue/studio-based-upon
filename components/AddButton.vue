@@ -13,10 +13,23 @@
         <span class="add-btn__clone add-btn__clone--back" />
         <span class="add-btn__clone add-btn__clone--front" />
       </template>
-      <template v-else>
+      <template v-else-if="variant === 'remove'">
         <span class="add-btn__h" />
-        <span v-if="variant !== 'remove'" class="add-btn__v" />
       </template>
+      <svg
+        v-else
+        class="add-btn__heart"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
+        />
+      </svg>
     </span>
   </button>
 </template>
@@ -28,7 +41,7 @@ withDefaults(
     label: string
     /** Saved / selected visual state. */
     active?: boolean
-    /** Visual glyph: plus, minus, or duplicate squares. */
+    /** Visual glyph: heart (add), minus, or duplicate squares. */
     variant?: 'add' | 'remove' | 'clone'
   }>(),
   { variant: 'add' },
@@ -67,25 +80,27 @@ withDefaults(
   background: var(--thumb-ctrl-bg, #fff);
 }
 
-.add-btn__h,
-.add-btn__v {
+.add-btn__heart {
   position: absolute;
-  background: currentColor;
+  top: 50%;
+  left: 50%;
+  width: calc(var(--_face) * 13 / 21);
+  height: calc(var(--_face) * 13 / 21);
+  transform: translate(-50%, -50%);
+  display: block;
+}
+
+.add-btn--active .add-btn__heart {
+  fill: currentColor;
 }
 
 .add-btn__h {
+  position: absolute;
   top: 50%;
   left: 50%;
   width: calc(var(--_face) * 11 / 21);
   height: 1px;
-  transform: translate(-50%, -50%);
-}
-
-.add-btn__v {
-  top: 50%;
-  left: 50%;
-  width: 1px;
-  height: calc(var(--_face) * 11 / 21);
+  background: currentColor;
   transform: translate(-50%, -50%);
 }
 

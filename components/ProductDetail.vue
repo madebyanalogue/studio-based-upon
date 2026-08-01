@@ -6,12 +6,16 @@
       'pdp--standalone': standalone,
       'pdp--ready': contentReady,
       'pdp--sides': sidesVisible,
+      'pdp--zoomed': imageExpanded,
     }"
   >
     <aside class="pdp__col pdp__col--left">
       <div class="pdp__toolbar">
         <button type="button" class="pdp__close  interface" @click="$emit('close')">Close</button>
-        <div class="pdp__meta interface">
+        <div
+          class="pdp__meta interface pdp__pane-fade"
+          :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
+        >
           <span>{{ typeLabel }}</span>
           <template v-if="orderLabel">
             <span class="pdp__meta-sep" aria-hidden="true">/</span>
@@ -20,7 +24,10 @@
         </div>
       </div>
 
-      <div class="pdp__body">
+      <div
+        class="pdp__body pdp__pane-fade"
+        :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
+      >
         <h1 class="pdp__title">{{ product.title }}</h1>
 
         <dl class="pdp__specs">
@@ -51,9 +58,6 @@
 
         <div class="pdp__actions">
           <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
-          <button type="button" class="pdp__save" @click="onMoreLikeThis">
-            More Like This
-          </button>
           <button
             type="button"
             class="pdp__save"
@@ -102,13 +106,8 @@
     <div class="pdp__col pdp__col--center">
       <div
         ref="stageRef"
-        class="pdp__stage"
-        :class="{
-          'pdp__stage--expanded': imageExpanded,
-          'pdp__stage--fit-height': imageExpanded && zoomFit === 'height',
-          'pdp__stage--fit-width': imageExpanded && zoomFit === 'width',
-        }"
-        :data-lenis-prevent="imageExpanded && zoomFit === 'width' ? '' : undefined"
+        class="pdp__stage pdp__pane-fade"
+        :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
         @click="onStageClick"
       >
         <figure v-if="activeEntry" class="pdp__hero">
@@ -145,7 +144,7 @@
               :aria-current="i === selectedIndex ? 'true' : undefined"
               @click.stop="selectImage(i)"
             >
-              <img :src="entry.src" alt="" loading="lazy" draggable="false" />
+              <img :src="entry.thumbSrc" alt="" loading="lazy" draggable="false" />
             </button>
           </div>
         </figure>
@@ -156,8 +155,84 @@
       </div>
     </div>
 
-    <!-- Reserved for the cart panel (same --side-column-width) -->
-    <aside class="pdp__col pdp__col--right" aria-hidden="true" />
+    <aside
+      class="pdp__col pdp__col--right"
+      :class="{ 'pdp__col--right-collapsed': !relatedPanelOpen }"
+      :aria-hidden="!hasRelatedItems ? true : undefined"
+    >
+      <template v-if="hasRelatedItems && relatedPanelOpen">
+        <div class="pdp__toolbar pdp__related-toolbar">
+          <h2 class="pdp__related-heading interface">More like this</h2>
+          <button
+            type="button"
+            class="pdp__related-hide interface"
+            @click="relatedPanelOpen = false"
+          >
+            Hide
+          </button>
+        </div>
+        <div class="pdp__related" data-lenis-prevent>
+          <ul class="pdp__related-list">
+            <li v-for="item in visibleRelatedItems" :key="item._id" class="pdp__related-item">
+              <button
+                type="button"
+                class="pdp__related-card mono"
+                :aria-label="`View ${item.title}`"
+                @click="onRelatedClick(item)"
+              >
+                <span class="pdp__related-pad">
+                  <span class="pdp__related-media">
+                    <img
+                      v-if="item.imageUrl"
+                      :src="item.imageUrl"
+                      :alt="item.title"
+                      loading="lazy"
+                      draggable="false"
+                    />
+                  </span>
+                </span>
+                <span class="pdp__related-meta">
+                  <span class="pdp__related-title">{{ item.title }}</span>
+                  <span v-if="item.typeLabel" class="pdp__related-type">{{ item.typeLabel }}</span>
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </template>
+      <button
+        v-else-if="hasRelatedItems"
+        type="button"
+        class="pdp__related-reveal interface"
+        @click="relatedPanelOpen = true"
+      >
+        More like this
+      </button>
+    </aside>
+
+    <!-- Zoom covers center + right without resizing the grid -->
+    <div
+      v-show="zoomMounted"
+      ref="zoomRef"
+      class="pdp__zoom"
+      :class="{
+        'pdp__zoom--visible': imageExpanded,
+        'pdp__zoom--fit-height': imageExpanded && zoomFit === 'height',
+        'pdp__zoom--fit-width': imageExpanded && zoomFit === 'width',
+      }"
+      :data-lenis-prevent="imageExpanded && zoomFit === 'width' ? '' : undefined"
+      @click="collapseImage"
+    >
+      <img
+        v-if="zoomSrc"
+        ref="zoomImgRef"
+        class="pdp__zoom-image"
+        :src="zoomSrc"
+        :alt="`${product.title} — zoomed`"
+        draggable="false"
+        @click.stop="collapseImage"
+      />
+    </div>
   </article>
 
   <div v-else class="pdp pdp--missing">
@@ -170,6 +245,8 @@
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
+import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
+import { productSlug } from '~/composables/useProductCatalog'
 
 const props = withDefaults(
   defineProps<{
@@ -187,12 +264,18 @@ const emit = defineEmits<{
 const { fetchProduct, getNextProduct } = useProductCatalog()
 const { imageUrl } = useSanityImage()
 const { requestSave, isSaved } = useBucket()
-const { close, finishClose, getFlipSource, clearPendingFlip, closingFlip, openImageIndex, setReturnImage } =
-  useProductOverlay()
-const { setAffinity } = useDiscoveryAffinity()
+const {
+  close,
+  finishClose,
+  getFlipSource,
+  getFlipImageUrl,
+  clearPendingFlip,
+  closingFlip,
+  openImageIndex,
+  setReturnImage,
+} = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
 const { items: libraryItems } = await useLibraryCatalog()
-const router = useRouter()
 
 const { data: product, refresh } = await useAsyncData(
   () => `product-detail-${props.slug}`,
@@ -227,47 +310,87 @@ const showMaterials = ref(false)
 const showFinishes = ref(false)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
+const zoomRef = ref<HTMLElement | null>(null)
+const zoomImgRef = ref<HTMLImageElement | null>(null)
 const contentReady = ref(false)
 const sidesVisible = ref(false)
 const galleryVisible = ref(false)
+/** Fades left/center copy + gallery; column rules stay put */
+const paneContentVisible = ref(true)
+const CONTENT_FADE_MS = 220
+let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
+/** Zoom overlay is visible over center + right */
 const imageExpanded = ref(false)
+/** Keep zoom DOM mounted while loading / open */
+const zoomMounted = ref(false)
+const zoomSrc = ref('')
 /** Expanded layout: fill container height (landscape) or full width with vertical scroll (tall). */
 const zoomFit = ref<'width' | 'height'>('width')
 
-type GalleryEntry = { id: string; src: string }
+type GalleryEntry = {
+  id: string
+  /** PDP resting hero */
+  src: string
+  /** Small gallery strip */
+  thumbSrc: string
+  /** Expanded zoom */
+  zoomSrc: string
+}
 
 const galleryEntries = computed((): GalleryEntry[] => {
   if (!product.value) return []
 
-  const urls: string[] = []
-  const hero = imageUrl(product.value.image, 1800)
-  if (hero) urls.push(hero)
+  const assets = [
+    product.value.image,
+    ...(product.value.gallery || []),
+    ...(product.value.spiritGallery || []),
+  ].filter(Boolean)
 
-  if (product.value.gallery?.length) {
-    product.value.gallery.forEach((img) => {
-      const url = imageUrl(img, 1800)
-      if (url && !urls.includes(url)) urls.push(url)
+  const seen = new Set<string>()
+  const entries: GalleryEntry[] = []
+
+  for (const asset of assets) {
+    const src = imageUrl(asset, IMAGE_WIDTH.hero)
+    if (!src) continue
+    const key = src.replace(/\?.*$/, '')
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({
+      id: `${product.value!._id}-img-${entries.length}`,
+      src,
+      thumbSrc: imageUrl(asset, IMAGE_WIDTH.strip) || src,
+      zoomSrc: imageUrl(asset, IMAGE_WIDTH.zoom) || src,
     })
   }
 
-  if (product.value.spiritGallery?.length) {
-    product.value.spiritGallery.forEach((img) => {
-      const url = imageUrl(img, 1800)
-      if (url && !urls.includes(url)) urls.push(url)
-    })
-  }
-
-  return urls.map((src, i) => ({
-    id: `${product.value!._id}-img-${i}`,
-    src,
-  }))
+  return entries
 })
 
 const activeEntry = computed(
   () => galleryEntries.value[selectedIndex.value] || galleryEntries.value[0] || null,
+)
+
+// Prefetch the full gallery once the PDP is open so thumb clicks aren't cold
+watch(
+  [galleryEntries, contentReady],
+  ([entries, ready]) => {
+    if (!ready || !entries.length) return
+    for (const entry of entries) {
+      void prefetchImage(entry.src)
+    }
+    // Active zoom first; remaining zoom tiers after heroes have a head start
+    const active = entries[selectedIndex.value] || entries[0]
+    if (active?.zoomSrc) void prefetchImage(active.zoomSrc)
+    if (!import.meta.client) return
+    window.setTimeout(() => {
+      for (const entry of entries) {
+        if (entry.zoomSrc) void prefetchImage(entry.zoomSrc)
+      }
+    }, 500)
+  },
 )
 
 watch(galleryEntries, (entries) => {
@@ -282,6 +405,9 @@ const selectImage = (index: number) => {
   if (index < 0 || index >= galleryEntries.value.length) return
   selectedIndex.value = index
   imageExpanded.value = false
+  zoomMounted.value = false
+  zoomSrc.value = ''
+  clearExpandCloseListener()
 }
 
 const cycleImage = (direction: 1 | -1) => {
@@ -303,36 +429,47 @@ const clearExpandCloseListener = () => {
 
 const collapseImage = () => {
   imageExpanded.value = false
+  zoomMounted.value = false
+  zoomSrc.value = ''
   clearExpandCloseListener()
 }
 
 const updateZoomFit = () => {
-  if (!imageExpanded.value) return
-  const stage = stageRef.value
-  const img = heroRef.value
-  if (!stage || !img?.naturalWidth || !img.naturalHeight) {
+  const layer = zoomRef.value
+  const img = zoomImgRef.value
+  if (!layer || !img?.naturalWidth || !img.naturalHeight) {
     zoomFit.value = 'width'
     return
   }
-  const stageW = stage.clientWidth
-  const stageH = stage.clientHeight
+  const stageW = layer.clientWidth
+  const stageH = layer.clientHeight
   if (!stageW || !stageH) {
     zoomFit.value = 'width'
     return
   }
-  // If the image at full stage width would be shorter than the stage, fill height instead
+  // If the image at full layer width would be shorter than the layer, fill height instead
   const heightAtFullWidth = stageW * (img.naturalHeight / img.naturalWidth)
   zoomFit.value = heightAtFullWidth < stageH ? 'height' : 'width'
 }
 
 const expandImage = async () => {
-  imageExpanded.value = true
+  const src = activeEntry.value?.zoomSrc
+  if (!src || !import.meta.client) return
+
   clearExpandCloseListener()
+
+  // Prefetch first — only reveal the overlay once the zoom bitmap is ready
+  await prefetchImage(src)
+  zoomSrc.value = src
+  zoomMounted.value = true
+  imageExpanded.value = false
   await nextTick()
-  const img = heroRef.value
+
+  const img = zoomImgRef.value
   if (img && !img.complete) await waitForImage(img)
   updateZoomFit()
-  if (!import.meta.client) return
+  imageExpanded.value = true
+
   // Attach after this click finishes so it doesn't immediately collapse
   requestAnimationFrame(() => {
     expandCloseBound = () => {
@@ -415,9 +552,98 @@ const materials = computed(() =>
     .map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
 )
 
+const overlapCount = (a: string[] = [], b: string[] = []) => {
+  if (!a.length || !b.length) return 0
+  const set = new Set(a.map((v) => v.toLowerCase()))
+  return b.reduce((n, v) => n + (set.has(v.toLowerCase()) ? 1 : 0), 0)
+}
+
+const typeLabelFor = (type?: string) => {
+  if (!type) return ''
+  return PRODUCT_TYPE_FILTERS.find((t) => t.value === type)?.label || type
+}
+
+type RelatedCard = {
+  _id: string
+  title: string
+  slug: string
+  imageUrl: string
+  typeLabel: string
+}
+
+/** Manual Sanity picks first; otherwise score by shared colour / material / tag / type. */
+const relatedFromProduct = computed((): RelatedCard[] => {
+  if (!product.value) return []
+
+  const manual = (product.value.related || []).filter((item) => item?._id && item.slug)
+  if (manual.length) {
+    return manual.slice(0, 8).map((item) => ({
+      _id: item._id,
+      title: item.title,
+      slug: item.slug,
+      imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
+      typeLabel: typeLabelFor(item.category),
+    }))
+  }
+
+  const current = libraryItem.value
+  const type =
+    current?.category ||
+    current?.type ||
+    product.value.category ||
+    product.value.series?.toLowerCase() ||
+    ''
+  const colours = current?.colours || product.value.colours || []
+  const mats = current?.materials || product.value.materials || []
+  const tags = current?.tags || product.value.tags || []
+
+  const scored = libraryItems.value
+    .filter((item) => item._id !== product.value?._id && productSlug(item))
+    .map((item) => {
+      const itemType = item.category || item.type || ''
+      let score = 0
+      if (type && itemType && type === itemType) score += 2
+      score += overlapCount(colours, item.colours) * 3
+      score += overlapCount(mats, item.materials) * 3
+      score += overlapCount(tags, item.tags) * 2
+      return { item, score }
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title))
+    .slice(0, 6)
+
+  return scored.map(({ item }) => ({
+    _id: item._id,
+    title: item.title,
+    slug: productSlug(item) || item._id,
+    imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
+    typeLabel: typeLabelFor(item.category || item.type),
+  }))
+})
+
+/** Open until the user hides — remembered across visits */
+const relatedPanelOpen = useCookie<boolean>('sba-pdp-related-open', {
+  default: () => false,
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
+
+/** Current product's related set — replenishes when navigating between items */
+const visibleRelatedItems = computed(() =>
+  relatedFromProduct.value.filter(
+    (item) => item._id !== product.value?._id && item.slug !== props.slug,
+  ),
+)
+
+const hasRelatedItems = computed(() => visibleRelatedItems.value.length > 0)
+
+const onRelatedClick = (item: RelatedCard) => {
+  emit('navigate', item.slug)
+}
+
 const nextProduct = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
 const nextImageUrl = computed(() =>
-  nextProduct.value ? imageUrl(nextProduct.value.image, 900) : '',
+  nextProduct.value ? imageUrl(nextProduct.value.image, IMAGE_WIDTH.thumb) : '',
 )
 
 const goToNext = () => {
@@ -447,23 +673,6 @@ const isCurrentImageSaved = computed(() => {
 const onAddToSelection = () => {
   if (!activeEntry.value) return
   onToggleImage(activeEntry.value, selectedIndex.value)
-}
-
-const onMoreLikeThis = async () => {
-  if (!product.value) return
-  const categories = [
-    ...(product.value.categories || []),
-    ...(product.value.materials || []),
-  ]
-  setAffinity(categories.length ? categories : ['surfaces'], product.value._id)
-  finishClose()
-  emit('close')
-  if (import.meta.client) {
-    window.history.replaceState({}, '', '/')
-  }
-  if (router.currentRoute.value.path !== '/') {
-    await navigateTo('/')
-  }
 }
 
 const sendEnquiry = () => {
@@ -547,9 +756,14 @@ const runFlipOpen = async () => {
     return
   }
 
-  // Fixed flyer on body so overflow clipping can't hide the Flip
+  // Prefer prefetched hero-tier URL so Flip scales a sharp bitmap, not the grid thumb
   const flyer = document.createElement('img')
-  flyer.src = (source as HTMLImageElement).currentSrc || (source as HTMLImageElement).src || hero.src
+  const flipSrc =
+    getFlipImageUrl() ||
+    hero.src ||
+    (source as HTMLImageElement).currentSrc ||
+    (source as HTMLImageElement).src
+  flyer.src = flipSrc
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
   Object.assign(flyer.style, {
@@ -565,6 +779,7 @@ const runFlipOpen = async () => {
     borderRadius: getComputedStyle(source).borderRadius,
   })
   document.body.appendChild(flyer)
+  if (!flyer.complete) await waitForImage(flyer)
 
   gsap.set(source, { opacity: 0 })
 
@@ -682,7 +897,6 @@ const runFlipClose = async () => {
 }
 
 const onHeroLoad = () => {
-  if (imageExpanded.value) updateZoomFit()
   if (!flipStarted.value) void runFlipOpen()
 }
 
@@ -692,33 +906,66 @@ watch(closingFlip, (closing) => {
 
 watch(
   () => props.slug,
-  () => {
+  async () => {
     showMaterials.value = false
     showFinishes.value = false
+    imageExpanded.value = false
+    zoomMounted.value = false
+    zoomSrc.value = ''
+    clearExpandCloseListener()
+    galleryVisible.value = false
+
+    const softSwap = sidesVisible.value && contentReady.value
+    const token = ++slugSwapToken
+
+    if (softSwap) {
+      // Fade pane content only — column rules / related rail stay put
+      paneContentVisible.value = false
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, CONTENT_FADE_MS)
+      })
+      if (token !== slugSwapToken) return
+
+      flipStarted.value = true
+      flipCloseStarted.value = false
+      selectedIndex.value = 0
+      await refresh()
+      if (token !== slugSwapToken) return
+      await nextTick()
+
+      const hero = heroRef.value
+      if (hero && !hero.complete) await waitForImage(hero)
+      if (token !== slugSwapToken) return
+
+      galleryVisible.value = true
+      paneContentVisible.value = true
+      return
+    }
+
     flipStarted.value = false
     flipCloseStarted.value = false
     contentReady.value = false
     sidesVisible.value = false
-    galleryVisible.value = false
+    paneContentVisible.value = true
     selectedIndex.value = openImageIndex.value
-    imageExpanded.value = false
-    clearExpandCloseListener()
-    refresh()
-    nextTick(() => {
-      if (heroRef.value?.complete) void runFlipOpen()
-    })
+    await refresh()
+    await nextTick()
+    if (heroRef.value?.complete) void runFlipOpen()
   },
 )
 </script>
 
 <style scoped>
 .pdp {
+  position: relative;
   display: grid;
   grid-template-columns: var(--side-column-width) 1fr var(--side-column-width);
-  height: 100dvh;
+  height: calc(100dvh - var(--bucket-push));
   background: transparent;
   border-top: 1px solid var(--grid-line);
-  transition: background 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    height var(--bucket-close-ms) var(--theme-ease),
+    background var(--theme-ms) var(--theme-ease);
 }
 
 .pdp--ready {
@@ -726,7 +973,7 @@ watch(
 }
 
 .pdp--standalone {
-  height: calc(100dvh - var(--header-height));
+  height: calc(100dvh - var(--header-height) - var(--bucket-push));
 }
 
 .pdp--missing {
@@ -741,6 +988,7 @@ watch(
 
 .pdp__col {
   min-width: 0;
+  min-height: 0;
   height: 100%;
   overflow-y: auto;
   display: flex;
@@ -766,6 +1014,7 @@ watch(
 
 .pdp__col--right {
   border-left: 1px solid var(--grid-line);
+  overflow: hidden;
 }
 
 .pdp__col--center {
@@ -773,6 +1022,69 @@ watch(
   flex-direction: column;
   overflow: hidden;
   align-items: stretch;
+}
+
+/* Soft product swaps: fade content, not the column shells / rules */
+.pdp__pane-fade {
+  transition: opacity 0.22s ease;
+  opacity: 1;
+}
+
+.pdp__pane-fade--out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Zoom layer sits above center + right; grid columns stay put */
+.pdp__zoom {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--side-column-width);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream);
+  opacity: 0;
+  pointer-events: none;
+  transition: background var(--theme-ms) var(--theme-ease);
+}
+
+.pdp__zoom--visible {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: zoom-out;
+}
+
+.pdp__zoom--fit-width {
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-items: flex-start;
+}
+
+.pdp__zoom--fit-height {
+  overflow: hidden;
+}
+
+.pdp__zoom-image {
+  display: block;
+  cursor: zoom-out;
+}
+
+.pdp__zoom--fit-width .pdp__zoom-image {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+}
+
+.pdp__zoom--fit-height .pdp__zoom-image {
+  width: auto;
+  height: 100%;
+  max-width: none;
+  max-height: 100%;
 }
 
 .pdp__stage {
@@ -797,23 +1109,6 @@ watch(
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f2ecdf' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
-.pdp__stage--expanded {
-  padding: 0;
-  cursor: default;
-}
-
-.pdp__stage--fit-width {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
-.pdp__stage--fit-height {
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .pdp__hero {
   position: relative;
   margin: 0;
@@ -829,53 +1124,12 @@ watch(
   container-type: size;
 }
 
-.pdp__stage--fit-width .pdp__hero {
-  display: block;
-  height: auto;
-  max-height: none;
-  container-type: normal;
-}
-
-.pdp__stage--fit-height .pdp__hero {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-height: 100%;
-  min-height: 0;
-  container-type: normal;
-  /* Frame is absolutely centered; stage clips horizontal overflow */
-  overflow: visible;
-}
-
 .pdp__hero-frame {
   position: relative;
   display: inline-grid;
   max-width: 100%;
   max-height: 100%;
   cursor: default;
-}
-
-.pdp__stage--fit-width .pdp__hero-frame {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  max-height: none;
-}
-
-/* Pin frame to hero height so landscape zoom can't grow past it.
-   Width comes from the image aspect ratio; stage overflow clips sides. */
-.pdp__stage--fit-height .pdp__hero-frame {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  display: block;
-  height: 100%;
-  max-height: 100%;
-  width: auto;
-  max-width: none;
-  margin: 0;
 }
 
 .pdp__hero-image {
@@ -887,30 +1141,6 @@ watch(
   object-fit: contain;
   cursor: zoom-in;
   will-change: transform;
-}
-
-.pdp__stage--fit-width .pdp__hero-image {
-  max-width: none;
-  max-height: none;
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  cursor: zoom-out;
-}
-
-.pdp__stage--fit-height .pdp__hero-image {
-  display: block;
-  max-width: none;
-  max-height: 100%;
-  width: auto;
-  height: 100%;
-  object-fit: contain;
-  cursor: zoom-out;
-}
-
-.pdp__stage--expanded .pdp__thumbs,
-.pdp__stage--expanded .pdp__add {
-  display: none;
 }
 
 .pdp__thumbs {
@@ -983,6 +1213,9 @@ watch(
   padding: 1rem var(--gutter);
   background: var(--cream);
   border-bottom: 1px solid var(--grid-line);
+  transition:
+    background var(--theme-ms) var(--theme-ease),
+    border-color var(--theme-ms) var(--theme-ease);
 }
 
 .pdp__close {
@@ -1188,6 +1421,120 @@ watch(
   color: var(--charcoal);
 }
 
+.pdp__col--right-collapsed {
+  align-items: center;
+  justify-content: center;
+}
+
+.pdp__related-toolbar {
+  flex-shrink: 0;
+  justify-content: space-between;
+  position: relative;
+}
+
+.pdp__related-heading {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: inherit;
+  color: var(--charcoal);
+}
+
+.pdp__related-hide {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  transition: color 0.2s ease;
+}
+
+.pdp__related-hide:hover {
+  color: var(--charcoal);
+}
+
+.pdp__related-reveal {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.pdp__related-reveal:hover {
+  color: var(--charcoal);
+}
+
+.pdp__related {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--gutter) 0 2rem;
+}
+
+.pdp__related-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.pdp__related-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  color: var(--charcoal);
+  cursor: pointer;
+}
+
+.pdp__related-pad {
+  position: relative;
+  padding: 0 var(--gutter);
+}
+
+.pdp__related-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.4;
+  overflow: hidden;
+  border-radius: var(--thumb-radius);
+}
+
+.pdp__related-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.pdp__related-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.5rem var(--gutter) 1rem;
+  font-size: var(--text-sm);
+}
+
+.pdp__related-title {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdp__related-type {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
 .pdp__next {
   margin-top: 3rem;
   text-align: center;
@@ -1219,11 +1566,11 @@ watch(
     display: flex;
     flex-direction: column;
     height: auto;
-    min-height: 100dvh;
+    min-height: calc(100dvh - var(--bucket-push));
   }
 
   .pdp--standalone {
-    min-height: calc(100dvh - var(--header-height));
+    min-height: calc(100dvh - var(--header-height) - var(--bucket-push));
   }
 
   .pdp__col {
@@ -1250,6 +1597,10 @@ watch(
 
   .pdp__col--right {
     display: none;
+  }
+
+  .pdp__zoom {
+    left: 0;
   }
 }
 </style>
