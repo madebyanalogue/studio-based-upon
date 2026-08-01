@@ -27,12 +27,7 @@
         <span
           v-for="(item, index) in pilePreview"
           :key="item.id"
-          class="stack__pile-card"
-          :class="{
-            'stack__pile-card--fan':
-              index === pilePreview.length - 1 ||
-              pileFanSlot(index, pilePreview.length) > 0,
-          }"
+          class="stack__pile-card stack__pile-card--fan"
           :data-flip-id="flipSurface === 'pile' ? item.id : undefined"
           :style="pileCardStyle(item.id, index, pilePreview.length)"
         >
@@ -44,8 +39,12 @@
             draggable="false"
           />
         </span>
-        <span v-if="settledItems.length" class="stack__pile-count interface">
-          {{ settledItems.length }}
+        <span
+          v-if="false && settledItems.length"
+          class="stack__pile-tip"
+          :class="{ 'stack__pile-tip--visible': pileFanned && pileCountVisible }"
+        >
+          {{ activeMoodboard?.name || 'My Selection' }} — {{ settledItems.length }}
         </span>
       </button>
 
@@ -153,13 +152,13 @@
             ref="titleInput"
             v-model="editName"
             type="text"
-            class="stack__title-input interface"
+            class="stack__title-input"
             aria-label="Selection name"
             @keydown.enter.prevent="saveName"
             @keydown.esc.prevent="cancelEdit"
             @blur="saveName"
           />
-          <p v-else class="stack__title interface">
+          <p v-else class="stack__title">
             {{ activeMoodboard?.name || 'My Selection' }}
           </p>
           <button
@@ -285,6 +284,8 @@ const flipSurface = ref<'pile' | 'cells'>('pile')
 const keepPileForFlip = ref(false)
 /** Hover fan — locked through open so Flip.fit starts from fanned positions. */
 const pileFanned = ref(false)
+/** Pile badge — hides on open click, returns with close backdrop. */
+const pileCountVisible = ref(true)
 /** Square track size from grid width / cols — keeps cells square without overlap. */
 const cellSizePx = ref(0)
 /** Cell images ready (after Flip or soft-enter). Hidden during backdrop-only phase. */
@@ -294,7 +295,8 @@ const softEnter = ref(false)
 /** Per-cell remove/undo animation phase (keyed by item id or undo key). */
 const cellPhase = ref<Record<string, CellPhase>>({})
 
-const BACKDROP_MS = 550
+const BACKDROP_OPEN_MS = 350
+const BACKDROP_CLOSE_MS = 800
 const GRID_LINES_MS = 320
 const CONTROLS_FADE_IN_DELAY_MS = 400
 const CONTROLS_FADE_OUT_DELAY_MS = 100
@@ -302,6 +304,8 @@ const FLIP_DURATION = 0.95
 const FLIP_STAGGER = 0.075
 const CELL_SCALE_MS = 280
 const UNDO_FADE_MS = 220
+/** Pause after scale-out before Undo appears */
+const UNDO_ENTER_DELAY_MS = 350
 /** Fixed column count — cell = pile = 1/6 viewport width, square */
 const STACK_COLS = 6
 
@@ -368,6 +372,8 @@ const onRemoveClick = async (item: BucketItem) => {
   await nextTick()
   await waitFrames(2)
   if (!selectionEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) return
+  await wait(UNDO_ENTER_DELAY_MS)
+  if (!selectionEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) return
   setCellPhase(undoKey, 'undo-ready')
 }
 
@@ -407,6 +413,7 @@ const onClearAll = async () => {
   for (const item of live) clearCellPhase(item.id)
   await nextTick()
   await waitFrames(2)
+  await wait(UNDO_ENTER_DELAY_MS)
   for (const key of undoKeys) {
     if (selectionEntries.value.some((e) => e.kind === 'undo' && e.key === key)) {
       setCellPhase(key, 'undo-ready')
@@ -503,28 +510,48 @@ const hashAngle = (id: string, salt = '') => {
 }
 
 /**
- * Fan slot from top of pile (0 = top card, stays put).
- * 1–2 peel up/left/right; 3–4 side; 5–7 drop below — up to 8 cards total.
+ * Fan directions (max travel). Spread across the whole stack via per-id hash;
+ * scale ≤ 1 so nothing moves further than these templates.
  */
-const FAN_OFFSETS: Array<{ x: number; y: number; r: number } | null> = [
-  null, // 1st — top stays
-  { x: -34, y: -40, r: -9 }, // 2nd — up-left
-  { x: 36, y: -32, r: 8 }, // 3rd — up-right
-  { x: -48, y: 4, r: -6 }, // 4th — left
-  { x: -26, y: 48, r: -4 }, // 5th — below-left
-  { x: 8, y: 58, r: 2 }, // 6th — below
-  { x: 34, y: 50, r: 6 }, // 7th — below-right
-  { x: 46, y: -8, r: 7 }, // 8th — right
+const FAN_DIRS: Array<{ x: number; y: number; r: number }> = [
+  { x: -34, y: -40, r: -9 }, // up-left
+  { x: 36, y: -32, r: 8 }, // up-right
+  { x: -48, y: 4, r: -6 }, // left
+  { x: -26, y: 48, r: -4 }, // below-left
+  { x: 8, y: 58, r: 2 }, // below
+  { x: 34, y: 50, r: 6 }, // below-right
+  { x: 46, y: -8, r: 7 }, // right
 ]
 
-/** 0 = no fan; 1–7 = slot in FAN_OFFSETS */
-const pileFanSlot = (index: number, total: number) => {
+const hashInt = (id: string, salt = '') => {
+  const key = salt ? `${id}::${salt}` : id
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+/** Bumped on each hover — reshuffles fan directions. */
+const pileFanSeed = ref(0)
+
+/** Randomised fan for every non-top card — depth softens travel, never exceeds FAN_DIRS. */
+const pileFanOffset = (id: string, index: number, total: number) => {
   const fromTop = total - 1 - index
-  return fromTop >= 1 && fromTop <= 7 ? fromTop : 0
+  if (fromTop <= 0) return null
+
+  const h = hashInt(id, `fan:${pileFanSeed.value}`)
+  const dir = FAN_DIRS[h % FAN_DIRS.length]!
+  const depthT = fromTop / Math.max(total - 1, 1)
+  // Near-top: closer to full template; deeper: smaller nudge (still participates)
+  const depthScale = 1 - depthT * 0.55
+  const jitter = 0.65 + ((h >> 9) % 36) / 100 // 0.65–1.00
+  const s = Math.min(1, depthScale * jitter)
+
+  return { x: dir.x * s, y: dir.y * s, r: dir.r * s }
 }
 
 const onPileMouseEnter = () => {
   if (isFlipping.value) return
+  pileFanSeed.value += 1
   pileFanned.value = true
 }
 
@@ -541,18 +568,27 @@ const syncPileFanFromHover = async () => {
   pileFanned.value = !!pileRef.value?.matches(':hover')
 }
 
-/** Changes whenever pile membership changes — reshuffles under-card tilts on add/remove. */
-const pilePoseSalt = computed(() => settledItems.value.map((item) => item.id).join('|'))
+/**
+ * Landing id is set at flyer impact (before the card mounts) so under-cards
+ * reshuffle immediately; cleared on handoff when settledItems already includes it.
+ */
+const pileLandingId = ref<string | null>(null)
+
+/** Changes on add/remove / land impact — reshuffles under-card tilts. */
+const pilePoseSalt = computed(() => {
+  const settled = settledItems.value.map((item) => item.id).join('|')
+  if (!pileLandingId.value) return settled
+  return settled ? `${pileLandingId.value}|${settled}` : pileLandingId.value
+})
 
 const pileCardStyle = (id: string, index: number, total: number) => {
   const t = total <= 1 ? 0 : index / (total - 1)
   const x = (t - 0.5) * 10
   const y = (0.5 - t) * 6
-  const isTop = index === total - 1
-  // Top keeps its own tilt; others salt against the full stack so add/remove both reshuffle
+  // While a flyer is landing, every settled card is "under" so they all reshuffle together
+  const isTop = !pileLandingId.value && index === total - 1
   const rot = isTop ? hashAngle(id) : hashAngle(id, pilePoseSalt.value)
-  const slot = pileFanSlot(index, total)
-  const fan = slot ? FAN_OFFSETS[slot] : null
+  const fan = pileFanOffset(id, index, total)
   const hoverX = fan ? x + fan.x : x
   const hoverY = fan ? y + fan.y : y
   const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
@@ -567,6 +603,17 @@ const pileCardStyle = (id: string, index: number, total: number) => {
     '--pile-hover-r': `${hoverRot}deg`,
     zIndex: index + 1,
   }
+}
+
+/** Whole-pile thump when a flyer hits */
+const bumpPileImpact = () => {
+  const pile = pileRef.value
+  if (!import.meta.client || !pile) return
+  gsap.killTweensOf(pile)
+  gsap
+    .timeline()
+    .to(pile, { y: 11, duration: 0.09, ease: 'power3.in' })
+    .to(pile, { y: 0, duration: 0.38, ease: 'power3.out' })
 }
 
 const productSlug = (item: BucketItem) => {
@@ -770,12 +817,14 @@ const fadeOutStage = async () => {
   // Backdrop only — grid lines already off; keep stagePresent until fade ends
   controlsVisible.value = false
   gridLinesVisible.value = false
+  // Count fades in with the backdrop fade-out
+  pileCountVisible.value = true
   stageVisible.value = false
   cellsReady.value = false
   softEnter.value = false
   flipSurface.value = 'pile'
   keepPileForFlip.value = false
-  await wait(BACKDROP_MS)
+  await wait(BACKDROP_CLOSE_MS)
   stagePresent.value = false
 }
 
@@ -791,7 +840,7 @@ const revealStage = async () => {
       resolve()
     })
   })
-  await wait(BACKDROP_MS)
+  await wait(BACKDROP_OPEN_MS)
 }
 
 const fadeGridLinesIn = async () => {
@@ -815,6 +864,7 @@ const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
   // Lock hover fan so Flip.fit starts from spread positions (no snap-back)
   pileFanned.value = true
+  pileCountVisible.value = false
   isFlipping.value = true
   cellsReady.value = false
   softEnter.value = false
@@ -858,6 +908,7 @@ const closeToPile = async () => {
     cellsReady.value = false
     flipSurface.value = 'pile'
     keepPileForFlip.value = false
+    pileCountVisible.value = true
     return
   }
   if (!isOpen.value) {
@@ -920,12 +971,14 @@ type FlyPayload = NonNullable<ReturnType<typeof consumePendingFly>>
 const flyIntoPile = (payload: FlyPayload) => {
   if (!import.meta.client) {
     clearArriving(payload.itemId)
+    pileLandingId.value = null
     return
   }
   measurePileAnchor()
   const dest = pileAnchor.value
   if (!dest) {
     clearArriving(payload.itemId)
+    pileLandingId.value = null
     if (payload.source) {
       payload.source.style.removeProperty('opacity')
       payload.source.style.removeProperty('transition')
@@ -1032,6 +1085,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       onComplete: () => {
         // Mount pile card, then drop flyer before paint — no overlapping clone
         clearArriving(payload.itemId)
+        pileLandingId.value = null
         nextTick(() => {
           wrap.remove()
           fadeSourceBack()
@@ -1070,6 +1124,15 @@ const flyIntoPile = (payload: FlyPayload) => {
       },
       'dive',
     )
+    // Hit a touch early so the pile thump leads the flyer settle
+    .call(
+      () => {
+        pileLandingId.value = payload.itemId
+        bumpPileImpact()
+      },
+      undefined,
+      'dive+=0.3',
+    )
     .to(wrap, {
       // Settle — position + rotation only (size/padding already final)
       left: landLeft,
@@ -1106,6 +1169,7 @@ watch(isOpen, async (open) => {
   if (isFlipping.value) return
 
   // Header / non-Flip open: backdrop → items → grid lines
+  pileCountVisible.value = false
   cellsReady.value = false
   softEnter.value = false
   controlsVisible.value = false
@@ -1208,6 +1272,7 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   cursor: pointer;
+  will-change: transform;
 }
 
 /* Expand hit area so fanned cards (esp. below) keep hover without shifting layout */
@@ -1274,17 +1339,32 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.stack__pile-count {
+.stack__pile-tip {
   position: absolute;
-  right: 12%;
-  bottom: 12%;
-  z-index: 20;
-  min-width: 1.6rem;
-  padding: 0.25rem 0.45rem;
-  border-radius: 6px;
-  background: var(--charcoal);
-  color: var(--warm-white);
-  font-size: var(--text-xs);
+  left: 50%;
+  bottom: calc(100% + 0.35rem);
+  z-index: 30;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--charcoal);
+  font-family: var(--serif);
+  font-size: var(--text-sm, 14px);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 0.55rem);
+  transition:
+    opacity 0.28s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack__pile-tip--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .stack__stage {
@@ -1308,11 +1388,14 @@ onBeforeUnmount(() => {
   inset: 0;
   background: var(--background-color, var(--cream));
   opacity: 0;
-  transition: opacity 0.55s ease;
+  /* Close fade out */
+  transition: opacity 0.8s ease;
 }
 
 .stack__stage--visible .stack__backdrop {
   opacity: 1;
+  /* Open fade in */
+  transition: opacity 0.35s ease;
 }
 
 
@@ -1413,7 +1496,7 @@ onBeforeUnmount(() => {
   pointer-events: auto;
   opacity: 0;
   transition:
-    opacity 0.22s ease,
+    opacity 0.7s ease,
     color 0.2s ease;
 }
 
@@ -1423,6 +1506,9 @@ onBeforeUnmount(() => {
 
 .stack__cell--undo-leaving .stack__undo {
   opacity: 0;
+  transition:
+    opacity 0.22s ease,
+    color 0.2s ease;
 }
 
 .stack__undo:hover {
@@ -1694,11 +1780,12 @@ onBeforeUnmount(() => {
   margin: 0;
   min-width: 0;
   flex: 1;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   color: var(--charcoal);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--serif);
 }
 
 .stack__count {

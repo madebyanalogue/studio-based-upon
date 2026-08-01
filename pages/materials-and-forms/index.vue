@@ -247,6 +247,9 @@ const activeFilter = ref(prefs.value.filter || '')
 const activeMaterials = ref<string[]>([...(prefs.value.materials || [])])
 const activeColours = ref<string[]>([...(prefs.value.colours || [])])
 const searchQuery = ref(prefs.value.search || '')
+/** Applied to the grid after typing pauses */
+const debouncedSearchQuery = ref(searchQuery.value)
+const SEARCH_DEBOUNCE_MS = 350
 const columns = ref(
   allowedColumns.includes(prefs.value.columns as (typeof allowedColumns)[number])
     ? prefs.value.columns
@@ -352,7 +355,7 @@ const transitionFilter = async (nextIds: Set<string>) => {
   gridAnimating.value = true
 
   const FADE_OUT = 0.4
-  const FADE_IN = 0.4
+  const FADE_IN = 0.8
   const BEAT = 120
 
   // 1) Obvious fade-out for items leaving the filter.
@@ -409,7 +412,7 @@ const transitionFilter = async (nextIds: Set<string>) => {
     gsap.to(enteringEls, {
       autoAlpha: 1,
       duration: FADE_IN,
-      ease: 'power2.inOut',
+      ease: 'power4.in',
       onComplete: () => {
         gsap.set(enteringEls, { clearProps: 'opacity,visibility' })
         finish()
@@ -519,7 +522,7 @@ const matchesPageFilter = (item: FormalItem, key: string) => {
 }
 
 const filteredItems = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
+  const query = debouncedSearchQuery.value.trim().toLowerCase()
 
   return items.value.filter((item) => {
     const pageMatch = matchesPageFilter(item, activeFilter.value)
@@ -551,18 +554,18 @@ if (!visibleIds.value.size && filteredItems.value.length) {
 }
 
 watch(
-  [activeFilter, activeMaterials, activeColours],
+  [activeFilter, activeMaterials, activeColours, debouncedSearchQuery],
   () => {
     void transitionFilter(filteredIdSet.value)
   },
   { deep: true },
 )
 
-watch(searchQuery, () => {
+watch(searchQuery, (value) => {
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
   searchFlipTimer = setTimeout(() => {
-    void transitionFilter(filteredIdSet.value)
-  }, 220)
+    debouncedSearchQuery.value = value
+  }, SEARCH_DEBOUNCE_MS)
 })
 
 watch(

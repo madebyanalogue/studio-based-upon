@@ -313,15 +313,17 @@ onMounted(() => {
   width: 100%;
   height: auto;
   display: block;
-  transition: opacity 0.35s ease;
+  transition: opacity 0.35s ease, filter 0.35s ease;
 }
 
 .grid-item--saved .grid-item__image {
   opacity: 0.1;
+  filter: grayscale(1);
 }
 
 .grid-item--saved:hover .grid-item__image {
   opacity: 1;
+  filter: grayscale(0);
 }
 
 .grid-item__type-label {
@@ -353,8 +355,7 @@ onMounted(() => {
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.grid-item:hover .grid-item__add,
-.grid-item__add.add-btn--active {
+.grid-item:hover .grid-item__add {
   opacity: 1;
   transform: translateY(0);
 }

@@ -290,15 +290,17 @@ const onToggle = (event?: MouseEvent) => {
   object-fit: cover;
   display: block;
   pointer-events: none;
-  transition: opacity 0.7s ease;
+  transition: opacity 0.7s ease, filter 0.7s ease;
 }
 
 .product-card--saved .product-card__image {
   opacity: 0.1;
+  filter: grayscale(1);
 }
 
 .product-card--saved:hover .product-card__image {
   opacity: 1;
+  filter: grayscale(0);
 }
 
 .product-card__type-label {
@@ -327,8 +329,7 @@ const onToggle = (event?: MouseEvent) => {
   pointer-events: none;
 }
 
-.product-card:hover .product-card__add,
-.product-card__add.add-btn--active {
+.product-card:hover .product-card__add {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;

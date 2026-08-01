@@ -38,7 +38,8 @@
   --mono: 'Maison Neue Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --handwritten: 'Biro Script Plus', 'Segoe Script', 'Apple Chancery', cursive;
   --text-xs: 11px;
-  --text-sm: 11px;
+  --text-sm: 12px;
+  --text-md: 21px;
   --text-base: 14px;
   --text-lg: 1.125rem;
   --text-xl: 1.8rem;
