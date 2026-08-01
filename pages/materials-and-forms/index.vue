@@ -135,6 +135,8 @@
         :class="{
           'products__grid--revealed': gridRevealed,
           'products__grid--animating': gridAnimating,
+          'products__grid--wide': columns === 10,
+          'products__grid--dense': columns === 6 || columns === 10,
         }"
         :style="{ '--columns': columns }"
       >
@@ -853,6 +855,18 @@ useHead(() => ({
 
 .products__grid :deep(.product-card.is-filtered-out) {
   display: none !important;
+}
+
+.products__grid--wide :deep(.product-card__meta) {
+  opacity: 0;
+}
+
+.products__grid--wide :deep(.product-card:hover .product-card__meta) {
+  opacity: 0;
+}
+
+.products__grid--dense :deep(.product-card__type) {
+  display: none;
 }
 
 .products__empty {

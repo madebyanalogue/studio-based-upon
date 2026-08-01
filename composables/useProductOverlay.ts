@@ -7,16 +7,50 @@ export type ProductOverlayOpenOptions = {
   imageIndex?: number
   /** Prefetched hero-sized URL for a sharp Flip flyer (falls back to source src) */
   flipSrc?: string | null
+  /** Cart / selection item id when opening from bucket UI */
+  bucketItemId?: string | null
 }
 
 export type ProductReturnImage = {
   productId: string
   index: number
+  /** When set, cart UI updates this selection entry on close */
+  bucketItemId?: string
 }
 
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null
 let flipImageUrl: string | null = null
+let flipBucketItemId: string | null = null
+
+/** Keep thumb at full opacity while opening — overlay steals :hover and saved CSS would dip to 0.1. */
+const lockFlipSourceFull = (el: HTMLElement) => {
+  el.style.transition = 'none'
+  el.style.opacity = '1'
+}
+
+const hideFlipSource = (el: HTMLElement) => {
+  el.style.transition = 'none'
+  el.style.opacity = '0'
+}
+
+const restoreFlipSource = () => {
+  if (!import.meta.client || !flipSourceEl) return
+  const el = flipSourceEl
+  // Instant handoff — CSS image opacity transitions would flash a fade-in
+  el.style.transition = 'none'
+  el.style.opacity = ''
+  void el.offsetWidth
+  requestAnimationFrame(() => {
+    if (el.style.transition === 'none') el.style.transition = ''
+  })
+}
+
+const clearFlipSource = () => {
+  flipSourceEl = null
+  flipImageUrl = null
+  flipBucketItemId = null
+}
 
 export const useProductOverlay = () => {
   const openSlug = useState<string | null>('product-overlay-slug', () => null)
@@ -40,10 +74,13 @@ export const useProductOverlay = () => {
       if (options.source) {
         flipSourceEl = options.source
         flipImageUrl = options.flipSrc || null
+        flipBucketItemId = options.bucketItemId || null
+        // Lock opacity 1 before overlay mounts (hover ends → saved CSS would otherwise dip)
+        lockFlipSourceFull(options.source)
+        // Keep source visible until ProductDetail has a ready flyer (avoids a blank gap)
         pendingFlip.value = true
       } else {
-        flipSourceEl = null
-        flipImageUrl = null
+        clearFlipSource()
         pendingFlip.value = false
       }
       closingFlip.value = false
@@ -53,8 +90,7 @@ export const useProductOverlay = () => {
           : 0
       returnImage.value = null
     } else if (!alreadyOpen) {
-      flipSourceEl = null
-      flipImageUrl = null
+      clearFlipSource()
       pendingFlip.value = false
       closingFlip.value = false
       openImageIndex.value = 0
@@ -69,8 +105,9 @@ export const useProductOverlay = () => {
       // so one Back / close returns to the original page.
       if (alreadyOpen) {
         window.history.replaceState(state, '', url)
-        flipSourceEl = null
-        flipImageUrl = null
+        // In-overlay nav — restore grid thumb (no return flip for this open)
+        restoreFlipSource()
+        clearFlipSource()
         pendingFlip.value = false
         closingFlip.value = false
         openImageIndex.value = 0
@@ -92,7 +129,11 @@ export const useProductOverlay = () => {
   }
 
   const setReturnImage = (productId: string, index: number) => {
-    returnImage.value = { productId, index }
+    returnImage.value = {
+      productId,
+      index,
+      ...(flipBucketItemId ? { bucketItemId: flipBucketItemId } : {}),
+    }
   }
 
   const finishClose = () => {
@@ -100,8 +141,9 @@ export const useProductOverlay = () => {
 
     const target = returnUrl.value || '/'
     returnUrl.value = null
-    flipSourceEl = null
-    flipImageUrl = null
+    // Thumb stays hidden until close flyer finishes; restore here as final handoff
+    restoreFlipSource()
+    clearFlipSource()
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -149,8 +191,8 @@ export const useProductOverlay = () => {
   const syncFromHistory = () => {
     if (!openSlug.value) return
     openSlug.value = null
-    flipSourceEl = null
-    flipImageUrl = null
+    restoreFlipSource()
+    clearFlipSource()
     pendingFlip.value = false
     closingFlip.value = false
     returnUrl.value = null
@@ -169,6 +211,8 @@ export const useProductOverlay = () => {
     getFlipSource,
     getFlipImageUrl,
     clearPendingFlip,
+    hideFlipSource,
+    restoreFlipSource,
     pendingFlip,
     closingFlip,
     openImageIndex,

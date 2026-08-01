@@ -43,10 +43,9 @@
           @click="onThemeClick"
           @mouseleave="clearTooltipHide('theme')"
         >
-          <!-- Sun when dark (switch to light); moon when light (switch to dark) -->
+          <!-- Both icons in DOM; visibility follows html.dark so SSR/hydration match -->
           <svg
-            v-if="isDark"
-            class="header__icon"
+            class="header__icon header__icon--sun"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -59,8 +58,7 @@
             <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
           </svg>
           <svg
-            v-else
-            class="header__icon"
+            class="header__icon header__icon--moon"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -71,9 +69,21 @@
           >
             <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
           </svg>
-          <span class="header__tooltip interface" aria-hidden="true">
-            {{ themeTooltipLabel }}
+          <span
+            v-if="frozenThemeTooltip"
+            class="header__tooltip interface"
+            aria-hidden="true"
+          >
+            {{ frozenThemeTooltip }}
           </span>
+          <template v-else>
+            <span class="header__tooltip header__tooltip--to-light interface" aria-hidden="true">
+              Light
+            </span>
+            <span class="header__tooltip header__tooltip--to-dark interface" aria-hidden="true">
+              Dark
+            </span>
+          </template>
         </button>
 
         <button
@@ -157,10 +167,6 @@ type TooltipId = 'theme' | 'boards' | 'selections'
 const hiddenTooltip = ref<TooltipId | null>(null)
 /** Keep pre-click label so theme toggle doesn't flash the opposite word while fading out. */
 const frozenThemeTooltip = ref<'Light' | 'Dark' | null>(null)
-
-const themeTooltipLabel = computed(
-  () => frozenThemeTooltip.value ?? (isDark.value ? 'Light' : 'Dark'),
-)
 
 const hideTooltip = (id: TooltipId) => {
   hiddenTooltip.value = id
@@ -294,6 +300,40 @@ const onSelectionsClick = () => {
   width: 18px;
   height: 18px;
   display: block;
+  grid-area: 1 / 1;
+}
+
+.header__icon--sun {
+  display: none;
+}
+
+.header__icon--moon {
+  display: block;
+}
+
+/* Full :global(...) — `:global(html.dark) .x` compiles to `html.dark { … }` and blanks the page */
+:global(html.dark .header__icon--sun) {
+  display: block;
+}
+
+:global(html.dark .header__icon--moon) {
+  display: none;
+}
+
+.header__tooltip--to-light {
+  display: none;
+}
+
+.header__tooltip--to-dark {
+  display: block;
+}
+
+:global(html.dark .header__tooltip--to-light) {
+  display: block;
+}
+
+:global(html.dark .header__tooltip--to-dark) {
+  display: none;
 }
 
 .header__icon-btn:hover,

@@ -161,6 +161,13 @@
                       </template>
 
                       <AddButton
+                        v-if="galleryCount(entry.item) > 1"
+                        class="bucket__thumb-ctrl bucket__thumb-ctrl--clone"
+                        variant="clone"
+                        :label="`Clone ${entry.item.title}`"
+                        @click.stop="cloneItem(entry.item.id)"
+                      />
+                      <AddButton
                         class="bucket__thumb-ctrl bucket__thumb-ctrl--remove"
                         variant="remove"
                         :label="`Remove ${entry.item.title}`"
@@ -288,8 +295,9 @@
 
 <script setup lang="ts">
 import type { BucketItem } from '~/composables/useBucket'
+import { productIdFromBucketId } from '~/composables/useBucket'
 import { uniqueImageUrls } from '~/composables/productImages'
-import { imageAssetKey } from '~/composables/useSanityImage'
+import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 
 const {
   moodboards,
@@ -303,19 +311,20 @@ const {
   closeDrawer,
   removeItem,
   undoRemove,
+  cloneItem,
   cycleItemImage,
   setItemGallery,
+  setItemImageIndex,
   openMoodboard,
   setActiveMoodboard,
   createMoodboard,
   renameMoodboard,
   deleteMoodboard,
 } = useBucket()
-const { isOpen: productOpen } = useProductOverlay()
+const { isOpen: productOpen, open, returnImage } = useProductOverlay()
 const { initFromBucket, snapshot, loadBoard } = useMoodboard()
 const { createBoard, boards, activeBoardId, setActiveBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
-const { open } = useProductOverlay()
 const { fetchProduct } = useProductCatalog()
 const { imageUrl: buildUrl } = useSanityImage()
 
@@ -422,8 +431,26 @@ const openProduct = (item: BucketItem, event?: MouseEvent) => {
   const source =
     ((event?.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null) ||
     null
-  open(slug, { source })
+  const index = galleryIndex(item)
+  const urls = galleryUrls(item)
+  const flipSrc = urls[index] || item.imageUrl || null
+  if (flipSrc) void prefetchImage(flipSrc)
+  open(slug, {
+    source,
+    imageIndex: index,
+    flipSrc,
+    bucketItemId: item.id,
+  })
 }
+
+watch(returnImage, (value) => {
+  if (!value) return
+  const targetId =
+    value.bucketItemId ||
+    items.value.find((item) => productIdFromBucketId(item.id) === value.productId)?.id
+  if (!targetId) return
+  setItemImageIndex(targetId, value.index)
+})
 
 const startEdit = () => {
   editName.value = activeMoodboard.value?.name || ''
@@ -993,6 +1020,11 @@ watch(activeMoodboardId, () => {
 .bucket__item:hover .bucket__thumb-ctrl {
   opacity: 1;
   pointer-events: auto;
+}
+
+.bucket__thumb-ctrl--clone {
+  top: var(--thumb-ctrl-inset);
+  left: var(--thumb-ctrl-inset);
 }
 
 .bucket__thumb-ctrl--remove {

@@ -578,6 +578,8 @@ async function loadVideosSequentially() {
         ...loadedSrcById.value,
         [section.id]: objectUrl,
       }
+      await nextTick()
+      syncScrubProgresses()
     } catch (error) {
       console.warn(`Failed to preload ${section.entry.title || section.id}`, error)
       // Fall back to direct URL so the clip can still attempt to play.
@@ -589,6 +591,8 @@ async function loadVideosSequentially() {
         ...loadProgressById.value,
         [section.id]: 1,
       }
+      await nextTick()
+      syncScrubProgresses()
     }
   }
 
@@ -607,6 +611,11 @@ const trackRef = ref<HTMLElement | null>(null)
 const itemsRef = ref<HTMLElement | null>(null)
 
 const scrubProgressById = ref<Record<string, number>>({})
+/**
+ * Raw progress when each clip was first measured. Videos already on-screen at
+ * arrival would otherwise open mid-scrub; we remap from this baseline → 0.
+ */
+const scrubOriginById = ref<Record<string, number>>({})
 /** Only the most on-screen clip is scrubbed; others freeze to avoid dual-decode jank. */
 const activeScrubId = ref<string | null>(null)
 
@@ -624,6 +633,33 @@ function progressForElement(el: Element) {
   const end = -rect.width
   const span = start - end || 1
   return Math.min(1, Math.max(0, (start - rect.left) / span))
+}
+
+function normalizeScrubProgress(id: string, raw: number) {
+  const origin = scrubOriginById.value[id] ?? 0
+  const span = 1 - origin
+  if (span <= 0.001) return raw >= origin ? 1 : 0
+  return Math.min(1, Math.max(0, (raw - origin) / span))
+}
+
+/** Freeze each clip's scrub baseline at first layout so in-view arrivals start on frame 0. */
+function captureScrubOrigins() {
+  if (!import.meta.client) return
+  const root = isDesktop.value ? itemsRef.value : document.querySelector('.precrafted-m')
+  if (!root) return
+
+  let next = scrubOriginById.value
+  let changed = false
+  root.querySelectorAll<HTMLElement>('[data-scrub-id]').forEach((el) => {
+    const id = el.dataset.scrubId
+    if (!id || next[id] !== undefined) return
+    if (!changed) {
+      next = { ...next }
+      changed = true
+    }
+    next[id] = progressForElement(el)
+  })
+  if (changed) scrubOriginById.value = next
 }
 
 function visibleScore(el: Element) {
@@ -645,6 +681,8 @@ function syncScrubProgresses() {
   const root = isDesktop.value ? itemsRef.value : document.querySelector('.precrafted-m')
   if (!root) return
 
+  captureScrubOrigins()
+
   let bestId: string | null = null
   let bestScore = -Infinity
   const measured: Record<string, number> = {}
@@ -652,7 +690,8 @@ function syncScrubProgresses() {
   root.querySelectorAll<HTMLElement>('[data-scrub-id]').forEach((el) => {
     const id = el.dataset.scrubId
     if (!id || !loadedSrcById.value[id]) return
-    measured[id] = progressForElement(el)
+    const raw = progressForElement(el)
+    measured[id] = normalizeScrubProgress(id, raw)
     const score = visibleScore(el)
     if (score > bestScore) {
       bestScore = score
@@ -733,16 +772,29 @@ onMounted(() => {
   syncDesktop()
   desktopMediaQuery.addEventListener('change', syncDesktop)
   setupMobileScrub()
+  nextTick(() => {
+    captureScrubOrigins()
+    syncScrubProgresses()
+  })
   loadVideosSequentially()
 })
 
 watch(isDesktop, () => {
-  setupMobileScrub()
+  // Layout swap — re-baseline so the newly visible clip opens on frame 0.
+  scrubOriginById.value = {}
+  nextTick(() => {
+    captureScrubOrigins()
+    setupMobileScrub()
+    syncScrubProgresses()
+  })
 })
 
 watch(trackSections, () => {
+  scrubOriginById.value = {}
   nextTick(() => {
+    captureScrubOrigins()
     setupMobileScrub()
+    syncScrubProgresses()
     loadVideosSequentially()
   })
 })

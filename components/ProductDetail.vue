@@ -157,27 +157,41 @@
 
     <aside
       class="pdp__col pdp__col--right"
-      :class="{ 'pdp__col--right-collapsed': !relatedPanelOpen }"
+      :class="{ 'pdp__col--right-collapsed': relatedUi === 'reveal' && !relatedLeaving }"
       :aria-hidden="!hasRelatedItems ? true : undefined"
     >
-      <template v-if="hasRelatedItems && relatedPanelOpen">
+      <div
+        v-if="hasRelatedItems && relatedPanelMounted"
+        class="pdp__related-shell"
+        :class="{
+          'pdp__related-shell--leaving': relatedLeaving,
+          'pdp__related-shell--entering': relatedEntering,
+        }"
+      >
         <div class="pdp__toolbar pdp__related-toolbar">
-          <h2 class="pdp__related-heading interface">More like this</h2>
+          <h2 class="pdp__related-heading interface">Related</h2>
           <button
             type="button"
             class="pdp__related-hide interface"
-            @click="relatedPanelOpen = false"
+            :disabled="relatedBusy"
+            @click="hideRelatedPanel"
           >
             Hide
           </button>
         </div>
         <div class="pdp__related" data-lenis-prevent>
           <ul class="pdp__related-list">
-            <li v-for="item in visibleRelatedItems" :key="item._id" class="pdp__related-item">
+            <li
+              v-for="(item, index) in visibleRelatedItems"
+              :key="item._id"
+              class="pdp__related-item"
+              :style="{ '--related-stagger': `${relatedStaggerDelays[index] ?? 0}s` }"
+            >
               <button
                 type="button"
                 class="pdp__related-card mono"
                 :aria-label="`View ${item.title}`"
+                :disabled="relatedBusy"
                 @click="onRelatedClick(item)"
               >
                 <span class="pdp__related-pad">
@@ -199,12 +213,14 @@
             </li>
           </ul>
         </div>
-      </template>
+      </div>
       <button
-        v-else-if="hasRelatedItems"
+        v-if="hasRelatedItems && relatedRevealMounted"
         type="button"
         class="pdp__related-reveal interface"
-        @click="relatedPanelOpen = true"
+        :class="{ 'pdp__related-reveal--visible': relatedRevealVisible }"
+        :disabled="relatedBusy"
+        @click="showRelatedPanel"
       >
         More like this
       </button>
@@ -270,6 +286,8 @@ const {
   getFlipSource,
   getFlipImageUrl,
   clearPendingFlip,
+  hideFlipSource,
+  restoreFlipSource,
   closingFlip,
   openImageIndex,
   setReturnImage,
@@ -489,7 +507,8 @@ const onStageClick = (event: MouseEvent) => {
   if (imageExpanded.value) return
   const target = event.target as HTMLElement | null
   if (!target) return
-  if (target.closest('.pdp__hero-frame, .pdp__thumbs, .pdp__add, button, a')) return
+  // Dismiss on letterbox / stage chrome only — not the contained image or its controls
+  if (target.closest('.pdp__hero-image, .pdp__thumbs, .pdp__add, button, a')) return
   emit('close')
 }
 
@@ -637,6 +656,99 @@ const visibleRelatedItems = computed(() =>
 
 const hasRelatedItems = computed(() => visibleRelatedItems.value.length > 0)
 
+const RELATED_ITEM_MS = 380
+const RELATED_TOOLBAR_MS = 560
+const RELATED_STAGGER_STEP = 0.028
+const RELATED_REVEAL_MS = 240
+
+/** Which surface owns the column — panel stays mounted through leave anim */
+const relatedUi = ref<'panel' | 'reveal'>(relatedPanelOpen.value ? 'panel' : 'reveal')
+const relatedLeaving = ref(false)
+const relatedEntering = ref(false)
+const relatedBusy = ref(false)
+const relatedRevealVisible = ref(!relatedPanelOpen.value)
+const relatedStaggerDelays = ref<number[]>([])
+
+const relatedPanelMounted = computed(
+  () => relatedUi.value === 'panel' || relatedLeaving.value || relatedEntering.value,
+)
+const relatedRevealMounted = computed(
+  () => relatedUi.value === 'reveal' || relatedRevealVisible.value,
+)
+
+const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const waitFrames = (n = 2) =>
+  new Promise<void>((resolve) => {
+    const step = (left: number) => {
+      if (left <= 0) {
+        resolve()
+        return
+      }
+      requestAnimationFrame(() => step(left - 1))
+    }
+    step(n)
+  })
+
+/** Shuffle 0…n-1 delays so items enter in a randomised order */
+const buildRelatedStagger = (count: number) => {
+  const delays = Array.from({ length: count }, (_, i) => i * RELATED_STAGGER_STEP)
+  for (let i = delays.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = delays[i]!
+    delays[i] = delays[j]!
+    delays[j] = tmp
+  }
+  return delays
+}
+
+const relatedMotionMs = (withStagger: boolean) => {
+  const staggerMs = withStagger
+    ? Math.max(0, visibleRelatedItems.value.length - 1) * RELATED_STAGGER_STEP * 1000
+    : 0
+  return Math.max(RELATED_TOOLBAR_MS, RELATED_ITEM_MS + staggerMs) + 40
+}
+
+const hideRelatedPanel = async () => {
+  if (relatedBusy.value || relatedUi.value !== 'panel') return
+  relatedBusy.value = true
+  relatedPanelOpen.value = false
+  relatedStaggerDelays.value = buildRelatedStagger(visibleRelatedItems.value.length)
+  relatedLeaving.value = true
+  await waitMs(relatedMotionMs(true))
+  relatedUi.value = 'reveal'
+  relatedLeaving.value = false
+  await nextTick()
+  await waitFrames(1)
+  relatedRevealVisible.value = true
+  relatedBusy.value = false
+}
+
+const showRelatedPanel = async () => {
+  if (relatedBusy.value || relatedUi.value !== 'reveal') return
+  relatedBusy.value = true
+  relatedRevealVisible.value = false
+  await waitMs(RELATED_REVEAL_MS)
+  relatedStaggerDelays.value = buildRelatedStagger(visibleRelatedItems.value.length)
+  relatedPanelOpen.value = true
+  relatedUi.value = 'panel'
+  relatedEntering.value = true
+  await nextTick()
+  await waitFrames(2)
+  relatedEntering.value = false
+  await waitMs(relatedMotionMs(true))
+  relatedBusy.value = false
+}
+
+watch(hasRelatedItems, (has) => {
+  if (has) return
+  relatedLeaving.value = false
+  relatedEntering.value = false
+  relatedBusy.value = false
+  relatedRevealVisible.value = false
+  relatedUi.value = relatedPanelOpen.value ? 'panel' : 'reveal'
+})
+
 const onRelatedClick = (item: RelatedCard) => {
   emit('navigate', item.slug)
 }
@@ -650,25 +762,19 @@ const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const onToggleImage = (entry: GalleryEntry, index: number, source?: HTMLElement | null) => {
+const onToggleImage = (entry: GalleryEntry, index: number) => {
   if (!product.value) return
   const urls = galleryEntries.value.map((g) => g.src)
-  requestSave(
-    {
-      id: product.value._id,
-      title: product.value.title,
-      imageUrl: entry.src,
-      itemType: product.value.series || 'item',
-      link: `/materials-and-forms/${product.value.slug}`,
-      imageUrls: urls.length > 1 ? urls : undefined,
-      imageIndex: urls.length > 1 ? index : undefined,
-    },
-    {
-      source:
-        source ||
-        (document.querySelector('.pdp__hero-image') as HTMLElement | null),
-    },
-  )
+  // No source — skip fly-to-cart animation when saving from the PDP
+  requestSave({
+    id: product.value._id,
+    title: product.value.title,
+    imageUrl: entry.src,
+    itemType: product.value.series || 'item',
+    link: `/materials-and-forms/${product.value.slug}`,
+    imageUrls: urls.length > 1 ? urls : undefined,
+    imageIndex: urls.length > 1 ? index : undefined,
+  })
 }
 
 const isCurrentImageSaved = computed(() => {
@@ -720,6 +826,7 @@ const downloadSpec = () => {
 }
 
 const revealWithoutFlip = () => {
+  restoreFlipSource()
   clearPendingFlip()
   contentReady.value = true
   sidesVisible.value = true
@@ -746,6 +853,10 @@ const runFlipOpen = async () => {
     return
   }
 
+  // Source is already locked at opacity 1 from open() — keep it there through load
+  source.style.transition = 'none'
+  source.style.opacity = '1'
+
   await waitForImage(hero)
   await nextTick()
 
@@ -754,25 +865,32 @@ const runFlipOpen = async () => {
   await nextTick()
   void hero.offsetWidth
 
-  const from = source.getBoundingClientRect()
-  const to = hero.getBoundingClientRect()
-
-  if (from.width < 2 || to.width < 2) {
-    gsap.set(hero, { visibility: 'visible' })
-    revealWithoutFlip()
-    return
-  }
-
   // Prefer prefetched hero-tier URL so Flip scales a sharp bitmap, not the grid thumb
-  const flyer = document.createElement('img')
   const flipSrc =
     getFlipImageUrl() ||
     hero.src ||
     (source as HTMLImageElement).currentSrc ||
     (source as HTMLImageElement).src
+
+  // Decode flyer before hiding the source — keeps the grid thumb visible at full opacity
+  const flyer = document.createElement('img')
   flyer.src = flipSrc
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
+  if (!flyer.complete) await waitForImage(flyer)
+
+  const from = source.getBoundingClientRect()
+  const to = hero.getBoundingClientRect()
+
+  if (from.width < 2 || to.width < 2) {
+    gsap.set(hero, { visibility: 'visible' })
+    flyer.remove()
+    revealWithoutFlip()
+    return
+  }
+
+  const sourceFit = getComputedStyle(source).objectFit || 'cover'
+  const heroFit = getComputedStyle(hero).objectFit || 'contain'
   Object.assign(flyer.style, {
     position: 'fixed',
     top: `${from.top}px`,
@@ -780,15 +898,16 @@ const runFlipOpen = async () => {
     width: `${from.width}px`,
     height: `${from.height}px`,
     margin: '0',
-    objectFit: 'cover',
+    objectFit: sourceFit,
     zIndex: '500',
     pointerEvents: 'none',
     borderRadius: getComputedStyle(source).borderRadius,
+    opacity: '1',
   })
   document.body.appendChild(flyer)
-  if (!flyer.complete) await waitForImage(flyer)
 
-  gsap.set(source, { opacity: 0 })
+  // Cover with flyer, then hide source — no blank frame / no hover-opacity dip
+  hideFlipSource(source)
 
   const state = Flip.getState(flyer)
 
@@ -798,24 +917,23 @@ const runFlipOpen = async () => {
     width: to.width,
     height: to.height,
     borderRadius: '0px',
-    objectFit: 'contain',
+    objectFit: heroFit,
   })
 
   // Snappy expand with a soft landing
   Flip.from(state, {
-    duration: 0.32,
-    ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    duration: 0.45,
+    ease: 'power3.out',
     onComplete: () => {
       flyer.remove()
       gsap.set(hero, { visibility: 'visible' })
-      gsap.set(source, { clearProps: 'opacity' })
       contentReady.value = true
       sidesVisible.value = true
       clearPendingFlip()
     },
   })
 
-  gsap.delayedCall(0.22, () => {
+  gsap.delayedCall(0.3, () => {
     galleryVisible.value = true
   })
 }
@@ -832,15 +950,15 @@ const runFlipClose = async () => {
     return
   }
 
-  // Push the currently selected gallery image back onto the grid thumb
+  // Push the currently selected gallery image back onto grid / cart thumbs
   setReturnImage(product.value._id, selectedIndex.value)
+  await nextTick()
   await nextTick()
   if (source instanceof HTMLImageElement) {
     await waitForImage(source)
   }
   // Let GridItem commitHeight → bottom-anchor → ProductGrid shift entry.y
   // before capturing the Flip destination (otherwise the tile stays top-anchored).
-  await nextTick()
   await nextTick()
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
@@ -855,18 +973,19 @@ const runFlipClose = async () => {
   const to = source.getBoundingClientRect()
 
   if (from.width < 2 || to.width < 2) {
-    gsap.set(source, { clearProps: 'opacity' })
     finishClose()
     return
   }
 
   gsap.set(hero, { visibility: 'hidden' })
-  gsap.set(source, { opacity: 0 })
+  hideFlipSource(source)
 
   const flyer = document.createElement('img')
   flyer.src = hero.currentSrc || hero.src
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
+  const heroFit = getComputedStyle(hero).objectFit || 'contain'
+  const sourceFit = getComputedStyle(source).objectFit || 'cover'
   Object.assign(flyer.style, {
     position: 'fixed',
     top: `${from.top}px`,
@@ -874,12 +993,13 @@ const runFlipClose = async () => {
     width: `${from.width}px`,
     height: `${from.height}px`,
     margin: '0',
-    objectFit: 'contain',
+    objectFit: heroFit,
     zIndex: '500',
     pointerEvents: 'none',
     borderRadius: '0px',
   })
   document.body.appendChild(flyer)
+  if (!flyer.complete) await waitForImage(flyer)
 
   const state = Flip.getState(flyer)
 
@@ -889,15 +1009,15 @@ const runFlipClose = async () => {
     width: to.width,
     height: to.height,
     borderRadius: getComputedStyle(source).borderRadius,
-    objectFit: 'cover',
+    objectFit: sourceFit,
   })
 
   Flip.from(state, {
-    duration: 0.28,
-    ease: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    duration: 0.4,
+    ease: 'power3.out',
     onComplete: () => {
       flyer.remove()
-      gsap.set(source, { clearProps: 'opacity' })
+      // finishClose → restoreFlipSource (instant, no CSS fade flash)
       finishClose()
     },
   })
@@ -1105,14 +1225,19 @@ watch(
   padding: 1.25rem var(--gutter) 1.5rem;
   box-sizing: border-box;
   overscroll-behavior: contain;
-  /* X cursor over empty stage / hero chrome; image resets below */
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
+  cursor: auto;
+}
+
+/* Close cross only after the open flyer has finished */
+.pdp--ready .pdp__stage {
+  /* Match cart close control: 25×25 square with cross */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%23ffffff' stroke='%231a1a1a'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%231a1a1a' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
 /* Fully global selector — `:global(html.dark) .pdp__stage` was compiling to
    `html.dark { cursor: … }` and painting the close cursor site-wide. */
-:global(html.dark .pdp__stage) {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23f2ecdf' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") 12 12, pointer;
+:global(html.dark .pdp--ready .pdp__stage) {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%232a2621' stroke='%23f2ecdf'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%23f2ecdf' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
 .pdp__hero {
@@ -1130,20 +1255,22 @@ watch(
   container-type: size;
 }
 
+/* Shrink-wraps to the contained image so letterbox keeps the stage close cursor */
 .pdp__hero-frame {
   position: relative;
-  display: inline-grid;
   max-width: 100%;
   max-height: 100%;
-  cursor: default;
+  width: fit-content;
+  height: fit-content;
+  line-height: 0;
 }
 
 .pdp__hero-image {
   display: block;
-  max-width: 100cqw;
-  max-height: 100cqh;
   width: auto;
   height: auto;
+  max-width: 100cqi;
+  max-height: 100cqb;
   object-fit: contain;
   cursor: zoom-in;
   will-change: transform;
@@ -1432,10 +1559,29 @@ watch(
   justify-content: center;
 }
 
+.pdp__related-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
 .pdp__related-toolbar {
   flex-shrink: 0;
   justify-content: space-between;
   position: relative;
+  transform: translateY(0);
+  transition: transform 0.56s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp__related-shell--leaving .pdp__related-toolbar {
+  transform: translateY(-110%);
+}
+
+.pdp__related-shell--entering .pdp__related-toolbar {
+  transform: translateY(-110%);
+  transition: none;
 }
 
 .pdp__related-heading {
@@ -1460,14 +1606,38 @@ watch(
   font-size: var(--text-sm);
   color: var(--muted);
   text-decoration: none;
-  transition: color 0.2s ease;
+  opacity: 0;
+  transition:
+    color 0.2s ease,
+    opacity 0.24s ease;
+}
+
+.pdp__related-reveal--visible {
+  opacity: 1;
 }
 
 .pdp__related-reveal:hover {
   color: var(--charcoal);
 }
 
+.pdp__related-item {
+  --related-stagger: 0s;
+  transform: translateX(0);
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--related-stagger);
+}
+
+.pdp__related-shell--leaving .pdp__related-item {
+  transform: translateX(110%);
+}
+
+.pdp__related-shell--entering .pdp__related-item {
+  transform: translateX(110%);
+  transition: none;
+}
+
 .pdp__related {
+  --gutter: 2.5rem;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1483,12 +1653,15 @@ watch(
   flex-direction: column;
 }
 
+.pdp__related-item + .pdp__related-item {
+  margin-top: calc(var(--gutter) * 1);
+}
+
 .pdp__related-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  display: grid;
   width: 100%;
   min-width: 0;
+  /* aspect-ratio: 1; */
   text-align: left;
   color: var(--charcoal);
   cursor: pointer;
@@ -1496,34 +1669,40 @@ watch(
 
 .pdp__related-pad {
   position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   padding: 0 var(--gutter);
+  box-sizing: border-box;
 }
 
 .pdp__related-media {
   position: relative;
-  display: block;
+  display: grid;
+  place-items: center;
   width: 100%;
-  aspect-ratio: 1.4;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   border-radius: var(--thumb-radius);
 }
 
 .pdp__related-media img {
   display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+  border-radius: var(--thumb-radius);
   pointer-events: none;
 }
 
 .pdp__related-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-  padding: 0.5rem var(--gutter) 1rem;
-  font-size: var(--text-sm);
+  display: none;
 }
 
 .pdp__related-title {

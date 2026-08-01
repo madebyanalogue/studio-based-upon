@@ -1,5 +1,9 @@
 <template>
-  <article ref="rootRef" class="grid-item">
+  <article
+    ref="rootRef"
+    class="grid-item"
+    :class="{ 'grid-item--saved': saved }"
+  >
     <component
       :is="linkTag"
       v-bind="linkProps"
@@ -309,6 +313,15 @@ onMounted(() => {
   width: 100%;
   height: auto;
   display: block;
+  transition: opacity 0.35s ease;
+}
+
+.grid-item--saved .grid-item__image {
+  opacity: 0.1;
+}
+
+.grid-item--saved:hover .grid-item__image {
+  opacity: 1;
 }
 
 .grid-item__type-label {
@@ -332,10 +345,11 @@ onMounted(() => {
 
 .grid-item__add {
   position: absolute;
-  top: var(--thumb-ctrl-inset);
   right: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
+  z-index: 3;
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(4px);
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
@@ -347,7 +361,7 @@ onMounted(() => {
 
 .grid-item__cycle {
   position: absolute;
-  right: var(--thumb-ctrl-inset);
+  left: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
   z-index: 2;
   opacity: 0;

@@ -28,7 +28,11 @@
           v-for="(item, index) in pilePreview"
           :key="item.id"
           class="stack__pile-card"
-          :class="{ 'stack__pile-card--fan': pileFanSlot(index, pilePreview.length) > 0 }"
+          :class="{
+            'stack__pile-card--fan':
+              index === pilePreview.length - 1 ||
+              pileFanSlot(index, pilePreview.length) > 0,
+          }"
           :data-flip-id="flipSurface === 'pile' ? item.id : undefined"
           :style="pileCardStyle(item.id, index, pilePreview.length)"
         >
@@ -60,49 +64,75 @@
           v-if="showSelectionGrid"
           ref="gridRef"
           class="stack__grid"
+          :class="{ 'stack__grid--lines': gridLinesVisible }"
           :style="gridStyle"
           data-lenis-prevent
         >
           <div
-            v-for="(item, index) in items"
-            :key="item.id"
+            v-for="(entry, index) in selectionEntries"
+            :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
             class="stack__cell"
+            :class="cellClass(entry)"
             :style="softEnter ? softEnterStyle(index) : undefined"
           >
             <div
-              class="stack__cell-media"
-              :data-flip-id="flipSurface === 'cells' ? item.id : undefined"
+              v-if="entry.kind === 'undo'"
+              class="stack__cell-media stack__cell-media--undo"
             >
               <div class="stack__cell-frame">
                 <button
                   type="button"
-                  class="stack__cell-hit"
-                  :aria-label="`Open ${item.title}`"
-                  @click="openProduct(item, $event)"
+                  class="stack__undo interface"
+                  @click="onUndoClick(entry.key, entry.item)"
                 >
-                  <img
-                    v-if="item.imageUrl"
-                    :src="item.imageUrl"
-                    :alt="item.title"
-                    class="stack__cell-image"
-                  />
+                  Undo
                 </button>
-                <AddButton
-                  class="stack__cell-ctrl stack__cell-ctrl--remove"
-                  variant="remove"
-                  :label="`Remove ${item.title}`"
-                  @click.stop="removeItem(item.id)"
-                />
-                <ImageCycleArrows
-                  v-if="galleryCount(item) > 1"
-                  class="stack__cell-ctrl stack__cell-ctrl--cycle"
-                  :index="galleryIndex(item)"
-                  :count="galleryCount(item)"
-                  hide-count
-                  boxed
-                  @prev="cycleItemImage(item.id, -1)"
-                  @next="cycleItemImage(item.id, 1)"
-                />
+              </div>
+            </div>
+            <div
+              v-else
+              class="stack__cell-media"
+              :data-flip-id="flipSurface === 'cells' ? entry.item.id : undefined"
+            >
+              <div class="stack__cell-frame">
+                <div class="stack__cell-figure">
+                  <button
+                    type="button"
+                    class="stack__cell-hit"
+                    :aria-label="`Open ${entry.item.title}`"
+                    @click="openProduct(entry.item, $event)"
+                  >
+                    <img
+                      v-if="entry.item.imageUrl"
+                      :src="entry.item.imageUrl"
+                      :alt="entry.item.title"
+                      class="stack__cell-image"
+                    />
+                  </button>
+                  <AddButton
+                    v-if="galleryCount(entry.item) > 1"
+                    class="stack__cell-ctrl stack__cell-ctrl--clone"
+                    variant="clone"
+                    :label="`Clone ${entry.item.title}`"
+                    @click.stop="cloneItem(entry.item.id)"
+                  />
+                  <AddButton
+                    class="stack__cell-ctrl stack__cell-ctrl--remove"
+                    variant="remove"
+                    :label="`Remove ${entry.item.title}`"
+                    @click.stop="onRemoveClick(entry.item)"
+                  />
+                  <ImageCycleArrows
+                    v-if="galleryCount(entry.item) > 1"
+                    class="stack__cell-ctrl stack__cell-ctrl--cycle"
+                    :index="galleryIndex(entry.item)"
+                    :count="galleryCount(entry.item)"
+                    hide-count
+                    boxed
+                    @prev="cycleItemImage(entry.item.id, -1)"
+                    @next="cycleItemImage(entry.item.id, 1)"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -117,23 +147,33 @@
         :class="{ 'stack__controls--visible': controlsVisible }"
         aria-label="Selection actions"
       >
-        <button type="button" class="stack__close interface" @click="requestClose">
-          Close
-        </button>
+        <div class="stack__controls-head">
+          <input
+            v-if="isEditing"
+            ref="titleInput"
+            v-model="editName"
+            type="text"
+            class="stack__title-input interface"
+            aria-label="Selection name"
+            @keydown.enter.prevent="saveName"
+            @keydown.esc.prevent="cancelEdit"
+            @blur="saveName"
+          />
+          <p v-else class="stack__title interface">
+            {{ activeMoodboard?.name || 'My Selection' }}
+          </p>
+          <button
+            type="button"
+            class="stack__close"
+            aria-label="Close selection"
+            @click="requestClose"
+          >
+            <span class="stack__close-icon" aria-hidden="true" />
+          </button>
+        </div>
 
-        <input
-          v-if="isEditing"
-          ref="titleInput"
-          v-model="editName"
-          type="text"
-          class="stack__title-input interface"
-          aria-label="Selection name"
-          @keydown.enter.prevent="saveName"
-          @keydown.esc.prevent="cancelEdit"
-          @blur="saveName"
-        />
-        <p v-else class="stack__title interface">
-          {{ activeMoodboard?.name || 'My Selection' }}
+        <p class="stack__count interface">
+          {{ countLabel }}
         </p>
 
         <div class="stack__control-links">
@@ -141,10 +181,20 @@
             Rename
           </button>
           <button
+            v-if="activePendingRemovals.length && !items.length"
             type="button"
             class="stack__link interface"
-            :disabled="!items.length"
-            @click="clearActiveItems"
+            :disabled="bulkBusy"
+            @click="onUndoAll"
+          >
+            Undo
+          </button>
+          <button
+            v-else
+            type="button"
+            class="stack__link interface"
+            :disabled="!items.length || bulkBusy"
+            @click="onClearAll"
           >
             Clear all
           </button>
@@ -174,12 +224,18 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
-import type { BucketItem } from '~/composables/useBucket'
+import type { BucketItem, SelectionEntry } from '~/composables/useBucket'
+import { productIdFromBucketId } from '~/composables/useBucket'
 import { uniqueImageUrls } from '~/composables/productImages'
-import { imageAssetKey } from '~/composables/useSanityImage'
+import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
+
+type CellPhase = 'scale-out' | 'scale-in' | 'scaled-in' | 'undo-ready' | 'undo-leaving'
 
 const {
   items,
+  selectionEntries,
+  activePendingRemovals,
+  count,
   isOpen,
   panelTab,
   isMoodboard,
@@ -190,16 +246,21 @@ const {
   openDrawer,
   openMoodboard,
   renameMoodboard,
-  clearActiveItems,
   removeItem,
+  removeItems,
+  undoRemove,
+  undoAllRemovals,
+  clearPendingRemovals,
+  cloneItem,
   cycleItemImage,
+  setItemImageIndex,
   pendingFly,
   consumePendingFly,
 } = useBucket()
 const { initFromBucket, snapshot } = useMoodboard()
 const { createBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
-const { open } = useProductOverlay()
+const { open, returnImage } = useProductOverlay()
 
 const gridRef = ref<HTMLElement | null>(null)
 const pileRef = ref<HTMLElement | null>(null)
@@ -214,6 +275,8 @@ const isFlipping = ref(false)
 const stagePresent = ref(false)
 /** CSS fade class — toggled after mount / before unmount so opacity can transition. */
 const stageVisible = ref(false)
+/** Grid borders — shown only after items land (open), hidden before they leave (close). */
+const gridLinesVisible = ref(false)
 /** Controls fade independently — out earlier than the backdrop on close. */
 const controlsVisible = ref(false)
 /** Which surface currently owns data-flip-id (never both). */
@@ -228,16 +291,149 @@ const cellSizePx = ref(0)
 const cellsReady = ref(false)
 /** CSS cell fade — only for non-Flip opens (e.g. header). Avoids post-Flip flash. */
 const softEnter = ref(false)
+/** Per-cell remove/undo animation phase (keyed by item id or undo key). */
+const cellPhase = ref<Record<string, CellPhase>>({})
 
 const BACKDROP_MS = 550
+const GRID_LINES_MS = 320
 const CONTROLS_FADE_IN_DELAY_MS = 400
 const CONTROLS_FADE_OUT_DELAY_MS = 100
 const FLIP_DURATION = 0.95
 const FLIP_STAGGER = 0.075
+const CELL_SCALE_MS = 280
+const UNDO_FADE_MS = 220
 /** Fixed column count — cell = pile = 1/6 viewport width, square */
 const STACK_COLS = 6
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const waitFrames = (n = 2) =>
+  new Promise<void>((resolve) => {
+    const step = (left: number) => {
+      if (left <= 0) {
+        resolve()
+        return
+      }
+      requestAnimationFrame(() => step(left - 1))
+    }
+    step(n)
+  })
+
+const setCellPhase = (key: string, phase: CellPhase) => {
+  cellPhase.value = { ...cellPhase.value, [key]: phase }
+}
+
+const clearCellPhase = (key: string) => {
+  const { [key]: _, ...rest } = cellPhase.value
+  cellPhase.value = rest
+}
+
+const clearAllCellPhases = () => {
+  cellPhase.value = {}
+}
+
+const cellClass = (entry: SelectionEntry) => {
+  if (entry.kind === 'undo') {
+    const phase = cellPhase.value[entry.key]
+    return {
+      'stack__cell--undo': true,
+      'stack__cell--undo-ready': phase === 'undo-ready',
+      'stack__cell--undo-leaving': phase === 'undo-leaving',
+    }
+  }
+  const phase = cellPhase.value[entry.item.id]
+  return {
+    'stack__cell--scale-out': phase === 'scale-out',
+    'stack__cell--scale-in': phase === 'scale-in',
+    'stack__cell--scaled-in': phase === 'scaled-in',
+  }
+}
+
+const bulkBusy = ref(false)
+
+const countLabel = computed(() => {
+  const n = count.value
+  return `${n} ${n === 1 ? 'item' : 'items'} in this selection`
+})
+
+const onRemoveClick = async (item: BucketItem) => {
+  const id = item.id
+  if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
+  const undoKey = `${activeMoodboardId.value}::${id}`
+  setCellPhase(id, 'scale-out')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] !== 'scale-out') return
+  removeItem(id)
+  clearCellPhase(id)
+  await nextTick()
+  await waitFrames(2)
+  if (!selectionEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) return
+  setCellPhase(undoKey, 'undo-ready')
+}
+
+const onUndoClick = async (key: string, item: BucketItem) => {
+  const phase = cellPhase.value[key]
+  if (
+    bulkBusy.value ||
+    phase === 'undo-leaving' ||
+    phase === 'scale-in' ||
+    phase === 'scaled-in'
+  ) {
+    return
+  }
+  setCellPhase(key, 'undo-leaving')
+  await wait(UNDO_FADE_MS)
+  if (cellPhase.value[key] !== 'undo-leaving') return
+  undoRemove(key)
+  clearCellPhase(key)
+  const id = item.id
+  setCellPhase(id, 'scale-in')
+  await nextTick()
+  await waitFrames(2)
+  if (cellPhase.value[id] !== 'scale-in') return
+  setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+}
+
+const onClearAll = async () => {
+  if (bulkBusy.value || !items.value.length || !activeMoodboardId.value) return
+  bulkBusy.value = true
+  const live = items.value.slice()
+  const undoKeys = live.map((item) => `${activeMoodboardId.value}::${item.id}`)
+  for (const item of live) setCellPhase(item.id, 'scale-out')
+  await wait(CELL_SCALE_MS)
+  removeItems(live.map((item) => item.id))
+  for (const item of live) clearCellPhase(item.id)
+  await nextTick()
+  await waitFrames(2)
+  for (const key of undoKeys) {
+    if (selectionEntries.value.some((e) => e.kind === 'undo' && e.key === key)) {
+      setCellPhase(key, 'undo-ready')
+    }
+  }
+  bulkBusy.value = false
+}
+
+const onUndoAll = async () => {
+  if (bulkBusy.value || !activePendingRemovals.value.length) return
+  bulkBusy.value = true
+  const pendings = activePendingRemovals.value.slice()
+  for (const pending of pendings) setCellPhase(pending.key, 'undo-leaving')
+  await wait(UNDO_FADE_MS)
+  const restoreIds = pendings.map((p) => p.item.id)
+  for (const pending of pendings) clearCellPhase(pending.key)
+  undoAllRemovals()
+  await nextTick()
+  for (const id of restoreIds) setCellPhase(id, 'scale-in')
+  await waitFrames(2)
+  for (const id of restoreIds) setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  for (const id of restoreIds) {
+    if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+  }
+  bulkBusy.value = false
+}
 
 const settledItems = computed(() => {
   const hide = new Set(arrivingIds.value)
@@ -256,14 +452,14 @@ const showSelectionGrid = computed(
   () =>
     stagePresent.value &&
     panelTab.value === 'selections' &&
-    items.value.length > 0,
+    selectionEntries.value.length > 0,
 )
 
 /** All settled items in the pile (reversed so newest sits on top) — needed for Flip ids. */
 const pilePreview = computed(() => settledItems.value.slice().reverse())
 
 const gridDims = computed(() => {
-  const n = Math.max(items.value.length, 1)
+  const n = Math.max(selectionEntries.value.length, 1)
   const cols = STACK_COLS
   const rows = Math.ceil(n / cols)
   return { cols, rows }
@@ -298,9 +494,11 @@ const syncCellSize = () => {
   cellSizePx.value = window.innerWidth / STACK_COLS
 }
 
-const hashAngle = (id: string) => {
+/** Stable-ish tilt from id (+ optional salt so underneath cards reshuffle when top changes). */
+const hashAngle = (id: string, salt = '') => {
+  const key = salt ? `${id}::${salt}` : id
   let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0
   return ((h % 11) - 5) * 0.9 // about -4.5° … 4.5°
 }
 
@@ -343,18 +541,22 @@ const syncPileFanFromHover = async () => {
   pileFanned.value = !!pileRef.value?.matches(':hover')
 }
 
+/** Changes whenever pile membership changes — reshuffles under-card tilts on add/remove. */
+const pilePoseSalt = computed(() => settledItems.value.map((item) => item.id).join('|'))
+
 const pileCardStyle = (id: string, index: number, total: number) => {
   const t = total <= 1 ? 0 : index / (total - 1)
   const x = (t - 0.5) * 10
   const y = (0.5 - t) * 6
   const isTop = index === total - 1
-  // Top card: fixed slight tilt; others keep their hashed angle
-  const rot = isTop ? -1 : hashAngle(id)
+  // Top keeps its own tilt; others salt against the full stack so add/remove both reshuffle
+  const rot = isTop ? hashAngle(id) : hashAngle(id, pilePoseSalt.value)
   const slot = pileFanSlot(index, total)
   const fan = slot ? FAN_OFFSETS[slot] : null
   const hoverX = fan ? x + fan.x : x
   const hoverY = fan ? y + fan.y : y
-  const hoverRot = fan ? rot + fan.r : rot
+  const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
+  const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
 
   return {
     '--pile-x': `${x}px`,
@@ -395,8 +597,26 @@ const openProduct = (item: BucketItem, event?: MouseEvent) => {
   const source =
     ((event?.currentTarget as HTMLElement | null)?.querySelector('img') as HTMLElement | null) ||
     null
-  open(slug, { source })
+  const index = galleryIndex(item)
+  const urls = galleryUrls(item)
+  const flipSrc = urls[index] || item.imageUrl || null
+  if (flipSrc) void prefetchImage(flipSrc)
+  open(slug, {
+    source,
+    imageIndex: index,
+    flipSrc,
+    bucketItemId: item.id,
+  })
 }
+
+watch(returnImage, (value) => {
+  if (!value) return
+  const targetId =
+    value.bucketItemId ||
+    items.value.find((item) => productIdFromBucketId(item.id) === value.productId)?.id
+  if (!targetId) return
+  setItemImageIndex(targetId, value.index)
+})
 
 const startEdit = () => {
   editName.value = activeMoodboard.value?.name || ''
@@ -472,7 +692,9 @@ const staggerDelayForIndex = (index: number, mode: 'open' | 'close') => {
 
 const staggerDelayForEl = (el: Element, mode: 'open' | 'close') => {
   const id = el.getAttribute('data-flip-id')
-  const index = items.value.findIndex((item) => item.id === id)
+  const index = selectionEntries.value.findIndex(
+    (entry) => entry.kind === 'item' && entry.item.id === id,
+  )
   return staggerDelayForIndex(index >= 0 ? index : 0, mode)
 }
 
@@ -505,13 +727,15 @@ const runFlip = (
 const fitPileCardsToCells = () =>
   new Promise<void>((resolve) => {
     const cards = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
-    const medias = gridRef.value?.querySelectorAll<HTMLElement>('.stack__cell-media')
-    if (!cards?.length || !medias?.length) {
+    // During open, flip ids stay on the pile — match cells by grid index, not data-flip-id
+    const medias = Array.from(
+      gridRef.value?.querySelectorAll<HTMLElement>('.stack__cell-media') || [],
+    )
+    if (!cards?.length || !medias.length) {
       resolve()
       return
     }
 
-    const mediaByIndex = Array.from(medias)
     const cardById = new Map(
       Array.from(cards).map((el) => [el.getAttribute('data-flip-id') || '', el]),
     )
@@ -522,15 +746,18 @@ const fitPileCardsToCells = () =>
       if (pending <= 0) resolve()
     }
 
-    items.value.forEach((item, index) => {
+    items.value.forEach((item) => {
       const card = cardById.get(item.id)
-      const media = mediaByIndex[index]
+      const index = selectionEntries.value.findIndex(
+        (entry) => entry.kind === 'item' && entry.item.id === item.id,
+      )
+      const media = index >= 0 ? medias[index] : undefined
       if (!card || !media) return
       pending += 1
       Flip.fit(card, media, {
         absolute: true,
         duration: FLIP_DURATION,
-        delay: staggerDelayForIndex(index, 'open'),
+        delay: staggerDelayForIndex(index >= 0 ? index : 0, 'open'),
         ease: 'power3.inOut',
         onComplete: done,
       })
@@ -540,8 +767,9 @@ const fitPileCardsToCells = () =>
   })
 
 const fadeOutStage = async () => {
-  // Fade opacity first; keep stagePresent so visibility/grid aren’t yanked away
+  // Backdrop only — grid lines already off; keep stagePresent until fade ends
   controlsVisible.value = false
+  gridLinesVisible.value = false
   stageVisible.value = false
   cellsReady.value = false
   softEnter.value = false
@@ -552,10 +780,11 @@ const fadeOutStage = async () => {
 }
 
 const revealStage = async () => {
+  gridLinesVisible.value = false
   stagePresent.value = true
   await nextTick()
   syncCellSize()
-  // Paint opacity:0 once, then enable --visible so the fade-in runs
+  // Paint backdrop at opacity 0, then fade it in (grid lines stay off)
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => {
       stageVisible.value = true
@@ -563,6 +792,16 @@ const revealStage = async () => {
     })
   })
   await wait(BACKDROP_MS)
+}
+
+const fadeGridLinesIn = async () => {
+  gridLinesVisible.value = true
+  await wait(GRID_LINES_MS)
+}
+
+const fadeGridLinesOut = async () => {
+  gridLinesVisible.value = false
+  await wait(GRID_LINES_MS)
 }
 
 /** Fade controls in after open has started (later than the backdrop). */
@@ -582,26 +821,38 @@ const openFromPile = async () => {
   flipSurface.value = 'pile'
   keepPileForFlip.value = true
   controlsVisible.value = false
+  gridLinesVisible.value = false
   scheduleControlsFadeIn()
-  // 1) Fade backdrop + grid chrome; keep pile mounted so cards aren’t cell-clipped
+  // 1) Backdrop fade in (no grid lines yet)
   await revealStage()
-  // 2) Open grid (media hidden), fly pile cards from fanned pose into cells
+  // 2) Items disperse into cells over plain backdrop
   openDrawer('selections')
   await nextTick()
   syncCellSize()
   await fitPileCardsToCells()
-  // 3) Swap to cell media at the same size/place, then drop the pile
+  // 3) Swap to cell media, then fade grid lines in
   flipSurface.value = 'cells'
   cellsReady.value = true
   keepPileForFlip.value = false
   pileFanned.value = false
   isFlipping.value = false
+  await fadeGridLinesIn()
+}
+
+const finishClose = async () => {
+  await fadeOutStage()
+  clearAllCellPhases()
+  clearPendingRemovals()
+  dismissDrawer()
 }
 
 const closeToPile = async () => {
   if (!import.meta.client || isFlipping.value) {
+    clearAllCellPhases()
+    clearPendingRemovals()
     dismissDrawer()
     controlsVisible.value = false
+    gridLinesVisible.value = false
     stageVisible.value = false
     stagePresent.value = false
     cellsReady.value = false
@@ -610,12 +861,11 @@ const closeToPile = async () => {
     return
   }
   if (!isOpen.value) {
-    await fadeOutStage()
+    await finishClose()
     return
   }
-  if (panelTab.value !== 'selections' || !items.value.length) {
-    await fadeOutStage()
-    dismissDrawer()
+  if (panelTab.value !== 'selections' || !selectionEntries.value.length) {
+    await finishClose()
     return
   }
 
@@ -623,6 +873,15 @@ const closeToPile = async () => {
   void wait(CONTROLS_FADE_OUT_DELAY_MS).then(() => {
     controlsVisible.value = false
   })
+
+  // 1) Grid lines out first so items don’t travel over them
+  await fadeGridLinesOut()
+
+  // Only undo placeholders left — already faded with grid lines
+  if (!items.value.length) {
+    await finishClose()
+    return
+  }
 
   syncCellSize()
   const medias = gridRef.value?.querySelectorAll('.stack__cell-media[data-flip-id]')
@@ -636,6 +895,7 @@ const closeToPile = async () => {
   await nextTick()
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
+    // 2) Items gather back to the pile
     await runFlip(state, cards, { mode: 'close' })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, { clearProps: 'transform,top,left,right,bottom,width,height,position,margin' })
@@ -645,14 +905,19 @@ const closeToPile = async () => {
   // fade applies the fan with transition:none and it “pops” on next hover too
   isFlipping.value = false
   await syncPileFanFromHover()
+  // 3) Backdrop fade out (undos already left with the grid lines)
   await fadeOutStage()
+  clearAllCellPhases()
+  clearPendingRemovals()
 }
 
 const requestClose = () => {
   void closeToPile()
 }
 
-const flyIntoPile = (payload: NonNullable<typeof pendingFly.value>) => {
+type FlyPayload = NonNullable<ReturnType<typeof consumePendingFly>>
+
+const flyIntoPile = (payload: FlyPayload) => {
   if (!import.meta.client) {
     clearArriving(payload.itemId)
     return
@@ -661,61 +926,157 @@ const flyIntoPile = (payload: NonNullable<typeof pendingFly.value>) => {
   const dest = pileAnchor.value
   if (!dest) {
     clearArriving(payload.itemId)
+    if (payload.source) {
+      payload.source.style.removeProperty('opacity')
+      payload.source.style.removeProperty('transition')
+      payload.source.removeAttribute('data-bucket-fly')
+    }
     return
   }
 
-  const flyer = document.createElement('img')
-  flyer.src = payload.imageUrl
-  flyer.alt = ''
-  flyer.setAttribute('aria-hidden', 'true')
-  Object.assign(flyer.style, {
+  const source = payload.source
+  // Keep original hidden instantly (no fade-out) while the flyer travels
+  if (source) {
+    source.setAttribute('data-bucket-fly', payload.itemId)
+    source.style.setProperty('transition', 'none')
+    source.style.setProperty('opacity', '0')
+  }
+
+  // Match pile card structure (full cell + padded image) so handoff doesn’t pop size
+  const CELL_PAD = 50
+  const wrap = document.createElement('div')
+  Object.assign(wrap.style, {
     position: 'fixed',
     left: `${payload.from.left}px`,
     top: `${payload.from.top}px`,
     width: `${payload.from.width}px`,
     height: `${payload.from.height}px`,
-    objectFit: 'contain',
-    borderRadius: '2px',
     zIndex: '400',
     pointerEvents: 'none',
     margin: '0',
-    boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+    overflow: 'hidden',
+    transformOrigin: 'center center',
+    boxSizing: 'border-box',
   })
-  document.body.appendChild(flyer)
+  const flyerImg = document.createElement('img')
+  flyerImg.src = payload.imageUrl
+  flyerImg.alt = ''
+  flyerImg.setAttribute('aria-hidden', 'true')
+  Object.assign(flyerImg.style, {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    objectPosition: 'center',
+    padding: '0px',
+    boxSizing: 'border-box',
+    display: 'block',
+    margin: '0',
+    border: '0',
+  })
+  wrap.appendChild(flyerImg)
+  document.body.appendChild(wrap)
 
-  // Land at full cell size — matches open-grid media / pile card
   const destSize = Math.min(dest.width, dest.height)
   const destLeft = dest.left
   const destTop = dest.top
 
-  // Playful arch: rise then settle into the pile (Safari-like)
+  // Playful arch: rise, overshoot into the pile, then settle with inertia
   const midX = payload.from.left + (destLeft - payload.from.left) * 0.45
   const midY = Math.min(payload.from.top, destTop) - Math.min(140, window.innerHeight * 0.18)
+  const landRot = hashAngle(payload.itemId)
+  const overshootRot = landRot + (landRot === 0 ? -5 : Math.sign(landRot) * 5)
+
+  const resolveFlySource = () => {
+    if (source && document.contains(source)) return source
+    return document.querySelector(
+      `img[data-bucket-fly="${CSS.escape(payload.itemId)}"]`,
+    ) as HTMLElement | null
+  }
+
+  /** Native CSS fade — GSAP opacity tweens fight `transition: opacity` on the thumb. */
+  const fadeSourceBack = () => {
+    window.setTimeout(() => {
+      const el = resolveFlySource()
+      if (!el) return
+      gsap.killTweensOf(el)
+      el.style.setProperty('transition', 'opacity 2s ease')
+      el.style.setProperty('opacity', '0')
+      void el.offsetWidth
+      el.style.setProperty('opacity', '0.1')
+      const handoff = () => {
+        el.style.removeProperty('transition')
+        el.style.removeProperty('opacity')
+        el.removeAttribute('data-bucket-fly')
+      }
+      const onEnd = (e: TransitionEvent) => {
+        if (e.propertyName !== 'opacity') return
+        el.removeEventListener('transitionend', onEnd)
+        handoff()
+      }
+      el.addEventListener('transitionend', onEnd)
+      window.setTimeout(() => {
+        el.removeEventListener('transitionend', onEnd)
+        handoff()
+      }, 2200)
+    }, 550)
+  }
+
+  // Top card rest offset (matches pileCardStyle) so the swap lines up
+  const nextTotal = settledItems.value.length + 1
+  const topT = nextTotal <= 1 ? 0 : 1
+  const landLeft = destLeft + (topT - 0.5) * 10
+  const landTop = destTop + (0.5 - topT) * 6
 
   gsap
     .timeline({
       onComplete: () => {
-        flyer.remove()
+        // Mount pile card, then drop flyer before paint — no overlapping clone
         clearArriving(payload.itemId)
+        nextTick(() => {
+          wrap.remove()
+          fadeSourceBack()
+        })
       },
     })
-    .to(flyer, {
+    .to(wrap, {
+      // Rise — keep source size
       left: midX,
       top: midY,
-      width: payload.from.width * 0.85,
-      height: payload.from.height * 0.85,
-      rotate: hashAngle(payload.itemId) * 0.5,
+      rotate: landRot * 0.45,
       duration: 0.32,
       ease: 'power2.out',
     })
-    .to(flyer, {
-      left: destLeft,
-      top: destTop,
-      width: destSize,
-      height: destSize,
-      rotate: hashAngle(payload.itemId),
-      duration: 0.42,
-      ease: 'power3.in',
+    .to(
+      wrap,
+      {
+        // Mid-flight: cell footprint + dive
+        left: landLeft,
+        top: landTop + 4,
+        width: destSize,
+        height: destSize,
+        rotate: overshootRot,
+        duration: 0.4,
+        ease: 'power2.inOut',
+      },
+      'dive',
+    )
+    .to(
+      flyerImg,
+      {
+        // Match .stack__pile-image padding so the bitmap matches the landed card
+        padding: CELL_PAD,
+        duration: 0.4,
+        ease: 'power2.inOut',
+      },
+      'dive',
+    )
+    .to(wrap, {
+      // Settle — position + rotation only (size/padding already final)
+      left: landLeft,
+      top: landTop,
+      rotate: landRot,
+      duration: 0.48,
+      ease: 'power3.out',
     })
 }
 
@@ -744,16 +1105,18 @@ watch(isOpen, async (open) => {
   // Flip opens own the sequence — skip soft-enter path
   if (isFlipping.value) return
 
-  // Header / non-Flip open: fade grid first, then stagger cells in
+  // Header / non-Flip open: backdrop → items → grid lines
   cellsReady.value = false
   softEnter.value = false
   controlsVisible.value = false
+  gridLinesVisible.value = false
   flipSurface.value = 'cells'
   scheduleControlsFadeIn()
   await revealStage()
   if (!isOpen.value || isFlipping.value) return
   cellsReady.value = true
   softEnter.value = true
+  await fadeGridLinesIn()
 })
 
 watch(stagePresent, (present) => {
@@ -834,8 +1197,8 @@ onBeforeUnmount(() => {
 
 .stack__pile {
   position: fixed;
-  left: var(--gutter);
-  bottom: var(--gutter);
+  left: 0;
+  bottom: 0;
   z-index: 210;
   /* Same footprint as one open-grid cell so Flip keeps image size */
   width: var(--stack-cell-size);
@@ -928,37 +1291,38 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  /* Delay visibility:hidden until opacity fade finishes */
-  transition:
-    opacity 0.55s ease,
-    visibility 0s linear 0.55s;
+  /* Delay visibility:hidden until backdrop opacity fade finishes */
+  transition: visibility 0s linear 0.55s;
 }
 
 .stack__stage--visible {
-  opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transition:
-    opacity 0.55s ease,
-    visibility 0s linear 0s;
+  transition: visibility 0s linear 0s;
 }
 
 .stack__backdrop {
   position: absolute;
   inset: 0;
   background: var(--background-color, var(--cream));
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+
+.stack__stage--visible .stack__backdrop {
+  opacity: 1;
 }
 
 
 /*
   Keep cell media invisible until cellsReady.
+  Undo placeholders stay visible so they can fade with the stage on close.
   (Previously :not(.stack--flipping) allowed a flash at rest grid positions on open
   before Flip rewound them to the pile.)
 */
-.stack:not(.stack--cells-ready) .stack__cell-media {
+.stack:not(.stack--cells-ready) .stack__cell-media:not(.stack__cell-media--undo) {
   opacity: 0;
 }
 
@@ -979,8 +1343,14 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
-  border-top: 1px solid var(--grid-line);
-  border-left: 1px solid var(--grid-line);
+  border-top: 1px solid transparent;
+  border-left: 1px solid transparent;
+  transition: border-color 0.32s ease;
+}
+
+.stack__grid--lines {
+  border-top-color: var(--grid-line);
+  border-left-color: var(--grid-line);
 }
 
 /* Shell stays in document flow — square tracks from gridAutoRows = column width */
@@ -994,9 +1364,15 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   background: transparent;
-  border-right: 1px solid var(--grid-line);
-  border-bottom: 1px solid var(--grid-line);
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
   box-sizing: border-box;
+  transition: border-color 0.32s ease;
+}
+
+.stack__grid--lines .stack__cell {
+  border-right-color: var(--grid-line);
+  border-bottom-color: var(--grid-line);
 }
 
 /* Only this layer Flips — leaving the shell keeps the grid shape stable */
@@ -1005,6 +1381,82 @@ onBeforeUnmount(() => {
   inset: 0;
   min-width: 0;
   min-height: 0;
+}
+
+/* Undo fades with grid lines (same 0.32s window on close) */
+.stack__cell-media--undo {
+  opacity: 1;
+  transition: opacity 0.32s ease;
+}
+
+.stack__grid:not(.stack__grid--lines) .stack__cell-media--undo {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stack__cell-media--undo .stack__cell-frame {
+  pointer-events: none;
+}
+
+.stack__undo {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition:
+    opacity 0.22s ease,
+    color 0.2s ease;
+}
+
+.stack__cell--undo-ready:not(.stack__cell--undo-leaving) .stack__undo {
+  opacity: 1;
+}
+
+.stack__cell--undo-leaving .stack__undo {
+  opacity: 0;
+}
+
+.stack__undo:hover {
+  color: var(--charcoal);
+}
+
+/* Remove: hide controls, scale image out — then undo fades in */
+.stack__cell--scale-out .stack__cell-ctrl,
+.stack__cell--scale-in .stack__cell-ctrl,
+.stack__cell--scaled-in .stack__cell-ctrl {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: none;
+}
+
+.stack__cell--scale-out .stack__cell-figure {
+  transform: scale(0);
+  transform-origin: center center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+/* Undo restore: mount at 0, then scale up; controls return after */
+.stack__cell--scale-in .stack__cell-figure {
+  transform: scale(0);
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.stack__cell--scaled-in .stack__cell-figure {
+  transform: scale(1);
+  transform-origin: center center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
 /* Content box = cell minus padding on every side */
@@ -1017,30 +1469,38 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   box-sizing: border-box;
+  container-type: size;
+}
+
+/* Shrink-wraps to the contained image so controls sit on the image, not the square */
+.stack__cell-figure {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  width: fit-content;
+  height: fit-content;
+  line-height: 0;
+  transform-origin: center center;
 }
 
 .stack__cell-hit {
-  position: relative;
   display: block;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
-  overflow: hidden;
+  line-height: 0;
 }
 
 .stack__cell-image {
   display: block;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100cqi;
+  max-height: 100cqb;
   object-fit: contain;
-  object-position: center;
   pointer-events: none;
 }
 
@@ -1055,6 +1515,11 @@ onBeforeUnmount(() => {
 .stack__cell:hover .stack__cell-ctrl {
   opacity: 1;
   pointer-events: auto;
+}
+
+.stack__cell-ctrl--clone {
+  top: var(--thumb-ctrl-inset, 4px);
+  left: var(--thumb-ctrl-inset, 4px);
 }
 
 .stack__cell-ctrl--remove {
@@ -1172,24 +1637,81 @@ onBeforeUnmount(() => {
   transition: opacity 0.45s ease 0.2s;
 }
 
+.stack__controls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .stack__close {
-  align-self: flex-end;
-  font-size: var(--text-sm);
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--charcoal);
+  background: var(--elevated-bg, #fff);
   color: var(--charcoal);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.stack__close:hover {
+  color: var(--accent, var(--charcoal));
+  border-color: currentColor;
+}
+
+.stack__close-icon {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+
+.stack__close-icon::before,
+.stack__close-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+}
+
+.stack__close-icon::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.stack__close-icon::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .stack__title {
   margin: 0;
+  min-width: 0;
+  flex: 1;
   font-size: var(--text-sm);
   color: var(--charcoal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack__count {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 .stack__title-input {
-  width: 100%;
+  min-width: 0;
+  flex: 1;
   margin: 0;
-  padding: 0.55rem 0.65rem;
+  padding: 0.35rem 0.5rem;
   font: inherit;
   font-size: var(--text-sm);
   color: var(--charcoal);

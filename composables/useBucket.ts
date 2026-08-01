@@ -16,9 +16,11 @@ export type BucketItem = {
 /** Stable cart id — product + image index so multiple gallery frames can be saved. */
 export const bucketItemId = (productId: string, imageIndex?: number) => {
   const base = productId.includes('::') ? productId.split('::')[0] : productId
-  return typeof imageIndex === 'number' && imageIndex >= 0
-    ? `${base}::${imageIndex}`
-    : base
+  if (typeof imageIndex === 'number' && imageIndex >= 0) {
+    return `${base}::${imageIndex}`
+  }
+  // Keep an already-qualified id (e.g. `foo::2`) — don't strip the index
+  return productId.includes('::') ? productId : base
 }
 
 export const productIdFromBucketId = (itemId: string) => itemId.split('::')[0]
@@ -97,6 +99,8 @@ export const useBucket = () => {
     imageUrl: string
     from: { left: number; top: number; width: number; height: number }
   } | null>('bucket-pending-fly', () => null)
+  // DOM source kept off useState (not serializable)
+  let pendingFlySource: HTMLElement | null = null
 
   const activeMoodboard = computed(() => {
     const boards = moodboards.value
@@ -108,23 +112,47 @@ export const useBucket = () => {
 
   const count = computed(() => items.value.length)
 
-  /** Active selection rows: live items + undo placeholders in original slots. */
+  /** Soft-removed entries waiting for undo on the active board. */
+  const activePendingRemovals = computed(() => {
+    const boardId = activeMoodboardId.value
+    if (!boardId) return [] as PendingRemoval[]
+    return pendingRemovals.value.filter((p) => p.moodboardId === boardId)
+  })
+
+  /** Active selection rows: live items + undo placeholders in original visual slots. */
   const selectionEntries = computed((): SelectionEntry[] => {
     const boardId = activeMoodboardId.value
-    const entries: SelectionEntry[] = items.value.map((item) => ({ kind: 'item', item }))
-    if (!boardId) return entries
+    const live = items.value.map((item) => ({ kind: 'item' as const, item }))
+    if (!boardId) return live
 
     const pendings = pendingRemovals.value
       .filter((p) => p.moodboardId === boardId)
       .slice()
-      .sort((a, b) => b.index - a.index || b.seq - a.seq)
+      .sort((a, b) => a.index - b.index || a.seq - b.seq)
 
-    for (const pending of pendings) {
-      entries.splice(Math.min(pending.index, entries.length), 0, {
-        kind: 'undo',
-        key: pending.key,
-        item: pending.item,
-      })
+    if (!pendings.length) return live
+
+    // Walk stable visual slots — pending.index is the grid position at remove time,
+    // not an index into the compacted live list (which shifts after each remove).
+    const total = live.length + pendings.length
+    const pendingBySlot = new Map(pendings.map((p) => [p.index, p]))
+    const entries: SelectionEntry[] = []
+    let liveIdx = 0
+
+    for (let slot = 0; slot < total; slot++) {
+      const pending = pendingBySlot.get(slot)
+      if (pending) {
+        entries.push({ kind: 'undo', key: pending.key, item: pending.item })
+        continue
+      }
+      const item = live[liveIdx]
+      if (!item) break
+      entries.push(item)
+      liveIdx += 1
+    }
+    while (liveIdx < live.length) {
+      entries.push(live[liveIdx])
+      liveIdx += 1
     }
     return entries
   })
@@ -138,6 +166,17 @@ export const useBucket = () => {
   const dismissPendingRemoval = (key: string) => {
     clearRemovalTimer(key)
     pendingRemovals.value = pendingRemovals.value.filter((p) => p.key !== key)
+  }
+
+  /** Drop undo placeholders (item already removed from the board). */
+  const clearPendingRemovals = (moodboardId?: string | null) => {
+    const boardId = moodboardId === undefined ? activeMoodboardId.value : moodboardId
+    for (const pending of pendingRemovals.value) {
+      if (!boardId || pending.moodboardId === boardId) clearRemovalTimer(pending.key)
+    }
+    pendingRemovals.value = boardId
+      ? pendingRemovals.value.filter((p) => p.moodboardId !== boardId)
+      : []
   }
 
   const ensureActive = () => {
@@ -271,18 +310,24 @@ export const useBucket = () => {
     const boardId = activeMoodboardId.value!
     const board = moodboards.value.find((b) => b.id === boardId)
     if (!board) return
-    const index = board.items.findIndex((i) => i.id === id)
-    if (index < 0) return
-    const source = board.items[index]
+    const boardIndex = board.items.findIndex((i) => i.id === id)
+    if (boardIndex < 0) return
+    const source = board.items[boardIndex]
     const item: BucketItem = {
       ...source,
       imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
     }
 
+    // Visual grid/list slot (includes existing undo placeholders) — stays stable
+    const visualIndex = selectionEntries.value.findIndex(
+      (entry) => entry.kind === 'item' && entry.item.id === id,
+    )
+    const index = visualIndex >= 0 ? visualIndex : boardIndex
+
     const key = `${boardId}::${id}`
     dismissPendingRemoval(key)
 
-    // Soft-remove: drop from selection immediately, keep undo slot for 2 minutes
+    // Soft-remove: drop from selection immediately, keep undo slot until dismiss
     moodboards.value = moodboards.value.map((b) =>
       b.id === boardId ? { ...b, items: b.items.filter((i) => i.id !== id) } : b,
     )
@@ -293,7 +338,8 @@ export const useBucket = () => {
       { key, moodboardId: boardId, item, index, seq: ++removalSeq },
     ]
 
-    if (import.meta.client) {
+    // v1: timed undo strip. v2: keep until the cart closes.
+    if (import.meta.client && bucketUiVersion.value === 'v1') {
       removalTimers.set(
         key,
         setTimeout(() => dismissPendingRemoval(key), UNDO_REMOVE_MS),
@@ -305,15 +351,99 @@ export const useBucket = () => {
     const pending = pendingRemovals.value.find((p) => p.key === key)
     if (!pending) return
 
+    // Convert visual slot → index among live items (skip other undo slots before it)
+    const undosBefore = pendingRemovals.value.filter(
+      (p) =>
+        p.moodboardId === pending.moodboardId &&
+        p.key !== key &&
+        p.index < pending.index,
+    ).length
+    const liveInsertAt = Math.max(0, pending.index - undosBefore)
+
     moodboards.value = moodboards.value.map((board) => {
       if (board.id !== pending.moodboardId) return board
       if (board.items.some((i) => i.id === pending.item.id)) return board
       const next = [...board.items]
-      next.splice(Math.min(pending.index, next.length), 0, pending.item)
+      next.splice(Math.min(liveInsertAt, next.length), 0, pending.item)
       return { ...board, items: next }
     })
     persist()
     dismissPendingRemoval(key)
+  }
+
+  /** Soft-remove many items at once, keeping each visual slot for undo. */
+  const removeItems = (ids: string[]) => {
+    ensureActive()
+    const boardId = activeMoodboardId.value!
+    const idSet = new Set(ids)
+    if (!idSet.size) return
+
+    const captured = selectionEntries.value.flatMap((entry, index) => {
+      if (entry.kind !== 'item' || !idSet.has(entry.item.id)) return []
+      const item: BucketItem = {
+        ...entry.item,
+        imageUrls: entry.item.imageUrls ? [...entry.item.imageUrls] : undefined,
+      }
+      return [
+        {
+          key: `${boardId}::${item.id}`,
+          moodboardId: boardId,
+          item,
+          index,
+          seq: ++removalSeq,
+        } satisfies PendingRemoval,
+      ]
+    })
+    if (!captured.length) return
+
+    const capturedKeys = new Set(captured.map((p) => p.key))
+    for (const key of capturedKeys) clearRemovalTimer(key)
+
+    moodboards.value = moodboards.value.map((b) =>
+      b.id === boardId
+        ? { ...b, items: b.items.filter((i) => !idSet.has(i.id)) }
+        : b,
+    )
+    persist()
+
+    pendingRemovals.value = [
+      ...pendingRemovals.value.filter((p) => !capturedKeys.has(p.key)),
+      ...captured,
+    ]
+
+    if (import.meta.client && bucketUiVersion.value === 'v1') {
+      for (const pending of captured) {
+        removalTimers.set(
+          pending.key,
+          setTimeout(() => dismissPendingRemoval(pending.key), UNDO_REMOVE_MS),
+        )
+      }
+    }
+  }
+
+  /** Restore every pending removal on the active board (keeps visual order). */
+  const undoAllRemovals = () => {
+    ensureActive()
+    const boardId = activeMoodboardId.value!
+    const pendings = pendingRemovals.value.filter((p) => p.moodboardId === boardId)
+    if (!pendings.length) return
+
+    // selectionEntries is already live + undo slots in order — materialise as items
+    const nextItems = selectionEntries.value.map((entry) => {
+      const source = entry.item
+      return {
+        ...source,
+        imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
+      }
+    })
+
+    moodboards.value = moodboards.value.map((board) =>
+      board.id === boardId ? { ...board, items: nextItems } : board,
+    )
+    persist()
+
+    for (const pending of pendings) clearRemovalTimer(pending.key)
+    pendingRemovals.value = pendingRemovals.value.filter((p) => p.moodboardId !== boardId)
   }
 
   const cloneItem = (itemId: string) => {
@@ -397,6 +527,32 @@ export const useBucket = () => {
     persist()
   }
 
+  /** Point a selection entry at a gallery frame (e.g. PDP Flip-close handoff). */
+  const setItemImageIndex = (itemId: string, imageIndex: number) => {
+    moodboards.value = moodboards.value.map((board) => ({
+      ...board,
+      items: board.items.map((item) => {
+        if (item.id !== itemId) return item
+        const urls = uniqueImageUrls(...(item.imageUrls || []))
+        if (urls.length < 2) return item
+        const idx = Math.min(Math.max(0, imageIndex), urls.length - 1)
+        if (
+          item.imageIndex === idx &&
+          imageAssetKey(item.imageUrl) === imageAssetKey(urls[idx])
+        ) {
+          return item
+        }
+        return {
+          ...item,
+          imageUrls: urls,
+          imageIndex: idx,
+          imageUrl: urls[idx],
+        }
+      }),
+    }))
+    persist()
+  }
+
   const toggleInMoodboard = (moodboardId: string, item: BucketItem, openDrawer = false) => {
     const board = moodboards.value.find((b) => b.id === moodboardId)
     if (!board) return
@@ -457,7 +613,11 @@ export const useBucket = () => {
     }
 
     const boardId = moodboards.value[0].id
-    const alreadySaved = isSavedIn(boardId, normalized.id)
+    const alreadySaved =
+      moodboards.value
+        .find((b) => b.id === boardId)
+        ?.items.some((i) => i.id === normalized.id) ?? false
+    // Fly only when adding — never when unhearting / removing
     if (
       !alreadySaved &&
       bucketUiVersion.value === 'v2' &&
@@ -466,6 +626,11 @@ export const useBucket = () => {
     ) {
       const rect = opts.source.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) {
+        pendingFlySource = opts.source
+        // Instant hide — no CSS opacity transition on the way out
+        opts.source.setAttribute('data-bucket-fly', normalized.id)
+        opts.source.style.setProperty('transition', 'none')
+        opts.source.style.setProperty('opacity', '0')
         pendingFly.value = {
           itemId: normalized.id,
           imageUrl: normalized.imageUrl,
@@ -477,6 +642,29 @@ export const useBucket = () => {
           },
         }
       }
+    } else if (alreadySaved && opts?.source && import.meta.client) {
+      // Fade original back in on unheart
+      const el = opts.source
+      el.style.transition = 'opacity 0.35s ease'
+      // Force current opacity so the transition always runs from saved → full
+      const current = getComputedStyle(el).opacity
+      el.style.opacity = current
+      void el.offsetWidth
+      el.style.opacity = '1'
+      const clearInline = () => {
+        el.style.transition = ''
+        el.style.opacity = ''
+      }
+      const onEnd = (e: TransitionEvent) => {
+        if (e.propertyName !== 'opacity') return
+        el.removeEventListener('transitionend', onEnd)
+        clearInline()
+      }
+      el.addEventListener('transitionend', onEnd)
+      window.setTimeout(() => {
+        el.removeEventListener('transitionend', onEnd)
+        clearInline()
+      }, 400)
     }
 
     toggleInMoodboard(boardId, normalized, openOnAdd)
@@ -484,8 +672,11 @@ export const useBucket = () => {
 
   const consumePendingFly = () => {
     const payload = pendingFly.value
+    const source = pendingFlySource
     pendingFly.value = null
-    return payload
+    pendingFlySource = null
+    if (!payload) return null
+    return { ...payload, source }
   }
 
   const selectMoodboardForItem = (moodboardId: string) => {
@@ -544,6 +735,7 @@ export const useBucket = () => {
     activeMoodboardId,
     items,
     selectionEntries,
+    activePendingRemovals,
     isOpen,
     panelTab,
     isMoodboard,
@@ -556,10 +748,14 @@ export const useBucket = () => {
     setActiveMoodboard,
     addItem,
     removeItem,
+    removeItems,
     undoRemove,
+    undoAllRemovals,
+    clearPendingRemovals,
     cloneItem,
     cycleItemImage,
     setItemGallery,
+    setItemImageIndex,
     addItemToMoodboard,
     removeItemFromMoodboard,
     requestSave,

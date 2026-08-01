@@ -9,8 +9,9 @@
   --side-column-width: 320px;
   --bucket-rail-width: 2.15rem;
   --bucket-close-ms: 0.4s;
-  /* Shared light/dark surface fade (header, PDP, overlay) */
-  --theme-ms: 0.4s;
+  /* Shared light/dark surface fade (header, PDP, overlay).
+     0 until html.theme-ready so hard-load / stored dark mode doesn't animate in. */
+  --theme-ms: 0s;
   --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
   /* Bottom cart: panel height = header + list pad (top+bottom) + item row */
   --bucket-item-height: 150px;
@@ -26,6 +27,11 @@
 
 html.bucket-push {
   --bucket-push: var(--bucket-height);
+}
+
+/* Enable theme color transitions only after initial theme is applied */
+html.theme-ready {
+  --theme-ms: 0.4s;
 }
 
 /* Dark mode — warm charcoal surfaces, cream text (inverted light palette) */
@@ -49,7 +55,7 @@ html.dark {
   --shadow-color: rgba(0, 0, 0, 0.45);
 
   --thumb-ctrl-color: var(--charcoal);
-  --thumb-ctrl-bg: var(--elevated-bg);
+  --thumb-ctrl-bg: var(--cream);
 }
 
 @media (min-width: 768px) {

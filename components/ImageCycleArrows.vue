@@ -70,7 +70,7 @@ defineEmits<{
 
 .image-cycle--boxed {
   --_size: var(--thumb-ctrl-size, 23px);
-  --_face: calc(var(--_size) - 2px);
+  --_face: var(--_size);
   width: calc(var(--_size) * 2);
   height: var(--_size);
   display: grid;
@@ -86,9 +86,10 @@ defineEmits<{
   height: var(--_face);
   padding: 0;
   gap: 0;
-  background: var(--thumb-ctrl-bg, #fff);
-  border: 1px solid currentColor;
-  box-sizing: content-box;
+  background: var(--thumb-ctrl-bg, var(--cream));
+  border: 0;
+  border-radius: var(--thumb-ctrl-radius, 4px);
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 1fr 1fr;
 }

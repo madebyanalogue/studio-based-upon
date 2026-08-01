@@ -1,5 +1,5 @@
 <template>
-  <article class="product-card mono">
+  <article class="product-card mono" :class="{ 'product-card--saved': saved }">
     <div class="product-card__pad">
       <component
         :is="linkTag"
@@ -245,7 +245,7 @@ const onToggle = (event?: MouseEvent) => {
 
 .product-card__cycle {
   position: absolute;
-  right: var(--thumb-ctrl-inset);
+  left: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
   z-index: 2;
   opacity: 0;
@@ -290,6 +290,15 @@ const onToggle = (event?: MouseEvent) => {
   object-fit: cover;
   display: block;
   pointer-events: none;
+  transition: opacity 0.7s ease;
+}
+
+.product-card--saved .product-card__image {
+  opacity: 0.1;
+}
+
+.product-card--saved:hover .product-card__image {
+  opacity: 1;
 }
 
 .product-card__type-label {
@@ -309,8 +318,8 @@ const onToggle = (event?: MouseEvent) => {
 
 .product-card__add {
   position: absolute;
-  top: var(--thumb-ctrl-inset);
   right: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
   z-index: 3;
   opacity: 0;
   transform: translateY(4px);
@@ -331,10 +340,13 @@ const onToggle = (event?: MouseEvent) => {
   z-index: 1;
   padding: var(--title-pad);
   min-width: 0;
-  /* opacity: 0; */
-  transition: opacity 0.25s ease;
+  opacity: 0;
+  transition: opacity 0.6s ease;
   pointer-events: none;
   border-top: 1px dashed var(--ui-border-color);
+}
+
+.product-card__meta * {
   font-size: var(--text-sm);
   font-size: clamp(10px,.5cqi, 12px);
 }
@@ -374,8 +386,8 @@ const onToggle = (event?: MouseEvent) => {
   align-items: baseline;
   gap: 0.35rem;
   color: var(--muted);
-  opacity: 0;
-  transition: opacity 0.5s ease 0.5s;
+  opacity: 1;
+  transition: opacity 0.7s ease 0s;
 }
 .product-card:hover .product-card__type {
   opacity: 1;

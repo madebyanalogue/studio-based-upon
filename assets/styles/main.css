@@ -23,15 +23,15 @@
   --thumb-ctrl-inset: 4px;
   --thumb-ctrl-size: 23px;
   --thumb-ctrl-color: var(--black);
-  --thumb-ctrl-bg: var(--elevated-bg);
+  --thumb-ctrl-bg: var(--cream);
+  --thumb-ctrl-radius: 4px;
   --thumb-ctrl-blend: normal;
   --thumb-radius: 2px;
   --undo-remove-ms: 5s;
 
 
-  --card-pad: 10px;
-  --title-pad: 15px;
-  --title-pad: 5px 10px 10px;
+  --card-pad: calc(var(--gutter) * 0.75);
+  --title-pad: 0px var(--card-pad) calc(var(--card-pad) * 0.5);
 
   color-scheme: light;
 }

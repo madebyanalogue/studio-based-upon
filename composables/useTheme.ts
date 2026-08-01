@@ -28,14 +28,9 @@ const applyDom = (mode: ThemeMode) => {
 
 /** Light / dark theme with localStorage persistence. */
 export const useTheme = () => {
-  const theme = useState<ThemeMode>('theme-mode', () => {
-    if (import.meta.client) {
-      const stored = readStored()
-      if (stored) return stored
-      if (document.documentElement.classList.contains('dark')) return 'dark'
-    }
-    return 'light'
-  })
+  // Always the same on server + first client paint so hydration matches.
+  // Client storage is applied after mount via initTheme().
+  const theme = useState<ThemeMode>('theme-mode', () => 'light')
 
   const isDark = computed(() => theme.value === 'dark')
 
@@ -49,15 +44,22 @@ export const useTheme = () => {
     setTheme(theme.value === 'dark' ? 'light' : 'dark')
   }
 
-  /** Sync Vue state from storage / early head script (call once on client mount). */
+  /** Sync Vue state from storage / early head script (call once after mount). */
   const initTheme = () => {
     if (!import.meta.client) return
     const stored = readStored()
     if (stored) {
       setTheme(stored)
-      return
+    } else {
+      setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
     }
-    setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+
+    // Paint the settled theme with --theme-ms: 0, then enable toggle transitions.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.documentElement.classList.add('theme-ready')
+      })
+    })
   }
 
   return {

@@ -51,7 +51,7 @@ withDefaults(
 <style scoped>
 .add-btn {
   --_size: var(--thumb-ctrl-size, 23px);
-  --_face: calc(var(--_size) - 2px);
+  --_face: var(--_size);
   width: var(--_size);
   height: var(--_size);
   display: grid;
@@ -75,9 +75,10 @@ withDefaults(
   display: block;
   width: var(--_face);
   height: var(--_face);
-  border: 1px solid currentColor;
-  box-sizing: content-box;
-  background: var(--thumb-ctrl-bg, #fff);
+  border: 0;
+  border-radius: var(--thumb-ctrl-radius, 4px);
+  box-sizing: border-box;
+  background: var(--thumb-ctrl-bg, var(--cream));
 }
 
 .add-btn__heart {
@@ -121,6 +122,6 @@ withDefaults(
 .add-btn__clone--front {
   top: calc(var(--_face) * 7 / 21);
   left: calc(var(--_face) * 7 / 21);
-  background: var(--thumb-ctrl-bg, #fff);
+  background: var(--thumb-ctrl-bg, var(--cream));
 }
 </style>
