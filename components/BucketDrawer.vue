@@ -161,12 +161,6 @@
                       </template>
 
                       <AddButton
-                        class="bucket__thumb-ctrl bucket__thumb-ctrl--clone"
-                        variant="clone"
-                        label="Clone item"
-                        @click.stop="cloneItem(entry.item.id)"
-                      />
-                      <AddButton
                         class="bucket__thumb-ctrl bucket__thumb-ctrl--remove"
                         variant="remove"
                         :label="`Remove ${entry.item.title}`"
@@ -295,6 +289,7 @@
 <script setup lang="ts">
 import type { BucketItem } from '~/composables/useBucket'
 import { uniqueImageUrls } from '~/composables/productImages'
+import { imageAssetKey } from '~/composables/useSanityImage'
 
 const {
   moodboards,
@@ -308,7 +303,6 @@ const {
   closeDrawer,
   removeItem,
   undoRemove,
-  cloneItem,
   cycleItemImage,
   setItemGallery,
   openMoodboard,
@@ -337,13 +331,19 @@ const productSlug = (item: BucketItem) => {
   return match?.[1] || null
 }
 
-const galleryCount = (item: BucketItem) => item.imageUrls?.length || 0
+const galleryUrls = (item: BucketItem) => uniqueImageUrls(...(item.imageUrls || []))
+
+const galleryCount = (item: BucketItem) => galleryUrls(item).length
 
 const galleryIndex = (item: BucketItem) => {
-  const urls = item.imageUrls || []
+  const urls = galleryUrls(item)
   if (!urls.length) return 0
-  if (typeof item.imageIndex === 'number') return item.imageIndex
-  const idx = urls.indexOf(item.imageUrl)
+  if (typeof item.imageIndex === 'number') {
+    return Math.min(item.imageIndex, urls.length - 1)
+  }
+  const idx = urls.findIndex(
+    (url) => imageAssetKey(url) === imageAssetKey(item.imageUrl),
+  )
   return idx >= 0 ? idx : 0
 }
 
@@ -993,11 +993,6 @@ watch(activeMoodboardId, () => {
 .bucket__item:hover .bucket__thumb-ctrl {
   opacity: 1;
   pointer-events: auto;
-}
-
-.bucket__thumb-ctrl--clone {
-  top: var(--thumb-ctrl-inset);
-  left: var(--thumb-ctrl-inset);
 }
 
 .bucket__thumb-ctrl--remove {

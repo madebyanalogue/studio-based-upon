@@ -1,11 +1,17 @@
+import { imageAssetKey } from '~/composables/useSanityImage'
+
 /** Deduplicate image URLs for project galleries (Forms, Surfaces, etc.). */
 export const uniqueImageUrls = (
   ...urls: Array<string | null | undefined>
 ): string[] => {
   const out: string[] = []
+  const seen = new Set<string>()
   for (const url of urls) {
     if (!url || url.includes('picsum.photos')) continue
-    if (!out.includes(url)) out.push(url)
+    const key = imageAssetKey(url) || url
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(url)
   }
   return out
 }

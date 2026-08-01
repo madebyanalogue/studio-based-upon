@@ -204,18 +204,25 @@ const onOpen = (event: MouseEvent) => {
   })
 }
 
-const onToggle = () => {
+const onToggle = (event?: MouseEvent) => {
   const urls = projectImages.value
   const idx = imageIndex.value
-  requestSave({
-    id: props.item._id,
-    title: props.item.title,
-    imageUrl: urls[idx] || props.imageUrl,
-    itemType: typeLabel.value,
-    link: href.value,
-    imageUrls: urls.length > 1 ? urls : undefined,
-    imageIndex: urls.length > 1 ? idx : undefined,
-  })
+  const source =
+    ((event?.currentTarget as HTMLElement | null)
+      ?.closest('.product-card')
+      ?.querySelector('.product-card__image') as HTMLElement | null) || null
+  requestSave(
+    {
+      id: props.item._id,
+      title: props.item.title,
+      imageUrl: urls[idx] || props.imageUrl,
+      itemType: typeLabel.value,
+      link: href.value,
+      imageUrls: urls.length > 1 ? urls : undefined,
+      imageIndex: urls.length > 1 ? idx : undefined,
+    },
+    { source },
+  )
 }
 </script>
 

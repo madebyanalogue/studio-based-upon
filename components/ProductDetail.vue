@@ -650,18 +650,25 @@ const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const onToggleImage = (entry: GalleryEntry, index: number) => {
+const onToggleImage = (entry: GalleryEntry, index: number, source?: HTMLElement | null) => {
   if (!product.value) return
   const urls = galleryEntries.value.map((g) => g.src)
-  requestSave({
-    id: product.value._id,
-    title: product.value.title,
-    imageUrl: entry.src,
-    itemType: product.value.series || 'item',
-    link: `/materials-and-forms/${product.value.slug}`,
-    imageUrls: urls.length > 1 ? urls : undefined,
-    imageIndex: urls.length > 1 ? index : undefined,
-  })
+  requestSave(
+    {
+      id: product.value._id,
+      title: product.value.title,
+      imageUrl: entry.src,
+      itemType: product.value.series || 'item',
+      link: `/materials-and-forms/${product.value.slug}`,
+      imageUrls: urls.length > 1 ? urls : undefined,
+      imageIndex: urls.length > 1 ? index : undefined,
+    },
+    {
+      source:
+        source ||
+        (document.querySelector('.pdp__hero-image') as HTMLElement | null),
+    },
+  )
 }
 
 const isCurrentImageSaved = computed(() => {
@@ -960,12 +967,11 @@ watch(
   position: relative;
   display: grid;
   grid-template-columns: var(--side-column-width) 1fr var(--side-column-width);
-  height: calc(100dvh - var(--bucket-push));
+  /* Full viewport — overlay sits above the cart, so don't shrink for --bucket-push */
+  height: 100dvh;
   background: transparent;
   border-top: 1px solid var(--grid-line);
-  transition:
-    height var(--bucket-close-ms) var(--theme-ease),
-    background var(--theme-ms) var(--theme-ease);
+  transition: background var(--theme-ms) var(--theme-ease);
 }
 
 .pdp--ready {
@@ -973,7 +979,7 @@ watch(
 }
 
 .pdp--standalone {
-  height: calc(100dvh - var(--header-height) - var(--bucket-push));
+  height: calc(100dvh - var(--header-height));
 }
 
 .pdp--missing {
@@ -1566,11 +1572,11 @@ watch(
     display: flex;
     flex-direction: column;
     height: auto;
-    min-height: calc(100dvh - var(--bucket-push));
+    min-height: 100dvh;
   }
 
   .pdp--standalone {
-    min-height: calc(100dvh - var(--header-height) - var(--bucket-push));
+    min-height: calc(100dvh - var(--header-height));
   }
 
   .pdp__col {

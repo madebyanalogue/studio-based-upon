@@ -69,12 +69,9 @@ onUnmounted(() => {
 <style scoped>
 .product-overlay {
   position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: calc(100dvh - var(--bucket-push));
-  z-index: 250;
-  transition: height var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+  inset: 0;
+  height: 100dvh;
+  z-index: 320; /* above cart / BucketStack (280–300) */
 }
 
 .product-overlay__backdrop {

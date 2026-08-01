@@ -11,7 +11,8 @@
     <main class="page-wrapper">
       <NuxtPage />
     </main>
-    <BucketDrawer />
+    <BucketDrawer v-if="bucketUi === 'v1'" />
+    <BucketStack v-else />
     <MoodboardCanvas />
     <MoodboardPicker />
     <ProductOverlay />
@@ -23,7 +24,12 @@
 import { isHomepagePath } from '~/composables/useHomepagePreloader'
 
 const { seoTitle, seoDescription, disablePreloader } = useSiteSettings()
+const { version: bucketUi, initBucketUi } = useBucketUi()
 const route = useRoute()
+
+onMounted(() => {
+  initBucketUi()
+})
 
 const preloaderReady = ref(
   !import.meta.client || !isHomepagePath(route.path),

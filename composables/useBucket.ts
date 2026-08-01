@@ -1,3 +1,6 @@
+import { uniqueImageUrls } from '~/composables/productImages'
+import { imageAssetKey } from '~/composables/useSanityImage'
+
 export type BucketItem = {
   id: string
   title: string
@@ -44,6 +47,8 @@ const UNDO_REMOVE_MS = 5000
 
 const removalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let removalSeq = 0
+/** Optional animated close (bucket UI v2). */
+let animatedCloseHandler: (() => void) | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -77,6 +82,7 @@ const defaultMoodboard = (index = 1): MoodboardBucket => ({
 })
 
 export const useBucket = () => {
+  const { version: bucketUiVersion } = useBucketUi()
   const moodboards = useState<MoodboardBucket[]>('moodboards', () => [defaultMoodboard()])
   const activeMoodboardId = useState<string | null>('active-moodboard-id', () => null)
   const isOpen = useState('bucket-open', () => false)
@@ -85,6 +91,12 @@ export const useBucket = () => {
   const reopenCartAfterMoodboard = useState('bucket-reopen-after-moodboard', () => false)
   const pickerItem = useState<BucketItem | null>('moodboard-picker-item', () => null)
   const pendingRemovals = useState<PendingRemoval[]>('bucket-pending-removals', () => [])
+  /** One-shot fly-to-stack payload for bucket UI v2. */
+  const pendingFly = useState<{
+    itemId: string
+    imageUrl: string
+    from: { left: number; top: number; width: number; height: number }
+  } | null>('bucket-pending-fly', () => null)
 
   const activeMoodboard = computed(() => {
     const boards = moodboards.value
@@ -208,6 +220,19 @@ export const useBucket = () => {
     persist()
   }
 
+  const clearActiveItems = () => {
+    ensureActive()
+    const boardId = activeMoodboardId.value!
+    for (const pending of pendingRemovals.value) {
+      if (pending.moodboardId === boardId) clearRemovalTimer(pending.key)
+    }
+    pendingRemovals.value = pendingRemovals.value.filter((p) => p.moodboardId !== boardId)
+    moodboards.value = moodboards.value.map((board) =>
+      board.id === boardId ? { ...board, items: [] } : board,
+    )
+    persist()
+  }
+
   const addItemToMoodboard = (moodboardId: string, item: BucketItem) => {
     moodboards.value = moodboards.value.map((board) => {
       if (board.id !== moodboardId) return board
@@ -317,13 +342,21 @@ export const useBucket = () => {
       ...board,
       items: board.items.map((item) => {
         if (item.id !== itemId) return item
-        const urls = item.imageUrls?.filter(Boolean) || []
+        const urls = uniqueImageUrls(...(item.imageUrls || []))
         if (urls.length < 2) return item
         const current =
-          item.imageIndex ?? Math.max(0, urls.indexOf(item.imageUrl))
+          typeof item.imageIndex === 'number'
+            ? Math.min(item.imageIndex, urls.length - 1)
+            : Math.max(
+                0,
+                urls.findIndex(
+                  (url) => imageAssetKey(url) === imageAssetKey(item.imageUrl),
+                ),
+              )
         const next = (current + direction + urls.length) % urls.length
         return {
           ...item,
+          imageUrls: urls,
           imageIndex: next,
           imageUrl: urls[next],
         }
@@ -338,7 +371,7 @@ export const useBucket = () => {
     imageUrls: string[],
     imageIndex?: number,
   ) => {
-    const urls = imageUrls.filter(Boolean)
+    const urls = uniqueImageUrls(...imageUrls)
     if (urls.length < 2) return
     moodboards.value = moodboards.value.map((board) => ({
       ...board,
@@ -346,8 +379,13 @@ export const useBucket = () => {
         if (item.id !== itemId) return item
         const idx =
           typeof imageIndex === 'number'
-            ? imageIndex
-            : Math.max(0, urls.indexOf(item.imageUrl))
+            ? Math.min(imageIndex, urls.length - 1)
+            : Math.max(
+                0,
+                urls.findIndex(
+                  (url) => imageAssetKey(url) === imageAssetKey(item.imageUrl),
+                ),
+              )
         return {
           ...item,
           imageUrls: urls,
@@ -407,15 +445,47 @@ export const useBucket = () => {
     }
   }
 
-  const requestSave = (item: BucketItem) => {
+  const requestSave = (item: BucketItem, opts?: { source?: HTMLElement | null }) => {
     ensureActive()
     const normalized = normalizeBucketItem(item)
+    const openOnAdd = bucketUiVersion.value === 'v1'
+
     if (moodboards.value.length > 1) {
       openPicker(normalized)
       isOpen.value = true
       return
     }
-    toggleInMoodboard(moodboards.value[0].id, normalized, true)
+
+    const boardId = moodboards.value[0].id
+    const alreadySaved = isSavedIn(boardId, normalized.id)
+    if (
+      !alreadySaved &&
+      bucketUiVersion.value === 'v2' &&
+      opts?.source &&
+      import.meta.client
+    ) {
+      const rect = opts.source.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        pendingFly.value = {
+          itemId: normalized.id,
+          imageUrl: normalized.imageUrl,
+          from: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+        }
+      }
+    }
+
+    toggleInMoodboard(boardId, normalized, openOnAdd)
+  }
+
+  const consumePendingFly = () => {
+    const payload = pendingFly.value
+    pendingFly.value = null
+    return payload
   }
 
   const selectMoodboardForItem = (moodboardId: string) => {
@@ -445,8 +515,20 @@ export const useBucket = () => {
     }
   }
 
-  const closeDrawer = () => {
+  const dismissDrawer = () => {
     isOpen.value = false
+  }
+
+  const closeDrawer = () => {
+    if (animatedCloseHandler) {
+      animatedCloseHandler()
+      return
+    }
+    dismissDrawer()
+  }
+
+  const registerAnimatedClose = (handler: (() => void) | null) => {
+    animatedCloseHandler = handler
   }
 
   const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
@@ -470,6 +552,7 @@ export const useBucket = () => {
     createMoodboard,
     renameMoodboard,
     deleteMoodboard,
+    clearActiveItems,
     setActiveMoodboard,
     addItem,
     removeItem,
@@ -488,6 +571,10 @@ export const useBucket = () => {
     openMoodboard,
     closeMoodboard,
     closeDrawer,
+    dismissDrawer,
+    registerAnimatedClose,
     openDrawer,
+    pendingFly,
+    consumePendingFly,
   }
 }

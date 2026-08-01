@@ -27,6 +27,15 @@
       <div class="header__actions">
         <button
           type="button"
+          class="header__version interface"
+          :aria-label="`Bucket UI ${bucketUiVersion}. Switch to ${bucketUiVersion === 'v1' ? 'v2' : 'v1'}`"
+          @click="toggleBucketUi"
+        >
+          {{ bucketUiVersion }}
+        </button>
+
+        <button
+          type="button"
           class="header__icon-btn"
           :class="{ 'header__icon-btn--tooltip-hidden': hiddenTooltip === 'theme' }"
           :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
@@ -63,7 +72,7 @@
             <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
           </svg>
           <span class="header__tooltip interface" aria-hidden="true">
-            {{ isDark ? 'Light' : 'Dark' }}
+            {{ themeTooltipLabel }}
           </span>
         </button>
 
@@ -135,11 +144,23 @@
 <script setup lang="ts">
 const { logo, headerMenu } = useSiteSettings()
 const { isOpen, panelTab, openDrawer, closeDrawer } = useBucket()
+const { version: bucketUiVersion, toggleVersion } = useBucketUi()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
+const toggleBucketUi = () => {
+  closeDrawer()
+  toggleVersion()
+}
+
 type TooltipId = 'theme' | 'boards' | 'selections'
 const hiddenTooltip = ref<TooltipId | null>(null)
+/** Keep pre-click label so theme toggle doesn't flash the opposite word while fading out. */
+const frozenThemeTooltip = ref<'Light' | 'Dark' | null>(null)
+
+const themeTooltipLabel = computed(
+  () => frozenThemeTooltip.value ?? (isDark.value ? 'Light' : 'Dark'),
+)
 
 const hideTooltip = (id: TooltipId) => {
   hiddenTooltip.value = id
@@ -147,6 +168,7 @@ const hideTooltip = (id: TooltipId) => {
 
 const clearTooltipHide = (id: TooltipId) => {
   if (hiddenTooltip.value === id) hiddenTooltip.value = null
+  if (id === 'theme') frozenThemeTooltip.value = null
 }
 
 const isActive = (path: string) => {
@@ -155,6 +177,7 @@ const isActive = (path: string) => {
 }
 
 const onThemeClick = () => {
+  frozenThemeTooltip.value = isDark.value ? 'Light' : 'Dark'
   hideTooltip('theme')
   toggleTheme()
 }
@@ -242,6 +265,21 @@ const onSelectionsClick = () => {
   gap: 0.35rem;
 }
 
+.header__version {
+  margin-right: 0.15rem;
+  padding: 0.2rem 0.4rem;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  border: 1px solid var(--grid-line);
+  border-radius: 4px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.header__version:hover {
+  color: var(--charcoal);
+  border-color: var(--charcoal);
+}
+
 .header__icon-btn {
   position: relative;
   display: grid;
@@ -294,6 +332,7 @@ const onSelectionsClick = () => {
 .header__icon-btn--tooltip-hidden:focus-visible .header__tooltip {
   opacity: 0;
   transform: translateX(-50%) translateY(-2px);
+  transition: none;
 }
 
 .header__enquire {

@@ -237,19 +237,28 @@ const cycle = (direction: 1 | -1) => {
   })
 }
 
-const onToggle = () => {
+const onToggle = (event?: MouseEvent) => {
   const urls = projectImages.value
   const idx = imageIndex.value
   const hero = props.imageUrl || buildUrl(props.item.image)
-  requestSave({
-    id: props.item._id,
-    title: props.item.title,
-    imageUrl: urls[idx] || hero,
-    itemType: typeLabel.value,
-    link: href.value,
-    imageUrls: urls.length > 1 ? urls : undefined,
-    imageIndex: urls.length > 1 ? idx : undefined,
-  })
+  const source =
+    imageRef.value ||
+    ((event?.currentTarget as HTMLElement | null)
+      ?.closest('.grid-item')
+      ?.querySelector('.grid-item__image') as HTMLElement | null) ||
+    null
+  requestSave(
+    {
+      id: props.item._id,
+      title: props.item.title,
+      imageUrl: urls[idx] || hero,
+      itemType: typeLabel.value,
+      link: href.value,
+      imageUrls: urls.length > 1 ? urls : undefined,
+      imageIndex: urls.length > 1 ? idx : undefined,
+    },
+    { source },
+  )
 }
 
 onMounted(() => {
