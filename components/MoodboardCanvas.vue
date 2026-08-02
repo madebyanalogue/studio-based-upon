@@ -194,7 +194,7 @@
             aria-label="Remove item"
             :style="{ transform: `scale(${1 / item.scale})` }"
             @pointerdown.stop
-            @click.stop="removeItem(item.id)"
+            @click.stop="onRemovePlacement(item.id)"
           >
             ×
           </button>
@@ -417,6 +417,7 @@ const {
   markMoodboardSurfaceReady,
   consumeMoodboardSkipBgFade,
   requestMoodboardRestack,
+  restoreParkedSelectionItem,
 } = useBucket()
 
 const MOODBOARD_FADE_MS = 420
@@ -588,6 +589,15 @@ watch(
   },
   { immediate: true },
 )
+
+/** Remove from canvas; cart-sourced items return to the column immediately. */
+const onRemovePlacement = (id: string) => {
+  const item = placements.value.find((entry) => entry.id === id)
+  removeItem(id)
+  if (item?.sourceBucketItemId) {
+    restoreParkedSelectionItem(item.sourceBucketItemId)
+  }
+}
 
 /** Restack → fade panel/items → fade background → close. */
 const exitMoodboard = async () => {
@@ -1102,7 +1112,6 @@ onUnmounted(() => {
   transition: opacity 0.32s ease;
 }
 
-.moodboard__panel,
 .moodboard__actions,
 .moodboard__pen-bar {
   opacity: 0;
@@ -1110,14 +1119,29 @@ onUnmounted(() => {
   transition: opacity 0.32s ease;
 }
 
-.moodboard--panel-ready .moodboard__panel,
+.moodboard__panel {
+  opacity: 1;
+  pointer-events: none;
+  transform: translateY(calc(100% + var(--gutter) + 1rem));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.moodboard--panel-ready .moodboard__panel {
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .moodboard--panel-ready .moodboard__actions,
 .moodboard--panel-ready .moodboard__pen-bar {
   opacity: 1;
   pointer-events: auto;
 }
 
-.moodboard--items-out .moodboard__panel,
+.moodboard--items-out .moodboard__panel {
+  pointer-events: none;
+  transform: translateY(calc(100% + var(--gutter) + 1rem));
+}
+
 .moodboard--items-out .moodboard__actions,
 .moodboard--items-out .moodboard__pen-bar {
   opacity: 0;

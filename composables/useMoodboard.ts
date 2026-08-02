@@ -17,6 +17,10 @@ export type MoodboardItem = {
   /** Natural height in px — when set, item keeps its intrinsic ratio. */
   height?: number
   objectFit?: 'contain' | 'cover'
+  /** Cart item this placement was dragged from — restored to selection on board close. */
+  sourceBucketItemId?: string
+  /** Selection pile the cart item came from. */
+  sourceSelectionId?: string
 }
 
 export type MoodboardStroke = {
@@ -124,6 +128,8 @@ export const useMoodboard = () => {
       width?: number
       height?: number
       objectFit?: 'contain' | 'cover'
+      sourceBucketItemId?: string
+      sourceSelectionId?: string
     },
   ) => {
     const id = `image-${Date.now()}-${Math.round(Math.random() * 1000)}`
@@ -148,6 +154,8 @@ export const useMoodboard = () => {
         width: options?.width,
         height: options?.height,
         objectFit: options?.objectFit,
+        sourceBucketItemId: options?.sourceBucketItemId,
+        sourceSelectionId: options?.sourceSelectionId,
       },
     ]
     activeId.value = id
@@ -235,6 +243,9 @@ export const useMoodboard = () => {
     copy.y = source.y + 28
     zCounter.value += 1
     copy.z = zCounter.value
+    // Clone is board-only — don't reclaim the parked cart item twice
+    delete copy.sourceBucketItemId
+    delete copy.sourceSelectionId
     placements.value = [...placements.value, copy]
     activeId.value = copy.id
     return copy.id

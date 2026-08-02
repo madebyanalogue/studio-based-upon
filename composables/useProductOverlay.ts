@@ -23,20 +23,74 @@ let flipSourceEl: HTMLElement | null = null
 let flipImageUrl: string | null = null
 let flipBucketItemId: string | null = null
 
-/** Keep thumb at full opacity while opening — overlay steals :hover and saved CSS would dip to 0.1. */
+/** Cart→PDP: hold flyer until the cart fade prelude finishes. */
+let flipOpenGate: Promise<void> | null = null
+let releaseFlipOpenGateFn: (() => void) | null = null
+
+const beginFlipOpenGate = () => {
+  flipOpenGate = new Promise<void>((resolve) => {
+    releaseFlipOpenGateFn = () => {
+      resolve()
+      flipOpenGate = null
+      releaseFlipOpenGateFn = null
+    }
+  })
+}
+
+const releaseFlipOpenGate = () => {
+  releaseFlipOpenGateFn?.()
+}
+
+const waitForFlipOpenGate = async () => {
+  if (flipOpenGate) await flipOpenGate
+}
+
+const clearFlipOpenGate = () => {
+  releaseFlipOpenGateFn?.()
+}
+
+/** Keep thumb at hover look while opening — overlay steals :hover and saved CSS would dim/gray. */
 const lockFlipSourceFull = (el: HTMLElement) => {
   el.style.transition = 'none'
   el.style.opacity = '1'
+  el.style.filter = 'grayscale(0)'
 }
 
 const hideFlipSource = (el: HTMLElement) => {
   el.style.transition = 'none'
   el.style.opacity = '0'
+  el.style.filter = 'grayscale(0)'
 }
 
 const restoreFlipSource = () => {
   if (!import.meta.client || !flipSourceEl) return
   const el = flipSourceEl
+  const saved = !!el.closest('.product-card--saved')
+
+  if (saved) {
+    // Flyer hands off at full opacity, then ease into the saved dim (0.1)
+    el.style.transition = 'none'
+    el.style.opacity = '1'
+    el.style.filter = 'grayscale(0)'
+    void el.offsetWidth
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.style.transition = 'opacity 0.7s ease, filter 0.7s ease'
+        el.style.opacity = '0.1'
+        el.style.filter = 'grayscale(1)'
+        const cleanup = (event: TransitionEvent) => {
+          if (event.propertyName !== 'opacity') return
+          el.removeEventListener('transitionend', cleanup)
+          el.style.removeProperty('opacity')
+          el.style.removeProperty('filter')
+          el.style.removeProperty('transition')
+        }
+        el.addEventListener('transitionend', cleanup)
+      })
+    })
+    return
+  }
+
   // Instant handoff — CSS image opacity transitions would flash a fade-in
   el.style.transition = 'none'
   el.style.opacity = ''
@@ -144,6 +198,7 @@ export const useProductOverlay = () => {
     // Thumb stays hidden until close flyer finishes; restore here as final handoff
     restoreFlipSource()
     clearFlipSource()
+    clearFlipOpenGate()
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -193,6 +248,7 @@ export const useProductOverlay = () => {
     openSlug.value = null
     restoreFlipSource()
     clearFlipSource()
+    clearFlipOpenGate()
     pendingFlip.value = false
     closingFlip.value = false
     returnUrl.value = null
@@ -213,6 +269,9 @@ export const useProductOverlay = () => {
     clearPendingFlip,
     hideFlipSource,
     restoreFlipSource,
+    beginFlipOpenGate,
+    releaseFlipOpenGate,
+    waitForFlipOpenGate,
     pendingFlip,
     closingFlip,
     openImageIndex,

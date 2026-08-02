@@ -288,6 +288,7 @@ const {
   clearPendingFlip,
   hideFlipSource,
   restoreFlipSource,
+  waitForFlipOpenGate,
   closingFlip,
   openImageIndex,
   setReturnImage,
@@ -858,15 +859,19 @@ const runFlipOpen = async () => {
 
   const source = getFlipSource()
   const hero = heroRef.value
+  // Cart fade prelude (if any) runs in parallel with image prep
+  const gateP = waitForFlipOpenGate()
 
   if (!source || !hero) {
+    await gateP
     revealWithoutFlip()
     return
   }
 
-  // Source is already locked at opacity 1 from open() — keep it there through load
+  // Source is already locked at hover look from open() — keep it through load
   source.style.transition = 'none'
   source.style.opacity = '1'
+  source.style.filter = 'grayscale(0)'
 
   await waitForImage(hero)
   await nextTick()
@@ -888,7 +893,11 @@ const runFlipOpen = async () => {
   flyer.src = flipSrc
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
-  if (!flyer.complete) await waitForImage(flyer)
+  // Prep flyer while cart items/grid/info finish fading
+  await Promise.all([
+    flyer.complete ? Promise.resolve() : waitForImage(flyer),
+    gateP,
+  ])
 
   const from = source.getBoundingClientRect()
   const to = hero.getBoundingClientRect()

@@ -43,6 +43,13 @@ export type PendingRemoval = {
   seq: number
 }
 
+/** Selection items lent to the board canvas — restored to the cart on board close. */
+export type ParkedSelectionItem = {
+  selectionId: string
+  item: BucketItem
+  index: number
+}
+
 const STORAGE_KEY = 'sba-moodboards'
 const LEGACY_STORAGE_KEY = 'sba-bucket'
 const UNDO_REMOVE_MS = 5000
@@ -87,6 +94,10 @@ export const useBucket = () => {
   const { version: bucketUiVersion } = useBucketUi()
   const moodboards = useState<MoodboardBucket[]>('moodboards', () => [defaultMoodboard()])
   const activeMoodboardId = useState<string | null>('active-moodboard-id', () => null)
+  const parkedSelectionItems = useState<ParkedSelectionItem[]>(
+    'bucket-parked-selection',
+    () => [],
+  )
   const isOpen = useState('bucket-open', () => false)
   const panelTab = useState<'selections' | 'boards'>('bucket-panel-tab', () => 'selections')
   const isMoodboard = useState('bucket-moodboard', () => false)
@@ -295,6 +306,59 @@ export const useBucket = () => {
     pendingRemovals.value = pendingRemovals.value.filter(
       (p) => !(p.moodboardId === moodboardId && p.item.id === itemId),
     )
+    persist()
+  }
+
+  /** Lift a selection item onto the board — gone from the column until restored. */
+  const parkSelectionItem = (selectionId: string, itemId: string) => {
+    const board = moodboards.value.find((entry) => entry.id === selectionId)
+    if (!board) return false
+    const index = board.items.findIndex((entry) => entry.id === itemId)
+    if (index < 0) return false
+    const source = board.items[index]!
+    const item: BucketItem = {
+      ...source,
+      imageUrls: source.imageUrls ? [...source.imageUrls] : undefined,
+    }
+    if (!parkedSelectionItems.value.some((entry) => entry.item.id === itemId)) {
+      parkedSelectionItems.value = [
+        ...parkedSelectionItems.value,
+        { selectionId, item, index },
+      ]
+    }
+    removeItemFromMoodboard(selectionId, itemId)
+    return true
+  }
+
+  const restoreParkedSelectionItem = (itemId: string) => {
+    const parked = parkedSelectionItems.value.find((entry) => entry.item.id === itemId)
+    if (!parked) return
+    moodboards.value = moodboards.value.map((board) => {
+      if (board.id !== parked.selectionId) return board
+      if (board.items.some((entry) => entry.id === parked.item.id)) return board
+      const items = [...board.items]
+      items.splice(Math.min(parked.index, items.length), 0, parked.item)
+      return { ...board, items }
+    })
+    parkedSelectionItems.value = parkedSelectionItems.value.filter(
+      (entry) => entry.item.id !== itemId,
+    )
+    persist()
+  }
+
+  const restoreAllParkedSelectionItems = () => {
+    const parked = [...parkedSelectionItems.value].sort((a, b) => a.index - b.index)
+    if (!parked.length) return
+    for (const entry of parked) {
+      moodboards.value = moodboards.value.map((board) => {
+        if (board.id !== entry.selectionId) return board
+        if (board.items.some((item) => item.id === entry.item.id)) return board
+        const items = [...board.items]
+        items.splice(Math.min(entry.index, items.length), 0, entry.item)
+        return { ...board, items }
+      })
+    }
+    parkedSelectionItems.value = []
     persist()
   }
 
@@ -712,6 +776,8 @@ export const useBucket = () => {
     reopenCartAfterMoodboard.value = isOpen.value
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = !!opts?.skipBgFade
+    // Fresh session — don't carry over a previous park list
+    parkedSelectionItems.value = []
     isMoodboard.value = true
     isOpen.value = false
   }
@@ -723,6 +789,8 @@ export const useBucket = () => {
   }
 
   const closeMoodboard = () => {
+    // Items dragged onto the board return to their selection piles
+    restoreAllParkedSelectionItems()
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
     isMoodboard.value = false
@@ -788,6 +856,9 @@ export const useBucket = () => {
     setItemImageIndex,
     addItemToMoodboard,
     removeItemFromMoodboard,
+    parkSelectionItem,
+    restoreParkedSelectionItem,
+    restoreAllParkedSelectionItems,
     requestSave,
     selectMoodboardForItem,
     openPicker,

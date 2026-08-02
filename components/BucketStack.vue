@@ -139,7 +139,10 @@
           v-if="showSelectionGrid"
           ref="gridRef"
           class="stack__grid"
-          :class="{ 'stack__grid--lines': gridLinesVisible }"
+          :class="{
+            'stack__grid--lines': gridLinesVisible,
+            'stack__grid--pdp-focus': !!pdpFocusItemId,
+          }"
           :style="gridStyle"
           data-lenis-prevent
         >
@@ -334,14 +337,21 @@ const {
   setItemImageIndex,
   pendingFly,
   consumePendingFly,
-  removeItemFromMoodboard,
+  parkSelectionItem,
   moodboardSurfaceReady,
   registerMoodboardRestack,
 } = useBucket()
 const { reset: resetMoodboard, addImage } = useMoodboard()
 const { createBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
-const { open, returnImage, isOpen: productOverlayOpen } = useProductOverlay()
+const {
+  open,
+  returnImage,
+  isOpen: productOverlayOpen,
+  beginFlipOpenGate,
+  releaseFlipOpenGate,
+} = useProductOverlay()
+const { fetchProduct } = useProductCatalog()
 
 const gridRef = ref<HTMLElement | null>(null)
 /** Active board pile — used for Flip / fly-to landing */
@@ -396,6 +406,9 @@ const BACKDROP_CLOSE_MS = 800
 const GRID_LINES_MS = 320
 const CONTROLS_FADE_IN_DELAY_MS = 400
 const CONTROLS_FADE_OUT_DELAY_MS = 100
+/** Cart → PDP: fade other items / grid / info before flyer moves */
+const PDP_CART_FADE_MS = 300
+const pdpFocusItemId = ref<string | null>(null)
 const FLIP_DURATION = 0.95
 const FLIP_STAGGER = 0.075
 const CELL_SCALE_MS = 280
@@ -446,6 +459,7 @@ const cellClass = (entry: SelectionEntry) => {
     'stack__cell--scale-out': phase === 'scale-out',
     'stack__cell--scale-in': phase === 'scale-in',
     'stack__cell--scaled-in': phase === 'scaled-in',
+    'stack__cell--pdp-focus': pdpFocusItemId.value === entry.item.id,
   }
 }
 
@@ -1015,10 +1029,10 @@ const onColumnPointerMove = (event: PointerEvent) => {
   event.preventDefault()
 }
 
-const compactColumnAfterRemove = async (boardId: string, removedId: string) => {
+const compactColumnAfterPark = async (boardId: string, removedId: string) => {
   const column = columnEls.value[boardId]
   if (!column) {
-    removeItemFromMoodboard(boardId, removedId)
+    parkSelectionItem(boardId, removedId)
     return
   }
   const before = new Map<string, DOMRect>()
@@ -1026,7 +1040,8 @@ const compactColumnAfterRemove = async (boardId: string, removedId: string) => {
     const id = thumb.dataset.columnId
     if (id) before.set(id, thumb.getBoundingClientRect())
   })
-  removeItemFromMoodboard(boardId, removedId)
+  // Park (not permanently remove) — returns to cart when the board closes
+  parkSelectionItem(boardId, removedId)
   await nextTick()
   await waitFrames(2)
   const thumbs = column.querySelectorAll<HTMLElement>('.stack__column-thumb')
@@ -1092,9 +1107,11 @@ const onColumnPointerUp = async (event: PointerEvent) => {
       height,
       scale: 1,
       objectFit: 'contain',
+      sourceBucketItemId: drag.item.id,
+      sourceSelectionId: drag.boardId,
     })
     destroyColumnGhost()
-    await compactColumnAfterRemove(drag.boardId, drag.item.id)
+    await compactColumnAfterPark(drag.boardId, drag.item.id)
     return
   }
 
@@ -1398,7 +1415,7 @@ const galleryIndex = (item: BucketItem) => {
   return idx >= 0 ? idx : 0
 }
 
-const openProduct = (item: BucketItem, event?: MouseEvent) => {
+const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   const slug = productSlug(item)
   if (!slug) return
   const source =
@@ -1408,12 +1425,31 @@ const openProduct = (item: BucketItem, event?: MouseEvent) => {
   const urls = galleryUrls(item)
   const flipSrc = urls[index] || item.imageUrl || null
   if (flipSrc) void prefetchImage(flipSrc)
+
+  // Hold flyer until cart UI has faded; product fetch runs in parallel
+  beginFlipOpenGate()
+  pdpFocusItemId.value = item.id
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+
+  // Warm ProductDetail's useAsyncData cache so mount isn't cold
+  const cacheKey = `product-detail-${slug}`
+  const nuxtApp = useNuxtApp()
+  if (nuxtApp.payload.data[cacheKey] == null) {
+    void fetchProduct(slug).then((data) => {
+      if (data) nuxtApp.payload.data[cacheKey] = data
+    })
+  }
+
   open(slug, {
     source,
     imageIndex: index,
     flipSrc,
     bucketItemId: item.id,
   })
+
+  await wait(PDP_CART_FADE_MS)
+  releaseFlipOpenGate()
 }
 
 watch(returnImage, (value) => {
@@ -1423,6 +1459,16 @@ watch(returnImage, (value) => {
     items.value.find((item) => productIdFromBucketId(item.id) === value.productId)?.id
   if (!targetId) return
   setItemImageIndex(targetId, value.index)
+})
+
+watch(productOverlayOpen, (on) => {
+  if (on) return
+  pdpFocusItemId.value = null
+  // Restore cart chrome if the selection stage is still up underneath
+  if (stagePresent.value && stageVisible.value) {
+    gridLinesVisible.value = true
+    controlsVisible.value = true
+  }
 })
 
 const startEdit = () => {
@@ -2568,12 +2614,27 @@ onBeforeUnmount(() => {
   border-right: 1px solid transparent;
   border-bottom: 1px solid transparent;
   box-sizing: border-box;
-  transition: border-color 0.32s ease;
+  transition:
+    border-color 0.32s ease,
+    opacity 0.3s ease;
 }
 
 .stack__grid--lines .stack__cell {
   border-right-color: var(--grid-line);
   border-bottom-color: var(--grid-line);
+}
+
+/* Opening PDP from cart — other items fade before the flyer moves */
+.stack__grid--pdp-focus .stack__cell:not(.stack__cell--pdp-focus) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.stack__grid--pdp-focus .stack__cell--pdp-focus .stack__cell-ctrl {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s ease;
 }
 
 /* Only this layer Flips — leaving the shell keeps the grid shape stable */
@@ -2829,16 +2890,18 @@ onBeforeUnmount(() => {
   border: 1px solid var(--grid-line);
   backdrop-filter: blur(50px);
   -webkit-backdrop-filter: blur(50px);
-  opacity: 0;
+  opacity: 1;
   pointer-events: none;
-  transition: opacity 0.35s ease;
+  /* Park below the viewport; slide up on open */
+  transform: translateY(calc(100% + var(--gutter) + 1rem));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .stack__controls--visible {
-  opacity: 1;
   pointer-events: auto;
+  transform: translateY(0);
   /* Slight enter delay; leave has no delay so close feels earlier than backdrop */
-  transition: opacity 0.45s ease 0.2s;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.2s;
 }
 
 .stack__controls-head {
