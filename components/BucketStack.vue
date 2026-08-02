@@ -1,55 +1,131 @@
 <template>
   <Teleport to="body">
     <div
-      v-if="!isMoodboard"
       class="stack"
       :class="{
         'stack--open': isOpen || stagePresent,
         'stack--flipping': isFlipping,
         'stack--soft-enter': softEnter,
         'stack--cells-ready': cellsReady,
+        'stack--moodboard': isMoodboard,
+        'stack--above-pdp': productOverlayOpen && !isOpen && !stagePresent,
       }"
       :style="stackCssVars"
-      :aria-hidden="isOpen || stagePresent ? 'false' : 'true'"
+      :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
     >
-      <!-- Collapsed pile (bottom-left) -->
-      <button
-        v-if="showPile"
-        ref="pileRef"
-        type="button"
-        class="stack__pile"
-        :class="{ 'stack__pile--fanned': pileFanned }"
-        :aria-label="`Open selection, ${settledItems.length} items`"
-        @mouseenter="onPileMouseEnter"
-        @mouseleave="onPileMouseLeave"
-        @click="openFromPile"
-      >
-        <span
-          v-for="(item, index) in pilePreview"
-          :key="item.id"
-          class="stack__pile-card stack__pile-card--fan"
-          :data-flip-id="flipSurface === 'pile' ? item.id : undefined"
-          :style="pileCardStyle(item.id, index, pilePreview.length)"
-        >
-          <img
-            v-if="item.imageUrl"
-            :src="item.imageUrl"
-            :alt="item.title"
-            class="stack__pile-image"
-            draggable="false"
-          />
-        </span>
-        <span
-          v-if="false && settledItems.length"
-          class="stack__pile-tip"
-          :class="{ 'stack__pile-tip--visible': pileFanned && pileCountVisible }"
-        >
-          {{ activeMoodboard?.name || 'My Selection' }} — {{ settledItems.length }}
-        </span>
-      </button>
-
-      <!-- Expanded fullscreen -->
+      <!-- Selection piles + create slot (bottom-left) -->
       <div
+        v-if="showRail"
+        class="stack__rail"
+        :class="{ 'stack__rail--hot': railHot }"
+        @mouseenter="onRailEnter"
+        @mouseleave="onRailLeave"
+      >
+        <div
+          v-for="board in moodboards"
+          :key="board.id"
+          :ref="(el) => setPileWrapRef(board.id, el)"
+          class="stack__pile-wrap"
+          @mouseenter="onPileMouseEnter(board.id)"
+          @mouseleave="onPileMouseLeave(board.id)"
+        >
+          <button
+            :ref="(el) => setPileRef(board.id, el)"
+            type="button"
+            class="stack__pile"
+            :class="{
+              'stack__pile--fanned': pileFannedId === board.id,
+              'stack__pile--active': board.id === activeMoodboardId,
+              'stack__pile--expanded': expandedBoardIds.includes(board.id),
+            }"
+            :aria-label="`${board.name}, ${board.items.length} items`"
+            @click="onPileClick(board.id)"
+          >
+            <span
+              v-for="(item, index) in boardPilePreview(board)"
+              :key="item.id"
+              class="stack__pile-card stack__pile-card--fan"
+              :data-item-id="item.id"
+              :data-flip-id="
+                flipSurface === 'pile' && board.id === activeMoodboardId
+                  ? item.id
+                  : undefined
+              "
+              :style="pileCardStyle(item.id, index, boardPilePreview(board).length)"
+            >
+              <img
+                v-if="item.imageUrl"
+                :src="item.imageUrl"
+                :alt="item.title"
+                class="stack__pile-image"
+                draggable="false"
+              />
+            </span>
+          </button>
+
+          <!-- Dispersed column (board builder) -->
+          <div
+            v-if="expandedBoardIds.includes(board.id)"
+            class="stack__column"
+            :class="{ 'stack__column--preparing': preparingBoardId === board.id }"
+            :ref="(el) => setColumnRef(board.id, el)"
+            :style="columnFixedStyle(board.id)"
+          >
+            <div
+              class="stack__column-scroll"
+              @wheel.prevent.stop="onColumnWheel"
+            >
+              <!-- Grows when few items so the column stays pinned to the footprint -->
+              <div class="stack__column-pin" aria-hidden="true" />
+              <div
+                v-for="item in boardColumnItems(board)"
+                :key="item.id"
+                class="stack__column-thumb"
+                :data-column-id="item.id"
+                @pointerdown="onColumnThumbPointerDown($event, item, board.id)"
+              >
+                <img
+                  v-if="item.imageUrl"
+                  :src="item.imageUrl"
+                  :alt="item.title"
+                  draggable="false"
+                />
+              </div>
+              <!-- Reserve the pile footprint so the last thumb sits on its top edge -->
+              <div class="stack__column-foot" aria-hidden="true" />
+            </div>
+
+            <!-- Centered on the pile footprint (bottom cell of the column) -->
+            <button
+              type="button"
+              class="stack__column-close"
+              aria-label="Restack selection"
+              @click.stop="restackBoard(board.id)"
+            >
+              <div class="stack__column-close-icon" aria-hidden="true">
+                <div class="stack__column-close-bar" />
+                <div class="stack__column-close-bar" />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <button
+          v-if="showCreateSlot"
+          ref="createSlotRef"
+          type="button"
+          class="stack__create"
+          :class="{ 'stack__create--visible': railHot }"
+          aria-label="Create new selection"
+          @click="onCreateSelection"
+        >
+          <span class="stack__create-plus" aria-hidden="true">+</span>
+        </button>
+      </div>
+
+      <!-- Expanded fullscreen (hidden in board builder) -->
+      <div
+        v-if="!isMoodboard"
         class="stack__stage"
         :class="{ 'stack__stage--visible': stageVisible }"
         role="dialog"
@@ -232,6 +308,7 @@ type CellPhase = 'scale-out' | 'scale-in' | 'scaled-in' | 'undo-ready' | 'undo-l
 
 const {
   items,
+  moodboards,
   selectionEntries,
   activePendingRemovals,
   count,
@@ -244,6 +321,8 @@ const {
   registerAnimatedClose,
   openDrawer,
   openMoodboard,
+  createMoodboard,
+  setActiveMoodboard,
   renameMoodboard,
   removeItem,
   removeItems,
@@ -255,14 +334,31 @@ const {
   setItemImageIndex,
   pendingFly,
   consumePendingFly,
+  removeItemFromMoodboard,
+  moodboardSurfaceReady,
+  registerMoodboardRestack,
 } = useBucket()
-const { initFromBucket, snapshot } = useMoodboard()
+const { reset: resetMoodboard, addImage } = useMoodboard()
 const { createBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
-const { open, returnImage } = useProductOverlay()
+const { open, returnImage, isOpen: productOverlayOpen } = useProductOverlay()
 
 const gridRef = ref<HTMLElement | null>(null)
+/** Active board pile — used for Flip / fly-to landing */
 const pileRef = ref<HTMLElement | null>(null)
+const pileEls = ref<Record<string, HTMLElement | null>>({})
+const pileWrapEls = ref<Record<string, HTMLElement | null>>({})
+const columnEls = ref<Record<string, HTMLElement | null>>({})
+const createSlotRef = ref<HTMLElement | null>(null)
+const railHot = ref(false)
+/** Fixed column geometry keyed by board id (viewport coords). */
+const columnLayouts = ref<
+  Record<string, { left: number; width: number; top: number; height: number }>
+>({})
+/** Column mounted but thumbs hidden until flyers are placed. */
+const preparingBoardId = ref<string | null>(null)
+const pileFannedId = ref<string | null>(null)
+const expandedBoardIds = ref<string[]>([])
 const titleInput = ref<HTMLInputElement | null>(null)
 const isEditing = ref(false)
 const editName = ref('')
@@ -284,7 +380,7 @@ const flipSurface = ref<'pile' | 'cells'>('pile')
 const keepPileForFlip = ref(false)
 /** Hover fan — locked through open so Flip.fit starts from fanned positions. */
 const pileFanned = ref(false)
-/** Pile badge — hides on open click, returns with close backdrop. */
+/** Tip / count visibility — hides on open click, returns with close backdrop. */
 const pileCountVisible = ref(true)
 /** Square track size from grid width / cols — keeps cells square without overlap. */
 const cellSizePx = ref(0)
@@ -448,11 +544,132 @@ const settledItems = computed(() => {
   return items.value.filter((item) => !hide.has(item.id))
 })
 
-const showPile = computed(
+const boardPilePreview = (board: { id: string; items: typeof items.value }) => {
+  const hide = new Set(arrivingIds.value)
+  if (pendingFly.value?.itemId && board.id === activeMoodboardId.value) {
+    hide.add(pendingFly.value.itemId)
+  }
+  return board.items.filter((item) => !hide.has(item.id)).slice().reverse()
+}
+
+/**
+ * Top of pile → top of column (newest first). board.items is prepended on add.
+ */
+const boardColumnItems = (board: { id: string; items: typeof items.value }) => {
+  const hide = new Set(arrivingIds.value)
+  if (pendingFly.value?.itemId && board.id === activeMoodboardId.value) {
+    hide.add(pendingFly.value.itemId)
+  }
+  return board.items.filter((item) => !hide.has(item.id))
+}
+
+/** Hidden for now — multi-selection create slot. */
+const showCreateSlot = computed(() => false)
+
+const showRail = computed(
   () =>
     keepPileForFlip.value ||
-    (!isOpen.value && (settledItems.value.length > 0 || arrivingIds.value.length > 0)),
+    isMoodboard.value ||
+    (!isOpen.value &&
+      !stagePresent.value &&
+      (moodboards.value.some((b) => b.items.length > 0) || arrivingIds.value.length > 0)),
 )
+
+const setPileRef = (id: string, el: unknown) => {
+  const html = el instanceof HTMLElement ? el : null
+  pileEls.value[id] = html
+  if (id === activeMoodboardId.value) pileRef.value = html
+}
+
+const setPileWrapRef = (id: string, el: unknown) => {
+  pileWrapEls.value[id] = el instanceof HTMLElement ? el : null
+}
+
+const setColumnRef = (id: string, el: unknown) => {
+  columnEls.value[id] = el instanceof HTMLElement ? el : null
+}
+
+const inactiveRailEls = () => {
+  const activeId = activeMoodboardId.value
+  const els: HTMLElement[] = []
+  for (const board of moodboards.value) {
+    if (board.id === activeId) continue
+    const el = pileWrapEls.value[board.id]
+    if (el) els.push(el)
+  }
+  if (createSlotRef.value) els.push(createSlotRef.value)
+  return els
+}
+
+/** Other piles drop out of view while the backdrop fades in. */
+const shelveInactiveRail = () => {
+  if (!import.meta.client) return
+  const duration = BACKDROP_OPEN_MS / 1000
+  for (const el of inactiveRailEls()) {
+    gsap.killTweensOf(el)
+    gsap.to(el, {
+      yPercent: 100,
+      duration,
+      ease: 'power3.in',
+      overwrite: true,
+    })
+  }
+}
+
+/** Park inactive piles off-screen instantly (rail remount mid-close). */
+const parkInactiveRail = () => {
+  if (!import.meta.client) return
+  for (const el of inactiveRailEls()) {
+    gsap.killTweensOf(el)
+    gsap.set(el, { yPercent: 100 })
+  }
+}
+
+/** Other piles rise back as the backdrop fades out. */
+const unshelveInactiveRail = () => {
+  if (!import.meta.client) return
+  const duration = BACKDROP_CLOSE_MS / 1000
+  for (const el of inactiveRailEls()) {
+    gsap.killTweensOf(el)
+    gsap.to(el, {
+      yPercent: 0,
+      duration,
+      ease: 'power3.out',
+      overwrite: true,
+    })
+  }
+}
+
+const resetShelvedRail = () => {
+  if (!import.meta.client) return
+  for (const board of moodboards.value) {
+    const el = pileWrapEls.value[board.id]
+    if (!el) continue
+    gsap.killTweensOf(el)
+    gsap.set(el, { clearProps: 'transform' })
+  }
+  const create = createSlotRef.value
+  if (!create) return
+  gsap.killTweensOf(create)
+  gsap.set(create, { clearProps: 'transform' })
+}
+
+const onRailEnter = () => {
+  railHot.value = true
+}
+
+const onRailLeave = () => {
+  railHot.value = false
+  if (!isFlipping.value && !keepPileForFlip.value) {
+    pileFannedId.value = null
+    pileFanned.value = false
+  }
+}
+
+const onCreateSelection = () => {
+  const board = createMoodboard({ open: false })
+  setActiveMoodboard(board.id)
+}
 
 /** Same grid DOM for prelude, open, and close — stays mounted through fade-out. */
 const showSelectionGrid = computed(
@@ -462,7 +679,7 @@ const showSelectionGrid = computed(
     selectionEntries.value.length > 0,
 )
 
-/** All settled items in the pile (reversed so newest sits on top) — needed for Flip ids. */
+/** All settled items in the active pile (reversed so newest sits on top) — Flip ids. */
 const pilePreview = computed(() => settledItems.value.slice().reverse())
 
 const gridDims = computed(() => {
@@ -509,6 +726,62 @@ const hashAngle = (id: string, salt = '') => {
   return ((h % 11) - 5) * 0.9 // about -4.5° … 4.5°
 }
 
+/** Rest pose for a pile card (matches pileCardStyle without fan / landing overrides). */
+const pileRestPose = (id: string, index: number, total: number, salt: string) => {
+  const t = total <= 1 ? 0 : index / (total - 1)
+  const x = (t - 0.5) * 10
+  const y = (0.5 - t) * 6
+  const isTop = index === total - 1
+  const rot = isTop ? hashAngle(id) : hashAngle(id, salt)
+  return { x, y, rot }
+}
+
+const readStackCellPad = () => {
+  if (!import.meta.client) return 50
+  const stackEl = document.querySelector('.stack')
+  if (!stackEl) return 50
+  return (
+    Number.parseFloat(getComputedStyle(stackEl).getPropertyValue('--stack-cell-pad')) || 50
+  )
+}
+
+/** Visual image size inside a padded square stack cell (natural aspect ratio). */
+const fitStackContentSize = (natW: number, natH: number, cellSize: number) => {
+  const pad = readStackCellPad()
+  const max = Math.max(1, cellSize - pad * 2)
+  const w = Math.max(1, natW)
+  const h = Math.max(1, natH)
+  const scale = Math.min(max / w, max / h)
+  return { width: w * scale, height: h * scale }
+}
+
+const readImageNaturalSize = async (
+  img: HTMLImageElement | null,
+  url: string,
+): Promise<{ w: number; h: number }> => {
+  if (img?.naturalWidth && img.naturalHeight) {
+    return { w: img.naturalWidth, h: img.naturalHeight }
+  }
+  if (!import.meta.client || !url) return { w: 1, h: 1 }
+  const probe = new Image()
+  probe.src = url
+  try {
+    if (typeof probe.decode === 'function') await probe.decode()
+    else {
+      await new Promise<void>((resolve, reject) => {
+        probe.onload = () => resolve()
+        probe.onerror = () => reject()
+      })
+    }
+  } catch {
+    /* keep defaults */
+  }
+  return {
+    w: probe.naturalWidth || img?.naturalWidth || 1,
+    h: probe.naturalHeight || img?.naturalHeight || 1,
+  }
+}
+
 /**
  * Fan directions (max travel). Spread across the whole stack via per-id hash;
  * scale ≤ 1 so nothing moves further than these templates.
@@ -549,23 +822,510 @@ const pileFanOffset = (id: string, index: number, total: number) => {
   return { x: dir.x * s, y: dir.y * s, r: dir.r * s }
 }
 
-const onPileMouseEnter = () => {
+const onPileMouseEnter = (boardId: string) => {
   if (isFlipping.value) return
+  railHot.value = true
+  if (expandedBoardIds.value.includes(boardId)) return
   pileFanSeed.value += 1
+  pileFannedId.value = boardId
   pileFanned.value = true
 }
 
-const onPileMouseLeave = () => {
+const onPileMouseLeave = (boardId: string) => {
   // Keep fanned pose while opening so Flip reads the spread positions
   if (isFlipping.value || keepPileForFlip.value) return
-  pileFanned.value = false
+  if (pileFannedId.value === boardId) {
+    pileFannedId.value = null
+    pileFanned.value = false
+  }
 }
 
 /** If the pointer is still over the pile after Flip, ease into the fan. */
 const syncPileFanFromHover = async () => {
   await nextTick()
   if (!import.meta.client || isFlipping.value) return
-  pileFanned.value = !!pileRef.value?.matches(':hover')
+  const id = activeMoodboardId.value
+  const el = id ? pileEls.value[id] : null
+  const hot = !!el?.matches(':hover')
+  pileFanned.value = hot
+  pileFannedId.value = hot && id ? id : null
+}
+
+const syncColumnLayout = (boardId: string) => {
+  if (!import.meta.client) return
+  const wrap = pileWrapEls.value[boardId]
+  if (!wrap) return
+  const rect = wrap.getBoundingClientRect()
+  columnLayouts.value = {
+    ...columnLayouts.value,
+    [boardId]: {
+      left: rect.left,
+      width: rect.width,
+      top: 0,
+      height: window.innerHeight,
+    },
+  }
+}
+
+const syncAllColumnLayouts = () => {
+  for (const id of expandedBoardIds.value) syncColumnLayout(id)
+}
+
+const columnFixedStyle = (boardId: string) => {
+  const layout = columnLayouts.value[boardId]
+  if (!layout) return undefined
+  return {
+    left: `${layout.left}px`,
+    width: `${layout.width}px`,
+    top: `${layout.top}px`,
+    height: `${layout.height}px`,
+  }
+}
+
+const onColumnWheel = (event: WheelEvent) => {
+  const scroll = event.currentTarget as HTMLElement | null
+  if (!scroll) return
+  event.preventDefault()
+  event.stopPropagation()
+  scroll.scrollTop += event.deltaY
+}
+
+type ColumnPending = {
+  item: BucketItem
+  boardId: string
+  thumb: HTMLElement
+  startX: number
+  startY: number
+}
+
+type ColumnDrag = {
+  item: BucketItem
+  boardId: string
+  thumb: HTMLElement
+  ghost: HTMLElement
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+}
+
+let columnPending: ColumnPending | null = null
+let columnDrag: ColumnDrag | null = null
+
+const clearColumnPointerListeners = () => {
+  window.removeEventListener('pointermove', onColumnPointerMove)
+  window.removeEventListener('pointerup', onColumnPointerUp)
+  window.removeEventListener('pointercancel', onColumnPointerUp)
+}
+
+const destroyColumnGhost = () => {
+  columnDrag?.ghost.remove()
+  columnDrag = null
+  document.documentElement.classList.remove('stack-column-dragging')
+}
+
+const startColumnDrag = (pending: ColumnPending, event: PointerEvent) => {
+  const rect = pending.thumb.getBoundingClientRect()
+  const img = pending.thumb.querySelector('img')
+  const natW = img?.naturalWidth || 1
+  const natH = img?.naturalHeight || 1
+  const fitted = fitStackContentSize(natW, natH, rect.width)
+  // Center the natural-ratio ghost on the square thumb’s content
+  const left = rect.left + (rect.width - fitted.width) / 2
+  const top = rect.top + (rect.height - fitted.height) / 2
+
+  const ghost = document.createElement('div')
+  ghost.className = 'stack__column-ghost'
+  const ghostImg = document.createElement('img')
+  ghostImg.src = pending.item.imageUrl || img?.src || ''
+  ghostImg.alt = pending.item.title
+  ghostImg.draggable = false
+  ghost.appendChild(ghostImg)
+  ghost.style.cssText = [
+    'position:fixed',
+    `left:${left}px`,
+    `top:${top}px`,
+    `width:${fitted.width}px`,
+    `height:${fitted.height}px`,
+    'margin:0',
+    'z-index:500',
+    'pointer-events:none',
+    'opacity:1',
+    'cursor:grabbing',
+    'box-sizing:border-box',
+    'overflow:hidden',
+    'background:transparent',
+  ].join(';')
+  document.body.appendChild(ghost)
+  columnDrag = {
+    item: pending.item,
+    boardId: pending.boardId,
+    thumb: pending.thumb,
+    ghost,
+    offsetX: event.clientX - left,
+    offsetY: event.clientY - top,
+    width: fitted.width,
+    height: fitted.height,
+  }
+  columnPending = null
+  document.documentElement.classList.add('stack-column-dragging')
+  // Source leaves with the ghost — feels like dragging the real item
+  pending.thumb.classList.add('stack__column-thumb--lifted')
+}
+
+const onColumnThumbPointerDown = (
+  event: PointerEvent,
+  item: BucketItem,
+  boardId: string,
+) => {
+  if (!import.meta.client || event.button !== 0) return
+  // Don't start a board-drag from the close control
+  if ((event.target as HTMLElement | null)?.closest?.('.stack__column-close')) return
+  const thumb = event.currentTarget as HTMLElement
+  columnPending = {
+    item,
+    boardId,
+    thumb,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  window.addEventListener('pointermove', onColumnPointerMove)
+  window.addEventListener('pointerup', onColumnPointerUp)
+  window.addEventListener('pointercancel', onColumnPointerUp)
+}
+
+const onColumnPointerMove = (event: PointerEvent) => {
+  if (columnDrag) {
+    event.preventDefault()
+    columnDrag.ghost.style.left = `${event.clientX - columnDrag.offsetX}px`
+    columnDrag.ghost.style.top = `${event.clientY - columnDrag.offsetY}px`
+    return
+  }
+  if (!columnPending) return
+  const dx = event.clientX - columnPending.startX
+  const dy = event.clientY - columnPending.startY
+  if (Math.hypot(dx, dy) < 8) return
+  // Mostly vertical → let the column scroll; don't steal the gesture
+  if (Math.abs(dy) > Math.abs(dx) * 1.15) {
+    columnPending = null
+    clearColumnPointerListeners()
+    return
+  }
+  startColumnDrag(columnPending, event)
+  event.preventDefault()
+}
+
+const compactColumnAfterRemove = async (boardId: string, removedId: string) => {
+  const column = columnEls.value[boardId]
+  if (!column) {
+    removeItemFromMoodboard(boardId, removedId)
+    return
+  }
+  const before = new Map<string, DOMRect>()
+  column.querySelectorAll<HTMLElement>('.stack__column-thumb').forEach((thumb) => {
+    const id = thumb.dataset.columnId
+    if (id) before.set(id, thumb.getBoundingClientRect())
+  })
+  removeItemFromMoodboard(boardId, removedId)
+  await nextTick()
+  await waitFrames(2)
+  const thumbs = column.querySelectorAll<HTMLElement>('.stack__column-thumb')
+  thumbs.forEach((thumb) => {
+    const id = thumb.dataset.columnId
+    if (!id) return
+    const from = before.get(id)
+    if (!from) return
+    const to = thumb.getBoundingClientRect()
+    const dx = from.left - to.left
+    const dy = from.top - to.top
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+    gsap.fromTo(
+      thumb,
+      { x: dx, y: dy },
+      { x: 0, y: 0, duration: 0.4, ease: 'power3.out', overwrite: true },
+    )
+  })
+  // Empty column → restack automatically
+  const board = moodboards.value.find((entry) => entry.id === boardId)
+  if (board && board.items.length === 0) {
+    expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
+    pileEls.value[boardId]?.classList.remove('stack__pile--dispersing')
+  }
+}
+
+const onColumnPointerUp = async (event: PointerEvent) => {
+  clearColumnPointerListeners()
+  const pending = columnPending
+  columnPending = null
+  const drag = columnDrag
+  if (!drag) return
+
+  const canvas = document.querySelector('.moodboard__canvas') as HTMLElement | null
+  const canvasRect = canvas?.getBoundingClientRect()
+  const overCanvas =
+    !!canvasRect &&
+    event.clientX >= canvasRect.left &&
+    event.clientX <= canvasRect.right &&
+    event.clientY >= canvasRect.top &&
+    event.clientY <= canvasRect.bottom
+
+  if (overCanvas && canvasRect && drag.item.imageUrl) {
+    const img = drag.thumb.querySelector('img')
+    const natural = await readImageNaturalSize(img, drag.item.imageUrl)
+    const cellSize =
+      pileEls.value[drag.boardId]?.getBoundingClientRect().width ||
+      drag.thumb.getBoundingClientRect().width ||
+      Math.max(drag.width, drag.height)
+    const fitted = fitStackContentSize(natural.w, natural.h, cellSize)
+    // Prefer live ghost rect (already natural-ratio); fall back to fitted
+    const ghostRect = drag.ghost.getBoundingClientRect()
+    const width = ghostRect.width || fitted.width
+    const height = ghostRect.height || fitted.height
+    const x = event.clientX - canvasRect.left - drag.offsetX
+    const y = event.clientY - canvasRect.top - drag.offsetY
+    addImage(drag.item.imageUrl, drag.item.title, {
+      imageUrls: drag.item.imageUrls,
+      imageIndex: drag.item.imageIndex,
+      x,
+      y,
+      width,
+      height,
+      scale: 1,
+      objectFit: 'contain',
+    })
+    destroyColumnGhost()
+    await compactColumnAfterRemove(drag.boardId, drag.item.id)
+    return
+  }
+
+  // Return ghost to the thumb, then restore the source
+  const thumbRect = drag.thumb.getBoundingClientRect()
+  await new Promise<void>((resolve) => {
+    gsap.to(drag.ghost, {
+      left: thumbRect.left,
+      top: thumbRect.top,
+      duration: 0.28,
+      ease: 'power3.out',
+      onComplete: () => resolve(),
+    })
+  })
+  drag.thumb.classList.remove('stack__column-thumb--lifted')
+  destroyColumnGhost()
+  void pending
+}
+
+/** Rotation in degrees from a computed CSS transform matrix. */
+const getRotationDeg = (el: HTMLElement) => {
+  const t = getComputedStyle(el).transform
+  if (!t || t === 'none') return 0
+  try {
+    const m = new DOMMatrixReadOnly(t)
+    return (Math.atan2(m.b, m.a) * 180) / Math.PI
+  } catch {
+    return 0
+  }
+}
+
+const disperseBoard = async (boardId: string) => {
+  if (!import.meta.client) return
+  if (expandedBoardIds.value.includes(boardId)) return
+  const pile = pileEls.value[boardId]
+  if (!pile) return
+
+  const pileRect = pile.getBoundingClientRect()
+  // Keep the cell size constant through the flight (ignore rotated AABB growth)
+  const size = pileRect.width
+
+  // Capture while still fanned/tilted — rotation eases out during disperse
+  const fromById = new Map<string, { left: number; top: number; rot: number }>()
+  pile.querySelectorAll<HTMLElement>('[data-item-id]').forEach((card) => {
+    const id = card.dataset.itemId
+    if (!id) return
+    const rect = card.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    fromById.set(id, {
+      left: cx - size / 2,
+      top: cy - size / 2,
+      rot: getRotationDeg(card),
+    })
+  })
+
+  preparingBoardId.value = boardId
+  expandedBoardIds.value = [...expandedBoardIds.value, boardId]
+  await nextTick()
+  syncColumnLayout(boardId)
+  await nextTick()
+  await waitFrames(2)
+
+  const column = columnEls.value[boardId]
+  if (!column) {
+    preparingBoardId.value = null
+    return
+  }
+  const scroll = column.querySelector<HTMLElement>('.stack__column-scroll')
+  const thumbs = [...column.querySelectorAll<HTMLElement>('.stack__column-thumb')]
+  if (!thumbs.length) {
+    preparingBoardId.value = null
+    return
+  }
+
+  // Measure column slots before we pull thumbs into fixed flyers
+  const dests = thumbs.map((thumb) => {
+    const rect = thumb.getBoundingClientRect()
+    return { left: rect.left, top: rect.top }
+  })
+
+  // Hold scroll layout while thumbs are position:fixed (out of flow)
+  const flightSpacer = document.createElement('div')
+  flightSpacer.setAttribute('aria-hidden', 'true')
+  flightSpacer.style.cssText = `flex:0 0 ${size * thumbs.length}px;width:100%;pointer-events:none;`
+  const foot = scroll?.querySelector('.stack__column-foot')
+  if (scroll && foot) scroll.insertBefore(flightSpacer, foot)
+  else scroll?.appendChild(flightSpacer)
+  if (scroll) scroll.scrollTop = 0
+
+  gsap.killTweensOf(thumbs)
+  thumbs.forEach((thumb, i) => {
+    const id = thumb.dataset.columnId || ''
+    const from = fromById.get(id) || {
+      left: pileRect.left,
+      top: pileRect.top,
+      rot: 0,
+    }
+    // Top-of-pile (first in column) stays above during flight
+    gsap.set(thumb, {
+      position: 'fixed',
+      left: from.left,
+      top: from.top,
+      width: size,
+      height: size,
+      rotation: from.rot,
+      transformOrigin: '50% 50%',
+      zIndex: 450 + (thumbs.length - 1 - i),
+      margin: 0,
+      boxSizing: 'border-box',
+      opacity: 1,
+      visibility: 'visible',
+    })
+  })
+
+  // Hide source pile only once flyers own the pixels; clear fan off-screen
+  pile.classList.add('stack__pile--dispersing')
+  pileFannedId.value = null
+  pileFanned.value = false
+  preparingBoardId.value = null
+
+  await new Promise<void>((resolve) => {
+    gsap.to(thumbs, {
+      left: (i: number) => dests[i]!.left,
+      top: (i: number) => dests[i]!.top,
+      width: size,
+      height: size,
+      rotation: 0,
+      duration: 0.6,
+      ease: 'power3.inOut',
+      stagger: 0,
+      onComplete: () => {
+        gsap.set(thumbs, {
+          clearProps:
+            'position,left,top,width,height,zIndex,margin,boxSizing,opacity,visibility,transform,rotation',
+        })
+        flightSpacer.remove()
+        // Stay at the top of the column (where the top-of-pile items land)
+        if (scroll) scroll.scrollTop = 0
+        requestAnimationFrame(() => {
+          if (scroll) scroll.scrollTop = 0
+          resolve()
+        })
+      },
+    })
+  })
+}
+
+const restackBoard = async (boardId: string) => {
+  if (!import.meta.client) return
+  const pile = pileEls.value[boardId]
+  const column = columnEls.value[boardId]
+  const board = moodboards.value.find((entry) => entry.id === boardId)
+  if (pile && column && board) {
+    const thumbs = [...column.querySelectorAll<HTMLElement>('.stack__column-thumb')]
+    const pileRect = pile.getBoundingClientRect()
+    const size = pileRect.width
+    const froms = thumbs.map((thumb) => thumb.getBoundingClientRect())
+    const preview = boardPilePreview(board)
+    const total = preview.length
+    // Same salt string as pilePoseSalt / pileCardStyle (unreversed item ids)
+    const salt = boardColumnItems(board)
+      .map((item) => item.id)
+      .join('|')
+    const poses = thumbs.map((thumb, i) => {
+      const id = thumb.dataset.columnId || ''
+      const pileIndex = preview.findIndex((item) => item.id === id)
+      const index = pileIndex >= 0 ? pileIndex : Math.max(0, total - 1 - i)
+      return pileRestPose(id, index, total, salt)
+    })
+
+    // Suppress pile transform transition so handoff doesn’t re-tween
+    pile.classList.add('stack__pile--restacking')
+
+    // Column order: top-of-pile first — keep that item highest z through the flight
+    thumbs.forEach((thumb, i) => {
+      gsap.set(thumb, {
+        position: 'fixed',
+        left: froms[i]!.left,
+        top: froms[i]!.top,
+        width: size,
+        height: size,
+        rotation: 0,
+        transformOrigin: '50% 50%',
+        zIndex: 450 + (thumbs.length - 1 - i),
+        margin: 0,
+      })
+    })
+    await new Promise<void>((resolve) => {
+      gsap.to(thumbs, {
+        left: (i: number) => pileRect.left + poses[i]!.x,
+        top: (i: number) => pileRect.top + poses[i]!.y,
+        width: size,
+        height: size,
+        rotation: (i: number) => poses[i]!.rot,
+        duration: 0.45,
+        ease: 'power3.inOut',
+        stagger: 0,
+        onComplete: () => resolve(),
+      })
+    })
+
+    // Reveal pile under flyers at the same pose, then drop flyers
+    pile.classList.remove('stack__pile--dispersing')
+    await nextTick()
+    gsap.set(thumbs, {
+      clearProps: 'position,left,top,width,height,zIndex,margin,transform,rotation',
+    })
+    pile.classList.remove('stack__pile--restacking')
+  } else {
+    pileEls.value[boardId]?.classList.remove('stack__pile--dispersing')
+  }
+  expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
+  const { [boardId]: _removed, ...restLayouts } = columnLayouts.value
+  columnLayouts.value = restLayouts
+}
+
+const onPileClick = (boardId: string) => {
+  const board = moodboards.value.find((entry) => entry.id === boardId)
+  setActiveMoodboard(boardId)
+  pileRef.value = pileEls.value[boardId] || null
+  if (!board?.items.length) return
+  if (isMoodboard.value) {
+    if (expandedBoardIds.value.includes(boardId)) {
+      void restackBoard(boardId)
+    } else {
+      void disperseBoard(boardId)
+    }
+    return
+  }
+  void openFromPile()
 }
 
 /**
@@ -691,12 +1451,38 @@ const sendEnquiry = () => {
   openFromBucket(items.value)
 }
 
-const onBuildMoodboard = () => {
-  if (!items.value.length) return
-  initFromBucket(items.value)
-  const { placements, strokes } = snapshot()
-  createBoard(placements, strokes)
-  dismissDrawer()
+/** Drop cart stage instantly (moodboard cream already covering). */
+const dropStageInstant = async () => {
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+  pileCountVisible.value = true
+  stageVisible.value = false
+  cellsReady.value = false
+  softEnter.value = false
+  flipSurface.value = 'pile'
+  keepPileForFlip.value = false
+  stagePresent.value = false
+  unshelveInactiveRail()
+  await nextTick()
+  resetShelvedRail()
+}
+
+const onBuildMoodboard = async () => {
+  // Empty canvas — selections stay in the rail; drag them on when ready
+  resetMoodboard()
+  createBoard([], [])
+
+  if (isOpen.value || stagePresent.value) {
+    // Gather Flip while keeping the cream cart backdrop, then hand off to board
+    await closeToPile({ handoffBackdrop: true })
+    openMoodboard({ skipBgFade: true })
+    // Wait until board cream is painted before dropping the cart stage
+    await nextTick()
+    await waitFrames(2)
+    await dropStageInstant()
+    return
+  }
+
   openMoodboard()
 }
 
@@ -711,18 +1497,18 @@ const clearArriving = (id: string) => {
 
 const measurePileAnchor = () => {
   if (!import.meta.client) return
-  const el = pileRef.value
+  const el =
+    pileEls.value[activeMoodboardId.value || ''] ||
+    pileRef.value
   if (el) {
+    pileRef.value = el
     pileAnchor.value = el.getBoundingClientRect()
     return
   }
   // Default bottom-left footprint before the pile mounts (matches one grid cell)
   syncCellSize()
   const size = cellSizePx.value || window.innerWidth / STACK_COLS
-  const pad =
-    Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gutter')) ||
-    24
-  pileAnchor.value = new DOMRect(pad, window.innerHeight - size - pad, size, size)
+  pileAnchor.value = new DOMRect(0, window.innerHeight - size, size, size)
 }
 
 /** Delay from animation start for a grid index — open: top-right, close: bottom-left. */
@@ -823,9 +1609,13 @@ const fadeOutStage = async () => {
   cellsReady.value = false
   softEnter.value = false
   flipSurface.value = 'pile'
-  keepPileForFlip.value = false
+  // Keep rail mounted through the fade so the pile stays visible; other stacks rise
+  unshelveInactiveRail()
   await wait(BACKDROP_CLOSE_MS)
+  keepPileForFlip.value = false
   stagePresent.value = false
+  await nextTick()
+  resetShelvedRail()
 }
 
 const revealStage = async () => {
@@ -863,7 +1653,9 @@ const scheduleControlsFadeIn = () => {
 const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
   // Lock hover fan so Flip.fit starts from spread positions (no snap-back)
+  pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   pileFanned.value = true
+  pileFannedId.value = activeMoodboardId.value
   pileCountVisible.value = false
   isFlipping.value = true
   cellsReady.value = false
@@ -873,7 +1665,8 @@ const openFromPile = async () => {
   controlsVisible.value = false
   gridLinesVisible.value = false
   scheduleControlsFadeIn()
-  // 1) Backdrop fade in (no grid lines yet)
+  // 1) Backdrop fade in — other stacks drop away on the same beat
+  shelveInactiveRail()
   await revealStage()
   // 2) Items disperse into cells over plain backdrop
   openDrawer('selections')
@@ -896,26 +1689,41 @@ const finishClose = async () => {
   dismissDrawer()
 }
 
-const closeToPile = async () => {
+const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
+  const handoff = !!opts?.handoffBackdrop
+
   if (!import.meta.client || isFlipping.value) {
     clearAllCellPhases()
     clearPendingRemovals()
     dismissDrawer()
     controlsVisible.value = false
     gridLinesVisible.value = false
-    stageVisible.value = false
-    stagePresent.value = false
+    if (!handoff) {
+      stageVisible.value = false
+      stagePresent.value = false
+    }
     cellsReady.value = false
     flipSurface.value = 'pile'
-    keepPileForFlip.value = false
+    keepPileForFlip.value = handoff
     pileCountVisible.value = true
     return
   }
   if (!isOpen.value) {
+    if (handoff && stagePresent.value) {
+      clearAllCellPhases()
+      clearPendingRemovals()
+      return
+    }
     await finishClose()
     return
   }
   if (panelTab.value !== 'selections' || !selectionEntries.value.length) {
+    if (handoff) {
+      clearAllCellPhases()
+      clearPendingRemovals()
+      dismissDrawer()
+      return
+    }
     await finishClose()
     return
   }
@@ -930,6 +1738,12 @@ const closeToPile = async () => {
 
   // Only undo placeholders left — already faded with grid lines
   if (!items.value.length) {
+    if (handoff) {
+      clearAllCellPhases()
+      clearPendingRemovals()
+      dismissDrawer()
+      return
+    }
     await finishClose()
     return
   }
@@ -939,11 +1753,14 @@ const closeToPile = async () => {
   const state = medias?.length ? Flip.getState(medias) : null
   isFlipping.value = true
   cellsReady.value = false
-  // Hand flip ids to pile; cell shells stay put so the grid shape doesn’t change
+  // Hand flip ids to pile and remount the rail (hidden while cart is open)
   flipSurface.value = 'pile'
+  keepPileForFlip.value = true
   dismissDrawer()
   await nextTick()
   await nextTick()
+  parkInactiveRail()
+  pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
     // 2) Items gather back to the pile
@@ -956,6 +1773,14 @@ const closeToPile = async () => {
   // fade applies the fan with transition:none and it “pops” on next hover too
   isFlipping.value = false
   await syncPileFanFromHover()
+
+  if (handoff) {
+    // Keep cream stage up — moodboard mounts on top with the same bg
+    clearAllCellPhases()
+    clearPendingRemovals()
+    return
+  }
+
   // 3) Backdrop fade out (undos already left with the grid lines)
   await fadeOutStage()
   clearAllCellPhases()
@@ -1048,6 +1873,8 @@ const flyIntoPile = (payload: FlyPayload) => {
 
   /** Native CSS fade — GSAP opacity tweens fight `transition: opacity` on the thumb. */
   const fadeSourceBack = () => {
+    // PDP: restore full opacity. Grid thumbs: settle at 0.1 (hover brings them back).
+    const targetOpacity = productOverlayOpen.value ? '1' : '0.1'
     window.setTimeout(() => {
       const el = resolveFlySource()
       if (!el) return
@@ -1055,7 +1882,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       el.style.setProperty('transition', 'opacity 2s ease')
       el.style.setProperty('opacity', '0')
       void el.offsetWidth
-      el.style.setProperty('opacity', '0.1')
+      el.style.setProperty('opacity', targetOpacity)
       const handoff = () => {
         el.style.removeProperty('transition')
         el.style.removeProperty('opacity')
@@ -1198,6 +2025,30 @@ watch(activeMoodboardId, () => {
   isEditing.value = false
 })
 
+watch(isMoodboard, (on) => {
+  if (import.meta.client) {
+    if (on) lockPageScroll()
+    else unlockPageScroll()
+  }
+  if (!on) {
+    expandedBoardIds.value = []
+    preparingBoardId.value = null
+  }
+})
+
+/** After board bg + info panel fade in, open this selection’s column. */
+watch(moodboardSurfaceReady, async (ready) => {
+  if (!ready || !import.meta.client) return
+  const id = activeMoodboardId.value
+  if (!id) return
+  const board = moodboards.value.find((entry) => entry.id === id)
+  if (!board?.items.length) return
+  if (expandedBoardIds.value.includes(id)) return
+  await nextTick()
+  await waitFrames(2)
+  await disperseBoard(id)
+})
+
 watch(showSelectionGrid, async (show) => {
   if (!show || !import.meta.client) return
   await nextTick()
@@ -1222,11 +2073,18 @@ watch(
   { flush: 'post' },
 )
 
-const onWinResize = () => syncCellSize()
+const onWinResize = () => {
+  syncCellSize()
+  syncAllColumnLayouts()
+}
 
 onMounted(() => {
   registerAnimatedClose(() => {
     void closeToPile()
+  })
+  registerMoodboardRestack(async () => {
+    const ids = [...expandedBoardIds.value]
+    await Promise.all(ids.map((id) => restackBoard(id)))
   })
   if (import.meta.client) {
     syncCellSize()
@@ -1236,12 +2094,17 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   registerAnimatedClose(null)
+  registerMoodboardRestack(null)
   cellRo?.disconnect()
   cellRo = null
+  clearColumnPointerListeners()
+  destroyColumnGhost()
   if (import.meta.client) {
     window.removeEventListener('resize', onWinResize)
     document.documentElement.classList.remove('bucket-stack-open')
+    document.documentElement.classList.remove('stack-column-dragging')
     if (stagePresent.value) unlockPageScroll()
+    if (isMoodboard.value) unlockPageScroll()
   }
 })
 </script>
@@ -1253,26 +2116,58 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: 200;
   pointer-events: none;
+  overflow: visible;
 }
 
 .stack--open {
   z-index: 280;
 }
 
-.stack__pile {
+/* Above ProductOverlay (320) so piles stay visible on PDP */
+.stack--above-pdp {
+  z-index: 340;
+}
+
+.stack--moodboard {
+  z-index: 310; /* above MoodboardCanvas (300) */
+}
+
+.stack__rail {
   position: fixed;
   left: 0;
   bottom: 0;
   z-index: 210;
-  /* Same footprint as one open-grid cell so Flip keeps image size */
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.stack__pile-wrap {
+  position: relative;
   width: var(--stack-cell-size);
   height: var(--stack-cell-size);
+  flex: 0 0 auto;
+  pointer-events: auto;
+  overflow: visible;
+}
+
+.stack__pile {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  /* Same footprint as one open-grid cell so Flip keeps image size */
+  width: 100%;
+  height: 100%;
   overflow: visible;
   pointer-events: auto;
   border: 0;
   background: transparent;
   cursor: pointer;
   will-change: transform;
+  padding: 0;
 }
 
 /* Expand hit area so fanned cards (esp. below) keep hover without shifting layout */
@@ -1283,9 +2178,231 @@ onBeforeUnmount(() => {
 }
 
 /* Above stage backdrop/grid, below controls */
-.stack--flipping .stack__pile {
+.stack--flipping .stack__rail {
   z-index: 2;
+}
+
+.stack--flipping .stack__pile {
   overflow: visible;
+}
+
+.stack__create {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: var(--stack-cell-size);
+  height: var(--stack-cell-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+
+.stack__rail--hot .stack__create,
+.stack__create--visible {
+  pointer-events: auto;
+}
+
+.stack__create-plus {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--charcoal);
+  color: var(--charcoal);
+  background: var(--cream);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.28s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack__create--visible .stack__create-plus,
+.stack__rail--hot .stack__create-plus {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.stack__column {
+  /* Full viewport height — top edge to bottom edge */
+  position: fixed;
+  z-index: 312;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.stack__column-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  pointer-events: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* Pushes thumbs down when there aren't enough to fill the viewport */
+.stack__column-pin {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+/* Pile footprint reserved at the bottom — last thumb sits on its top edge */
+.stack__column-foot {
+  flex: 0 0 var(--stack-cell-size);
+  width: 100%;
+  pointer-events: none;
+}
+
+/* Hide laid-out thumbs until flyers are parked on the pile */
+.stack__column--preparing .stack__column-thumb {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.stack__column-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: transparent;
+  cursor: grab;
+  cursor: -webkit-grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.stack__column-thumb:hover {
+  cursor: grab;
+  cursor: -webkit-grab;
+}
+
+.stack__column-thumb:active {
+  cursor: grabbing;
+  cursor: -webkit-grabbing;
+}
+
+/* Ghost is the item — source disappears while dragging */
+.stack__column-thumb--lifted {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+.stack__column-ghost {
+  opacity: 1 !important;
+  visibility: visible !important;
+  cursor: grabbing;
+  cursor: -webkit-grabbing;
+  box-shadow: none;
+  background: transparent;
+}
+
+.stack__column-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: var(--stack-cell-pad, 50px);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Ghost is already sized to the visual content box — no square padding */
+.stack__column-ghost img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+:global(html.stack-column-dragging),
+:global(html.stack-column-dragging *) {
+  cursor: grabbing !important;
+}
+
+.stack__column-close {
+  /* Always centered on the stack footprint (pile cell) */
+  position: absolute;
+  left: 50%;
+  top: calc(100% - (var(--stack-cell-size) / 2));
+  z-index: 6;
+  width: 3.25rem;
+  height: 3.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--charcoal);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transform: translate(-50%, -50%) scale(0.88);
+  opacity: 0;
+  pointer-events: auto;
+  animation: stack-close-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+@keyframes stack-close-in {
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.stack__column-close-icon {
+  position: relative;
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
+.stack__column-close-bar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--warm-white);
+  transform-origin: center center;
+}
+
+.stack__column-close-bar:first-child {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.stack__column-close-bar:last-child {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.stack__pile--expanded,
+.stack__pile--dispersing {
+  pointer-events: none;
+}
+
+/* Hide pile only once flyers have taken over — avoids an instant reorder flash */
+.stack__pile--dispersing .stack__pile-card {
+  visibility: hidden;
 }
 
 .stack--flipping .stack__pile-card {
@@ -1314,7 +2431,8 @@ onBeforeUnmount(() => {
 }
 
 /* Only suppress transitions while GSAP is driving the cards */
-.stack--flipping .stack__pile-card {
+.stack--flipping .stack__pile-card,
+.stack__pile--restacking .stack__pile-card {
   transition: none;
 }
 

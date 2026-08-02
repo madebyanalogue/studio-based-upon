@@ -229,13 +229,13 @@ export const useBucket = () => {
     }
   }
 
-  const createMoodboard = () => {
+  const createMoodboard = (opts?: { open?: boolean }) => {
     const nextIndex = moodboards.value.length + 1
     const board = defaultMoodboard(nextIndex)
     moodboards.value = [...moodboards.value, board]
     activeMoodboardId.value = board.id
     persist()
-    isOpen.value = true
+    if (opts?.open) isOpen.value = true
     return board
   }
 
@@ -606,13 +606,14 @@ export const useBucket = () => {
     const normalized = normalizeBucketItem(item)
     const openOnAdd = bucketUiVersion.value === 'v1'
 
-    if (moodboards.value.length > 1) {
+    // Multi-board without a fly source → picker. With a source, add to active + fly.
+    if (moodboards.value.length > 1 && !opts?.source) {
       openPicker(normalized)
       isOpen.value = true
       return
     }
 
-    const boardId = moodboards.value[0].id
+    const boardId = activeMoodboardId.value || moodboards.value[0].id
     const alreadySaved =
       moodboards.value
         .find((b) => b.id === boardId)
@@ -691,19 +692,48 @@ export const useBucket = () => {
     closePicker()
   }
 
-  const openMoodboard = () => {
+  /** True after the board surface has finished fading in (BucketStack may auto-disperse). */
+  const moodboardSurfaceReady = useState('moodboard-surface-ready', () => false)
+  /** Cart→board: reuse cream backdrop — skip moodboard bg fade-in. */
+  const moodboardSkipBgFade = useState('moodboard-skip-bg-fade', () => false)
+
+  let moodboardRestackHandler: (() => Promise<void>) | null = null
+
+  const registerMoodboardRestack = (handler: (() => Promise<void>) | null) => {
+    moodboardRestackHandler = handler
+  }
+
+  const requestMoodboardRestack = async () => {
+    if (moodboardRestackHandler) await moodboardRestackHandler()
+  }
+
+  const openMoodboard = (opts?: { skipBgFade?: boolean }) => {
     // Remember cart state so closing the board can restore it.
     reopenCartAfterMoodboard.value = isOpen.value
+    moodboardSurfaceReady.value = false
+    moodboardSkipBgFade.value = !!opts?.skipBgFade
     isMoodboard.value = true
     isOpen.value = false
   }
 
+  const consumeMoodboardSkipBgFade = () => {
+    const skip = moodboardSkipBgFade.value
+    moodboardSkipBgFade.value = false
+    return skip
+  }
+
   const closeMoodboard = () => {
+    moodboardSurfaceReady.value = false
+    moodboardSkipBgFade.value = false
     isMoodboard.value = false
     if (reopenCartAfterMoodboard.value) {
       isOpen.value = true
       reopenCartAfterMoodboard.value = false
     }
+  }
+
+  const markMoodboardSurfaceReady = () => {
+    moodboardSurfaceReady.value = true
   }
 
   const dismissDrawer = () => {
@@ -766,6 +796,11 @@ export const useBucket = () => {
     isSavedIn,
     openMoodboard,
     closeMoodboard,
+    moodboardSurfaceReady,
+    markMoodboardSurfaceReady,
+    consumeMoodboardSkipBgFade,
+    registerMoodboardRestack,
+    requestMoodboardRestack,
     closeDrawer,
     dismissDrawer,
     registerAnimatedClose,

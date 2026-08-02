@@ -263,7 +263,7 @@ const flipModes = [
   { id: 'default' as const, label: 'Default' },
   { id: 'stagger' as const, label: 'Stagger' },
 ]
-const flipMode = ref<FlipMode>('stagger')
+const flipMode = ref<FlipMode>('default')
 const visibleIds = ref<Set<string>>(new Set())
 const visibleCount = computed(() => visibleIds.value.size)
 let filterTransitionsReady = false
@@ -607,7 +607,7 @@ useHead(() => ({
 
 .products__intro {
   max-width: 34rem;
-  font-size: var(--text-md);
+  font-size: var(--text-base);
   color: var(--muted);
 }
 

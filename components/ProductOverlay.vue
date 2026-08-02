@@ -71,7 +71,7 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   height: 100dvh;
-  z-index: 320; /* above cart / BucketStack (280–300) */
+  z-index: 320; /* above cart stage; selection rail rises to 340 while PDP is open */
 }
 
 .product-overlay__backdrop {

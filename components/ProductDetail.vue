@@ -125,7 +125,7 @@
               class="pdp__add"
               :active="isCurrentImageSaved"
               :label="isCurrentImageSaved ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
-              @click.stop="onToggleImage(activeEntry, selectedIndex)"
+              @click.stop="onToggleImage(activeEntry, selectedIndex, $event)"
             />
           </div>
 
@@ -762,19 +762,29 @@ const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const onToggleImage = (entry: GalleryEntry, index: number) => {
+const onToggleImage = (entry: GalleryEntry, index: number, event?: Event) => {
   if (!product.value) return
   const urls = galleryEntries.value.map((g) => g.src)
-  // No source — skip fly-to-cart animation when saving from the PDP
-  requestSave({
-    id: product.value._id,
-    title: product.value.title,
-    imageUrl: entry.src,
-    itemType: product.value.series || 'item',
-    link: `/materials-and-forms/${product.value.slug}`,
-    imageUrls: urls.length > 1 ? urls : undefined,
-    imageIndex: urls.length > 1 ? index : undefined,
-  })
+  const fromEvent =
+    (event?.currentTarget as HTMLElement | null)?.closest?.('.pdp__hero-frame')?.querySelector(
+      '.pdp__hero-image',
+    ) || (event?.currentTarget as HTMLElement | null)
+  const source =
+    (fromEvent instanceof HTMLElement ? fromEvent : null) ||
+    heroRef.value ||
+    null
+  requestSave(
+    {
+      id: product.value._id,
+      title: product.value.title,
+      imageUrl: entry.src,
+      itemType: product.value.series || 'item',
+      link: `/materials-and-forms/${product.value.slug}`,
+      imageUrls: urls.length > 1 ? urls : undefined,
+      imageIndex: urls.length > 1 ? index : undefined,
+    },
+    { source },
+  )
 }
 
 const isCurrentImageSaved = computed(() => {
@@ -786,6 +796,7 @@ const isCurrentImageSaved = computed(() => {
 const onAddToSelection = () => {
   if (!activeEntry.value) return
   onToggleImage(activeEntry.value, selectedIndex.value)
+  // heroRef used as fly source inside onToggleImage when no event
 }
 
 const sendEnquiry = () => {

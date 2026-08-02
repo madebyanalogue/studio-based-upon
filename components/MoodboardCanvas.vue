@@ -1,85 +1,17 @@
 <template>
   <Teleport to="body">
     <div
-      v-if="isMoodboard"
+      v-if="surfacePresent"
       class="moodboard"
+      :class="{
+        'moodboard--ready': surfaceReady,
+        'moodboard--panel-ready': panelReady,
+        'moodboard--items-out': itemsOut,
+      }"
       role="dialog"
       aria-modal="true"
       aria-label="Moodboard composer"
     >
-      <header class="moodboard__toolbar">
-        <div class="moodboard__nav">
-          <button type="button" class="btn moodboard__back" @click="onSaveAndClose">
-            Save and Close
-          </button>
-          <button type="button" class="btn moodboard__cancel" @click="onCancelEdits">
-            Cancel edits
-          </button>
-        </div>
-
-        <div ref="switcherRef" class="moodboard__switcher">
-          <form
-            v-if="titleEditing"
-            class="moodboard__title-edit"
-            @submit.prevent="saveTitleEdit"
-          >
-            <input
-              ref="titleInput"
-              v-model="titleDraft"
-              type="text"
-              class="moodboard__title-input  interface"
-              aria-label="Board name"
-              @blur="saveTitleEdit"
-              @keydown.esc="cancelTitleEdit"
-            />
-          </form>
-          <template v-else>
-            <button
-              type="button"
-              class="moodboard__switcher-toggle  interface"
-              :aria-expanded="switchOpen"
-              @click="switchOpen = !switchOpen"
-            >
-              <span>{{ activeBoard?.name || activeMoodboard?.name || 'My Board 1' }}</span>
-              <span
-                v-if="boards.length > 1"
-                class="moodboard__switcher-caret"
-                aria-hidden="true"
-              ></span>
-            </button>
-            <button
-              type="button"
-              class="moodboard__title-edit-btn"
-              aria-label="Rename board"
-              title="Rename board"
-              @click="startTitleEdit"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 20h4L18.5 9.5a2.121 2.121 0 0 0-3-3L5 17v3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-                <path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.5" />
-              </svg>
-            </button>
-          </template>
-          <div v-if="switchOpen && boards.length > 1" class="moodboard__switcher-menu">
-            <button
-              v-for="board in boards"
-              :key="board.id"
-              type="button"
-              class="moodboard__switcher-option"
-              :class="{ 'moodboard__switcher-option--active': board.id === activeBoardId }"
-              @click="switchSavedBoard(board.id)"
-            >
-              {{ board.name }}
-            </button>
-          </div>
-        </div>
-
-        <div class="moodboard__tools">
-          <button type="button" class="btn" @click="downloadScreenshot">Download screenshot</button>
-          <button type="button" class="btn btn--filled" @click="sendEnquiry">Send as enquiry</button>
-        </div>
-      </header>
-
       <div class="moodboard__workspace">
         <MoodboardLibraryPanel
           :open="libraryOpen"
@@ -196,9 +128,13 @@
             {
               'moodboard__item--active': activeId === item.id,
               'moodboard__item--resizing': resizeState?.id === item.id,
+              'moodboard__item--contain': item.objectFit === 'contain',
+              'moodboard__item--natural': !!item.height,
             },
           ]"
           :style="{
+            width: `${item.width || 210}px`,
+            height: item.height ? `${item.height}px` : undefined,
             transform: `translate(${item.x}px, ${item.y}px) scale(${item.scale})`,
             transformOrigin: 'top left',
             zIndex: item.z,
@@ -277,7 +213,8 @@
       </div>
       </div>
 
-      <div class="moodboard__actions">
+      <!-- Vertical tool rail — top right -->
+      <div class="moodboard__actions" aria-label="Board tools">
         <button
           type="button"
           class="moodboard__action"
@@ -368,6 +305,86 @@
         <button type="button" class="btn moodboard__pen-clear" @click="clearStrokes">Clear drawing</button>
       </div>
 
+      <!-- Cart-style panel — bottom right -->
+      <aside class="moodboard__panel" aria-label="Board actions">
+        <div class="moodboard__panel-head">
+          <div ref="switcherRef" class="moodboard__switcher">
+            <form
+              v-if="titleEditing"
+              class="moodboard__title-edit"
+              @submit.prevent="saveTitleEdit"
+            >
+              <input
+                ref="titleInput"
+                v-model="titleDraft"
+                type="text"
+                class="moodboard__title-input interface"
+                aria-label="Board name"
+                @blur="saveTitleEdit"
+                @keydown.esc="cancelTitleEdit"
+              />
+            </form>
+            <template v-else>
+              <button
+                type="button"
+                class="moodboard__switcher-toggle interface"
+                :aria-expanded="switchOpen"
+                @click="switchOpen = !switchOpen"
+              >
+                <span class="moodboard__panel-title">{{
+                  activeBoard?.name || activeMoodboard?.name || 'My Board 1'
+                }}</span>
+                <span
+                  v-if="boards.length > 1"
+                  class="moodboard__switcher-caret"
+                  aria-hidden="true"
+                />
+              </button>
+            </template>
+            <div v-if="switchOpen && boards.length > 1" class="moodboard__switcher-menu">
+              <button
+                v-for="board in boards"
+                :key="board.id"
+                type="button"
+                class="moodboard__switcher-option"
+                :class="{ 'moodboard__switcher-option--active': board.id === activeBoardId }"
+                @click="switchSavedBoard(board.id)"
+              >
+                {{ board.name }}
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="moodboard__panel-close"
+            aria-label="Save and close board"
+            @click="onSaveAndClose"
+          >
+            <span class="moodboard__panel-close-icon" aria-hidden="true" />
+          </button>
+        </div>
+
+        <p class="moodboard__panel-meta interface">
+          {{ placements.length }} {{ placements.length === 1 ? 'item' : 'items' }}
+        </p>
+
+        <div class="moodboard__panel-links">
+          <button type="button" class="moodboard__panel-link interface" @click="startTitleEdit">
+            Rename
+          </button>
+          <button type="button" class="moodboard__panel-link interface" @click="onCancelEdits">
+            Cancel edits
+          </button>
+        </div>
+
+        <button type="button" class="btn" @click="downloadScreenshot">
+          Download screenshot
+        </button>
+        <button type="button" class="btn btn--filled" @click="sendEnquiry">
+          Send as enquiry
+        </button>
+      </aside>
+
       <input
         ref="colourInput"
         type="color"
@@ -397,7 +414,20 @@ const {
   activeMoodboard,
   activeMoodboardId,
   renameMoodboard,
+  markMoodboardSurfaceReady,
+  consumeMoodboardSkipBgFade,
+  requestMoodboardRestack,
 } = useBucket()
+
+const MOODBOARD_FADE_MS = 420
+const MOODBOARD_PANEL_FADE_MS = 320
+const MOODBOARD_ITEMS_FADE_MS = 320
+
+const surfacePresent = ref(false)
+const surfaceReady = ref(false)
+const panelReady = ref(false)
+const itemsOut = ref(false)
+const isExiting = ref(false)
 const {
   boards,
   activeBoard,
@@ -506,42 +536,100 @@ const openSnapshot = ref<OpenSnapshot | null>(null)
 // Module-level so revert can finish after this dialog unmounts.
 let cancelRevertTimer: ReturnType<typeof setTimeout> | null = null
 
+const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 watch(
   isMoodboard,
-  (open) => {
-    if (!open) return
-    if (cancelRevertTimer) {
-      clearTimeout(cancelRevertTimer)
-      cancelRevertTimer = null
+  async (open) => {
+    if (open) {
+      if (cancelRevertTimer) {
+        clearTimeout(cancelRevertTimer)
+        cancelRevertTimer = null
+      }
+      const state = snapshot()
+      openSnapshot.value = {
+        boardId: activeBoardId.value,
+        name: activeBoard.value?.name || activeMoodboard.value?.name || 'My Board 1',
+        placements: state.placements,
+        strokes: state.strokes,
+      }
+      itemsOut.value = false
+      isExiting.value = false
+      const skipBgFade = consumeMoodboardSkipBgFade()
+      surfacePresent.value = true
+      panelReady.value = false
+      if (skipBgFade) {
+        // Cart cream already covers the page — keep continuous, no bg fade
+        surfaceReady.value = true
+        await nextTick()
+      } else {
+        surfaceReady.value = false
+        await nextTick()
+        // 1) Board background fades in
+        requestAnimationFrame(() => {
+          surfaceReady.value = true
+        })
+        await waitMs(MOODBOARD_FADE_MS)
+      }
+      // 2) Board info panel fades in
+      panelReady.value = true
+      await waitMs(MOODBOARD_PANEL_FADE_MS)
+      // 3) Let BucketStack open the active selection column
+      markMoodboardSurfaceReady()
+      return
     }
-    const state = snapshot()
-    openSnapshot.value = {
-      boardId: activeBoardId.value,
-      name: activeBoard.value?.name || activeMoodboard.value?.name || 'My Board 1',
-      placements: state.placements,
-      strokes: state.strokes,
+    // Closed from elsewhere — drop surface if still up
+    if (!isExiting.value) {
+      surfaceReady.value = false
+      panelReady.value = false
+      itemsOut.value = false
+      surfacePresent.value = false
     }
   },
   { immediate: true },
 )
+
+/** Restack → fade panel/items → fade background → close. */
+const exitMoodboard = async () => {
+  if (isExiting.value) return
+  isExiting.value = true
+  switchOpen.value = false
+  libraryOpen.value = false
+  drawTool.value = null
+
+  await requestMoodboardRestack()
+  await waitMs(40)
+
+  itemsOut.value = true
+  panelReady.value = false
+  await waitMs(MOODBOARD_ITEMS_FADE_MS)
+
+  surfaceReady.value = false
+  await waitMs(MOODBOARD_FADE_MS)
+
+  surfacePresent.value = false
+  itemsOut.value = false
+  closeMoodboard()
+  isExiting.value = false
+}
 
 const onSaveAndClose = async () => {
   if (cancelRevertTimer) {
     clearTimeout(cancelRevertTimer)
     cancelRevertTimer = null
   }
+  if (isExiting.value) return
   const preview = await captureBoardPreview()
   saveActiveBoard(placements.value, strokes.value, preview || undefined)
-  switchOpen.value = false
-  closeMoodboard()
+  await exitMoodboard()
 }
 
-const onCancelEdits = () => {
+const onCancelEdits = async () => {
+  if (isExiting.value) return
   const snap = openSnapshot.value
   const revert = updateBoard
   const restore = loadBoard
-  switchOpen.value = false
-  closeMoodboard()
+  await exitMoodboard()
 
   // Revert after the composer has left the page.
   if (cancelRevertTimer) clearTimeout(cancelRevertTimer)
@@ -556,7 +644,7 @@ const onCancelEdits = () => {
       })
     }
     restore(snap.placements, snap.strokes)
-  }, 350)
+  }, 80)
 }
 
 const switchSavedBoard = async (id: string) => {
@@ -987,89 +1075,121 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 300;
-  background: var(--cream);
+  background: transparent;
   display: flex;
   flex-direction: column;
 }
 
-.moodboard__toolbar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem var(--gutter);
-
+/* Background layer — fades independently of the info panel */
+.moodboard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--cream);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.42s ease;
 }
 
-.moodboard__nav {
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.moodboard__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.moodboard__cancel {
-  opacity: 0.7;
-}
-
-.moodboard__cancel:hover {
+.moodboard--ready::before {
   opacity: 1;
+}
+
+.moodboard--items-out .moodboard__item,
+.moodboard--items-out .moodboard__draw-layer {
+  opacity: 0 !important;
+  transition: opacity 0.32s ease;
+}
+
+.moodboard__panel,
+.moodboard__actions,
+.moodboard__pen-bar {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.32s ease;
+}
+
+.moodboard--panel-ready .moodboard__panel,
+.moodboard--panel-ready .moodboard__actions,
+.moodboard--panel-ready .moodboard__pen-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.moodboard--items-out .moodboard__panel,
+.moodboard--items-out .moodboard__actions,
+.moodboard--items-out .moodboard__pen-bar {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .moodboard__switcher {
   position: relative;
-  justify-self: center;
-  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  display: flex;
   align-items: center;
-  gap: 0.75rem;
 }
 
 .moodboard__switcher-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: var(--text-lg);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--charcoal);
+  cursor: pointer;
   transition: color 0.2s ease;
 }
 
-.moodboard__title-edit-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  transition: color 0.2s ease;
+.moodboard__switcher-toggle:hover {
+  color: var(--accent, var(--charcoal));
 }
 
-.moodboard__title-edit-btn:hover {
-  color: var(--charcoal);
+.moodboard__panel-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--serif);
+  font-size: var(--text-md);
+  text-transform: capitalize;
+}
+
+.moodboard__switcher-toggle,
+.moodboard__switcher-option,
+.moodboard__title-input {
+  text-transform: capitalize;
+}
+
+.moodboard__title-edit {
+  flex: 1;
+  min-width: 0;
 }
 
 .moodboard__title-input {
-  font-size: var(--text-lg);
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: var(--text-sm);
   color: var(--charcoal);
-  text-align: center;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--charcoal);
-  padding: 0 0.25rem 0.15rem;
+  background: var(--cream);
+  border: 1px solid var(--grid-line);
+  box-sizing: border-box;
 }
 
 .moodboard__title-input:focus {
   outline: none;
-}
-
-.moodboard__switcher-toggle:hover {
-  color: var(--accent);
+  border-color: var(--charcoal);
 }
 
 .moodboard__switcher-caret {
+  flex-shrink: 0;
   width: 7px;
   height: 7px;
   border-right: 1px solid var(--muted);
@@ -1086,44 +1206,39 @@ onUnmounted(() => {
 
 .moodboard__switcher-menu {
   position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  bottom: calc(100% + 0.4rem);
   z-index: 10;
-  min-width: 11rem;
+  min-width: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0.35rem;
-  background: var(--warm-white);
+  padding: 0.25rem;
+  background: var(--elevated-bg, var(--warm-white));
   border: 1px solid var(--grid-line);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  box-shadow: none;
 }
 
 .moodboard__switcher-option {
-  padding: 0.55rem 0.75rem;
-  font-size: var(--text-sm);
+  padding: 0.45rem 0.55rem;
+  font-size: var(--text-xs);
   text-align: left;
   color: var(--muted);
-  border-radius: 8px;
-  transition: color 0.2s ease, background 0.2s ease;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .moodboard__switcher-option:hover,
 .moodboard__switcher-option--active {
   color: var(--charcoal);
-  background: var(--cream);
-}
-
-.moodboard__tools {
-  justify-self: end;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
 .moodboard__workspace {
   position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1144,6 +1259,8 @@ onUnmounted(() => {
   height: 100%;
   z-index: 200;
   pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.32s ease;
 }
 
 .moodboard__draw-layer--active {
@@ -1181,7 +1298,22 @@ onUnmounted(() => {
   cursor: grab;
   user-select: none;
   transform-origin: center;
-  transition: box-shadow 0.2s ease;
+  opacity: 1;
+  transition: box-shadow 0.2s ease, opacity 0.32s ease;
+}
+
+.moodboard__item--contain img {
+  object-fit: contain;
+}
+
+/* Natural drop size — box is already fitted to stack content proportions */
+.moodboard__item--natural img {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: fill;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .moodboard__item--active {
@@ -1360,14 +1492,15 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-/* Fixed tool circles, bottom-right */
+/* Vertical tool rail — top right */
 .moodboard__actions {
   position: absolute;
+  top: var(--gutter);
   right: var(--gutter);
-  bottom: var(--gutter);
   z-index: 400;
   display: flex;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
 .moodboard__action {
@@ -1379,13 +1512,12 @@ onUnmounted(() => {
   border: 1px solid var(--grid-line);
   background: transparent;
   color: var(--charcoal);
-  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .moodboard__action:hover {
-  background: var(--elevated-bg);
-  border-color: var(--elevated-bg);
-  box-shadow: 0 8px 24px var(--shadow-color);
+  background: var(--elevated-bg, var(--warm-white));
+  border-color: var(--charcoal);
 }
 
 .moodboard__action--active {
@@ -1397,6 +1529,110 @@ onUnmounted(() => {
 .moodboard__action--active:hover {
   background: var(--charcoal);
   color: var(--warm-white);
+}
+
+/* Cart-style panel — bottom right */
+.moodboard__panel {
+  position: absolute;
+  right: var(--gutter);
+  bottom: var(--gutter);
+  z-index: 420;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: var(--side-column-width, 16rem);
+  max-width: calc(100vw - (var(--gutter) * 2));
+  padding: var(--gutter);
+  box-sizing: border-box;
+  background: var(--panel-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  backdrop-filter: blur(50px);
+  -webkit-backdrop-filter: blur(50px);
+}
+
+.moodboard__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.moodboard__panel-close {
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--charcoal);
+  background: var(--elevated-bg, #fff);
+  color: var(--charcoal);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.moodboard__panel-close:hover {
+  color: var(--accent, var(--charcoal));
+  border-color: currentColor;
+}
+
+.moodboard__panel-close-icon {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+
+.moodboard__panel-close-icon::before,
+.moodboard__panel-close-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+}
+
+.moodboard__panel-close-icon::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.moodboard__panel-close-icon::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.moodboard__panel-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.moodboard__panel-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.moodboard__panel-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.moodboard__panel-link:hover {
+  color: var(--charcoal);
+}
+
+.moodboard__panel .btn {
+  width: 100%;
+  border-radius: 0;
 }
 
 .moodboard__pen-bar {
@@ -1411,7 +1647,6 @@ onUnmounted(() => {
   background: var(--warm-white);
   border: 1px solid var(--grid-line);
   border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .moodboard__pen-swatch {
@@ -1461,20 +1696,17 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
-  .moodboard__toolbar {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    text-align: center;
+  .moodboard__panel {
+    width: calc(100vw - (var(--gutter) * 2));
   }
 
-  .moodboard__nav,
-  .moodboard__switcher,
-  .moodboard__tools {
-    justify-self: center;
+  .moodboard__actions {
+    gap: 0.5rem;
   }
 
-  .moodboard__tools {
-    justify-content: center;
+  .moodboard__action {
+    width: 2.5rem;
+    height: 2.5rem;
   }
 }
 </style>

@@ -86,34 +86,42 @@
           </template>
         </button>
 
-        <button
-          type="button"
-          class="header__icon-btn"
-          :class="{
-            'header__icon-btn--active': isOpen && panelTab === 'boards',
-            'header__icon-btn--tooltip-hidden': hiddenTooltip === 'boards',
-          }"
-          aria-label="Open boards"
-          @click="onBoardsClick"
-          @mouseleave="clearTooltipHide('boards')"
-        >
-          <svg
-            class="header__icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+        <div ref="boardsMenuRef" class="header__boards">
+          <button
+            type="button"
+            class="header__version header__boards-toggle interface"
+            :class="{ 'header__boards-toggle--open': boardsOpen }"
+            :aria-expanded="boardsOpen"
+            aria-haspopup="listbox"
+            aria-label="Boards"
+            @click="onBoardsToggle"
           >
-            <rect x="3.5" y="3.5" width="7" height="7" rx="1" />
-            <rect x="13.5" y="3.5" width="7" height="7" rx="1" />
-            <rect x="3.5" y="13.5" width="7" height="7" rx="1" />
-            <rect x="13.5" y="13.5" width="7" height="7" rx="1" />
-          </svg>
-          <span class="header__tooltip interface" aria-hidden="true">Boards</span>
-        </button>
+            <span>Boards</span>
+            <span class="header__boards-caret" aria-hidden="true" />
+          </button>
+          <div
+            v-if="boardsOpen"
+            class="header__boards-menu"
+            role="listbox"
+            aria-label="Saved boards"
+          >
+            <button
+              v-for="board in boards"
+              :key="board.id"
+              type="button"
+              class="header__boards-option interface"
+              role="option"
+              :aria-selected="board.id === activeBoardId"
+              :class="{ 'header__boards-option--active': board.id === activeBoardId && isMoodboard }"
+              @click="onSelectBoard(board.id)"
+            >
+              {{ board.name }}
+            </button>
+            <p v-if="!boards.length" class="header__boards-empty interface">
+              No boards yet
+            </p>
+          </div>
+        </div>
 
         <button
           type="button"
@@ -153,17 +161,36 @@
 
 <script setup lang="ts">
 const { logo, headerMenu } = useSiteSettings()
-const { isOpen, panelTab, openDrawer, closeDrawer } = useBucket()
+const {
+  isOpen,
+  panelTab,
+  openDrawer,
+  closeDrawer,
+  isMoodboard,
+  openMoodboard,
+} = useBucket()
 const { version: bucketUiVersion, toggleVersion } = useBucketUi()
+const {
+  boards,
+  activeBoardId,
+  boardsOpen,
+  setActiveBoard,
+  saveActiveBoard,
+  toggleDropdown,
+  closeDropdown,
+} = useBoards()
+const { loadBoard, placements, strokes, clearActive } = useMoodboard()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
+
+const boardsMenuRef = ref<HTMLElement | null>(null)
 
 const toggleBucketUi = () => {
   closeDrawer()
   toggleVersion()
 }
 
-type TooltipId = 'theme' | 'boards' | 'selections'
+type TooltipId = 'theme' | 'selections'
 const hiddenTooltip = ref<TooltipId | null>(null)
 /** Keep pre-click label so theme toggle doesn't flash the opposite word while fading out. */
 const frozenThemeTooltip = ref<'Light' | 'Dark' | null>(null)
@@ -188,13 +215,28 @@ const onThemeClick = () => {
   toggleTheme()
 }
 
-const onBoardsClick = () => {
-  hideTooltip('boards')
-  if (isOpen.value && panelTab.value === 'boards') {
-    closeDrawer()
+const onBoardsToggle = () => {
+  toggleDropdown()
+}
+
+const onSelectBoard = async (id: string) => {
+  closeDropdown()
+  if (isMoodboard.value) {
+    if (id === activeBoardId.value) return
+    if (activeBoardId.value) {
+      saveActiveBoard(placements.value, strokes.value)
+    }
+    setActiveBoard(id)
+    const board = boards.value.find((entry) => entry.id === id)
+    if (board) loadBoard(board.placements, board.strokes)
+    clearActive()
     return
   }
-  openDrawer('boards')
+  const board = boards.value.find((entry) => entry.id === id)
+  if (!board) return
+  setActiveBoard(id)
+  loadBoard(board.placements, board.strokes)
+  openMoodboard()
 }
 
 const onSelectionsClick = () => {
@@ -205,6 +247,22 @@ const onSelectionsClick = () => {
   }
   openDrawer('selections')
 }
+
+const onDocumentPointerDown = (event: PointerEvent) => {
+  if (!boardsOpen.value) return
+  const target = event.target as Node | null
+  if (boardsMenuRef.value && target && !boardsMenuRef.value.contains(target)) {
+    closeDropdown()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown)
+})
 </script>
 
 <style scoped>
@@ -278,12 +336,97 @@ const onSelectionsClick = () => {
   color: var(--muted);
   border: 1px solid var(--grid-line);
   border-radius: 4px;
+  background: transparent;
   transition: color 0.2s ease, border-color 0.2s ease;
 }
 
 .header__version:hover {
   color: var(--charcoal);
   border-color: var(--charcoal);
+}
+
+.header__boards {
+  position: relative;
+  margin-right: 0.15rem;
+}
+
+.header__boards-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0;
+}
+
+.header__boards-toggle--open {
+  color: var(--charcoal);
+  border-color: var(--charcoal);
+}
+
+.header__boards-caret {
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.75;
+  transition: transform 0.2s ease;
+}
+
+.header__boards-toggle--open .header__boards-caret {
+  transform: rotate(180deg);
+}
+
+.header__boards-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  min-width: 10.5rem;
+  max-width: 16rem;
+  max-height: min(60vh, 20rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.25rem;
+  background: var(--elevated-bg, var(--cream));
+  border: 1px solid var(--grid-line);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.header__boards-option {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-align: left;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.header__boards-option:hover,
+.header__boards-option--active {
+  color: var(--charcoal);
+  background: transparent;
+}
+
+.header__boards-option--active {
+  font-weight: 500;
+}
+
+.header__boards-empty {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  color: var(--muted);
+  font-size: var(--text-xs);
 }
 
 .header__icon-btn {

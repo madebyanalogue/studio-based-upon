@@ -12,6 +12,11 @@ export type MoodboardItem = {
   y: number
   z: number
   scale: number
+  /** Base width in px (default 210). Used to match selection thumb size on drop. */
+  width?: number
+  /** Natural height in px — when set, item keeps its intrinsic ratio. */
+  height?: number
+  objectFit?: 'contain' | 'cover'
 }
 
 export type MoodboardStroke = {
@@ -110,7 +115,16 @@ export const useMoodboard = () => {
   const addImage = (
     imageUrl: string,
     title = 'Upload',
-    options?: { imageUrls?: string[]; imageIndex?: number },
+    options?: {
+      imageUrls?: string[]
+      imageIndex?: number
+      x?: number
+      y?: number
+      scale?: number
+      width?: number
+      height?: number
+      objectFit?: 'contain' | 'cover'
+    },
   ) => {
     const id = `image-${Date.now()}-${Math.round(Math.random() * 1000)}`
     const urls = options?.imageUrls?.filter(Boolean) || []
@@ -127,10 +141,13 @@ export const useMoodboard = () => {
         imageUrl: urls[imageIndex] || imageUrl,
         imageUrls: urls.length > 1 ? urls : undefined,
         imageIndex: urls.length > 1 ? imageIndex : undefined,
-        x: 140 + (placements.value.length % 5) * 40,
-        y: 140 + (placements.value.length % 5) * 40,
+        x: options?.x ?? 140 + (placements.value.length % 5) * 40,
+        y: options?.y ?? 140 + (placements.value.length % 5) * 40,
         z: zCounter.value,
-        scale: 1,
+        scale: options?.scale ?? 1,
+        width: options?.width,
+        height: options?.height,
+        objectFit: options?.objectFit,
       },
     ]
     activeId.value = id

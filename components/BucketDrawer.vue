@@ -322,7 +322,7 @@ const {
   deleteMoodboard,
 } = useBucket()
 const { isOpen: productOpen, open, returnImage } = useProductOverlay()
-const { initFromBucket, snapshot, loadBoard } = useMoodboard()
+const { loadBoard, reset } = useMoodboard()
 const { createBoard, boards, activeBoardId, setActiveBoard } = useBoards()
 const { openFromBucket } = useEnquiryForm()
 const { fetchProduct } = useProductCatalog()
@@ -408,7 +408,7 @@ const selectTab = (id: string) => {
 }
 
 const onNewTab = () => {
-  createMoodboard()
+  createMoodboard({ open: true })
   panelTab.value = 'selections'
 }
 
@@ -479,10 +479,9 @@ const onDeleteMoodboard = () => {
 }
 
 const onBuildMoodboard = () => {
-  if (!items.value.length) return
-  initFromBucket(items.value)
-  const { placements, strokes } = snapshot()
-  createBoard(placements, strokes)
+  // Empty canvas — selections stay in the rail; drag them on when ready
+  reset()
+  createBoard([], [])
   openMoodboard()
 }
 
