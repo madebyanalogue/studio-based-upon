@@ -52,12 +52,34 @@ export type ParkedSelectionItem = {
 
 const STORAGE_KEY = 'sba-moodboards'
 const LEGACY_STORAGE_KEY = 'sba-bucket'
+/** Survives refresh while the board composer is open. */
+const MOODBOARD_SESSION_KEY = 'sba-moodboard-session'
 const UNDO_REMOVE_MS = 5000
+
+export type MoodboardSessionDraft = {
+  open: true
+  activeBoardId: string | null
+  placements: unknown[]
+  strokes: unknown[]
+  parked: ParkedSelectionItem[]
+}
 
 const removalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let removalSeq = 0
 /** Optional animated close (bucket UI v2). */
 let animatedCloseHandler: (() => void) | null = null
+/** Shared across useBucket() callers — must be module-scoped like animatedCloseHandler. */
+let moodboardRestackHandler: (() => Promise<void>) | null = null
+let moodboardReturnHandler:
+  | ((opts: {
+      selectionId: string
+      itemId: string
+      from: { left: number; top: number; width: number; height: number }
+      imageUrl: string
+      objectFit?: 'contain' | 'cover'
+      item?: BucketItem
+    }) => Promise<void>)
+  | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -761,8 +783,6 @@ export const useBucket = () => {
   /** Cart→board: reuse cream backdrop — skip moodboard bg fade-in. */
   const moodboardSkipBgFade = useState('moodboard-skip-bg-fade', () => false)
 
-  let moodboardRestackHandler: (() => Promise<void>) | null = null
-
   const registerMoodboardRestack = (handler: (() => Promise<void>) | null) => {
     moodboardRestackHandler = handler
   }
@@ -771,13 +791,90 @@ export const useBucket = () => {
     if (moodboardRestackHandler) await moodboardRestackHandler()
   }
 
-  const openMoodboard = (opts?: { skipBgFade?: boolean }) => {
+  const registerMoodboardReturnToColumn = (
+    handler: typeof moodboardReturnHandler,
+  ) => {
+    moodboardReturnHandler = handler
+  }
+
+  const requestMoodboardReturnToColumn = async (opts: {
+    selectionId: string
+    itemId: string
+    from: { left: number; top: number; width: number; height: number }
+    imageUrl: string
+    objectFit?: 'contain' | 'cover'
+    /** Used to re-insert into the selection if the park list was cleared. */
+    item?: BucketItem
+  }) => {
+    if (moodboardReturnHandler) {
+      await moodboardReturnHandler(opts)
+      return
+    }
+    // Fallback if BucketStack isn’t mounted yet
+    restoreParkedSelectionItem(opts.itemId)
+    if (opts.item) {
+      const board = moodboards.value.find((entry) => entry.id === opts.selectionId)
+      if (board && !board.items.some((entry) => entry.id === opts.itemId)) {
+        addItemToMoodboard(opts.selectionId, opts.item)
+      }
+    }
+  }
+
+  const clearMoodboardSession = () => {
+    if (!import.meta.client) return
+    try {
+      localStorage.removeItem(MOODBOARD_SESSION_KEY)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const persistMoodboardSession = (draft: {
+    activeBoardId: string | null
+    placements: unknown[]
+    strokes: unknown[]
+  }) => {
+    if (!import.meta.client || !isMoodboard.value) return
+    try {
+      const payload: MoodboardSessionDraft = {
+        open: true,
+        activeBoardId: draft.activeBoardId,
+        placements: draft.placements,
+        strokes: draft.strokes,
+        parked: parkedSelectionItems.value.map((entry) => ({
+          selectionId: entry.selectionId,
+          item: { ...entry.item, imageUrls: entry.item.imageUrls ? [...entry.item.imageUrls] : undefined },
+          index: entry.index,
+        })),
+      }
+      localStorage.setItem(MOODBOARD_SESSION_KEY, JSON.stringify(payload))
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }
+
+  const readMoodboardSession = (): MoodboardSessionDraft | null => {
+    if (!import.meta.client) return null
+    try {
+      const raw = localStorage.getItem(MOODBOARD_SESSION_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw) as MoodboardSessionDraft
+      if (!parsed?.open) return null
+      return parsed
+    } catch {
+      return null
+    }
+  }
+
+  const openMoodboard = (opts?: { skipBgFade?: boolean; resume?: boolean }) => {
     // Remember cart state so closing the board can restore it.
-    reopenCartAfterMoodboard.value = isOpen.value
+    reopenCartAfterMoodboard.value = opts?.resume ? false : isOpen.value
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = !!opts?.skipBgFade
-    // Fresh session — don't carry over a previous park list
-    parkedSelectionItems.value = []
+    // Fresh open clears parks; resume keeps the parked list from the session draft
+    if (!opts?.resume) {
+      parkedSelectionItems.value = []
+    }
     isMoodboard.value = true
     isOpen.value = false
   }
@@ -791,6 +888,7 @@ export const useBucket = () => {
   const closeMoodboard = () => {
     // Items dragged onto the board return to their selection piles
     restoreAllParkedSelectionItems()
+    clearMoodboardSession()
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
     isMoodboard.value = false
@@ -798,6 +896,17 @@ export const useBucket = () => {
       isOpen.value = true
       reopenCartAfterMoodboard.value = false
     }
+  }
+
+  const setParkedSelectionItems = (items: ParkedSelectionItem[]) => {
+    parkedSelectionItems.value = items.map((entry) => ({
+      selectionId: entry.selectionId,
+      index: entry.index,
+      item: {
+        ...entry.item,
+        imageUrls: entry.item.imageUrls ? [...entry.item.imageUrls] : undefined,
+      },
+    }))
   }
 
   const markMoodboardSurfaceReady = () => {
@@ -856,6 +965,7 @@ export const useBucket = () => {
     setItemImageIndex,
     addItemToMoodboard,
     removeItemFromMoodboard,
+    parkedSelectionItems,
     parkSelectionItem,
     restoreParkedSelectionItem,
     restoreAllParkedSelectionItems,
@@ -867,11 +977,17 @@ export const useBucket = () => {
     isSavedIn,
     openMoodboard,
     closeMoodboard,
+    persistMoodboardSession,
+    clearMoodboardSession,
+    readMoodboardSession,
+    setParkedSelectionItems,
     moodboardSurfaceReady,
     markMoodboardSurfaceReady,
     consumeMoodboardSkipBgFade,
     registerMoodboardRestack,
     requestMoodboardRestack,
+    registerMoodboardReturnToColumn,
+    requestMoodboardReturnToColumn,
     closeDrawer,
     dismissDrawer,
     registerAnimatedClose,

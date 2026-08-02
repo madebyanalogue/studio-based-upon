@@ -252,7 +252,7 @@
   </article>
 
   <div v-else class="pdp pdp--missing">
-    <h1 class="page-title">Product not found</h1>
+    <h1 class="page-title">Item not found</h1>
     <button type="button" class="pdp__link  interface" @click="$emit('close')">Close</button>
   </div>
 </template>

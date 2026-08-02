@@ -22,7 +22,7 @@
         @mouseleave="onRailLeave"
       >
         <div
-          v-for="board in moodboards"
+          v-for="board in railBoards"
           :key="board.id"
           :ref="(el) => setPileWrapRef(board.id, el)"
           class="stack__pile-wrap"
@@ -81,6 +81,7 @@
                 v-for="item in boardColumnItems(board)"
                 :key="item.id"
                 class="stack__column-thumb"
+                :class="{ 'stack__column-thumb--returning': columnReturningId === item.id }"
                 :data-column-id="item.id"
                 @pointerdown="onColumnThumbPointerDown($event, item, board.id)"
               >
@@ -94,12 +95,16 @@
               <!-- Reserve the pile footprint so the last thumb sits on its top edge -->
               <div class="stack__column-foot" aria-hidden="true" />
             </div>
+          </div>
 
-            <!-- Centered on the pile footprint (bottom cell of the column) -->
+          <!-- Outside column v-if so leave fade can finish after restack -->
+          <Transition name="stack-column-close">
             <button
+              v-if="showColumnClose(board.id)"
               type="button"
               class="stack__column-close"
               aria-label="Restack selection"
+              :style="columnCloseStyle(board.id)"
               @click.stop="restackBoard(board.id)"
             >
               <div class="stack__column-close-icon" aria-hidden="true">
@@ -107,7 +112,7 @@
                 <div class="stack__column-close-bar" />
               </div>
             </button>
-          </div>
+          </Transition>
         </div>
 
         <button
@@ -338,8 +343,12 @@ const {
   pendingFly,
   consumePendingFly,
   parkSelectionItem,
+  restoreParkedSelectionItem,
+  parkedSelectionItems,
+  addItemToMoodboard,
   moodboardSurfaceReady,
   registerMoodboardRestack,
+  registerMoodboardReturnToColumn,
 } = useBucket()
 const { reset: resetMoodboard, addImage } = useMoodboard()
 const { createBoard } = useBoards()
@@ -369,6 +378,8 @@ const columnLayouts = ref<
 const preparingBoardId = ref<string | null>(null)
 const pileFannedId = ref<string | null>(null)
 const expandedBoardIds = ref<string[]>([])
+/** Column thumb id reserved (hidden) while a board item Flips back in. */
+const columnReturningId = ref<string | null>(null)
 const titleInput = ref<HTMLInputElement | null>(null)
 const isEditing = ref(false)
 const editName = ref('')
@@ -588,6 +599,15 @@ const showRail = computed(
       !stagePresent.value &&
       (moodboards.value.some((b) => b.items.length > 0) || arrivingIds.value.length > 0)),
 )
+
+/** Board view: only the active selection stack (extra wraps steal drag hits). */
+const railBoards = computed(() => {
+  if (!isMoodboard.value) return moodboards.value
+  const active =
+    moodboards.value.find((board) => board.id === activeMoodboardId.value) ||
+    moodboards.value[0]
+  return active ? [active] : []
+})
 
 const setPileRef = (id: string, el: unknown) => {
   const html = el instanceof HTMLElement ? el : null
@@ -896,6 +916,23 @@ const columnFixedStyle = (boardId: string) => {
   }
 }
 
+/** Hide close as soon as restack starts so the leave fade isn’t delayed. */
+const restackingBoardId = ref<string | null>(null)
+
+const showColumnClose = (boardId: string) =>
+  expandedBoardIds.value.includes(boardId) && restackingBoardId.value !== boardId
+
+const columnCloseStyle = (boardId: string) => {
+  const layout = columnLayouts.value[boardId]
+  if (layout) {
+    return { left: `${layout.left + layout.width / 2}px` }
+  }
+  const wrap = pileWrapEls.value[boardId]
+  if (!wrap) return undefined
+  const rect = wrap.getBoundingClientRect()
+  return { left: `${rect.left + rect.width / 2}px` }
+}
+
 const onColumnWheel = (event: WheelEvent) => {
   const scroll = event.currentTarget as HTMLElement | null
   if (!scroll) return
@@ -1027,6 +1064,209 @@ const onColumnPointerMove = (event: PointerEvent) => {
   }
   startColumnDrag(columnPending, event)
   event.preventDefault()
+}
+
+/** Open column (if needed), animate a gap, then Flip the board item into the slot. */
+const returnItemToColumn = async (opts: {
+  selectionId: string
+  itemId: string
+  from: { left: number; top: number; width: number; height: number }
+  imageUrl: string
+  objectFit?: 'contain' | 'cover'
+  item?: BucketItem
+}) => {
+  if (!import.meta.client) {
+    restoreParkedSelectionItem(opts.itemId)
+    return
+  }
+
+  const { selectionId, itemId, from, imageUrl } = opts
+  setActiveMoodboard(selectionId)
+  pileRef.value = pileEls.value[selectionId] || pileRef.value
+
+  // Flyer stays on top for the whole sequence
+  const flyer = document.createElement('div')
+  const img = document.createElement('img')
+  img.src = imageUrl
+  img.alt = ''
+  img.draggable = false
+  flyer.appendChild(img)
+  document.body.appendChild(flyer)
+  gsap.set(flyer, {
+    position: 'fixed',
+    left: from.left,
+    top: from.top,
+    width: Math.max(from.width, 1),
+    height: Math.max(from.height, 1),
+    margin: 0,
+    zIndex: 600,
+    pointerEvents: 'none',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    background: 'transparent',
+  })
+  gsap.set(img, {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    objectFit: opts.objectFit || 'contain',
+    padding: 0,
+  })
+
+  // Hide the destination thumb from the first painted frame (avoids pop)
+  columnReturningId.value = itemId
+
+  try {
+    const boardBefore = moodboards.value.find((entry) => entry.id === selectionId)
+    const wasExpanded = expandedBoardIds.value.includes(selectionId)
+    const alreadyInSelection = !!boardBefore?.items.some((entry) => entry.id === itemId)
+    const isParked = parkedSelectionItems.value.some((entry) => entry.item.id === itemId)
+
+    // 1) Open the column if closed
+    if (!wasExpanded) {
+      if ((boardBefore?.items.length || 0) > 0) {
+        await disperseBoard(selectionId)
+      } else {
+        const pile = pileEls.value[selectionId]
+        if (pile) {
+          preparingBoardId.value = selectionId
+          expandedBoardIds.value = [...expandedBoardIds.value, selectionId]
+          pile.classList.add('stack__pile--dispersing')
+          await nextTick()
+          syncColumnLayout(selectionId)
+          await nextTick()
+          await waitFrames(2)
+          preparingBoardId.value = null
+        }
+      }
+    }
+
+    let column = columnEls.value[selectionId]
+    if (!column) {
+      expandedBoardIds.value = [...new Set([...expandedBoardIds.value, selectionId])]
+      pileEls.value[selectionId]?.classList.add('stack__pile--dispersing')
+      await nextTick()
+      syncColumnLayout(selectionId)
+      await waitFrames(2)
+      column = columnEls.value[selectionId]
+    }
+    if (!column) {
+      if (isParked) restoreParkedSelectionItem(itemId)
+      else if (opts.item && !alreadyInSelection) addItemToMoodboard(selectionId, opts.item)
+      return
+    }
+
+    // 2) Capture sibling layout, then insert the reserved (hidden) slot
+    const beforeRect = new Map<string, DOMRect>()
+    column.querySelectorAll<HTMLElement>('.stack__column-thumb').forEach((thumb) => {
+      const id = thumb.dataset.columnId
+      if (id && id !== itemId) {
+        gsap.set(thumb, { x: 0, y: 0, clearProps: 'transform' })
+        beforeRect.set(id, thumb.getBoundingClientRect())
+      }
+    })
+
+    const hadThumb = alreadyInSelection
+    if (isParked) restoreParkedSelectionItem(itemId)
+    else if (!alreadyInSelection && opts.item) addItemToMoodboard(selectionId, opts.item)
+
+    await nextTick()
+    await waitFrames(2)
+
+    let destThumb = column.querySelector(
+      `[data-column-id="${itemId}"]`,
+    ) as HTMLElement | null
+    if (!destThumb) return
+
+    // FLIP siblings: hold old positions, then ease into the opened gap
+    if (!hadThumb) {
+      const movers: HTMLElement[] = []
+      column.querySelectorAll<HTMLElement>('.stack__column-thumb').forEach((thumb) => {
+        const id = thumb.dataset.columnId
+        if (!id || id === itemId) return
+        const from = beforeRect.get(id)
+        if (!from) return
+        const to = thumb.getBoundingClientRect()
+        const dx = from.left - to.left
+        const dy = from.top - to.top
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          gsap.set(thumb, { x: dx, y: dy })
+          movers.push(thumb)
+        }
+      })
+
+      destThumb.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      await waitFrames(1)
+
+      if (movers.length) {
+        await new Promise<void>((resolve) => {
+          gsap.to(movers, {
+            x: 0,
+            y: 0,
+            duration: 0.45,
+            ease: 'power3.out',
+            overwrite: true,
+            onComplete: () => resolve(),
+          })
+        })
+      } else {
+        await wait(180)
+      }
+    } else {
+      destThumb.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      await wait(180)
+    }
+
+    destThumb =
+      (column.querySelector(`[data-column-id="${itemId}"]`) as HTMLElement | null) ||
+      destThumb
+    const dest = destThumb.getBoundingClientRect()
+
+    if (!img.complete) {
+      await new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true })
+        img.addEventListener('error', () => resolve(), { once: true })
+      })
+    }
+
+    const cell = Math.max(dest.width, 1)
+    const fitted = fitStackContentSize(
+      img.naturalWidth || from.width || 1,
+      img.naturalHeight || from.height || 1,
+      cell,
+    )
+    const landLeft = dest.left + (cell - fitted.width) / 2
+    const landTop = dest.top + (cell - fitted.height) / 2
+
+    // 3) Flip / scale into the empty slot
+    await new Promise<void>((resolve) => {
+      gsap.fromTo(
+        flyer,
+        {
+          left: from.left,
+          top: from.top,
+          width: Math.max(from.width, 1),
+          height: Math.max(from.height, 1),
+        },
+        {
+          left: landLeft,
+          top: landTop,
+          width: fitted.width,
+          height: fitted.height,
+          duration: 0.55,
+          ease: 'power3.inOut',
+          onComplete: () => resolve(),
+        },
+      )
+    })
+
+    // Reveal the real thumb under the flyer, then drop the flyer
+    columnReturningId.value = null
+    await nextTick()
+  } finally {
+    columnReturningId.value = null
+    flyer.remove()
+  }
 }
 
 const compactColumnAfterPark = async (boardId: string, removedId: string) => {
@@ -1262,6 +1502,8 @@ const disperseBoard = async (boardId: string) => {
 
 const restackBoard = async (boardId: string) => {
   if (!import.meta.client) return
+  if (restackingBoardId.value === boardId) return
+  restackingBoardId.value = boardId
   const pile = pileEls.value[boardId]
   const column = columnEls.value[boardId]
   const board = moodboards.value.find((entry) => entry.id === boardId)
@@ -1327,6 +1569,7 @@ const restackBoard = async (boardId: string) => {
   expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
   const { [boardId]: _removed, ...restLayouts } = columnLayouts.value
   columnLayouts.value = restLayouts
+  if (restackingBoardId.value === boardId) restackingBoardId.value = null
 }
 
 const onPileClick = (boardId: string) => {
@@ -2079,6 +2322,8 @@ watch(isMoodboard, (on) => {
   if (!on) {
     expandedBoardIds.value = []
     preparingBoardId.value = null
+    columnReturningId.value = null
+    restackingBoardId.value = null
   }
 })
 
@@ -2132,6 +2377,7 @@ onMounted(() => {
     const ids = [...expandedBoardIds.value]
     await Promise.all(ids.map((id) => restackBoard(id)))
   })
+  registerMoodboardReturnToColumn((opts) => returnItemToColumn(opts))
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
@@ -2141,6 +2387,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   registerAnimatedClose(null)
   registerMoodboardRestack(null)
+  registerMoodboardReturnToColumn(null)
   cellRo?.disconnect()
   cellRo = null
   clearColumnPointerListeners()
@@ -2352,6 +2599,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
+/* Reserved slot while a board item Flips back — keeps layout, no image pop */
+.stack__column-thumb--returning {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .stack__column-ghost {
   opacity: 1 !important;
   visibility: visible !important;
@@ -2388,11 +2642,9 @@ onBeforeUnmount(() => {
 }
 
 .stack__column-close {
-  /* Always centered on the stack footprint (pile cell) */
-  position: absolute;
-  left: 50%;
-  top: calc(100% - (var(--stack-cell-size) / 2));
-  z-index: 6;
+  position: fixed;
+  bottom: 20px;
+  z-index: 320;
   width: 3.25rem;
   height: 3.25rem;
   margin: 0;
@@ -2403,17 +2655,32 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   cursor: pointer;
-  transform: translate(-50%, -50%) scale(0.88);
-  opacity: 0;
+  transform: translateX(-50%);
   pointer-events: auto;
-  animation: stack-close-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
 }
 
-@keyframes stack-close-in {
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
+.stack-column-close-enter-active {
+  transition:
+    opacity 0.3s ease 0.15s,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s;
+}
+
+.stack-column-close-leave-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack-column-close-enter-from,
+.stack-column-close-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.88);
+}
+
+.stack-column-close-enter-to,
+.stack-column-close-leave-from {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
 }
 
 .stack__column-close-icon {

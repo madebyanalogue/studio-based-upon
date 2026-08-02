@@ -123,6 +123,7 @@
           v-for="item in placements"
           :key="item.id"
           class="moodboard__item"
+          :data-placement-id="item.id"
           :class="[
             `moodboard__item--${item.kind}`,
             {
@@ -130,6 +131,7 @@
               'moodboard__item--resizing': resizeState?.id === item.id,
               'moodboard__item--contain': item.objectFit === 'contain',
               'moodboard__item--natural': !!item.height,
+              'moodboard__item--returning': returningId === item.id,
             },
           ]"
           :style="{
@@ -145,7 +147,6 @@
         >
           <template v-if="item.kind === 'image'">
             <img :src="item.imageUrl" :alt="item.title" draggable="false" />
-            <span class="moodboard__label  interface">{{ item.title }}</span>
             <ImageCycleArrows
               v-if="(item.imageUrls?.length || 0) > 1"
               class="moodboard__cycle"
@@ -188,16 +189,17 @@
             Clone
           </button>
 
-          <button
-            type="button"
+          <div
             class="moodboard__remove"
-            aria-label="Remove item"
             :style="{ transform: `scale(${1 / item.scale})` }"
             @pointerdown.stop
             @click.stop="onRemovePlacement(item.id)"
           >
-            ×
-          </button>
+            <AddButton
+              variant="remove"
+              :label="`Remove ${item.title} from board`"
+            />
+          </div>
 
           <template v-if="activeId === item.id && editingId !== item.id">
             <span
@@ -375,6 +377,9 @@
           <button type="button" class="moodboard__panel-link interface" @click="onCancelEdits">
             Cancel edits
           </button>
+          <button type="button" class="moodboard__panel-link interface" @click="onDeleteBoard">
+            Delete board
+          </button>
         </div>
 
         <button type="button" class="btn" @click="downloadScreenshot">
@@ -411,13 +416,19 @@ import { uniqueImageUrls } from '~/composables/productImages'
 const {
   isMoodboard,
   closeMoodboard,
+  openMoodboard,
   activeMoodboard,
   activeMoodboardId,
   renameMoodboard,
   markMoodboardSurfaceReady,
   consumeMoodboardSkipBgFade,
   requestMoodboardRestack,
-  restoreParkedSelectionItem,
+  requestMoodboardReturnToColumn,
+  persistMoodboardSession,
+  clearMoodboardSession,
+  readMoodboardSession,
+  setParkedSelectionItems,
+  parkedSelectionItems,
 } = useBucket()
 
 const MOODBOARD_FADE_MS = 420
@@ -437,6 +448,7 @@ const {
   saveActiveBoard,
   updateBoard,
   renameBoard,
+  deleteBoard,
 } = useBoards()
 const {
   placements,
@@ -460,6 +472,7 @@ const {
   removeItem,
   cloneItem,
   loadBoard,
+  reset,
   snapshot,
 } = useMoodboard()
 const { openFromMoodboard } = useEnquiryForm()
@@ -590,13 +603,64 @@ watch(
   { immediate: true },
 )
 
-/** Remove from canvas; cart-sourced items return to the column immediately. */
-const onRemovePlacement = (id: string) => {
+const returningId = ref<string | null>(null)
+
+/** Remove from canvas; cart-sourced items Flip back into the column stack. */
+const onRemovePlacement = async (id: string) => {
+  if (returningId.value) return
   const item = placements.value.find((entry) => entry.id === id)
-  removeItem(id)
-  if (item?.sourceBucketItemId) {
-    restoreParkedSelectionItem(item.sourceBucketItemId)
+  if (!item) return
+
+  if (
+    item.kind === 'image' &&
+    item.sourceBucketItemId &&
+    item.sourceSelectionId &&
+    item.imageUrl
+  ) {
+    const el = document.querySelector(
+      `[data-placement-id="${id}"]`,
+    ) as HTMLElement | null
+    if (!el) {
+      removeItem(id)
+      return
+    }
+    const rect = el.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) {
+      removeItem(id)
+      return
+    }
+    // Hide the board item under the flyer for the whole Flip sequence
+    returningId.value = id
+    await nextTick()
+    try {
+      await requestMoodboardReturnToColumn({
+        selectionId: item.sourceSelectionId,
+        itemId: item.sourceBucketItemId,
+        from: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        imageUrl: item.imageUrl,
+        objectFit: item.objectFit || 'contain',
+        item: {
+          id: item.sourceBucketItemId,
+          title: item.title,
+          imageUrl: item.imageUrl,
+          itemType: 'item',
+          imageUrls: item.imageUrls,
+          imageIndex: item.imageIndex,
+        },
+      })
+    } finally {
+      removeItem(id)
+      returningId.value = null
+    }
+    return
   }
+
+  removeItem(id)
 }
 
 /** Restack → fade panel/items → fade background → close. */
@@ -655,6 +719,42 @@ const onCancelEdits = async () => {
     }
     restore(snap.placements, snap.strokes)
   }, 80)
+}
+
+const onDeleteBoard = async () => {
+  if (isExiting.value) return
+  const id = activeBoardId.value
+  if (!id) return
+
+  if (cancelRevertTimer) {
+    clearTimeout(cancelRevertTimer)
+    cancelRevertTimer = null
+  }
+
+  const remaining = boards.value.filter((board) => board.id !== id)
+  deleteBoard(id)
+  switchOpen.value = false
+  titleEditing.value = false
+
+  if (!remaining.length) {
+    // Last board — leave the composer
+    reset()
+    openSnapshot.value = null
+    await exitMoodboard()
+    return
+  }
+
+  // Switch to the next board and keep editing
+  const next = remaining[0]!
+  setActiveBoard(next.id)
+  loadBoard(next.placements, next.strokes)
+  clearActive()
+  openSnapshot.value = {
+    boardId: next.id,
+    name: next.name,
+    placements: JSON.parse(JSON.stringify(next.placements)),
+    strokes: JSON.parse(JSON.stringify(next.strokes)),
+  }
 }
 
 const switchSavedBoard = async (id: string) => {
@@ -1064,15 +1164,55 @@ const sendEnquiry = async () => {
   openFromMoodboard(placements.value, screenshot)
 }
 
+/** Keep draft in localStorage so refresh can reopen the board composer. */
+let sessionPersistTimer: ReturnType<typeof setTimeout> | null = null
+const queuePersistSession = () => {
+  if (!import.meta.client) return
+  if (sessionPersistTimer) clearTimeout(sessionPersistTimer)
+  sessionPersistTimer = setTimeout(() => {
+    sessionPersistTimer = null
+    if (!isMoodboard.value) {
+      clearMoodboardSession()
+      return
+    }
+    persistMoodboardSession({
+      activeBoardId: activeBoardId.value,
+      placements: placements.value,
+      strokes: strokes.value,
+    })
+  }, 120)
+}
+
+watch(
+  [isMoodboard, placements, strokes, activeBoardId, parkedSelectionItems],
+  () => {
+    queuePersistSession()
+  },
+  { deep: true },
+)
+
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('keydown', onKeyDown)
   document.addEventListener('click', onDocumentClick)
+
+  // Resume board composer after refresh
+  const session = readMoodboardSession()
+  if (session?.open) {
+    if (session.activeBoardId) setActiveBoard(session.activeBoardId)
+    loadBoard(
+      (session.placements || []) as typeof placements.value,
+      (session.strokes || []) as typeof strokes.value,
+    )
+    setParkedSelectionItems(session.parked || [])
+    openMoodboard({ skipBgFade: true, resume: true })
+  }
 })
 
 onUnmounted(() => {
   // Keep cancelRevertTimer alive so discard can finish after this dialog unmounts.
+  if (sessionPersistTimer) clearTimeout(sessionPersistTimer)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('keydown', onKeyDown)
@@ -1340,9 +1480,9 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.moodboard__item--active {
-  outline: calc(1px * var(--inv-scale, 1)) solid var(--charcoal);
-  outline-offset: 0;
+.moodboard__item--returning {
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 /* Resize handles */
@@ -1386,36 +1526,12 @@ onUnmounted(() => {
   object-fit: cover;
 }
 
-.moodboard__label {
-  display: none;
-  margin-top: 0.5rem;
-  font-size: 10px;
-  text-align: center;
-}
-
 .moodboard__cycle {
   position: absolute;
   left: 50%;
   bottom: 8px;
   z-index: 3;
   transform-origin: center bottom;
-}
-
-.moodboard__item:hover .moodboard__label {
-  display: block;
-}
-
-/* When active (resize mode), keep the title out of flow so it
-   doesn't expand the selection outline / shift the handles. */
-.moodboard__item--active .moodboard__label {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-}
-
-.moodboard__item--resizing .moodboard__label {
-  display: none;
 }
 
 /* Colour card */
@@ -1443,6 +1559,9 @@ onUnmounted(() => {
   letter-spacing: 0.08em;
   text-align: center;
   color: var(--charcoal);
+  /* Keep type size stable when the item is scaled */
+  transform: scale(var(--inv-scale, 1));
+  transform-origin: center top;
 }
 
 /* Text item */
@@ -1460,6 +1579,9 @@ onUnmounted(() => {
   outline: none;
   white-space: pre-wrap;
   cursor: grab;
+  /* Keep type size stable when the item is scaled */
+  transform: scale(var(--inv-scale, 1));
+  transform-origin: top left;
 }
 
 .moodboard__text[contenteditable='true'] {
@@ -1491,22 +1613,17 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* Match cart cell remove control position */
 .moodboard__remove {
   position: absolute;
-  top: -0.6rem;
-  right: -0.6rem;
-  width: 1.5rem;
-  height: 1.5rem;
-  display: grid;
-  place-items: center;
-  font-size: 1.1rem;
-  line-height: 1;
-  color: var(--charcoal);
-  background: var(--warm-white);
-  border: 1px solid var(--grid-line);
-  border-radius: 50%;
+  top: var(--thumb-ctrl-inset, 4px);
+  right: var(--thumb-ctrl-inset, 4px);
+  z-index: 2;
   opacity: 0;
   transition: opacity 0.15s ease;
+  pointer-events: none;
+  transform-origin: top right;
+  cursor: pointer;
 }
 
 .moodboard__item:hover .moodboard__clone,
@@ -1514,6 +1631,7 @@ onUnmounted(() => {
 .moodboard__item--active .moodboard__clone,
 .moodboard__item--active .moodboard__remove {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* Vertical tool rail — top right */
