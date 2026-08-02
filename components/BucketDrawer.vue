@@ -260,12 +260,12 @@
           </template>
 
           <template v-else>
-            <div v-if="!boards.length" class="bucket__empty">
+            <div v-if="!selectionBoards.length" class="bucket__empty">
               <p class="bucket__empty-title interface">No boards yet</p>
               <p>Create a board from a selection to arrange pieces on the canvas.</p>
             </div>
             <ul v-else class="bucket__list bucket__list--boards">
-              <li v-for="board in boards" :key="board.id" class="bucket__item">
+              <li v-for="board in selectionBoards" :key="board.id" class="bucket__item">
                 <button
                   type="button"
                   class="bucket__board-row"
@@ -323,7 +323,19 @@ const {
 } = useBucket()
 const { isOpen: productOpen, open, returnImage } = useProductOverlay()
 const { loadBoard, reset } = useMoodboard()
-const { createBoard, boards, activeBoardId, setActiveBoard } = useBoards()
+const {
+  createBoard,
+  boards,
+  activeBoardId,
+  setActiveBoard,
+  boardsForSelection,
+  deleteBoardsForSelection,
+} = useBoards()
+const selectionBoards = computed(() =>
+  boardsForSelection(activeMoodboardId.value).filter(
+    (board) => board.placements.length > 0 || !!board.preview,
+  ),
+)
 const { openFromBucket } = useEnquiryForm()
 const { fetchProduct } = useProductCatalog()
 const { imageUrl: buildUrl } = useSanityImage()
@@ -474,14 +486,17 @@ const cancelEdit = () => {
 }
 
 const onDeleteMoodboard = () => {
-  if (activeMoodboardId.value) deleteMoodboard(activeMoodboardId.value)
+  if (activeMoodboardId.value) {
+    deleteBoardsForSelection(activeMoodboardId.value)
+    deleteMoodboard(activeMoodboardId.value)
+  }
   confirmingDelete.value = false
 }
 
 const onBuildMoodboard = () => {
   // Empty canvas — selections stay in the rail; drag them on when ready
   reset()
-  createBoard([], [])
+  createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
   openMoodboard()
 }
 

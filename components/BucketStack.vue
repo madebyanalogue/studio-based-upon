@@ -83,22 +83,27 @@
             @click="onPileClick(board.id)"
           >
             <span
-              v-for="(item, index) in boardPilePreview(board)"
-              :key="item.id"
+              v-for="(card, index) in stackPileCards(board)"
+              :key="card.id"
               class="stack__pile-card stack__pile-card--fan"
-              :data-item-id="item.id"
+              :class="{
+                'stack__pile-card--arriving': arrivingIds.includes(card.id),
+                'stack__pile-card--board': card.kind === 'board',
+              }"
+              :data-item-id="card.id"
               :data-flip-id="
                 flipSurface === 'pile' && board.id === activeMoodboardId
-                  ? item.id
+                  ? card.id
                   : undefined
               "
-              :style="pileCardStyle(item.id, index, boardPilePreview(board).length)"
+              :style="pileCardStyle(card.id, stackPileCards(board))"
             >
               <img
-                v-if="item.imageUrl"
-                :src="item.imageUrl"
-                :alt="item.title"
+                v-if="card.imageUrl"
+                :src="card.imageUrl"
+                :alt="card.title"
                 class="stack__pile-image"
+                :class="{ 'stack__pile-image--board': card.kind === 'board' }"
                 draggable="false"
               />
             </span>
@@ -205,10 +210,73 @@
           :class="{
             'stack__grid--lines': gridLinesVisible,
             'stack__grid--pdp-focus': !!pdpFocusItemId,
+            'stack__grid--with-boards': activeBoardEntries.length > 0,
           }"
           :style="gridStyle"
           data-lenis-prevent
         >
+          <!-- Saved boards for this selection — 2×2 top-right (+ undo slots) -->
+          <div
+            v-for="entry in activeBoardEntries"
+            :key="
+              entry.kind === 'undo' ? `undo-${entry.key}` : `board-${entry.board.id}`
+            "
+            class="stack__cell stack__cell--board"
+            :class="boardCellClass(entry)"
+            :style="boardPlacementStyles[entry.kind === 'undo' ? entry.key : entry.board.id]"
+          >
+            <div
+              v-if="entry.kind === 'undo'"
+              class="stack__cell-media stack__cell-media--undo"
+            >
+              <div class="stack__cell-frame stack__cell-frame--board">
+                <button
+                  type="button"
+                  class="stack__undo interface"
+                  @click="onUndoBoardClick(entry.key, entry.board)"
+                >
+                  Undo
+                </button>
+              </div>
+            </div>
+            <div
+              v-else
+              class="stack__cell-media"
+              :data-stack-id="boardFlipId(entry.board.id)"
+              :data-flip-id="
+                flipSurface === 'cells' ? boardFlipId(entry.board.id) : undefined
+              "
+            >
+              <div class="stack__cell-frame stack__cell-frame--board">
+                <div class="stack__cell-figure stack__cell-figure--board">
+                  <button
+                    type="button"
+                    class="stack__board-hit"
+                    :aria-label="`Open ${entry.board.name}`"
+                    @click="openSavedBoard(entry.board.id)"
+                  >
+                    <img
+                      v-if="entry.board.preview"
+                      :src="entry.board.preview"
+                      :alt="`${entry.board.name} preview`"
+                      class="stack__board-preview"
+                      @load="onBoardPreviewLoad(entry.board.id, $event)"
+                    />
+                    <span v-else class="stack__board-placeholder interface">{{
+                      entry.board.name
+                    }}</span>
+                  </button>
+                  <AddButton
+                    class="stack__cell-ctrl stack__cell-ctrl--remove"
+                    variant="remove"
+                    :label="`Remove ${entry.board.name}`"
+                    @click.stop="onRemoveBoardClick(entry.board)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div
             v-for="(entry, index) in selectionEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
@@ -233,6 +301,7 @@
             <div
               v-else
               class="stack__cell-media"
+              :data-stack-id="entry.item.id"
               :data-flip-id="flipSurface === 'cells' ? entry.item.id : undefined"
             >
               <div class="stack__cell-frame">
@@ -331,13 +400,12 @@
             Undo
           </button>
           <button
-            v-else
             type="button"
             class="stack__link interface"
-            :disabled="!items.length || bulkBusy"
-            @click="onClearAll"
+            :disabled="bulkBusy"
+            @click="confirmingDelete = true"
           >
-            Clear all
+            Delete selection
           </button>
         </div>
 
@@ -358,6 +426,36 @@
           Create Board
         </button>
       </aside>
+
+      <div
+        v-if="confirmingDelete"
+        class="stack__confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete selection"
+      >
+        <div class="stack__confirm-box">
+          <p class="stack__confirm-title interface">Delete this selection?</p>
+          <p class="stack__confirm-text">
+            “{{ activeMoodboard?.name || 'My Selection' }}” and its
+            {{ items.length }}
+            {{ items.length === 1 ? 'item' : 'items' }}
+            <template v-if="selectionBoards.length">
+              and {{ selectionBoards.length }}
+              {{ selectionBoards.length === 1 ? 'board' : 'boards' }}
+            </template>
+            will be permanently removed.
+          </p>
+          <div class="stack__confirm-actions">
+            <button type="button" class="btn" @click="confirmingDelete = false">
+              Cancel
+            </button>
+            <button type="button" class="btn btn--filled" @click="onDeleteSelection">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -367,6 +465,7 @@ import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import type { BucketItem, SelectionEntry } from '~/composables/useBucket'
 import { productIdFromBucketId } from '~/composables/useBucket'
+import type { SavedBoard, SelectionBoardEntry } from '~/composables/useBoards'
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 
@@ -392,7 +491,6 @@ const {
   setActiveMoodboard,
   renameMoodboard,
   removeItem,
-  removeItems,
   undoRemove,
   undoAllRemovals,
   clearPendingRemovals,
@@ -409,8 +507,19 @@ const {
   registerMoodboardRestack,
   registerMoodboardReturnToColumn,
 } = useBucket()
-const { reset: resetMoodboard, addImage } = useMoodboard()
-const { createBoard } = useBoards()
+const { reset: resetMoodboard, addImage, loadBoard } = useMoodboard()
+const {
+  createBoard,
+  boards,
+  boardsForSelection,
+  selectionBoardEntries,
+  softRemoveBoard,
+  undoBoardRemove,
+  clearPendingBoardRemovals,
+  deleteBoardsForSelection,
+  setActiveBoard,
+  updateBoard,
+} = useBoards()
 const { openFromBucket } = useEnquiryForm()
 const {
   open,
@@ -470,6 +579,7 @@ const cellsReady = ref(false)
 const softEnter = ref(false)
 /** Per-cell remove/undo animation phase (keyed by item id or undo key). */
 const cellPhase = ref<Record<string, CellPhase>>({})
+const confirmingDelete = ref(false)
 
 const BACKDROP_OPEN_MS = 350
 const BACKDROP_CLOSE_MS = 800
@@ -486,7 +596,16 @@ const UNDO_FADE_MS = 220
 /** Pause after scale-out before Undo appears */
 const UNDO_ENTER_DELAY_MS = 350
 /** Fixed column count — cell = pile = 1/6 viewport width, square */
-const STACK_COLS = 6
+/** Cart grid columns by viewport. */
+const stackColsForWidth = (width: number) => {
+  if (width >= 1600) return 6
+  if (width >= 1440) return 5
+  if (width >= 1200) return 4
+  if (width >= 660) return 3
+  return 2
+}
+
+const stackCols = ref(6)
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -582,24 +701,29 @@ const onUndoClick = async (key: string, item: BucketItem) => {
   if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
 }
 
-const onClearAll = async () => {
-  if (bulkBusy.value || !items.value.length || !activeMoodboardId.value) return
+const onDeleteSelection = async () => {
+  const id = activeMoodboardId.value
+  if (!id || bulkBusy.value) return
+  confirmingDelete.value = false
   bulkBusy.value = true
-  const live = items.value.slice()
-  const undoKeys = live.map((item) => `${activeMoodboardId.value}::${item.id}`)
-  for (const item of live) setCellPhase(item.id, 'scale-out')
-  await wait(CELL_SCALE_MS)
-  removeItems(live.map((item) => item.id))
-  for (const item of live) clearCellPhase(item.id)
-  await nextTick()
-  await waitFrames(2)
-  await wait(UNDO_ENTER_DELAY_MS)
-  for (const key of undoKeys) {
-    if (selectionEntries.value.some((e) => e.kind === 'undo' && e.key === key)) {
-      setCellPhase(key, 'undo-ready')
+  try {
+    const hadOthers = moodboards.value.some((board) => board.id !== id)
+    clearPendingRemovals(id)
+    deleteBoardsForSelection(id)
+    railOrderIds.value = railOrderIds.value.filter((entry) => entry !== id)
+    expandedBoardIds.value = expandedBoardIds.value.filter((entry) => entry !== id)
+    deleteMoodboard(id)
+    await nextTick()
+    if (!hadOthers) {
+      // Was the only selection — cart is empty; close
+      await closeToPile()
+    } else {
+      pileRef.value = pileEls.value[activeMoodboardId.value || ''] || null
+      syncRailOrder(true)
     }
+  } finally {
+    bulkBusy.value = false
   }
-  bulkBusy.value = false
 }
 
 const onUndoAll = async () => {
@@ -623,13 +747,53 @@ const onUndoAll = async () => {
 }
 
 const settledItems = computed(() => {
-  const hide = new Set(arrivingIds.value)
+  // Keep arriving cards in the salt/list so under-card poses don't reshuffle on land.
+  // Visibility is handled by .stack__pile-card--arriving (opacity 0).
+  const hide = new Set<string>()
   if (pendingFly.value?.itemId) hide.add(pendingFly.value.itemId)
   return items.value.filter((item) => !hide.has(item.id))
 })
 
+const boardFlipId = (boardId: string) => `board:${boardId}`
+
+type StackPileCard = {
+  id: string
+  imageUrl: string
+  title: string
+  kind: 'item' | 'board'
+}
+
+/** Pile cards for a selection — saved boards at the bottom, product items on top. */
+const stackPileCards = (selection: { id: string; items: typeof items.value }) => {
+  const hide = new Set<string>()
+  if (pendingFly.value?.itemId && selection.id === activeMoodboardId.value) {
+    hide.add(pendingFly.value.itemId)
+  }
+  // Last in array = top of pile. Boards sit under the product stack.
+  const boardCards: StackPileCard[] = boardsForSelection(selection.id)
+    .slice()
+    .reverse()
+    .map((board) => ({
+      id: boardFlipId(board.id),
+      imageUrl: board.preview || '',
+      title: board.name,
+      kind: 'board' as const,
+    }))
+  const itemCards: StackPileCard[] = selection.items
+    .filter((item) => !hide.has(item.id))
+    .map((item) => ({
+      id: item.id,
+      imageUrl: item.imageUrl,
+      title: item.title,
+      kind: 'item' as const,
+    }))
+    .reverse()
+  return [...boardCards, ...itemCards]
+}
+
+/** Kept for restack pose math (items only). */
 const boardPilePreview = (board: { id: string; items: typeof items.value }) => {
-  const hide = new Set(arrivingIds.value)
+  const hide = new Set<string>()
   if (pendingFly.value?.itemId && board.id === activeMoodboardId.value) {
     hide.add(pendingFly.value.itemId)
   }
@@ -647,13 +811,20 @@ const boardColumnItems = (board: { id: string; items: typeof items.value }) => {
   return board.items.filter((item) => !hide.has(item.id))
 }
 
+const selectionHasBoards = (selectionId: string) =>
+  boardsForSelection(selectionId).length > 0 ||
+  selectionBoardEntries(selectionId).some((entry) => entry.kind === 'undo')
+
 const showRail = computed(
   () =>
     keepPileForFlip.value ||
     isMoodboard.value ||
     (!isOpen.value &&
       !stagePresent.value &&
-      (moodboards.value.some((b) => b.items.length > 0) || arrivingIds.value.length > 0)),
+      (moodboards.value.some(
+        (b) => b.items.length > 0 || selectionHasBoards(b.id),
+      ) ||
+        arrivingIds.value.length > 0)),
 )
 
 /** New-selection “+” — rendered whenever the rail is up. */
@@ -820,8 +991,12 @@ const expandRail = async () => {
   }
 }
 
+const railCollapsing = ref(false)
+
 const collapseRail = async () => {
   if (!import.meta.client) return
+  // Click + mouseleave were both starting a drop (second call reset y → 0 then fell again)
+  if (railCollapsing.value) return
   if (moodboards.value.length <= 1) {
     railExpanded.value = false
     createPlusReady.value = false
@@ -831,6 +1006,10 @@ const collapseRail = async () => {
     parkInactiveRailBelow()
     return
   }
+
+  railCollapsing.value = true
+  clearRailLeaveTimer()
+  railHoldOpen.value = true
   const token = ++railAnimToken
   const keepId = activeMoodboardId.value
   const create = createSlotRef.value
@@ -844,94 +1023,72 @@ const collapseRail = async () => {
 
   const dropDuration = 0.34
   createPlusReady.value = false
+  // Mark collapsed immediately so leave/click can’t re-enter the drop
+  railExpanded.value = false
 
-  // Pin droppers in viewport space first — collapsing flex width mid-fall caused the “bump”
-  for (const el of dropping) {
-    const rect = el.getBoundingClientRect()
-    gsap.killTweensOf(el)
-    gsap.set(el, {
-      position: 'fixed',
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-      margin: 0,
-      zIndex: 8,
-      y: 0,
-      yPercent: 0,
-      x: 0,
-      xPercent: 0,
-    })
-  }
+  try {
+    // Fade (+) only — keep its width until after the drop so the row doesn’t hitch
+    if (create) {
+      gsap.killTweensOf(create)
+      gsap.to(create, {
+        xPercent: -100,
+        opacity: 0,
+        duration: 0.16,
+        ease: 'power3.in',
+        overwrite: true,
+      })
+    }
 
-  // (+) out of the way without shifting pinned stacks
-  if (create) {
-    gsap.killTweensOf(create)
-    gsap.set(create, {
-      width: 0,
-      paddingLeft: 0,
-      opacity: 0,
-      xPercent: -100,
-    })
-  }
-
-  // Keep stack is alone in flow now — hold its visual spot, then ease to the corner
-  if (keepEl) {
-    gsap.killTweensOf(keepEl)
-    const settledLeft = keepEl.getBoundingClientRect().left
-    const dx = fromLeft - settledLeft
-    if (Math.abs(dx) > 0.5) gsap.set(keepEl, { x: dx })
-  }
-
-  const fallBy = Math.max(window.innerHeight * 0.35, 180)
-  const motions: Promise<void>[] = []
-
-  if (dropping.length) {
-    motions.push(
-      new Promise<void>((resolve) => {
+    // All non-active stacks ease down together (don’t reset y first — that caused a double drop)
+    if (dropping.length) {
+      for (const el of dropping) gsap.killTweensOf(el)
+      await new Promise<void>((resolve) => {
         gsap.to(dropping, {
-          y: fallBy,
+          yPercent: 110,
           duration: dropDuration,
-          ease: 'power3.in',
+          ease: 'power2.inOut',
           stagger: 0,
           overwrite: true,
           onComplete: () => resolve(),
         })
-      }),
-    )
-  }
+      })
+    }
 
-  if (keepEl) {
-    motions.push(
-      new Promise<void>((resolve) => {
-        gsap.to(keepEl, {
-          x: 0,
-          duration: dropDuration,
-          ease: 'power3.out',
-          overwrite: true,
-          onComplete: () => resolve(),
+    if (token !== railAnimToken) return
+
+    if (create) gsap.set(create, { width: 0, paddingLeft: 0 })
+    for (const el of dropping) gsap.set(el, { width: 0, minWidth: 0 })
+
+    syncRailOrder(true)
+    await nextTick()
+    await waitFrames(1)
+
+    if (keepEl && document.contains(keepEl)) {
+      const toLeft = keepEl.getBoundingClientRect().left
+      const dx = fromLeft - toLeft
+      if (Math.abs(dx) > 0.5) {
+        await new Promise<void>((resolve) => {
+          gsap.fromTo(
+            keepEl,
+            { x: dx },
+            {
+              x: 0,
+              duration: 0.55,
+              ease: 'power2.out',
+              overwrite: true,
+              onComplete: () => resolve(),
+            },
+          )
         })
-      }),
-    )
+      }
+    }
+    parkInactiveRailBelow()
+  } finally {
+    railCollapsing.value = false
+    window.setTimeout(() => {
+      railHoldOpen.value = false
+    }, 180)
   }
-
-  if (motions.length) await Promise.all(motions)
-  if (token !== railAnimToken) return
-
-  for (const el of dropping) {
-    gsap.set(el, {
-      clearProps: 'position,left,top,height,margin,zIndex,y,x,xPercent,yPercent',
-      width: 0,
-      minWidth: 0,
-    })
-  }
-
-  railExpanded.value = false
-  syncRailOrder(true)
-  await nextTick()
-  await waitFrames(1)
-  if (keepEl) gsap.set(keepEl, { clearProps: 'x' })
-  parkInactiveRailBelow()
 }
 
 const setPileRef = (id: string, el: unknown) => {
@@ -1137,21 +1294,152 @@ const onSelectEmptyStack = (boardId: string) => {
   }
 }
 
-const onRemoveEmptyStack = (boardId: string) => {
+const onRemoveEmptyStack = async (boardId: string) => {
   if (!canRemoveEmptyStack.value) return
   const board = moodboards.value.find((entry) => entry.id === boardId)
   if (!board || board.items.length > 0) return
-  expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
-  if (restackingBoardId.value === boardId) restackingBoardId.value = null
-  deleteMoodboard(boardId)
+
+  // Removing the node under the cursor fires rail mouseleave — hold open
+  railHoldOpen.value = true
+  clearRailLeaveTimer()
+  const keepExpanded = railExpanded.value && moodboards.value.length > 2
+
+  try {
+    const el = pileWrapEls.value[boardId]
+    if (el && railExpanded.value) {
+      gsap.killTweensOf(el)
+      await new Promise<void>((resolve) => {
+        gsap.to(el, {
+          yPercent: 110,
+          duration: 0.28,
+          ease: 'power3.in',
+          overwrite: true,
+          onComplete: () => resolve(),
+        })
+      })
+    }
+
+    expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
+    if (restackingBoardId.value === boardId) restackingBoardId.value = null
+    railOrderIds.value = railOrderIds.value.filter((id) => id !== boardId)
+    deleteBoardsForSelection(boardId)
+    deleteMoodboard(boardId)
+    await nextTick()
+
+    // Keep the selector open with remaining stacks still in view
+    if (keepExpanded && moodboards.value.length > 1) {
+      railExpanded.value = true
+      const cell = railCellSize() || 120
+      for (const entry of railBoards.value) {
+        if (entry.id === activeMoodboardId.value) continue
+        const wrap = pileWrapEls.value[entry.id]
+        if (!wrap) continue
+        gsap.killTweensOf(wrap)
+        gsap.set(wrap, {
+          width: cell,
+          minWidth: cell,
+          yPercent: 0,
+          overflow: 'visible',
+          pointerEvents: 'auto',
+        })
+      }
+      const create = createSlotRef.value
+      if (create) {
+        gsap.killTweensOf(create)
+        gsap.set(create, {
+          width: '2.5rem',
+          paddingLeft: 20,
+          opacity: 1,
+          xPercent: 0,
+          overflow: 'visible',
+        })
+        createPlusReady.value = true
+      }
+    }
+  } finally {
+    window.setTimeout(() => {
+      railHoldOpen.value = false
+    }, 200)
+  }
 }
 
 /** Same grid DOM for prelude, open, and close — stays mounted through fade-out. */
+/** Live boards for the active selection (no undo slots). */
+const selectionBoards = computed(() => boardsForSelection(activeMoodboardId.value))
+
+/** Live boards + undo placeholders for the active selection. */
+const activeBoardEntries = computed(() =>
+  selectionBoardEntries(activeMoodboardId.value),
+)
+
+/** Flip order in the grid: boards first, then product items. */
+const gridFlipIds = computed(() => [
+  ...activeBoardEntries.value
+    .filter((entry): entry is Extract<SelectionBoardEntry, { kind: 'board' }> =>
+      entry.kind === 'board',
+    )
+    .map((entry) => boardFlipId(entry.board.id)),
+  ...selectionEntries.value
+    .filter((entry): entry is Extract<SelectionEntry, { kind: 'item' }> =>
+      entry.kind === 'item',
+    )
+    .map((entry) => entry.item.id),
+])
+
+/** Pin boards in fixed 2×2 cells, top-right, packing left then down. */
+const boardPlacementStyles = computed(() => {
+  const cols = stackCols.value
+  const span = Math.min(2, cols)
+  const slotsPerBand = Math.max(1, Math.floor(cols / span))
+  const styles: Record<
+    string,
+    {
+      gridColumn: string
+      gridRow: string
+      '--board-aspect': string
+    }
+  > = {}
+
+  activeBoardEntries.value.forEach((entry, index) => {
+    const board = entry.board
+    const styleKey = entry.kind === 'undo' ? entry.key : board.id
+    const aspect =
+      board.previewAspect && board.previewAspect > 0 ? board.previewAspect : 16 / 9
+    const band = Math.floor(index / slotsPerBand)
+    const posInBand = index % slotsPerBand
+    const colStart = cols - span * (posInBand + 1) + 1
+    const rowStart = band * span + 1
+    styles[styleKey] = {
+      gridColumn: `${colStart} / span ${span}`,
+      gridRow: `${rowStart} / span ${span}`,
+      '--board-aspect': String(aspect),
+    }
+  })
+  return styles
+})
+
+const boardCellClass = (entry: SelectionBoardEntry) => {
+  if (entry.kind === 'undo') {
+    const phase = cellPhase.value[entry.key]
+    return {
+      'stack__cell--undo': true,
+      'stack__cell--undo-ready': phase === 'undo-ready',
+      'stack__cell--undo-leaving': phase === 'undo-leaving',
+    }
+  }
+  const phase = cellPhase.value[entry.board.id]
+  return {
+    'stack__cell--scale-out': phase === 'scale-out',
+    'stack__cell--scale-in': phase === 'scale-in',
+    'stack__cell--scaled-in': phase === 'scaled-in',
+  }
+}
+
 const showSelectionGrid = computed(
   () =>
     stagePresent.value &&
     panelTab.value === 'selections' &&
-    selectionEntries.value.length > 0,
+    (selectionEntries.value.length > 0 || activeBoardEntries.value.length > 0),
 )
 
 /** All settled items in the active pile (reversed so newest sits on top) — Flip ids. */
@@ -1159,7 +1447,7 @@ const pilePreview = computed(() => settledItems.value.slice().reverse())
 
 const gridDims = computed(() => {
   const n = Math.max(selectionEntries.value.length, 1)
-  const cols = STACK_COLS
+  const cols = stackCols.value
   const rows = Math.ceil(n / cols)
   return { cols, rows }
 })
@@ -1171,26 +1459,30 @@ const softEnterStyle = (index: number) => {
 
 const stackCssVars = computed(() => {
   const size = cellSizePx.value
+  const cols = stackCols.value
   return {
-    '--stack-cols': String(STACK_COLS),
-    '--stack-cell-size': size > 0 ? `${size}px` : `calc(100vw / ${STACK_COLS})`,
+    '--stack-cols': String(cols),
+    '--stack-cell-size': size > 0 ? `${size}px` : `calc(100vw / ${cols})`,
+    '--stack-cell-pad': '17%',
   }
 })
 
 const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${STACK_COLS}, var(--stack-cell-size))`,
+  gridTemplateColumns: `repeat(${stackCols.value}, var(--stack-cell-size))`,
   gridAutoRows: `var(--stack-cell-size)`,
 }))
 
-/** Keep pile + grid on the same square size (1/6 width) so Flip doesn’t rescale. */
+/** Keep pile + grid on the same square cell size so Flip doesn’t rescale. */
 const syncCellSize = () => {
   if (!import.meta.client) return
+  stackCols.value = stackColsForWidth(window.innerWidth)
+  const cols = stackCols.value
   const grid = gridRef.value
   if (grid) {
-    cellSizePx.value = grid.clientWidth / STACK_COLS
+    cellSizePx.value = grid.clientWidth / cols
     return
   }
-  cellSizePx.value = window.innerWidth / STACK_COLS
+  cellSizePx.value = window.innerWidth / cols
 }
 
 /** Stable-ish tilt from id (+ optional salt so underneath cards reshuffle when top changes). */
@@ -1211,18 +1503,23 @@ const pileRestPose = (id: string, index: number, total: number, salt: string) =>
   return { x, y, rot }
 }
 
-const readStackCellPad = () => {
-  if (!import.meta.client) return 50
+const readStackCellPad = (cellSize?: number) => {
+  const size = cellSize || cellSizePx.value || 100
+  if (!import.meta.client) return size * 0.17
   const stackEl = document.querySelector('.stack')
-  if (!stackEl) return 50
-  return (
-    Number.parseFloat(getComputedStyle(stackEl).getPropertyValue('--stack-cell-pad')) || 50
-  )
+  if (!stackEl) return size * 0.17
+  const raw = getComputedStyle(stackEl).getPropertyValue('--stack-cell-pad').trim()
+  if (raw.endsWith('%')) {
+    const pct = Number.parseFloat(raw)
+    return (size * (Number.isFinite(pct) ? pct : 17)) / 100
+  }
+  const px = Number.parseFloat(raw)
+  return Number.isFinite(px) ? px : size * 0.17
 }
 
 /** Visual image size inside a padded square stack cell (natural aspect ratio). */
 const fitStackContentSize = (natW: number, natH: number, cellSize: number) => {
-  const pad = readStackCellPad()
+  const pad = readStackCellPad(cellSize)
   const max = Math.max(1, cellSize - pad * 2)
   const w = Math.max(1, natW)
   const h = Math.max(1, natH)
@@ -1533,6 +1830,129 @@ const onColumnPointerMove = (event: PointerEvent) => {
   event.preventDefault()
 }
 
+/** Build a fixed flyer for board → stack / column returns. */
+const makeReturnFlyer = (opts: {
+  from: { left: number; top: number; width: number; height: number }
+  imageUrl: string
+  objectFit?: 'contain' | 'cover'
+}) => {
+  const flyer = document.createElement('div')
+  const img = document.createElement('img')
+  img.src = opts.imageUrl
+  img.alt = ''
+  img.draggable = false
+  flyer.appendChild(img)
+  document.body.appendChild(flyer)
+  gsap.set(flyer, {
+    position: 'fixed',
+    left: opts.from.left,
+    top: opts.from.top,
+    width: Math.max(opts.from.width, 1),
+    height: Math.max(opts.from.height, 1),
+    margin: 0,
+    zIndex: 600,
+    pointerEvents: 'none',
+    boxSizing: 'border-box',
+    overflow: 'hidden',
+    background: 'transparent',
+  })
+  gsap.set(img, {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    objectFit: opts.objectFit || 'contain',
+    padding: 0,
+  })
+  return { flyer, img }
+}
+
+/** Closed stack: fly the board item straight back onto the pile. */
+const returnItemToPile = async (opts: {
+  selectionId: string
+  itemId: string
+  from: { left: number; top: number; width: number; height: number }
+  imageUrl: string
+  objectFit?: 'contain' | 'cover'
+  item?: BucketItem
+}) => {
+  const { selectionId, itemId, from, imageUrl } = opts
+  const boardBefore = moodboards.value.find((entry) => entry.id === selectionId)
+  const alreadyInSelection = !!boardBefore?.items.some((entry) => entry.id === itemId)
+  const isParked = parkedSelectionItems.value.some((entry) => entry.item.id === itemId)
+
+  const { flyer, img } = makeReturnFlyer(opts)
+  // Hide pile card until the flyer lands
+  if (!arrivingIds.value.includes(itemId)) {
+    arrivingIds.value = [...arrivingIds.value, itemId]
+  }
+
+  try {
+    if (isParked) restoreParkedSelectionItem(itemId)
+    else if (!alreadyInSelection && opts.item) addItemToMoodboard(selectionId, opts.item)
+
+    await nextTick()
+    await waitFrames(2)
+    const pile = pileEls.value[selectionId]
+    if (!pile) return
+
+    if (!img.complete) {
+      await new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true })
+        img.addEventListener('error', () => resolve(), { once: true })
+      })
+    }
+
+    const dest = pile.getBoundingClientRect()
+    const cell = Math.max(dest.width, 1)
+    const fitted = fitStackContentSize(
+      img.naturalWidth || from.width || 1,
+      img.naturalHeight || from.height || 1,
+      cell,
+    )
+    const board = moodboards.value.find((entry) => entry.id === selectionId)
+    // Preview is newest-last (matches pileCardStyle index / z-index)
+    const preview = board ? board.items.slice().reverse() : []
+    const index = Math.max(
+      0,
+      preview.findIndex((entry) => entry.id === itemId),
+    )
+    const total = Math.max(preview.length, 1)
+    const t = total <= 1 ? 0 : index / (total - 1)
+    const isTop = index === total - 1
+    const landRot = isTop
+      ? hashAngle(itemId)
+      : hashAngle(itemId, committedPileSalt.value)
+    const landLeft = dest.left + (t - 0.5) * 10 + (cell - fitted.width) / 2
+    const landTop = dest.top + (0.5 - t) * 6 + (cell - fitted.height) / 2
+
+    await new Promise<void>((resolve) => {
+      gsap.fromTo(
+        flyer,
+        {
+          left: from.left,
+          top: from.top,
+          width: Math.max(from.width, 1),
+          height: Math.max(from.height, 1),
+          rotation: 0,
+        },
+        {
+          left: landLeft,
+          top: landTop,
+          width: fitted.width,
+          height: fitted.height,
+          rotation: landRot,
+          duration: 0.55,
+          ease: 'power3.inOut',
+          onComplete: () => resolve(),
+        },
+      )
+    })
+  } finally {
+    arrivingIds.value = arrivingIds.value.filter((id) => id !== itemId)
+    flyer.remove()
+  }
+}
+
 /** Open column (if needed), animate a gap, then Flip the board item into the slot. */
 const returnItemToColumn = async (opts: {
   selectionId: string
@@ -1551,62 +1971,22 @@ const returnItemToColumn = async (opts: {
   setActiveMoodboard(selectionId)
   pileRef.value = pileEls.value[selectionId] || pileRef.value
 
-  // Flyer stays on top for the whole sequence
-  const flyer = document.createElement('div')
-  const img = document.createElement('img')
-  img.src = imageUrl
-  img.alt = ''
-  img.draggable = false
-  flyer.appendChild(img)
-  document.body.appendChild(flyer)
-  gsap.set(flyer, {
-    position: 'fixed',
-    left: from.left,
-    top: from.top,
-    width: Math.max(from.width, 1),
-    height: Math.max(from.height, 1),
-    margin: 0,
-    zIndex: 600,
-    pointerEvents: 'none',
-    boxSizing: 'border-box',
-    overflow: 'hidden',
-    background: 'transparent',
-  })
-  gsap.set(img, {
-    display: 'block',
-    width: '100%',
-    height: '100%',
-    objectFit: opts.objectFit || 'contain',
-    padding: 0,
-  })
+  const wasExpanded = expandedBoardIds.value.includes(selectionId)
+  // Closed stack — skip column open; fly straight into the pile
+  if (!wasExpanded) {
+    await returnItemToPile(opts)
+    return
+  }
+
+  const { flyer, img } = makeReturnFlyer(opts)
 
   // Hide the destination thumb from the first painted frame (avoids pop)
   columnReturningId.value = itemId
 
   try {
     const boardBefore = moodboards.value.find((entry) => entry.id === selectionId)
-    const wasExpanded = expandedBoardIds.value.includes(selectionId)
     const alreadyInSelection = !!boardBefore?.items.some((entry) => entry.id === itemId)
     const isParked = parkedSelectionItems.value.some((entry) => entry.item.id === itemId)
-
-    // 1) Open the column if closed
-    if (!wasExpanded) {
-      if ((boardBefore?.items.length || 0) > 0) {
-        await disperseBoard(selectionId)
-      } else {
-        const pile = pileEls.value[selectionId]
-        if (pile) {
-          preparingBoardId.value = selectionId
-          expandedBoardIds.value = [...expandedBoardIds.value, selectionId]
-          pile.classList.add('stack__pile--dispersing')
-          await nextTick()
-          syncColumnLayout(selectionId)
-          await nextTick()
-          await waitFrames(2)
-          preparingBoardId.value = null
-        }
-      }
-    }
 
     let column = columnEls.value[selectionId]
     if (!column) {
@@ -1981,7 +2361,7 @@ const restackBoard = async (boardId: string) => {
     const froms = thumbs.map((thumb) => thumb.getBoundingClientRect())
     const preview = boardPilePreview(board)
     const total = preview.length
-    // Same salt string as pilePoseSalt / pileCardStyle (unreversed item ids)
+    // Same salt string as committedPileSalt / pileCardStyle (unreversed item ids)
     const salt = boardColumnItems(board)
       .map((item) => item.id)
       .join('|')
@@ -2023,17 +2403,18 @@ const restackBoard = async (boardId: string) => {
       })
     })
 
-    // Reveal pile under flyers at the same pose, then drop flyers
-    pile.classList.remove('stack__pile--dispersing')
+    // Drop column first, then reveal pile under the landed poses (avoids double stack)
+    expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
     await nextTick()
+    pile.classList.remove('stack__pile--dispersing')
     gsap.set(thumbs, {
       clearProps: 'position,left,top,width,height,zIndex,margin,transform,rotation',
     })
     pile.classList.remove('stack__pile--restacking')
   } else {
     pileEls.value[boardId]?.classList.remove('stack__pile--dispersing')
+    expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
   }
-  expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
   const { [boardId]: _removed, ...restLayouts } = columnLayouts.value
   columnLayouts.value = restLayouts
   if (restackingBoardId.value === boardId) restackingBoardId.value = null
@@ -2049,8 +2430,10 @@ const onPileClick = (boardId: string) => {
     if (moodboards.value.length > 1) void collapseRail()
     return
   }
-  if (!board?.items.length) return
+  if (!board?.items.length && !selectionHasBoards(boardId)) return
   if (isMoodboard.value) {
+    // Column disperse needs product items; boards stay in the cart grid
+    if (!board?.items.length) return
     if (expandedBoardIds.value.includes(boardId)) {
       void restackBoard(boardId)
     } else {
@@ -2062,30 +2445,66 @@ const onPileClick = (boardId: string) => {
 }
 
 /**
- * Landing id is set at flyer impact (before the card mounts) so under-cards
- * reshuffle immediately; cleared on handoff when settledItems already includes it.
+ * Landing id is set at flyer impact so under-cards reshuffle once on the thud.
+ * Cleared on handoff after poses are already final.
  */
 const pileLandingId = ref<string | null>(null)
 
-/** Changes on add/remove / land impact — reshuffles under-card tilts. */
-const pilePoseSalt = computed(() => {
-  const settled = settledItems.value.map((item) => item.id).join('|')
-  if (!pileLandingId.value) return settled
-  return settled ? `${pileLandingId.value}|${settled}` : pileLandingId.value
-})
+/**
+ * Frozen under-card salt — only advances on thud (or when the pile is idle).
+ * Prevents heart → mid-flight → post-land salt thrash.
+ */
+const committedPileSalt = ref('')
 
-const pileCardStyle = (id: string, index: number, total: number) => {
+const fullItemSalt = () => items.value.map((item) => item.id).join('|')
+
+watch(
+  pileLandingId,
+  (landingId) => {
+    if (landingId) {
+      // Thud: commit the final stack salt (new item is already in items)
+      committedPileSalt.value = fullItemSalt()
+    }
+  },
+)
+
+watch(
+  [items, arrivingIds],
+  () => {
+    // Idle only — never reshuffle while a flyer is in the air
+    if (!arrivingIds.value.length && !pileLandingId.value) {
+      committedPileSalt.value = fullItemSalt()
+    }
+  },
+  { deep: true, immediate: true },
+)
+
+const pileCardStyle = (id: string, cards: StackPileCard[]) => {
+  const landing = pileLandingId.value
+  const flying = arrivingIds.value
+  // Until the thud, pose as if the flyer isn't in the stack yet
+  const poseCards =
+    !landing && flying.length
+      ? cards.filter((card) => !flying.includes(card.id))
+      : cards
+  const poseIndex = poseCards.findIndex((card) => card.id === id)
+  const total = Math.max(poseCards.length, 1)
+  // In-flight card (hidden): park at top pose without shifting siblings
+  const index = poseIndex >= 0 ? poseIndex : Math.max(total - 1, 0)
   const t = total <= 1 ? 0 : index / (total - 1)
   const x = (t - 0.5) * 10
   const y = (0.5 - t) * 6
-  // While a flyer is landing, every settled card is "under" so they all reshuffle together
-  const isTop = !pileLandingId.value && index === total - 1
-  const rot = isTop ? hashAngle(id) : hashAngle(id, pilePoseSalt.value)
+  // Real stack top (and the card currently landing) — match flyer landRot
+  const stackTopId = cards[cards.length - 1]?.id
+  const isTop =
+    id === stackTopId || id === landing || (poseIndex < 0 && flying.includes(id))
+  const rot = isTop ? hashAngle(id) : hashAngle(id, committedPileSalt.value)
   const fan = pileFanOffset(id, index, total)
   const hoverX = fan ? x + fan.x : x
   const hoverY = fan ? y + fan.y : y
   const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
   const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
+  const zIndex = cards.findIndex((card) => card.id === id) + 1
 
   return {
     '--pile-x': `${x}px`,
@@ -2094,7 +2513,7 @@ const pileCardStyle = (id: string, index: number, total: number) => {
     '--pile-hover-x': `${hoverX}px`,
     '--pile-hover-y': `${hoverY}px`,
     '--pile-hover-r': `${hoverRot}deg`,
-    zIndex: index + 1,
+    zIndex: zIndex > 0 ? zIndex : cards.length,
   }
 }
 
@@ -2233,12 +2652,13 @@ const dropStageInstant = async () => {
 const onBuildMoodboard = async () => {
   // Empty canvas — selections stay in the rail; drag them on when ready
   resetMoodboard()
-  createBoard([], [])
+  createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
 
   if (isOpen.value || stagePresent.value) {
     // Gather Flip while keeping the cream cart backdrop, then hand off to board
     await closeToPile({ handoffBackdrop: true })
-    openMoodboard({ skipBgFade: true })
+    // Cart already closed for handoff — still reopen after save so the board tile appears
+    openMoodboard({ skipBgFade: true, reopenCart: true })
     // Wait until board cream is painted before dropping the cart stage
     await nextTick()
     await waitFrames(2)
@@ -2247,6 +2667,79 @@ const onBuildMoodboard = async () => {
   }
 
   openMoodboard()
+}
+
+const openSavedBoard = async (id: string) => {
+  const board = boards.value.find((entry) => entry.id === id)
+  if (!board) return
+  setActiveBoard(id)
+  loadBoard(board.placements, board.strokes)
+
+  if (isOpen.value || stagePresent.value) {
+    await closeToPile({ handoffBackdrop: true })
+    openMoodboard({ skipBgFade: true, reopenCart: true })
+    await nextTick()
+    await waitFrames(2)
+    await dropStageInstant()
+    return
+  }
+
+  openMoodboard()
+}
+
+const onRemoveBoardClick = async (board: SavedBoard) => {
+  const id = board.id
+  if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
+  const undoKey = `board::${id}`
+  setCellPhase(id, 'scale-out')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] !== 'scale-out') return
+  softRemoveBoard(id)
+  clearCellPhase(id)
+  await nextTick()
+  await waitFrames(2)
+  if (!activeBoardEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
+    return
+  }
+  await wait(UNDO_ENTER_DELAY_MS)
+  if (!activeBoardEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
+    return
+  }
+  setCellPhase(undoKey, 'undo-ready')
+}
+
+const onUndoBoardClick = async (key: string, board: SavedBoard) => {
+  const phase = cellPhase.value[key]
+  if (
+    bulkBusy.value ||
+    phase === 'undo-leaving' ||
+    phase === 'scale-in' ||
+    phase === 'scaled-in'
+  ) {
+    return
+  }
+  setCellPhase(key, 'undo-leaving')
+  await wait(UNDO_FADE_MS)
+  if (cellPhase.value[key] !== 'undo-leaving') return
+  undoBoardRemove(key)
+  clearCellPhase(key)
+  const id = board.id
+  setCellPhase(id, 'scale-in')
+  await nextTick()
+  await waitFrames(2)
+  if (cellPhase.value[id] !== 'scale-in') return
+  setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+}
+
+/** Backfill aspect for boards saved before previewAspect existed. */
+const onBoardPreviewLoad = (id: string, event: Event) => {
+  const board = boards.value.find((entry) => entry.id === id)
+  if (!board || (board.previewAspect && board.previewAspect > 0)) return
+  const img = event.target as HTMLImageElement | null
+  if (!img?.naturalWidth || !img.naturalHeight) return
+  updateBoard(id, { previewAspect: img.naturalWidth / img.naturalHeight })
 }
 
 const markArriving = (id: string) => {
@@ -2270,7 +2763,7 @@ const measurePileAnchor = () => {
   }
   // Default bottom-left footprint before the pile mounts (matches one grid cell)
   syncCellSize()
-  const size = cellSizePx.value || window.innerWidth / STACK_COLS
+  const size = cellSizePx.value || window.innerWidth / stackCols.value
   pileAnchor.value = new DOMRect(0, window.innerHeight - size, size, size)
 }
 
@@ -2287,10 +2780,8 @@ const staggerDelayForIndex = (index: number, mode: 'open' | 'close') => {
 }
 
 const staggerDelayForEl = (el: Element, mode: 'open' | 'close') => {
-  const id = el.getAttribute('data-flip-id')
-  const index = selectionEntries.value.findIndex(
-    (entry) => entry.kind === 'item' && entry.item.id === id,
-  )
+  const id = el.getAttribute('data-flip-id') || ''
+  const index = gridFlipIds.value.indexOf(id)
   return staggerDelayForIndex(index >= 0 ? index : 0, mode)
 }
 
@@ -2323,11 +2814,7 @@ const runFlip = (
 const fitPileCardsToCells = () =>
   new Promise<void>((resolve) => {
     const cards = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
-    // During open, flip ids stay on the pile — match cells by grid index, not data-flip-id
-    const medias = Array.from(
-      gridRef.value?.querySelectorAll<HTMLElement>('.stack__cell-media') || [],
-    )
-    if (!cards?.length || !medias.length) {
+    if (!cards?.length || !gridRef.value) {
       resolve()
       return
     }
@@ -2342,18 +2829,17 @@ const fitPileCardsToCells = () =>
       if (pending <= 0) resolve()
     }
 
-    items.value.forEach((item) => {
-      const card = cardById.get(item.id)
-      const index = selectionEntries.value.findIndex(
-        (entry) => entry.kind === 'item' && entry.item.id === item.id,
+    gridFlipIds.value.forEach((id, index) => {
+      const card = cardById.get(id)
+      const media = gridRef.value?.querySelector<HTMLElement>(
+        `.stack__cell-media[data-stack-id="${CSS.escape(id)}"]`,
       )
-      const media = index >= 0 ? medias[index] : undefined
       if (!card || !media) return
       pending += 1
       Flip.fit(card, media, {
         absolute: true,
         duration: FLIP_DURATION,
-        delay: staggerDelayForIndex(index >= 0 ? index : 0, 'open'),
+        delay: staggerDelayForIndex(index, 'open'),
         ease: 'power3.inOut',
         onComplete: done,
       })
@@ -2454,19 +2940,26 @@ const openFromPile = async () => {
   await fadeGridLinesIn()
 }
 
+const settlePendingRemovals = () => {
+  clearPendingRemovals()
+  clearPendingBoardRemovals()
+}
+
 const finishClose = async () => {
   await fadeOutStage()
   clearAllCellPhases()
-  clearPendingRemovals()
+  settlePendingRemovals()
   dismissDrawer()
 }
 
 const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   const handoff = !!opts?.handoffBackdrop
+  const hasFlipContent =
+    items.value.length > 0 || selectionBoards.value.length > 0
 
   if (!import.meta.client || isFlipping.value) {
     clearAllCellPhases()
-    clearPendingRemovals()
+    settlePendingRemovals()
     dismissDrawer()
     controlsVisible.value = false
     gridLinesVisible.value = false
@@ -2483,16 +2976,19 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   if (!isOpen.value) {
     if (handoff && stagePresent.value) {
       clearAllCellPhases()
-      clearPendingRemovals()
+      settlePendingRemovals()
       return
     }
     await finishClose()
     return
   }
-  if (panelTab.value !== 'selections' || !selectionEntries.value.length) {
+  if (
+    panelTab.value !== 'selections' ||
+    (!selectionEntries.value.length && !activeBoardEntries.value.length)
+  ) {
     if (handoff) {
       clearAllCellPhases()
-      clearPendingRemovals()
+      settlePendingRemovals()
       dismissDrawer()
       return
     }
@@ -2509,10 +3005,10 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   await fadeGridLinesOut()
 
   // Only undo placeholders left — already faded with grid lines
-  if (!items.value.length) {
+  if (!hasFlipContent) {
     if (handoff) {
       clearAllCellPhases()
-      clearPendingRemovals()
+      settlePendingRemovals()
       dismissDrawer()
       return
     }
@@ -2535,7 +3031,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
-    // 2) Items gather back to the pile
+    // 2) Items + boards gather back to the pile
     await runFlip(state, cards, { mode: 'close' })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, { clearProps: 'transform,top,left,right,bottom,width,height,position,margin' })
@@ -2549,14 +3045,14 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   if (handoff) {
     // Keep cream stage up — moodboard mounts on top with the same bg
     clearAllCellPhases()
-    clearPendingRemovals()
+    settlePendingRemovals()
     return
   }
 
   // 3) Backdrop fade out (undos already left with the grid lines)
   await fadeOutStage()
   clearAllCellPhases()
-  clearPendingRemovals()
+  settlePendingRemovals()
 }
 
 const requestClose = () => {
@@ -2593,7 +3089,6 @@ const flyIntoPile = (payload: FlyPayload) => {
   }
 
   // Match pile card structure (full cell + padded image) so handoff doesn’t pop size
-  const CELL_PAD = 50
   const wrap = document.createElement('div')
   Object.assign(wrap.style, {
     position: 'fixed',
@@ -2627,6 +3122,7 @@ const flyIntoPile = (payload: FlyPayload) => {
   document.body.appendChild(wrap)
 
   const destSize = Math.min(dest.width, dest.height)
+  const CELL_PAD = readStackCellPad(destSize)
   const destLeft = dest.left
   const destTop = dest.top
 
@@ -2673,22 +3169,23 @@ const flyIntoPile = (payload: FlyPayload) => {
     }, 550)
   }
 
-  // Top card rest offset (matches pileCardStyle) so the swap lines up
-  const nextTotal = settledItems.value.length + 1
+  // Top card rest offset (matches pileCardStyle) so the swap lines up.
+  // settledItems already includes the arriving card (hidden via CSS).
+  const nextTotal = Math.max(settledItems.value.length, 1)
   const topT = nextTotal <= 1 ? 0 : 1
   const landLeft = destLeft + (topT - 0.5) * 10
   const landTop = destTop + (0.5 - topT) * 6
 
   gsap
     .timeline({
-      onComplete: () => {
-        // Mount pile card, then drop flyer before paint — no overlapping clone
+      onComplete: async () => {
+        // Reveal pile card at its final pose (landing id still set → top tilt stable)
         clearArriving(payload.itemId)
+        await nextTick()
+        // Salt already committed at thud — clearing landing must not reshuffle
         pileLandingId.value = null
-        nextTick(() => {
-          wrap.remove()
-          fadeSourceBack()
-        })
+        wrap.remove()
+        fadeSourceBack()
       },
     })
     .to(wrap, {
@@ -2925,7 +3422,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .stack {
-  --stack-cell-pad: 50px;
+  --stack-cell-pad: 17%;
   position: fixed;
   inset: 0;
   z-index: 200;
@@ -2975,7 +3472,7 @@ onBeforeUnmount(() => {
 
 .stack__pile-empty {
   /* 67% of the image content box (33% smaller), centered in the cell */
-  --stack-empty-size: calc((100% - 2 * var(--stack-cell-pad, 50px)) * 0.67);
+  --stack-empty-size: calc((100% - 2 * var(--stack-cell-pad, 17%)) * 0.67);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -3105,12 +3602,18 @@ onBeforeUnmount(() => {
   height: 2.5rem;
   border-radius: 50%;
   border: 0;
-  color: var(--charcoal);
-  background: color-mix(in srgb, var(--background-color) 20%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* Match selection name tooltip colouring */
+  background: var(--text-color);
+  color: var(--background-color);
   display: grid;
   place-items: center;
+}
+
+:global(html.dark) .stack__create-plus {
+  background: color-mix(in srgb, var(--background-color) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-color);
 }
 
 /* Single-selection: CSS slide on rail hover */
@@ -3140,7 +3643,7 @@ onBeforeUnmount(() => {
   width: 12px;
   height: 1px;
   margin-top: -0.5px;
-  background: var(--charcoal);
+  background: currentColor;
   transform-origin: center center;
 }
 
@@ -3248,7 +3751,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: var(--stack-cell-pad, 50px);
+  padding: var(--stack-cell-pad, 17%);
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -3341,9 +3844,13 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* Hide pile only once flyers have taken over — avoids an instant reorder flash */
+/*
+ * Hide pile only once disperse flyers are parked on it (.stack__pile--dispersing).
+ * Hiding on --expanded alone flashed an empty gap before thumbs were positioned.
+ */
 .stack__pile--dispersing .stack__pile-card {
   visibility: hidden;
+  pointer-events: none;
 }
 
 .stack--flipping .stack__pile-card {
@@ -3371,6 +3878,14 @@ onBeforeUnmount(() => {
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Invisible placeholder keeps z-index / spread while the flyer travels */
+.stack__pile-card--arriving {
+  opacity: 0;
+  pointer-events: none;
+  /* No transform tween when this card is revealed — pose is already final */
+  transition: none;
+}
+
 /* Only suppress transitions while GSAP is driving the cards */
 .stack--flipping .stack__pile-card,
 .stack__pile--restacking .stack__pile-card {
@@ -3391,7 +3906,7 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
-  padding: var(--stack-cell-pad, 50px);
+  padding: var(--stack-cell-pad, 17%);
   box-sizing: border-box;
   object-fit: contain;
   object-position: center;
@@ -3478,7 +3993,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__grid {
-  --stack-cell-pad: 50px;
+  --stack-cell-pad: 17%;
   position: absolute;
   inset: 0;
   z-index: 1;
@@ -3504,9 +4019,14 @@ onBeforeUnmount(() => {
   border-left-color: var(--grid-line);
 }
 
+/* Let product cells fill around pinned board tiles */
+.stack__grid--with-boards {
+  grid-auto-flow: dense;
+}
+
 /* Shell stays in document flow — square tracks from gridAutoRows = column width */
 .stack__cell {
-  --stack-cell-pad: 50px;
+  --stack-cell-pad: 17%;
   position: relative;
   width: 100%;
   height: auto;
@@ -3521,6 +4041,95 @@ onBeforeUnmount(() => {
   transition:
     border-color 0.32s ease,
     opacity 0.3s ease;
+}
+
+/* Saved board — fixed 2×2 footprint; screenshot keeps capture aspect inside */
+.stack__cell--board {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+  align-self: stretch;
+  z-index: 1;
+}
+
+.stack__cell--board .stack__cell-media {
+  position: absolute;
+  inset: 0;
+}
+
+.stack__cell-frame--board {
+  position: absolute;
+  /* 2×2 tile: half the 1×1 % pad → same pixels as a single cell */
+  inset: calc(var(--stack-cell-pad, 17%) / 2);
+  width: auto;
+  height: auto;
+  display: grid;
+  place-items: center;
+}
+
+/* Shrink-wrap to the screenshot so [-] sits on the image (same as items) */
+.stack__cell-figure--board {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.stack__board-hit {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.stack__board-preview {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: var(--board-aspect, 16 / 9);
+  object-fit: contain;
+  pointer-events: none;
+  background: #f2ecdf;
+}
+
+.stack__board-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.stack__cell--board.stack__cell--scale-out .stack__cell-figure--board {
+  transform: scale(0);
+  transform-origin: center center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.stack__cell--board.stack__cell--scale-in .stack__cell-figure--board {
+  transform: scale(0);
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.stack__cell--board.stack__cell--scaled-in .stack__cell-figure--board {
+  transform: scale(1);
+  transform-origin: center center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack__pile-image--board {
+  object-fit: contain;
 }
 
 .stack__grid--lines .stack__cell {
@@ -3895,6 +4504,50 @@ onBeforeUnmount(() => {
 .stack__title-input:focus {
   outline: none;
   border-color: var(--charcoal);
+}
+
+.stack__confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 430;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--charcoal) 28%, transparent);
+  pointer-events: auto;
+}
+
+.stack__confirm-box {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.5rem;
+  background: var(--panel-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  box-sizing: border-box;
+}
+
+.stack__confirm-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-lg);
+  color: var(--charcoal);
+}
+
+.stack__confirm-text {
+  margin: 0 0 1.5rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.stack__confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.stack__confirm-actions .btn {
+  width: 100%;
+  border-radius: 0;
 }
 
 .stack__control-links {

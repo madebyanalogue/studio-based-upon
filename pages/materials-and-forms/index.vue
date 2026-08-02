@@ -842,8 +842,8 @@ useHead(() => ({
 .products__grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0;
-  margin: 0 calc(var(--gutter) - var(--card-pad));
+  gap: var(--card-gap);
+  margin: 0 var(--gutter);
   opacity: 0;
   transition: opacity 0.85s ease;
 }

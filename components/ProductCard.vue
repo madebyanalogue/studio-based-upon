@@ -358,7 +358,8 @@ const onToggle = (event?: MouseEvent) => {
   cursor: inherit;
 }
 
-.product-card:hover .product-card__meta {
+/* Title only when the image/media is hovered — not pad or meta area */
+.product-card:has(.product-card__media:hover) .product-card__meta {
   opacity: 1;
 }
 

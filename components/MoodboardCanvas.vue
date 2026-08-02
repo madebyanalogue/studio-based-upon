@@ -337,15 +337,18 @@
                   activeBoard?.name || activeMoodboard?.name || 'My Board 1'
                 }}</span>
                 <span
-                  v-if="boards.length > 1"
+                  v-if="selectionBoards.length > 1"
                   class="moodboard__switcher-caret"
                   aria-hidden="true"
                 />
               </button>
             </template>
-            <div v-if="switchOpen && boards.length > 1" class="moodboard__switcher-menu">
+            <div
+              v-if="switchOpen && selectionBoards.length > 1"
+              class="moodboard__switcher-menu"
+            >
               <button
-                v-for="board in boards"
+                v-for="board in selectionBoards"
                 :key="board.id"
                 type="button"
                 class="moodboard__switcher-option"
@@ -449,7 +452,20 @@ const {
   updateBoard,
   renameBoard,
   deleteBoard,
+  boardsForSelection,
 } = useBoards()
+
+/** Boards for the current selection — fall back to active board's selection. */
+const selectionBoards = computed(() => {
+  const sid = activeBoard.value?.selectionId || activeMoodboardId.value
+  const scoped = boardsForSelection(sid)
+  if (scoped.length) return scoped
+  // Legacy boards without selectionId still appear while editing them
+  if (activeBoard.value && !activeBoard.value.selectionId) {
+    return boards.value.filter((board) => !board.selectionId)
+  }
+  return scoped
+})
 const {
   placements,
   strokes,
@@ -693,8 +709,13 @@ const onSaveAndClose = async () => {
     cancelRevertTimer = null
   }
   if (isExiting.value) return
-  const preview = await captureBoardPreview()
-  saveActiveBoard(placements.value, strokes.value, preview || undefined)
+  const shot = await captureBoardPreview()
+  saveActiveBoard(
+    placements.value,
+    strokes.value,
+    shot?.preview,
+    shot?.aspect,
+  )
   await exitMoodboard()
 }
 
@@ -731,13 +752,13 @@ const onDeleteBoard = async () => {
     cancelRevertTimer = null
   }
 
-  const remaining = boards.value.filter((board) => board.id !== id)
+  const remaining = selectionBoards.value.filter((board) => board.id !== id)
   deleteBoard(id)
   switchOpen.value = false
   titleEditing.value = false
 
   if (!remaining.length) {
-    // Last board — leave the composer
+    // Last board for this selection — leave the composer
     reset()
     openSnapshot.value = null
     await exitMoodboard()
@@ -764,8 +785,13 @@ const switchSavedBoard = async (id: string) => {
   }
   // Persist current canvas before switching.
   if (activeBoardId.value) {
-    const preview = await captureBoardPreview()
-    saveActiveBoard(placements.value, strokes.value, preview || undefined)
+    const shot = await captureBoardPreview()
+    saveActiveBoard(
+      placements.value,
+      strokes.value,
+      shot?.preview,
+      shot?.aspect,
+    )
   }
   setActiveBoard(id)
   const board = boards.value.find((b) => b.id === id)
@@ -1125,7 +1151,10 @@ const downloadScreenshot = async () => {
 }
 
 /** Compact JPEG for board list thumbnails (kept small for localStorage). */
-const captureBoardPreview = async () => {
+const captureBoardPreview = async (): Promise<{
+  preview: string
+  aspect: number
+} | null> => {
   if (!canvasEl.value || !import.meta.client) return null
   clearActive()
   await nextTick()
@@ -1137,7 +1166,11 @@ const captureBoardPreview = async () => {
       useCORS: true,
       logging: false,
     })
-    return canvas.toDataURL('image/jpeg', 0.72)
+    return {
+      preview: canvas.toDataURL('image/jpeg', 0.72),
+      // Bitmap matches the viewport/canvas at capture time
+      aspect: canvas.width / Math.max(canvas.height, 1),
+    }
   } catch {
     return null
   }

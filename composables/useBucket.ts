@@ -869,9 +869,18 @@ export const useBucket = () => {
     }
   }
 
-  const openMoodboard = (opts?: { skipBgFade?: boolean; resume?: boolean }) => {
+  const openMoodboard = (opts?: {
+    skipBgFade?: boolean
+    resume?: boolean
+    /** Force cart reopen on close (e.g. cart was closed for handoff before open). */
+    reopenCart?: boolean
+  }) => {
     // Remember cart state so closing the board can restore it.
-    reopenCartAfterMoodboard.value = opts?.resume ? false : isOpen.value
+    reopenCartAfterMoodboard.value = opts?.resume
+      ? false
+      : opts?.reopenCart !== undefined
+        ? opts.reopenCart
+        : isOpen.value
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = !!opts?.skipBgFade
     // Fresh open clears parks; resume keeps the parked list from the session draft
@@ -895,10 +904,9 @@ export const useBucket = () => {
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
     isMoodboard.value = false
-    if (reopenCartAfterMoodboard.value) {
-      isOpen.value = true
-      reopenCartAfterMoodboard.value = false
-    }
+    // Always return to the cart when leaving the board composer
+    isOpen.value = true
+    reopenCartAfterMoodboard.value = false
   }
 
   const setParkedSelectionItems = (items: ParkedSelectionItem[]) => {
