@@ -17,7 +17,11 @@
       <div
         v-if="showRail"
         class="stack__rail"
-        :class="{ 'stack__rail--hot': railHot }"
+        :class="{
+          'stack__rail--hot': railHot,
+          'stack__rail--multi': moodboards.length > 1,
+          'stack__rail--expanded': railExpanded,
+        }"
         @mouseenter="onRailEnter"
         @mouseleave="onRailLeave"
       >
@@ -26,10 +30,47 @@
           :key="board.id"
           :ref="(el) => setPileWrapRef(board.id, el)"
           class="stack__pile-wrap"
+          :class="{
+            'stack__pile-wrap--empty': board.items.length === 0,
+            'stack__pile-wrap--receiving':
+              moodboards.length > 1 && board.id === activeMoodboardId,
+            'stack__pile-wrap--parked':
+              moodboards.length > 1 &&
+              !railExpanded &&
+              board.id !== activeMoodboardId,
+          }"
           @mouseenter="onPileMouseEnter(board.id)"
           @mouseleave="onPileMouseLeave(board.id)"
         >
+          <!-- Empty additional stack — frosted slot with remove -->
+          <div
+            v-if="board.items.length === 0"
+            :ref="(el) => setPileRef(board.id, el)"
+            class="stack__pile-empty"
+            role="button"
+            tabindex="0"
+            :aria-label="`${board.name}, empty selection`"
+            :aria-pressed="board.id === activeMoodboardId"
+            @click="onSelectEmptyStack(board.id)"
+            @keydown.enter.prevent="onSelectEmptyStack(board.id)"
+            @keydown.space.prevent="onSelectEmptyStack(board.id)"
+          >
+            <button
+              v-if="canRemoveEmptyStack"
+              type="button"
+              class="stack__pile-empty-remove"
+              :aria-label="`Remove ${board.name}`"
+              @click.stop="onRemoveEmptyStack(board.id)"
+            >
+              <span class="stack__pile-empty-x" aria-hidden="true">
+                <span class="stack__pile-empty-bar" />
+                <span class="stack__pile-empty-bar" />
+              </span>
+            </button>
+          </div>
+
           <button
+            v-else
             :ref="(el) => setPileRef(board.id, el)"
             type="button"
             class="stack__pile"
@@ -38,7 +79,7 @@
               'stack__pile--active': board.id === activeMoodboardId,
               'stack__pile--expanded': expandedBoardIds.includes(board.id),
             }"
-            :aria-label="`${board.name}, ${board.items.length} items`"
+            :aria-label="board.name"
             @click="onPileClick(board.id)"
           >
             <span
@@ -62,6 +103,15 @@
               />
             </span>
           </button>
+
+          <p
+            v-if="moodboards.length > 1"
+            class="stack__pile-tip"
+            :class="{ 'stack__pile-tip--visible': showPileTip(board.id) }"
+            aria-hidden="true"
+          >
+            {{ board.name }}
+          </p>
 
           <!-- Dispersed column (board builder) -->
           <div
@@ -120,11 +170,19 @@
           ref="createSlotRef"
           type="button"
           class="stack__create"
-          :class="{ 'stack__create--visible': railHot }"
+          :class="{
+            'stack__create--visible': createPlusVisible,
+            'stack__create--ready': createPlusReady,
+          }"
           aria-label="Create new selection"
           @click="onCreateSelection"
         >
-          <span class="stack__create-plus" aria-hidden="true">+</span>
+          <span class="stack__create-plus" aria-hidden="true">
+            <span class="stack__create-plus-icon">
+              <span class="stack__create-plus-bar" />
+              <span class="stack__create-plus-bar" />
+            </span>
+          </span>
         </button>
       </div>
 
@@ -330,6 +388,7 @@ const {
   openDrawer,
   openMoodboard,
   createMoodboard,
+  deleteMoodboard,
   setActiveMoodboard,
   renameMoodboard,
   removeItem,
@@ -588,9 +647,6 @@ const boardColumnItems = (board: { id: string; items: typeof items.value }) => {
   return board.items.filter((item) => !hide.has(item.id))
 }
 
-/** Hidden for now — multi-selection create slot. */
-const showCreateSlot = computed(() => false)
-
 const showRail = computed(
   () =>
     keepPileForFlip.value ||
@@ -600,14 +656,283 @@ const showRail = computed(
       (moodboards.value.some((b) => b.items.length > 0) || arrivingIds.value.length > 0)),
 )
 
-/** Board view: only the active selection stack (extra wraps steal drag hits). */
+/** New-selection “+” — rendered whenever the rail is up. */
+const showCreateSlot = computed(() => showRail.value && !isMoodboard.value)
+
+/**
+ * Stable rail display order. Active is first at rest; only re-synced after
+ * collapse so selecting another stack can animate into the corner first.
+ */
+const railOrderIds = ref<string[]>([])
+
+const syncRailOrder = (preferActiveFirst = true) => {
+  const boards = moodboards.value
+  if (!boards.length) {
+    railOrderIds.value = []
+    return
+  }
+  if (boards.length === 1 || !preferActiveFirst) {
+    railOrderIds.value = boards.map((board) => board.id)
+    return
+  }
+  const activeId = activeMoodboardId.value
+  const active = boards.find((board) => board.id === activeId) || boards[0]!
+  const rest = boards.filter((board) => board.id !== active.id).map((board) => board.id)
+  // Keep prior relative order of the rest when possible
+  const prevRest = railOrderIds.value.filter((id) => id !== active.id && rest.includes(id))
+  const missing = rest.filter((id) => !prevRest.includes(id))
+  railOrderIds.value = [active.id, ...prevRest, ...missing]
+}
+
+/** Board view: only the active stack. Otherwise ordered rail list. */
 const railBoards = computed(() => {
-  if (!isMoodboard.value) return moodboards.value
-  const active =
-    moodboards.value.find((board) => board.id === activeMoodboardId.value) ||
-    moodboards.value[0]
-  return active ? [active] : []
+  if (isMoodboard.value) {
+    const active =
+      moodboards.value.find((board) => board.id === activeMoodboardId.value) ||
+      moodboards.value[0]
+    return active ? [active] : []
+  }
+  const byId = new Map(moodboards.value.map((board) => [board.id, board]))
+  if (!railOrderIds.value.length) {
+    const activeId = activeMoodboardId.value
+    const active =
+      moodboards.value.find((board) => board.id === activeId) || moodboards.value[0]
+    if (!active) return []
+    return [
+      active,
+      ...moodboards.value.filter((board) => board.id !== active.id),
+    ]
+  }
+  const ordered = railOrderIds.value
+    .map((id) => byId.get(id))
+    .filter((board): board is (typeof moodboards.value)[number] => !!board)
+  for (const board of moodboards.value) {
+    if (!ordered.some((entry) => entry.id === board.id)) ordered.push(board)
+  }
+  return ordered
 })
+
+/** Multi-selection hover reveal — other stacks rise from below. */
+const railExpanded = ref(false)
+const createPlusReady = ref(false)
+let railAnimToken = 0
+
+const createPlusVisible = computed(() => {
+  if (moodboards.value.length <= 1) return railHot.value
+  return createPlusReady.value
+})
+
+const railCellSize = () => {
+  const active = pileWrapEls.value[activeMoodboardId.value || '']
+  return active?.offsetWidth || 0
+}
+
+const parkInactiveRailBelow = () => {
+  if (!import.meta.client || moodboards.value.length <= 1) return
+  const activeId = activeMoodboardId.value
+  for (const board of moodboards.value) {
+    if (board.id === activeId) continue
+    const el = pileWrapEls.value[board.id]
+    if (!el) continue
+    gsap.killTweensOf(el)
+    gsap.set(el, {
+      yPercent: 110,
+      width: 0,
+      minWidth: 0,
+      paddingLeft: 0,
+      paddingRight: 0,
+      overflow: 'visible',
+    })
+  }
+  const create = createSlotRef.value
+  if (create) {
+    gsap.killTweensOf(create)
+    gsap.set(create, { xPercent: -100, opacity: 0, width: 0, paddingLeft: 0 })
+  }
+  createPlusReady.value = false
+}
+
+const expandRail = async () => {
+  if (!import.meta.client) return
+  if (moodboards.value.length <= 1 || railExpanded.value) return
+  if (isOpen.value || stagePresent.value || isFlipping.value || isMoodboard.value) return
+  const token = ++railAnimToken
+  railExpanded.value = true
+  railHot.value = true
+  createPlusReady.value = false
+
+  const activeId = activeMoodboardId.value
+  const rising = railBoards.value
+    .filter((board) => board.id !== activeId)
+    .map((board) => pileWrapEls.value[board.id])
+    .filter((el): el is HTMLElement => !!el)
+
+  const cell = railCellSize() || rising[0]?.scrollWidth || 120
+  const riseStagger = 0.05
+  const riseDuration = 0.4
+
+  for (const el of rising) {
+    gsap.killTweensOf(el)
+    gsap.set(el, {
+      width: cell,
+      minWidth: cell,
+      overflow: 'visible',
+      pointerEvents: 'auto',
+      yPercent: 110,
+    })
+  }
+
+  if (rising.length) {
+    await new Promise<void>((resolve) => {
+      gsap.to(rising, {
+        yPercent: 0,
+        duration: riseDuration,
+        ease: 'power3.out',
+        stagger: riseStagger,
+        overwrite: true,
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  if (token !== railAnimToken) return
+  const create = createSlotRef.value
+  if (create) {
+    gsap.killTweensOf(create)
+    gsap.set(create, { width: '2.5rem', paddingLeft: 20, overflow: 'visible' })
+    createPlusReady.value = true
+    await new Promise<void>((resolve) => {
+      gsap.fromTo(
+        create,
+        { xPercent: -100, opacity: 0 },
+        {
+          xPercent: 0,
+          opacity: 1,
+          duration: 0.22,
+          ease: 'power3.out',
+          overwrite: true,
+          onComplete: () => resolve(),
+        },
+      )
+    })
+  } else {
+    createPlusReady.value = true
+  }
+}
+
+const collapseRail = async () => {
+  if (!import.meta.client) return
+  if (moodboards.value.length <= 1) {
+    railExpanded.value = false
+    createPlusReady.value = false
+    return
+  }
+  if (!railExpanded.value && !createPlusReady.value) {
+    parkInactiveRailBelow()
+    return
+  }
+  const token = ++railAnimToken
+  const keepId = activeMoodboardId.value
+  const create = createSlotRef.value
+  const keepEl = keepId ? pileWrapEls.value[keepId] : null
+  const fromLeft = keepEl?.getBoundingClientRect().left ?? 0
+
+  const dropping = railBoards.value
+    .filter((board) => board.id !== keepId)
+    .map((board) => pileWrapEls.value[board.id])
+    .filter((el): el is HTMLElement => !!el)
+
+  const dropDuration = 0.34
+  createPlusReady.value = false
+
+  // Pin droppers in viewport space first — collapsing flex width mid-fall caused the “bump”
+  for (const el of dropping) {
+    const rect = el.getBoundingClientRect()
+    gsap.killTweensOf(el)
+    gsap.set(el, {
+      position: 'fixed',
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      margin: 0,
+      zIndex: 8,
+      y: 0,
+      yPercent: 0,
+      x: 0,
+      xPercent: 0,
+    })
+  }
+
+  // (+) out of the way without shifting pinned stacks
+  if (create) {
+    gsap.killTweensOf(create)
+    gsap.set(create, {
+      width: 0,
+      paddingLeft: 0,
+      opacity: 0,
+      xPercent: -100,
+    })
+  }
+
+  // Keep stack is alone in flow now — hold its visual spot, then ease to the corner
+  if (keepEl) {
+    gsap.killTweensOf(keepEl)
+    const settledLeft = keepEl.getBoundingClientRect().left
+    const dx = fromLeft - settledLeft
+    if (Math.abs(dx) > 0.5) gsap.set(keepEl, { x: dx })
+  }
+
+  const fallBy = Math.max(window.innerHeight * 0.35, 180)
+  const motions: Promise<void>[] = []
+
+  if (dropping.length) {
+    motions.push(
+      new Promise<void>((resolve) => {
+        gsap.to(dropping, {
+          y: fallBy,
+          duration: dropDuration,
+          ease: 'power3.in',
+          stagger: 0,
+          overwrite: true,
+          onComplete: () => resolve(),
+        })
+      }),
+    )
+  }
+
+  if (keepEl) {
+    motions.push(
+      new Promise<void>((resolve) => {
+        gsap.to(keepEl, {
+          x: 0,
+          duration: dropDuration,
+          ease: 'power3.out',
+          overwrite: true,
+          onComplete: () => resolve(),
+        })
+      }),
+    )
+  }
+
+  if (motions.length) await Promise.all(motions)
+  if (token !== railAnimToken) return
+
+  for (const el of dropping) {
+    gsap.set(el, {
+      clearProps: 'position,left,top,height,margin,zIndex,y,x,xPercent,yPercent',
+      width: 0,
+      minWidth: 0,
+    })
+  }
+
+  railExpanded.value = false
+  syncRailOrder(true)
+  await nextTick()
+  await waitFrames(1)
+  if (keepEl) gsap.set(keepEl, { clearProps: 'x' })
+  parkInactiveRailBelow()
+}
 
 const setPileRef = (id: string, el: unknown) => {
   const html = el instanceof HTMLElement ? el : null
@@ -638,40 +963,42 @@ const inactiveRailEls = () => {
 /** Other piles drop out of view while the backdrop fades in. */
 const shelveInactiveRail = () => {
   if (!import.meta.client) return
+  railExpanded.value = false
+  createPlusReady.value = false
   const duration = BACKDROP_OPEN_MS / 1000
   for (const el of inactiveRailEls()) {
     gsap.killTweensOf(el)
     gsap.to(el, {
-      yPercent: 100,
+      yPercent: 110,
       duration,
       ease: 'power3.in',
       overwrite: true,
+      onComplete: () => {
+        // Collapse width after the drop so they don’t sit in the rail
+        if (el === createSlotRef.value) {
+          gsap.set(el, { width: 0, paddingLeft: 0, opacity: 0, xPercent: -100 })
+        } else {
+          gsap.set(el, { width: 0, minWidth: 0 })
+        }
+      },
     })
   }
 }
 
 /** Park inactive piles off-screen instantly (rail remount mid-close). */
 const parkInactiveRail = () => {
-  if (!import.meta.client) return
-  for (const el of inactiveRailEls()) {
-    gsap.killTweensOf(el)
-    gsap.set(el, { yPercent: 100 })
-  }
+  railExpanded.value = false
+  createPlusReady.value = false
+  parkInactiveRailBelow()
 }
 
-/** Other piles rise back as the backdrop fades out. */
+/** After cart close, park inactive stacks below again (collapsed multi-rail). */
 const unshelveInactiveRail = () => {
   if (!import.meta.client) return
-  const duration = BACKDROP_CLOSE_MS / 1000
-  for (const el of inactiveRailEls()) {
-    gsap.killTweensOf(el)
-    gsap.to(el, {
-      yPercent: 0,
-      duration,
-      ease: 'power3.out',
-      overwrite: true,
-    })
-  }
+  railExpanded.value = false
+  createPlusReady.value = false
+  resetShelvedRail()
+  parkInactiveRailBelow()
 }
 
 const resetShelvedRail = () => {
@@ -680,15 +1007,27 @@ const resetShelvedRail = () => {
     const el = pileWrapEls.value[board.id]
     if (!el) continue
     gsap.killTweensOf(el)
-    gsap.set(el, { clearProps: 'transform' })
+    gsap.set(el, { clearProps: 'transform,width,minWidth,padding,overflow,opacity' })
   }
   const create = createSlotRef.value
   if (!create) return
   gsap.killTweensOf(create)
-  gsap.set(create, { clearProps: 'transform' })
+  gsap.set(create, { clearProps: 'transform,width,padding,opacity' })
+}
+
+/** True while creating a slot so (+) animations don’t trip rail mouseleave → collapse. */
+const railHoldOpen = ref(false)
+let railLeaveTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearRailLeaveTimer = () => {
+  if (railLeaveTimer) {
+    clearTimeout(railLeaveTimer)
+    railLeaveTimer = null
+  }
 }
 
 const onRailEnter = () => {
+  clearRailLeaveTimer()
   railHot.value = true
 }
 
@@ -698,11 +1037,113 @@ const onRailLeave = () => {
     pileFannedId.value = null
     pileFanned.value = false
   }
+  if (!isOpen.value && !stagePresent.value) {
+    pileTipLocked.value = false
+  }
+  if (railHoldOpen.value) return
+  if (moodboards.value.length > 1 && railExpanded.value) {
+    // Delay so brief leave while clicking / animating (+) doesn’t collapse
+    clearRailLeaveTimer()
+    railLeaveTimer = setTimeout(() => {
+      railLeaveTimer = null
+      if (railHoldOpen.value || railHot.value) return
+      if (moodboards.value.length > 1 && railExpanded.value) {
+        void collapseRail()
+      }
+    }, 160)
+  }
 }
 
-const onCreateSelection = () => {
-  const board = createMoodboard({ open: false })
-  setActiveMoodboard(board.id)
+const onCreateSelection = async () => {
+  // Keep the current active selection and leave the rail open
+  railHoldOpen.value = true
+  clearRailLeaveTimer()
+  try {
+    const board = createMoodboard({ open: false, activate: false })
+    if (!railOrderIds.value.includes(board.id)) {
+      railOrderIds.value = [...railOrderIds.value, board.id]
+    }
+    await nextTick()
+    await waitFrames(1)
+
+    const el = pileWrapEls.value[board.id]
+    if (!el) return
+
+    if (railExpanded.value) {
+      const cell = railCellSize() || el.scrollWidth || 120
+      gsap.killTweensOf(el)
+      gsap.set(el, {
+        width: cell,
+        minWidth: cell,
+        overflow: 'visible',
+        pointerEvents: 'auto',
+        yPercent: 110,
+      })
+      // Tuck (+) briefly, rise the new slot, then slide (+) back out
+      const create = createSlotRef.value
+      if (create && createPlusReady.value) {
+        gsap.killTweensOf(create)
+        await new Promise<void>((resolve) => {
+          gsap.to(create, {
+            xPercent: -100,
+            opacity: 0,
+            duration: 0.16,
+            ease: 'power3.in',
+            overwrite: true,
+            onComplete: () => resolve(),
+          })
+        })
+      }
+      await new Promise<void>((resolve) => {
+        gsap.to(el, {
+          yPercent: 0,
+          duration: 0.4,
+          ease: 'power3.out',
+          overwrite: true,
+          onComplete: () => resolve(),
+        })
+      })
+      if (create) {
+        gsap.set(create, { width: '2.5rem', paddingLeft: 20, overflow: 'visible' })
+        createPlusReady.value = true
+        gsap.fromTo(
+          create,
+          { xPercent: -100, opacity: 0 },
+          { xPercent: 0, opacity: 1, duration: 0.22, ease: 'power3.out', overwrite: true },
+        )
+      }
+    } else if (moodboards.value.length > 1 && railHot.value) {
+      // First extra selection while (+) is open — expand the rail so it appears
+      await expandRail()
+    } else {
+      parkInactiveRailBelow()
+    }
+  } finally {
+    // Keep hold briefly so the pointer can settle back over the rail
+    window.setTimeout(() => {
+      railHoldOpen.value = false
+    }, 200)
+  }
+}
+
+const canRemoveEmptyStack = computed(() => moodboards.value.length > 1)
+
+const onSelectEmptyStack = (boardId: string) => {
+  const wasActive = boardId === activeMoodboardId.value
+  setActiveMoodboard(boardId)
+  pileRef.value = pileEls.value[boardId] || null
+  if (!wasActive && moodboards.value.length > 1) {
+    void collapseRail()
+  }
+}
+
+const onRemoveEmptyStack = (boardId: string) => {
+  if (!canRemoveEmptyStack.value) return
+  const board = moodboards.value.find((entry) => entry.id === boardId)
+  if (!board || board.items.length > 0) return
+  expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
+  if (restackingBoardId.value === boardId) restackingBoardId.value = null
+  deleteMoodboard(boardId)
 }
 
 /** Same grid DOM for prelude, open, and close — stays mounted through fade-out. */
@@ -856,6 +1297,17 @@ const pileFanOffset = (id: string, index: number, total: number) => {
   return { x: dir.x * s, y: dir.y * s, r: dir.r * s }
 }
 
+/** After open, tip stays off until close finishes and the pointer leaves then re-enters. */
+const pileTipLocked = ref(false)
+
+const showPileTip = (boardId: string) =>
+  !pileTipLocked.value &&
+  !isOpen.value &&
+  !stagePresent.value &&
+  !isFlipping.value &&
+  (moodboards.value.length <= 1 || railExpanded.value) &&
+  pileFannedId.value === boardId
+
 const onPileMouseEnter = (boardId: string) => {
   if (isFlipping.value) return
   railHot.value = true
@@ -863,6 +1315,17 @@ const onPileMouseEnter = (boardId: string) => {
   pileFanSeed.value += 1
   pileFannedId.value = boardId
   pileFanned.value = true
+  // Multi-rail: hover the active corner stack to raise the others
+  if (
+    moodboards.value.length > 1 &&
+    boardId === activeMoodboardId.value &&
+    !railExpanded.value &&
+    !isOpen.value &&
+    !stagePresent.value &&
+    !isMoodboard.value
+  ) {
+    void expandRail()
+  }
 }
 
 const onPileMouseLeave = (boardId: string) => {
@@ -871,6 +1334,10 @@ const onPileMouseLeave = (boardId: string) => {
   if (pileFannedId.value === boardId) {
     pileFannedId.value = null
     pileFanned.value = false
+  }
+  // Re-arm tip only after a real mouse-out while the cart is closed
+  if (!isOpen.value && !stagePresent.value) {
+    pileTipLocked.value = false
   }
 }
 
@@ -1574,8 +2041,14 @@ const restackBoard = async (boardId: string) => {
 
 const onPileClick = (boardId: string) => {
   const board = moodboards.value.find((entry) => entry.id === boardId)
+  const wasActive = boardId === activeMoodboardId.value
   setActiveMoodboard(boardId)
   pileRef.value = pileEls.value[boardId] || null
+  // Switching target selection — collapse rail so the new active settles bottom-left
+  if (!wasActive) {
+    if (moodboards.value.length > 1) void collapseRail()
+    return
+  }
   if (!board?.items.length) return
   if (isMoodboard.value) {
     if (expandedBoardIds.value.includes(boardId)) {
@@ -1754,6 +2227,7 @@ const dropStageInstant = async () => {
   unshelveInactiveRail()
   await nextTick()
   resetShelvedRail()
+  parkInactiveRailBelow()
 }
 
 const onBuildMoodboard = async () => {
@@ -1898,13 +2372,17 @@ const fadeOutStage = async () => {
   cellsReady.value = false
   softEnter.value = false
   flipSurface.value = 'pile'
-  // Keep rail mounted through the fade so the pile stays visible; other stacks rise
-  unshelveInactiveRail()
+  // Keep rail mounted through the fade; inactive stacks stay parked below
+  railExpanded.value = false
+  createPlusReady.value = false
+  parkInactiveRailBelow()
   await wait(BACKDROP_CLOSE_MS)
   keepPileForFlip.value = false
   stagePresent.value = false
   await nextTick()
+  // Clear cart-shelve leftovers, then re-park so multi-rail stays collapsed
   resetShelvedRail()
+  parkInactiveRailBelow()
 }
 
 const revealStage = async () => {
@@ -1941,6 +2419,11 @@ const scheduleControlsFadeIn = () => {
 
 const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
+  // Hide name tip for the whole open → close cycle (re-arms on mouse-out after close)
+  pileTipLocked.value = true
+  railAnimToken += 1
+  railExpanded.value = false
+  createPlusReady.value = false
   // Lock hover fan so Flip.fit starts from spread positions (no snap-back)
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   pileFanned.value = true
@@ -2369,6 +2852,43 @@ const onWinResize = () => {
   syncAllColumnLayouts()
 }
 
+watch(
+  moodboards,
+  () => {
+    if (railExpanded.value) {
+      // Append any brand-new boards without reshuffling mid-expand
+      const known = new Set(railOrderIds.value)
+      for (const board of moodboards.value) {
+        if (!known.has(board.id)) railOrderIds.value = [...railOrderIds.value, board.id]
+      }
+      railOrderIds.value = railOrderIds.value.filter((id) =>
+        moodboards.value.some((board) => board.id === id),
+      )
+      return
+    }
+    syncRailOrder(true)
+  },
+  { deep: true, immediate: true },
+)
+
+watch(
+  [railBoards, showRail],
+  async () => {
+    if (!import.meta.client || !showRail.value) return
+    if (
+      railExpanded.value ||
+      railHoldOpen.value ||
+      isOpen.value ||
+      stagePresent.value
+    ) {
+      return
+    }
+    await nextTick()
+    parkInactiveRailBelow()
+  },
+  { flush: 'post' },
+)
+
 onMounted(() => {
   registerAnimatedClose(() => {
     void closeToPile()
@@ -2381,6 +2901,7 @@ onMounted(() => {
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
+    nextTick(() => parkInactiveRailBelow())
   }
 })
 
@@ -2447,6 +2968,83 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
+/* Collapsed multi-rail: inactive wraps take no space (GSAP parks them below) */
+.stack__pile-wrap--parked {
+  pointer-events: none !important;
+}
+
+.stack__pile-empty {
+  /* 67% of the image content box (33% smaller), centered in the cell */
+  --stack-empty-size: calc((100% - 2 * var(--stack-cell-pad, 50px)) * 0.67);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  width: var(--stack-empty-size);
+  height: var(--stack-empty-size);
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px dashed color-mix(in srgb, var(--charcoal) 45%, transparent);
+  background: color-mix(in srgb, var(--background-color) 20%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.stack__pile-empty-remove {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+/* Inactive empty slots: show × on hover only. Active empty: never (can’t delete the receiving stack). */
+.stack__pile-wrap:not(.stack__pile-wrap--receiving)
+  .stack__pile-empty:hover
+  .stack__pile-empty-remove {
+  opacity: 1;
+}
+
+.stack__pile-empty-x {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.stack__pile-empty-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: var(--charcoal);
+  transform-origin: center center;
+}
+
+.stack__pile-empty-bar:first-child {
+  transform: rotate(45deg);
+}
+
+.stack__pile-empty-bar:last-child {
+  transform: rotate(-45deg);
+}
+
 .stack__pile {
   position: absolute;
   inset: 0;
@@ -2463,11 +3061,11 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
-/* Expand hit area so fanned cards (esp. below) keep hover without shifting layout */
+/* Expand hit area for fanned cards — leave the right edge clear for the (+) */
 .stack__pile::after {
   content: '';
   position: absolute;
-  inset: -48px -56px -80px -56px;
+  inset: -48px 0 -80px -56px;
 }
 
 /* Above stage backdrop/grid, below controls */
@@ -2481,22 +3079,24 @@ onBeforeUnmount(() => {
 
 .stack__create {
   position: relative;
-  z-index: 1;
+  z-index: 4;
   flex: 0 0 auto;
-  width: var(--stack-cell-size);
+  width: 2.5rem;
   height: var(--stack-cell-size);
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 20px;
+  box-sizing: content-box;
   border: 0;
   background: transparent;
   cursor: pointer;
   pointer-events: none;
   display: grid;
   place-items: center;
+  overflow: visible;
 }
 
-.stack__rail--hot .stack__create,
-.stack__create--visible {
+.stack__create--visible,
+.stack__create--ready {
   pointer-events: auto;
 }
 
@@ -2504,24 +3104,52 @@ onBeforeUnmount(() => {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 50%;
-  border: 1px solid var(--charcoal);
+  border: 0;
   color: var(--charcoal);
-  background: var(--cream);
+  background: color-mix(in srgb, var(--background-color) 20%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   display: grid;
   place-items: center;
-  font-size: 1.5rem;
-  line-height: 1;
-  opacity: 0;
-  transform: scale(0.85);
-  transition:
-    opacity 0.28s ease,
-    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.stack__create--visible .stack__create-plus,
-.stack__rail--hot .stack__create-plus {
+/* Single-selection: CSS slide on rail hover */
+.stack__rail:not(.stack__rail--multi) .stack__create-plus {
+  opacity: 0;
+  transform: translateX(-100%);
+  transition:
+    opacity 0.28s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack__rail:not(.stack__rail--multi) .stack__create--visible .stack__create-plus {
   opacity: 1;
-  transform: scale(1);
+  transform: translateX(0);
+}
+
+.stack__create-plus-icon {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.stack__create-plus-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 12px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: var(--charcoal);
+  transform-origin: center center;
+}
+
+.stack__create-plus-bar:first-child {
+  transform: rotate(0deg);
+}
+
+.stack__create-plus-bar:last-child {
+  transform: rotate(90deg);
 }
 
 .stack__column {
@@ -2776,10 +3404,12 @@ onBeforeUnmount(() => {
   bottom: calc(100% + 0.35rem);
   z-index: 30;
   margin: 0;
-  padding: 0;
+  padding: 0.35rem 0.65rem;
   border: 0;
-  background: transparent;
-  color: var(--charcoal);
+  border-radius: 6px;
+  /* Light mode: inverted — text colour fills, page background for type */
+  background: var(--text-color);
+  color: var(--background-color);
   font-family: var(--serif);
   font-size: var(--text-sm, 14px);
   line-height: 1.2;
@@ -2791,6 +3421,13 @@ onBeforeUnmount(() => {
   transition:
     opacity 0.28s ease,
     transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:global(html.dark) .stack__pile-tip {
+  background: color-mix(in srgb, var(--background-color) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-color);
 }
 
 .stack__pile-tip--visible {

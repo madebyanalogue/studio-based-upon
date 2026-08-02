@@ -262,11 +262,13 @@ export const useBucket = () => {
     }
   }
 
-  const createMoodboard = (opts?: { open?: boolean }) => {
+  const createMoodboard = (opts?: { open?: boolean; activate?: boolean }) => {
     const nextIndex = moodboards.value.length + 1
     const board = defaultMoodboard(nextIndex)
     moodboards.value = [...moodboards.value, board]
-    activeMoodboardId.value = board.id
+    if (opts?.activate !== false) {
+      activeMoodboardId.value = board.id
+    }
     persist()
     if (opts?.open) isOpen.value = true
     return board
@@ -660,8 +662,9 @@ export const useBucket = () => {
   }
 
   const isSaved = (id: string, imageIndex?: number) => {
-    const entryId = bucketItemId(id, imageIndex)
-    return moodboards.value.some((b) => b.items.some((i) => i.id === entryId))
+    const boardId = activeMoodboardId.value || moodboards.value[0]?.id
+    if (!boardId) return false
+    return isSavedIn(boardId, id, imageIndex)
   }
 
   const openPicker = (item: BucketItem) => {
