@@ -79,6 +79,10 @@
               'stack__pile--fanned': pileFannedId === board.id,
               'stack__pile--active': board.id === activeMoodboardId,
               'stack__pile--expanded': expandedBoardIds.includes(board.id),
+              // Vue-owned — imperative classList was wiped on re-render
+              'stack__pile--dispersing':
+                expandedBoardIds.includes(board.id) &&
+                preparingBoardId !== board.id,
             }"
             :aria-label="board.name"
             @click="onPileClick(board.id)"
@@ -4623,8 +4627,8 @@ onBeforeUnmount(() => {
 }
 
 /*
- * Hide pile only once disperse flyers are parked on it (.stack__pile--dispersing).
- * Hiding on --expanded alone flashed an empty gap before thumbs were positioned.
+ * Hide pile cards once the column owns them (.stack__pile--dispersing).
+ * Kept visible while --preparing (flyers still taking off from the pile).
  */
 .stack__pile--dispersing .stack__pile-card {
   visibility: hidden;

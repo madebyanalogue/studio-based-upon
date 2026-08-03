@@ -11,8 +11,7 @@
     <main class="page-wrapper">
       <NuxtPage />
     </main>
-    <BucketDrawer v-if="bucketUi === 'v1'" />
-    <BucketStack v-else />
+    <BucketStack />
     <MoodboardCanvas />
     <MoodboardPicker />
     <ProductOverlay />
@@ -24,7 +23,7 @@
 import { isHomepagePath } from '~/composables/useHomepagePreloader'
 
 const { seoTitle, seoDescription, disablePreloader } = useSiteSettings()
-const { version: bucketUi, initBucketUi } = useBucketUi()
+const { initBucketUi } = useBucketUi()
 const { initSerifFace } = useSerifFace()
 const route = useRoute()
 
