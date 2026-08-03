@@ -179,7 +179,8 @@
           }"
           :aria-label="`Open ${activeMoodboard?.name || 'selection'}`"
           @click="onSelectionsClick"
-          @mouseleave="clearTooltipHide('selections')"
+          @mouseenter="onSelectionsHover(true)"
+          @mouseleave="onSelectionsHover(false)"
         >
           <svg
             class="header__icon"
@@ -222,6 +223,7 @@ const {
   setActiveMoodboard,
   createMoodboard,
   openSelectionStack,
+  hoverSelectionStack,
 } = useBucket()
 const { face: serifFace, toggleFace: toggleSerifFace } = useSerifFace()
 const {
@@ -333,6 +335,11 @@ const onNewBoard = () => {
   loadBoard([], [])
   clearActive()
   openMoodboard({ reopenCart: false })
+}
+
+const onSelectionsHover = (hot: boolean) => {
+  if (!hot) clearTooltipHide('selections')
+  hoverSelectionStack(hot)
 }
 
 const onSelectionsClick = () => {

@@ -188,54 +188,6 @@
         </button>
       </div>
 
-      <!-- Boards pile (bottom-right) — stacked cards Flip into the boards cart -->
-      <div v-if="showBoardsRail && boardsPileCards.length" class="stack__boards-rail">
-        <div class="stack__pile-wrap stack__pile-wrap--board">
-          <button
-            ref="boardsPileRef"
-            type="button"
-            class="stack__pile stack__pile--board"
-            :class="{ 'stack__pile--fanned': boardsPileFanned }"
-            :aria-label="`Open boards, ${boardsPileCards.length}`"
-            @click="onBoardsPileClick"
-            @mouseenter="onBoardsPileEnter"
-            @mouseleave="onBoardsPileLeave"
-          >
-            <span
-              v-for="board in boardsPileCards"
-              :key="board.id"
-              class="stack__pile-card stack__pile-card--fan stack__pile-card--board"
-              :style="boardStackCardStyle(board.id)"
-            >
-              <!-- Flip target: same aspect as grid face so proportion doesn’t jump -->
-              <span
-                class="stack__pile-board-face"
-                :data-flip-id="
-                  flipSurface === 'pile' ? boardFlipId(board.id) : undefined
-                "
-                :style="{
-                  '--board-aspect':
-                    board.previewAspect && board.previewAspect > 0
-                      ? board.previewAspect
-                      : 16 / 9,
-                }"
-              >
-                <img
-                  v-if="board.preview"
-                  :src="board.preview"
-                  :alt="`${board.name} preview`"
-                  class="stack__pile-image stack__pile-image--board"
-                  draggable="false"
-                />
-                <span v-else class="stack__board-pile-label interface">{{
-                  board.name
-                }}</span>
-              </span>
-            </span>
-          </button>
-        </div>
-      </div>
-
       <!-- Expanded fullscreen (hidden in board builder) -->
       <div
         v-if="!isMoodboard"
@@ -592,6 +544,67 @@
         </div>
       </div>
     </div>
+
+    <!--
+      Sibling of .stack (not inside it) so PDP (320) can cover boards while the
+      selection rail still rises above the overlay for fly-to-stack.
+    -->
+    <div
+      v-if="showBoardsRail && boardsPileCards.length"
+      class="stack__boards-rail"
+      :class="{
+        'stack__boards-rail--cart': stagePresent && panelTab === 'boards',
+        'stack__boards-rail--flipping':
+          isFlipping && stagePresent && panelTab === 'boards',
+        'stack__boards-rail--cells-ready':
+          cellsReady && stagePresent && panelTab === 'boards',
+      }"
+      :style="stackCssVars"
+    >
+      <div class="stack__pile-wrap stack__pile-wrap--board">
+        <button
+          ref="boardsPileRef"
+          type="button"
+          class="stack__pile stack__pile--board"
+          :class="{ 'stack__pile--fanned': boardsPileFanned }"
+          :aria-label="`Open boards, ${boardsPileCards.length}`"
+          @click="onBoardsPileClick"
+          @mouseenter="onBoardsPileEnter"
+          @mouseleave="onBoardsPileLeave"
+        >
+          <span
+            v-for="board in boardsPileCards"
+            :key="board.id"
+            class="stack__pile-card stack__pile-card--fan stack__pile-card--board"
+            :style="boardStackCardStyle(board.id)"
+          >
+            <span
+              class="stack__pile-board-face"
+              :data-flip-id="
+                flipSurface === 'pile' ? boardFlipId(board.id) : undefined
+              "
+              :style="{
+                '--board-aspect':
+                  board.previewAspect && board.previewAspect > 0
+                    ? board.previewAspect
+                    : 16 / 9,
+              }"
+            >
+              <img
+                v-if="board.preview"
+                :src="board.preview"
+                :alt="`${board.name} preview`"
+                class="stack__pile-image stack__pile-image--board"
+                draggable="false"
+              />
+              <span v-else class="stack__board-pile-label interface">{{
+                board.name
+              }}</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
   </Teleport>
 </template>
 
@@ -620,6 +633,7 @@ const {
   dismissDrawer,
   registerAnimatedClose,
   registerAnimatedOpen,
+  registerSelectionStackHover,
   openDrawer,
   openMoodboard,
   createMoodboard,
@@ -1815,18 +1829,20 @@ const pileRestPose = (id: string, index: number, total: number, salt: string) =>
   return { x, y, rot }
 }
 
+/** Pad for pile landings — reads the rail’s 12% stack pad. */
 const readStackCellPad = (cellSize?: number) => {
   const size = cellSize || cellSizePx.value || 100
-  if (!import.meta.client) return size * 0.17
-  const stackEl = document.querySelector('.stack')
-  if (!stackEl) return size * 0.17
-  const raw = getComputedStyle(stackEl).getPropertyValue('--stack-cell-pad').trim()
+  if (!import.meta.client) return size * 0.12
+  const padEl =
+    document.querySelector('.stack__rail') || document.querySelector('.stack')
+  if (!padEl) return size * 0.12
+  const raw = getComputedStyle(padEl).getPropertyValue('--stack-cell-pad').trim()
   if (raw.endsWith('%')) {
     const pct = Number.parseFloat(raw)
-    return (size * (Number.isFinite(pct) ? pct : 17)) / 100
+    return (size * (Number.isFinite(pct) ? pct : 12)) / 100
   }
   const px = Number.parseFloat(raw)
-  return Number.isFinite(px) ? px : size * 0.17
+  return Number.isFinite(px) ? px : size * 0.12
 }
 
 /** Visual image size inside a padded square stack cell (natural aspect ratio). */
@@ -1951,13 +1967,16 @@ const onPileMouseLeave = (boardId: string) => {
   }
 }
 
-/** If the pointer is still over the pile after Flip, ease into the fan. */
+/** True while the nav heart is hovered — fans the stack like pile hover. */
+const navHeartHot = ref(false)
+
+/** If the pointer is still over the pile / nav heart after Flip, ease into the fan. */
 const syncPileFanFromHover = async () => {
   await nextTick()
   if (!import.meta.client || isFlipping.value) return
   const id = activeMoodboardId.value
   const el = id ? pileEls.value[id] : null
-  const hot = !!el?.matches(':hover')
+  const hot = navHeartHot.value || !!el?.matches(':hover')
   pileFanned.value = hot
   pileFannedId.value = hot && id ? id : null
 }
@@ -3176,13 +3195,33 @@ const fitPileCardsToCells = (opts?: {
       const delay = opts?.boardStagger
         ? staggerDelayForBoardIndex(index, 'open')
         : staggerDelayForIndex(index, 'open')
+      // Selection: grow pad 12% → 17% so the image scales down into the grid
+      const img = !opts?.boardStagger
+        ? card.querySelector<HTMLElement>('.stack__pile-image')
+        : null
+      if (img) {
+        gsap.fromTo(
+          img,
+          { padding: '12%' },
+          {
+            padding: '17%',
+            duration: FLIP_DURATION,
+            delay,
+            ease: 'power3.inOut',
+          },
+        )
+      }
       Flip.fit(card, media, {
         absolute: true,
         scale: true,
         duration: FLIP_DURATION,
         delay,
         ease: 'power3.inOut',
-        onComplete: done,
+        onComplete: () => {
+          // Lock final pad so a late style recalc can’t snap back to 12%
+          if (img) gsap.set(img, { padding: '17%' })
+          done()
+        },
       })
     })
 
@@ -3275,11 +3314,17 @@ const openFromPile = async () => {
   await nextTick()
   syncCellSize()
   await fitPileCardsToCells()
-  // 3) Swap to cell media, then fade grid lines in
-  flipSurface.value = 'cells'
+  // 3) Reveal cell media, hide Flip faces in the same beat, then unmount the
+  // pile before rebinding flip ids. Ending isFlipping while cards are still
+  // visible lets rail CSS (--stack-cell-pad: 12%) flash before the 17% grid.
   cellsReady.value = true
+  await nextTick()
+  const landed = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
+  if (landed?.length) gsap.set(landed, { autoAlpha: 0 })
   keepPileForFlip.value = false
   pileFanned.value = false
+  await nextTick()
+  flipSurface.value = 'cells'
   isFlipping.value = false
   await fadeGridLinesIn()
 }
@@ -3485,10 +3530,39 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
-    // 2) Items + boards gather back to the pile
+    // Shrink pad 17% → 12% while gathering so images grow back into the stack
+    cards.forEach((card) => {
+      const img = (card as HTMLElement).querySelector<HTMLElement>(
+        '.stack__pile-image',
+      )
+      if (!img) return
+      const id = (card as HTMLElement).getAttribute('data-flip-id') || ''
+      const index = Math.max(0, gridFlipIds.value.indexOf(id))
+      gsap.fromTo(
+        img,
+        { padding: '17%' },
+        {
+          padding: '12%',
+          duration: FLIP_DURATION,
+          delay: staggerDelayForIndex(index, 'close'),
+          ease: 'power3.inOut',
+        },
+      )
+    })
+    // 2) Items gather back to the pile
     await runFlip(state, cards, { mode: 'close' })
     // Drop Flip inline transforms so CSS pile vars own the pose again
-    gsap.set(cards, { clearProps: 'transform,top,left,right,bottom,width,height,position,margin' })
+    gsap.set(cards, {
+      clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
+    })
+    gsap.set(
+      Array.from(cards).flatMap((card) =>
+        Array.from(
+          (card as HTMLElement).querySelectorAll<HTMLElement>('.stack__pile-image'),
+        ),
+      ),
+      { clearProps: 'padding' },
+    )
     void pileRef.value?.offsetHeight
   }
   // Re-enable CSS transitions before backdrop fade — otherwise a hover during
@@ -3878,12 +3952,46 @@ const openSelectionStackFromNav = () => {
   void openFromPile()
 }
 
+/** Nav heart hover — fan the active pile (same pose Flip open starts from). */
+const onNavHeartEnter = () => {
+  navHeartHot.value = true
+  if (
+    isFlipping.value ||
+    isOpen.value ||
+    stagePresent.value ||
+    isMoodboard.value
+  ) {
+    return
+  }
+  const id = activeMoodboardId.value
+  if (!id) return
+  const board = moodboards.value.find((entry) => entry.id === id)
+  if (!board?.items.length) return
+  pileFanSeed.value += 1
+  pileFannedId.value = id
+  pileFanned.value = true
+}
+
+const onNavHeartLeave = () => {
+  navHeartHot.value = false
+  // Keep fanned while opening so Flip reads the spread positions
+  if (isFlipping.value || keepPileForFlip.value) return
+  if (pileFannedId.value && pileFannedId.value === activeMoodboardId.value) {
+    pileFannedId.value = null
+    pileFanned.value = false
+  }
+}
+
 onMounted(() => {
   registerAnimatedClose(() => {
     void closeToPile()
   })
   registerAnimatedOpen(() => {
     openSelectionStackFromNav()
+  })
+  registerSelectionStackHover({
+    enter: onNavHeartEnter,
+    leave: onNavHeartLeave,
   })
   registerMoodboardRestack(async () => {
     const ids = [...expandedBoardIds.value]
@@ -3902,6 +4010,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   registerAnimatedClose(null)
   registerAnimatedOpen(null)
+  registerSelectionStackHover(null)
   registerMoodboardRestack(null)
   registerMoodboardReturnToColumn(null)
   cellRo?.disconnect()
@@ -3920,6 +4029,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .stack {
+  /* Cart grid default — selection cells use 17% inset */
   --stack-cell-pad: 17%;
   position: fixed;
   inset: 0;
@@ -3928,11 +4038,17 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
+/* Pile / boards stack — looser pad; Flip animates padding up to 17% into the grid */
+.stack__rail,
+.stack__boards-rail {
+  --stack-cell-pad: 12%;
+}
+
 .stack--open {
   z-index: 280;
 }
 
-/* Above ProductOverlay (320) so piles stay visible on PDP */
+/* Selection rail above ProductOverlay (320); boards rail is a sibling under it */
 .stack--above-pdp {
   z-index: 340;
 }
@@ -3954,7 +4070,7 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-/* Boards pile — mirror of selection rail, anchored bottom-right */
+/* Boards pile — sibling of .stack so PDP (320) can cover it */
 .stack__boards-rail {
   position: fixed;
   right: 0;
@@ -3969,9 +4085,8 @@ onBeforeUnmount(() => {
 }
 
 /*
- * Boards cart open/closing: stage above the left selection stack so it doesn’t
- * pop through the cream. Boards pile stays mounted under the stage while viewing,
- * then rises above for Flip landings.
+ * Boards cart: stage (inside .stack--open at 280) covers the pile while viewing;
+ * pile rises above for Flip landings.
  */
 .stack--boards-cart .stack__rail {
   z-index: 200;
@@ -3981,18 +4096,19 @@ onBeforeUnmount(() => {
   z-index: 220;
 }
 
-.stack--boards-cart .stack__boards-rail {
-  z-index: 210;
+.stack__boards-rail--cart:not(.stack__boards-rail--flipping) {
+  z-index: 270;
 }
 
-/* Tuck under the cream while settled open — opacity keeps layout for Flip end poses */
-.stack--boards-cart.stack--cells-ready:not(.stack--flipping) .stack__boards-rail {
+.stack__boards-rail--cart.stack__boards-rail--cells-ready:not(
+    .stack__boards-rail--flipping
+  ) {
   opacity: 0;
   pointer-events: none;
 }
 
-.stack--boards-cart.stack--flipping .stack__boards-rail {
-  z-index: 230;
+.stack__boards-rail--flipping {
+  z-index: 290;
   opacity: 1;
   pointer-events: none;
 }
@@ -4174,7 +4290,8 @@ onBeforeUnmount(() => {
   z-index: 2;
 }
 
-.stack--flipping .stack__pile {
+.stack--flipping .stack__pile,
+.stack__boards-rail--flipping .stack__pile {
   overflow: visible;
 }
 
@@ -4457,7 +4574,8 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.stack--flipping .stack__pile-card {
+.stack--flipping .stack__pile-card,
+.stack__boards-rail--flipping .stack__pile-card {
   overflow: visible;
 }
 
@@ -4494,6 +4612,8 @@ onBeforeUnmount(() => {
 /* Only suppress transitions while GSAP is driving the cards */
 .stack--flipping .stack__pile-card,
 .stack--flipping .stack__pile-board-face,
+.stack__boards-rail--flipping .stack__pile-card,
+.stack__boards-rail--flipping .stack__pile-board-face,
 .stack__pile--restacking .stack__pile-card {
   transition: none;
 }
@@ -4523,7 +4643,7 @@ onBeforeUnmount(() => {
 .stack__pile-tip {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.35rem);
+  bottom: calc(100% + 0.35rem + 10px);
   z-index: 30;
   margin: 0;
   padding: 0.35rem 0.65rem;
@@ -4673,11 +4793,12 @@ onBeforeUnmount(() => {
 .stack__cell-frame--board {
   position: absolute;
   /*
-   * Match selection cart pad in absolute px: 17% of one cell.
-   * Boards span 2 rows → half that (same visual inset as items).
-   * Use --stack-cell-size so % of the wide board cell can’t shift on close.
+   * 1-up (1×1): same 17% pad as the selection cart.
+   * 2-up (3×2): half → 8.5% of one track cell.
    */
-  inset: calc(var(--stack-cell-size) * 0.17 / var(--board-span-rows, 1));
+  inset: calc(
+    var(--stack-cell-size) * 0.17 / var(--board-span-rows, 1)
+  );
   width: auto;
   height: auto;
   display: grid;

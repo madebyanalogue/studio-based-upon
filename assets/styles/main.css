@@ -39,7 +39,7 @@
 
 @media (min-width: 768px) {
   :root {
-    --card-gap: 0px 50px;
+    --card-gap: 0px 40px;
   }
 }
 

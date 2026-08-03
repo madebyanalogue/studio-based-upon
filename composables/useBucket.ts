@@ -70,6 +70,11 @@ let removalSeq = 0
 let animatedCloseHandler: (() => void) | null = null
 /** Optional animated open (bucket UI v2) — same path as clicking the selection stack. */
 let animatedOpenHandler: (() => void) | null = null
+/** Nav heart hover — fan the active selection stack like hovering the pile. */
+let selectionStackHoverHandlers: {
+  enter: () => void
+  leave: () => void
+} | null = null
 /** Shared across useBucket() callers — must be module-scoped like animatedCloseHandler. */
 let moodboardRestackHandler: (() => Promise<void>) | null = null
 let moodboardReturnHandler:
@@ -946,6 +951,17 @@ export const useBucket = () => {
     animatedOpenHandler = handler
   }
 
+  const registerSelectionStackHover = (
+    handlers: { enter: () => void; leave: () => void } | null,
+  ) => {
+    selectionStackHoverHandlers = handlers
+  }
+
+  const hoverSelectionStack = (hot: boolean) => {
+    if (hot) selectionStackHoverHandlers?.enter()
+    else selectionStackHoverHandlers?.leave()
+  }
+
   const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
     panelTab.value = tab
     isOpen.value = true
@@ -1018,6 +1034,8 @@ export const useBucket = () => {
     dismissDrawer,
     registerAnimatedClose,
     registerAnimatedOpen,
+    registerSelectionStackHover,
+    hoverSelectionStack,
     openSelectionStack,
     openDrawer,
     pendingFly,

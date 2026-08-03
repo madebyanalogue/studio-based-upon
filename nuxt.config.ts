@@ -52,10 +52,10 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
-      // Apply stored theme before CSS paints to avoid a light→dark flash.
+      // Apply stored theme / display face before CSS paints to avoid FOUC.
       script: [
         {
-          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`,
+          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');var f=localStorage.getItem('sba-serif-face');if(f==='serif')document.documentElement.classList.add('face-serif');}catch(e){}})();`,
           tagPosition: 'head',
         },
       ],

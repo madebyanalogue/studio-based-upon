@@ -23,9 +23,9 @@
 }
 
 @font-face {
-  font-family: 'Maison Bold';
-  src: url('../fonts/Maison-Bold.otf') format('opentype');
-  /* Map to 400 so existing serif usages (weight 400) pick up the Bold cut */
+  font-family: 'Maison Medium';
+  src: url('../fonts/Maison-Medium.otf') format('opentype');
+  /* Map to 400 so existing serif usages (weight 400) pick up the Medium cut */
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -41,7 +41,8 @@
 
 :root {
   --sans: 'Maison Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --serif: 'Ashcroft', 'Times New Roman', Times, serif;
+  /* Display face defaults to Maison Medium (sans); Ashcroft via html.face-serif */
+  --serif: 'Maison Medium', 'Maison Neue', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-sans: var(--sans);
   --font-serif: var(--serif);
   --mono: 'Maison Neue Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -56,9 +57,9 @@
   --text-3xl: clamp(2rem, 4vw, 3.5rem);
 }
 
-/* Nav serif/sans toggle — swaps display face used by --serif */
-html.serif-sans {
-  --serif: 'Maison Bold', 'Maison Neue', -apple-system, BlinkMacSystemFont, sans-serif;
+/* Nav serif/sans toggle — Ashcroft when face is serif */
+html.face-serif {
+  --serif: 'Ashcroft', 'Times New Roman', Times, serif;
 }
 
 body {
