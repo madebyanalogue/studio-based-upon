@@ -58,6 +58,13 @@ body {
   min-height: 100dvh;
 }
 
+/* Overlays (cart, board composer, PDP, enquiry) — block page scroll underneath */
+html.page-scroll-locked,
+html.page-scroll-locked body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
 a {
   color: inherit;
   text-decoration: none;

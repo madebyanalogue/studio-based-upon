@@ -423,7 +423,11 @@
         </div>
       </div>
 
-      <!-- Sibling of stage/pile so z-index can sit above flipping cards -->
+      <!--
+        Teleport to body so toolbox isn’t trapped under the boards rail sibling
+        (.stack stacking context can’t outrank Flip flyers at z-index 290).
+      -->
+      <Teleport to="body">
       <aside
         class="stack__controls"
         :class="{ 'stack__controls--visible': controlsVisible }"
@@ -543,6 +547,7 @@
           </div>
         </div>
       </div>
+      </Teleport>
     </div>
 
     <!--
@@ -859,20 +864,31 @@ const onDeleteSelection = async () => {
   confirmingDelete.value = false
   bulkBusy.value = true
   try {
-    const hadOthers = moodboards.value.some((board) => board.id !== id)
+    // Drop undo slots immediately — no undo after deleting the selection
     clearPendingRemovals(id)
+    controlsVisible.value = false
+    await nextTick()
+
+    // Zoom every item out (same scale-out as remove, without undo)
+    const itemIds = items.value.map((item) => item.id)
+    for (const itemId of itemIds) setCellPhase(itemId, 'scale-out')
+    if (itemIds.length) await wait(CELL_SCALE_MS)
+
+    // Grid + cream backdrop out, then leave the page (don’t open the next selection)
+    await fadeGridLinesOut()
+    cellsReady.value = false
+    await fadeOutStage()
+    clearAllCellPhases()
+
     deleteBoardsForSelection(id)
     railOrderIds.value = railOrderIds.value.filter((entry) => entry !== id)
     expandedBoardIds.value = expandedBoardIds.value.filter((entry) => entry !== id)
     deleteMoodboard(id)
+    dismissDrawer()
     await nextTick()
-    if (!hadOthers) {
-      // Was the only selection — cart is empty; close
-      await closeToPile()
-    } else {
-      pileRef.value = pileEls.value[activeMoodboardId.value || ''] || null
-      syncRailOrder(true)
-    }
+    pileRef.value = pileEls.value[activeMoodboardId.value || ''] || null
+    syncRailOrder(true)
+    parkInactiveRailBelow()
   } finally {
     bulkBusy.value = false
   }
@@ -1130,11 +1146,16 @@ const expandRail = async () => {
 }
 
 const railCollapsing = ref(false)
+/** Shared so a second collapseRail (click vs mouseleave) awaits the same drop. */
+let collapseRailPromise: Promise<void> | null = null
 
 const collapseRail = async () => {
   if (!import.meta.client) return
   // Click + mouseleave were both starting a drop (second call reset y → 0 then fell again)
-  if (railCollapsing.value) return
+  if (collapseRailPromise) {
+    await collapseRailPromise
+    return
+  }
   if (railBoards.value.length <= 1) {
     railExpanded.value = false
     createPlusReady.value = false
@@ -1148,6 +1169,8 @@ const collapseRail = async () => {
   railCollapsing.value = true
   clearRailLeaveTimer()
   railHoldOpen.value = true
+
+  collapseRailPromise = (async () => {
   const token = ++railAnimToken
   const keepId = activeMoodboardId.value
   const create = createSlotRef.value
@@ -1219,6 +1242,8 @@ const collapseRail = async () => {
           )
         })
       }
+      // Drop leftover GSAP transforms so later layout syncs read the true box
+      gsap.set(keepEl, { clearProps: 'transform,x,y,xPercent,yPercent' })
     }
     parkInactiveRailBelow()
   } finally {
@@ -1226,6 +1251,13 @@ const collapseRail = async () => {
     window.setTimeout(() => {
       railHoldOpen.value = false
     }, 180)
+  }
+  })()
+
+  try {
+    await collapseRailPromise
+  } finally {
+    collapseRailPromise = null
   }
 }
 
@@ -1633,10 +1665,10 @@ const boardStackCardStyle = (boardId: string) => {
 
   // Rest: tight stack with a slight depth peek
   const restScale = 1 - depth * 0.025
-  const restY = -depth * 3
+  const restY = -depth * 2
   // Hover: open into a centred file cascade
   const hoverScale = 1 - depth * 0.085
-  const hoverY = -depth * 16
+  const hoverY = -depth * 8
 
   return {
     '--pile-x': '0px',
@@ -2670,8 +2702,11 @@ const disperseBoard = async (boardId: string) => {
         flightSpacer.remove()
         // Stay at the top of the column (where the top-of-pile items land)
         if (scroll) scroll.scrollTop = 0
+        // Re-pin after flight — pile may have settled during the animation
+        syncColumnLayout(boardId)
         requestAnimationFrame(() => {
           if (scroll) scroll.scrollTop = 0
+          syncColumnLayout(boardId)
           resolve()
         })
       },
@@ -2780,6 +2815,17 @@ const onPileClick = async (boardId: string) => {
 
 const railSwitchBusy = ref(false)
 
+/** Clear parked / rail GSAP so the active wrap can size from CSS again. */
+const resetActivePileWrap = (boardId: string) => {
+  const el = pileWrapEls.value[boardId]
+  if (!el || !import.meta.client) return
+  gsap.killTweensOf(el)
+  gsap.set(el, {
+    clearProps:
+      'transform,x,y,xPercent,yPercent,width,minWidth,padding,paddingLeft,paddingRight,opacity,overflow',
+  })
+}
+
 /** Pick another selection while editing a board. */
 const switchSelectionInMoodboard = async (boardId: string) => {
   if (!import.meta.client || railSwitchBusy.value) return
@@ -2790,23 +2836,38 @@ const switchSelectionInMoodboard = async (boardId: string) => {
   railHoldOpen.value = true
   clearRailLeaveTimer()
   try {
-    const prevId = activeMoodboardId.value
-    if (prevId && expandedBoardIds.value.includes(prevId)) {
-      await restackBoard(prevId)
+    // Restack every open column — not only the previous active — so nothing
+    // is left fixed over the board canvas after the switch.
+    const openIds = [...expandedBoardIds.value]
+    for (const id of openIds) {
+      await restackBoard(id)
     }
+
     setActiveMoodboard(boardId)
     pileRef.value = pileEls.value[boardId] || null
-    if (railExpanded.value || createPlusReady.value) {
+    resetActivePileWrap(boardId)
+
+    // Always wait out an in-flight collapse (mouseleave may have started one)
+    if (collapseRailPromise) {
+      await collapseRailPromise
+    }
+    if (railExpanded.value || createPlusReady.value || railCollapsing.value) {
       await collapseRail()
     } else {
       syncRailOrder(true)
       await nextTick()
       parkInactiveRailBelow()
     }
+
+    resetActivePileWrap(boardId)
     await nextTick()
     await waitFrames(2)
+
     if (!expandedBoardIds.value.includes(boardId)) {
       await disperseBoard(boardId)
+    } else {
+      // Already open from a partial switch — re-pin to the settled pile
+      syncColumnLayout(boardId)
     }
   } finally {
     railSwitchBusy.value = false
@@ -3813,7 +3874,8 @@ watch(stagePresent, (present) => {
     'bucket-stack-open',
     present || isOpen.value,
   )
-  // Nested with PDP scroll lock — closing PDP won’t unlock while cart is open
+  // Nested with PDP / board scroll locks — closing cart won’t unlock
+  // while openMoodboard still holds a lock.
   if (present) lockPageScroll()
   else unlockPageScroll()
 })
@@ -3823,10 +3885,7 @@ watch(activeMoodboardId, () => {
 })
 
 watch(isMoodboard, (on) => {
-  if (import.meta.client) {
-    if (on) lockPageScroll()
-    else unlockPageScroll()
-  }
+  // Page scroll lock is owned by openMoodboard / closeMoodboard
   if (!on) {
     expandedBoardIds.value = []
     preparingBoardId.value = null
@@ -4022,6 +4081,8 @@ onBeforeUnmount(() => {
     document.documentElement.classList.remove('bucket-stack-open')
     document.documentElement.classList.remove('stack-column-dragging')
     if (stagePresent.value) unlockPageScroll()
+    // Board lock is owned by closeMoodboard — only unlock here if the
+    // composer was left open while this component tears down.
     if (isMoodboard.value) unlockPageScroll()
   }
 })
@@ -4111,10 +4172,6 @@ onBeforeUnmount(() => {
   z-index: 290;
   opacity: 1;
   pointer-events: none;
-}
-
-.stack--boards-cart .stack__controls {
-  z-index: 240;
 }
 
 .stack__boards-rail .stack__pile-wrap {
@@ -4837,6 +4894,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 0.55rem;
   opacity: 0;
+  /* Keep overlay non-blocking so clicks on the thumb open the board */
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
@@ -4844,7 +4902,6 @@ onBeforeUnmount(() => {
 .stack__cell-figure--board:hover .stack__board-actions,
 .stack__cell-figure--board:focus-within .stack__board-actions {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .stack__board-action {
@@ -4859,7 +4916,13 @@ onBeforeUnmount(() => {
   background: #1f1c18;
   color: #faf7f2;
   cursor: pointer;
+  pointer-events: none;
   transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.stack__cell-figure--board:hover .stack__board-action,
+.stack__cell-figure--board:focus-within .stack__board-action {
+  pointer-events: auto;
 }
 
 .stack__board-action:hover {

@@ -8,6 +8,8 @@ export type MoodboardItem = {
   imageIndex?: number
   colour?: string
   text?: string
+  /** Board text face — mono (default) or handwritten script. */
+  textStyle?: 'mono' | 'handwritten'
   x: number
   y: number
   z: number
@@ -17,10 +19,678 @@ export type MoodboardItem = {
   /** Natural height in px — when set, item keeps its intrinsic ratio. */
   height?: number
   objectFit?: 'contain' | 'cover'
+  /** CSS clip-path for a torn fragment (polygon percentages). */
+  clipPath?: string
+  /** White paper backing — same fragment with a jagged randomized tear edge. */
+  tearBackClipPath?: string
+  /** Restore the pre-tear piece from either half of a tear. */
+  tearRestore?: {
+    original: MoodboardItem
+    siblingId: string
+  }
   /** Cart item this placement was dragged from — restored to selection on board close. */
   sourceBucketItemId?: string
   /** Selection pile the cart item came from. */
   sourceSelectionId?: string
+}
+
+type TearPoint = { x: number; y: number }
+
+const tearSegIntersect = (
+  a1: TearPoint,
+  a2: TearPoint,
+  b1: TearPoint,
+  b2: TearPoint,
+): TearPoint | null => {
+  const d = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x)
+  if (Math.abs(d) < 1e-9) return null
+  const t = ((b1.x - a1.x) * (b2.y - b1.y) - (b1.y - a1.y) * (b2.x - b1.x)) / d
+  const u = ((b1.x - a1.x) * (a2.y - a1.y) - (b1.y - a1.y) * (a2.x - a1.x)) / d
+  if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) return null
+  return { x: a1.x + t * (a2.x - a1.x), y: a1.y + t * (a2.y - a1.y) }
+}
+
+const tearNear = (a: TearPoint, b: TearPoint, eps = 0.75) =>
+  Math.hypot(a.x - b.x, a.y - b.y) < eps
+
+const tearPathLength = (pts: TearPoint[]) => {
+  let len = 0
+  for (let i = 1; i < pts.length; i += 1) {
+    len += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y)
+  }
+  return len
+}
+
+const tearSimplifyPath = (pts: TearPoint[], minDist = 1.5): TearPoint[] => {
+  if (pts.length < 2) return pts.slice()
+  const out: TearPoint[] = [pts[0]!]
+  for (let i = 1; i < pts.length; i += 1) {
+    const prev = out[out.length - 1]!
+    const p = pts[i]!
+    if (Math.hypot(p.x - prev.x, p.y - prev.y) >= minDist) out.push(p)
+  }
+  const last = pts[pts.length - 1]!
+  if (!tearNear(out[out.length - 1]!, last)) out.push(last)
+  return out
+}
+
+const tearClamp = (p: TearPoint, w: number, h: number): TearPoint => ({
+  x: Math.min(w, Math.max(0, p.x)),
+  y: Math.min(h, Math.max(0, p.y)),
+})
+
+const tearNearestBoundary = (p: TearPoint, w: number, h: number): TearPoint => {
+  const x = Math.min(w, Math.max(0, p.x))
+  const y = Math.min(h, Math.max(0, p.y))
+  const dist = [y, w - x, h - y, x]
+  const min = Math.min(...dist)
+  if (min === dist[0]) return { x, y: 0 }
+  if (min === dist[1]) return { x: w, y }
+  if (min === dist[2]) return { x, y: h }
+  return { x: 0, y }
+}
+
+/** Perimeter param: 0 at TL, clockwise along top → right → bottom → left. */
+const tearBoundaryParam = (p: TearPoint, w: number, h: number) => {
+  const b = tearNearestBoundary(p, w, h)
+  const eps = 0.75
+  if (Math.abs(b.y) <= eps) return b.x
+  if (Math.abs(b.x - w) <= eps) return w + b.y
+  if (Math.abs(b.y - h) <= eps) return w + h + (w - b.x)
+  return w + h + w + (h - b.y)
+}
+
+const tearFromBoundaryParam = (t: number, w: number, h: number): TearPoint => {
+  const peri = 2 * (w + h)
+  let u = ((t % peri) + peri) % peri
+  if (u <= w) return { x: u, y: 0 }
+  u -= w
+  if (u <= h) return { x: w, y: u }
+  u -= h
+  if (u <= w) return { x: w - u, y: h }
+  u -= w
+  return { x: 0, y: h - u }
+}
+
+/** First boundary hit along a ray from origin in direction dir. */
+const tearRayBoundaryHit = (
+  origin: TearPoint,
+  dir: TearPoint,
+  w: number,
+  h: number,
+): TearPoint => {
+  const len = Math.hypot(dir.x, dir.y) || 1
+  const reach = Math.max(w, h) * 4
+  const end = {
+    x: origin.x + (dir.x / len) * reach,
+    y: origin.y + (dir.y / len) * reach,
+  }
+  const edges: [TearPoint, TearPoint][] = [
+    [
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+    ],
+    [
+      { x: w, y: 0 },
+      { x: w, y: h },
+    ],
+    [
+      { x: w, y: h },
+      { x: 0, y: h },
+    ],
+    [
+      { x: 0, y: h },
+      { x: 0, y: 0 },
+    ],
+  ]
+  let best: TearPoint | null = null
+  let bestT = Infinity
+  for (const [e1, e2] of edges) {
+    const hit = tearSegIntersect(origin, end, e1, e2)
+    if (!hit) continue
+    const t =
+      ((hit.x - origin.x) * dir.x + (hit.y - origin.y) * dir.y) / (len * len)
+    if (t > 1e-4 && t < bestT) {
+      bestT = t
+      best = hit
+    }
+  }
+  return best || tearNearestBoundary(origin, w, h)
+}
+
+/** Corners strictly between tStart → tEnd along the perimeter (clockwise if forward). */
+const tearWalkPerimeter = (
+  tStart: number,
+  tEnd: number,
+  w: number,
+  h: number,
+  forward: boolean,
+): TearPoint[] => {
+  const peri = 2 * (w + h)
+  const corners = [0, w, w + h, 2 * w + h]
+  // Must emit corners in walk order (by distance along the arc) — array order
+  // is wrong for vertical cuts and twists one half.
+  if (forward) {
+    const span = (tEnd - tStart + peri) % peri
+    if (span < 1e-4) return []
+    return corners
+      .map((c) => ({ d: (c - tStart + peri) % peri, c }))
+      .filter(({ d }) => d > 1e-4 && d < span - 1e-4)
+      .sort((a, b) => a.d - b.d)
+      .map(({ c }) => tearFromBoundaryParam(c, w, h))
+  }
+  const span = (tStart - tEnd + peri) % peri
+  if (span < 1e-4) return []
+  return corners
+    .map((c) => ({ d: (tStart - c + peri) % peri, c }))
+    .filter(({ d }) => d > 1e-4 && d < span - 1e-4)
+    .sort((a, b) => a.d - b.d)
+    .map(({ c }) => tearFromBoundaryParam(c, w, h))
+}
+
+const tearToClipPath = (pts: TearPoint[], w: number, h: number) => {
+  const safeW = Math.max(w, 1)
+  const safeH = Math.max(h, 1)
+  return `polygon(${pts
+    .map(
+      (p) =>
+        `${((p.x / safeW) * 100).toFixed(3)}% ${((p.y / safeH) * 100).toFixed(3)}%`,
+    )
+    .join(', ')})`
+}
+
+const tearParseClipPath = (
+  clip: string | undefined,
+  w: number,
+  h: number,
+): TearPoint[] | null => {
+  if (!clip) return null
+  const match = clip.match(/polygon\(\s*(.+)\s*\)/i)
+  if (!match?.[1]) return null
+  const pts: TearPoint[] = []
+  for (const part of match[1].split(',')) {
+    const bits = part.trim().split(/\s+/)
+    if (bits.length < 2) continue
+    const xs = bits[0]!
+    const ys = bits[1]!
+    const x = xs.endsWith('%')
+      ? (parseFloat(xs) / 100) * w
+      : parseFloat(xs)
+    const y = ys.endsWith('%')
+      ? (parseFloat(ys) / 100) * h
+      : parseFloat(ys)
+    if (Number.isFinite(x) && Number.isFinite(y)) pts.push({ x, y })
+  }
+  return pts.length >= 3 ? pts : null
+}
+
+/** Keep p if it is to the left of directed edge a→b (or on it). */
+const tearLeftOf = (p: TearPoint, a: TearPoint, b: TearPoint) =>
+  (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) >= -1e-6
+
+const tearIntersectPolygons = (
+  subject: TearPoint[],
+  clip: TearPoint[],
+): TearPoint[] => {
+  let output = subject.slice()
+  for (let i = 0; i < clip.length; i += 1) {
+    const a = clip[i]!
+    const b = clip[(i + 1) % clip.length]!
+    const input = output
+    output = []
+    if (!input.length) break
+    let prev = input[input.length - 1]!
+    for (const cur of input) {
+      const curIn = tearLeftOf(cur, a, b)
+      const prevIn = tearLeftOf(prev, a, b)
+      if (curIn) {
+        if (!prevIn) {
+          const hit = tearSegIntersect(prev, cur, a, b)
+          if (hit) output.push(hit)
+        }
+        output.push(cur)
+      } else if (prevIn) {
+        const hit = tearSegIntersect(prev, cur, a, b)
+        if (hit) output.push(hit)
+      }
+      prev = cur
+    }
+  }
+  return output
+}
+
+const tearDedupePath = (pts: TearPoint[], eps = 0.4): TearPoint[] => {
+  if (!pts.length) return []
+  const out: TearPoint[] = [pts[0]!]
+  for (let i = 1; i < pts.length; i += 1) {
+    if (!tearNear(out[out.length - 1]!, pts[i]!, eps)) out.push(pts[i]!)
+  }
+  return out
+}
+
+const tearRectEdges = (w: number, h: number): [TearPoint, TearPoint][] => [
+  [
+    { x: 0, y: 0 },
+    { x: w, y: 0 },
+  ],
+  [
+    { x: w, y: 0 },
+    { x: w, y: h },
+  ],
+  [
+    { x: w, y: h },
+    { x: 0, y: h },
+  ],
+  [
+    { x: 0, y: h },
+    { x: 0, y: 0 },
+  ],
+]
+
+const tearPointInRect = (p: TearPoint, w: number, h: number, pad = 0.5) =>
+  p.x >= -pad && p.x <= w + pad && p.y >= -pad && p.y <= h + pad
+
+const tearSignedArea = (pts: TearPoint[]) => {
+  let area = 0
+  for (let i = 0; i < pts.length; i += 1) {
+    const p = pts[i]!
+    const q = pts[(i + 1) % pts.length]!
+    area += p.x * q.y - q.x * p.y
+  }
+  return area / 2
+}
+
+/** Force counter-clockwise winding so CSS clip-path fills the intended side. */
+const tearEnsureCcw = (pts: TearPoint[]) =>
+  tearSignedArea(pts) < 0 ? pts.slice().reverse() : pts
+
+const tearCentroid = (pts: TearPoint[]): TearPoint => {
+  let x = 0
+  let y = 0
+  for (const p of pts) {
+    x += p.x
+    y += p.y
+  }
+  const n = Math.max(pts.length, 1)
+  return { x: x / n, y: y / n }
+}
+
+/** Insert points along the seam so jagged offsets read as a paper edge. */
+const tearDensifySeam = (seam: TearPoint[], spacing: number): TearPoint[] => {
+  if (seam.length < 2) return seam.slice()
+  const out: TearPoint[] = [seam[0]!]
+  for (let i = 1; i < seam.length; i += 1) {
+    const a = seam[i - 1]!
+    const b = seam[i]!
+    const dist = Math.hypot(b.x - a.x, b.y - a.y)
+    const steps = Math.max(1, Math.round(dist / Math.max(spacing, 1)))
+    for (let k = 1; k <= steps; k += 1) {
+      const t = k / steps
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+    }
+  }
+  return tearDedupePath(out, 0.2)
+}
+
+/**
+ * Soft paper tear: smooth anchor waves plus a light high-frequency tick so the
+ * edge reads torn — not a dense sawtooth, but a touch more jagged than a curve.
+ */
+const tearJaggedSeam = (
+  seam: TearPoint[],
+  piecePoly: TearPoint[],
+  amp: number,
+): TearPoint[] => {
+  // ~1 sample every 11–14px
+  const dense = tearDensifySeam(seam, Math.max(11, amp * 2.2))
+  if (dense.length < 3) return dense
+  const c = tearCentroid(piecePoly)
+
+  // Anchor bumps along the seam; ends stay on the clean cut
+  const anchors = new Array(dense.length).fill(0) as number[]
+  const stride = Math.max(2, Math.round(dense.length / 7))
+  for (let i = stride; i < dense.length - 1; i += stride) {
+    anchors[i] = amp * (0.55 + Math.random() * 0.65)
+  }
+  if (dense.length >= 4) {
+    const mid = Math.floor(dense.length / 2)
+    if (anchors[mid] === 0) anchors[mid] = amp * (0.5 + Math.random() * 0.55)
+  }
+
+  const amounts = new Array(dense.length).fill(0) as number[]
+  let prevIdx = 0
+  for (let i = 1; i < dense.length; i += 1) {
+    const isAnchor = i === dense.length - 1 || (anchors[i] ?? 0) > 0
+    if (!isAnchor) continue
+    const a0 = anchors[prevIdx] ?? 0
+    const a1 = i === dense.length - 1 ? 0 : (anchors[i] ?? 0)
+    const span = i - prevIdx || 1
+    for (let k = prevIdx; k <= i; k += 1) {
+      const t = (k - prevIdx) / span
+      amounts[k] = a0 + (a1 - a0) * t
+    }
+    prevIdx = i
+  }
+
+  const out: TearPoint[] = [dense[0]!]
+  for (let i = 1; i < dense.length - 1; i += 1) {
+    const prev = dense[i - 1]!
+    const p = dense[i]!
+    const next = dense[i + 1]!
+    const tx = next.x - prev.x
+    const ty = next.y - prev.y
+    const len = Math.hypot(tx, ty) || 1
+    let nx = -ty / len
+    let ny = tx / len
+    const awayX = p.x - c.x
+    const awayY = p.y - c.y
+    if (nx * awayX + ny * awayY < 0) {
+      nx = -nx
+      ny = -ny
+    }
+    // Base outward wave + light tick for a touch more jagged
+    const tick = (Math.random() - 0.35) * amp * 0.35
+    const amount = Math.max(0.4, (amounts[i] ?? 0) + tick)
+    out.push({ x: p.x + nx * amount, y: p.y + ny * amount })
+  }
+  out.push(dense[dense.length - 1]!)
+  return out
+}
+
+/**
+ * If the open seam crosses itself, drop the loop so clip polygons stay simple.
+ */
+const tearUncrossSeam = (seam: TearPoint[]): TearPoint[] => {
+  let pts = seam.slice()
+  let guard = 0
+  while (guard < 24) {
+    guard += 1
+    let hitAt: { i: number; j: number; point: TearPoint } | null = null
+    for (let i = 0; i < pts.length - 1 && !hitAt; i += 1) {
+      for (let j = i + 2; j < pts.length - 1; j += 1) {
+        if (i === 0 && j === pts.length - 2) continue
+        const hit = tearSegIntersect(pts[i]!, pts[i + 1]!, pts[j]!, pts[j + 1]!)
+        if (!hit) continue
+        if (
+          tearNear(hit, pts[i]!, 0.5) ||
+          tearNear(hit, pts[i + 1]!, 0.5) ||
+          tearNear(hit, pts[j]!, 0.5) ||
+          tearNear(hit, pts[j + 1]!, 0.5)
+        ) {
+          continue
+        }
+        hitAt = { i, j, point: hit }
+        break
+      }
+    }
+    if (!hitAt) break
+    pts = [...pts.slice(0, hitAt.i + 1), hitAt.point, ...pts.slice(hitAt.j + 1)]
+  }
+  return tearDedupePath(pts, 0.5)
+}
+
+/** True when a closed polygon has non-adjacent intersecting edges (bow-tie / twist). */
+const tearPolygonSelfIntersects = (pts: TearPoint[]): boolean => {
+  const n = pts.length
+  if (n < 4) return false
+  for (let i = 0; i < n; i += 1) {
+    const a = pts[i]!
+    const b = pts[(i + 1) % n]!
+    for (let j = i + 1; j < n; j += 1) {
+      const c = pts[j]!
+      const d = pts[(j + 1) % n]!
+      // Skip shared / adjacent edges
+      if ((i + 1) % n === j || (j + 1) % n === i) continue
+      const hit = tearSegIntersect(a, b, c, d)
+      if (!hit) continue
+      if (
+        tearNear(hit, a, 0.6) ||
+        tearNear(hit, b, 0.6) ||
+        tearNear(hit, c, 0.6) ||
+        tearNear(hit, d, 0.6)
+      ) {
+        continue
+      }
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Midpoints must stay strictly inside. Points clamped onto the border run along
+ * the perimeter and double the boundary walk — that’s the twisted half.
+ */
+const tearStrictInteriorMids = (
+  seam: TearPoint[],
+  w: number,
+  h: number,
+  pad = 2,
+): TearPoint[] => {
+  if (seam.length < 2) return seam.slice()
+  const out: TearPoint[] = [tearNearestBoundary(seam[0]!, w, h)]
+  for (let i = 1; i < seam.length - 1; i += 1) {
+    const p = seam[i]!
+    if (p.x < pad || p.x > w - pad || p.y < pad || p.y > h - pad) continue
+    out.push(p)
+  }
+  out.push(tearNearestBoundary(seam[seam.length - 1]!, w, h))
+  return tearDedupePath(out, 0.4)
+}
+
+/**
+ * Build the seam from a freehand path that may start/end outside the image.
+ * Uses the longest enter→exit span; mid samples stay strictly interior so the
+ * cut can curve without gluing to the border (which twists a clip half).
+ */
+const tearSeamFromOpenPath = (
+  path: TearPoint[],
+  w: number,
+  h: number,
+): TearPoint[] | null => {
+  if (path.length < 2 || tearPathLength(path) < 12) return null
+
+  type Crossing = { order: number; point: TearPoint }
+  const crossings: Crossing[] = []
+  const edges = tearRectEdges(w, h)
+
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const a = path[i]!
+    const b = path[i + 1]!
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const len2 = dx * dx + dy * dy || 1
+    for (const [e1, e2] of edges) {
+      const hit = tearSegIntersect(a, b, e1, e2)
+      if (!hit) continue
+      const t = ((hit.x - a.x) * dx + (hit.y - a.y) * dy) / len2
+      crossings.push({
+        order: i + Math.min(1, Math.max(0, t)),
+        point: tearClamp(hit, w, h),
+      })
+    }
+  }
+
+  crossings.sort((a, b) => a.order - b.order)
+  const unique: Crossing[] = []
+  for (const crossing of crossings) {
+    const prev = unique[unique.length - 1]
+    if (
+      prev &&
+      (tearNear(prev.point, crossing.point, 1.25) ||
+        crossing.order - prev.order < 0.04)
+    ) {
+      continue
+    }
+    unique.push(crossing)
+  }
+
+  if (unique.length < 2) return null
+
+  let expectEnter = !tearPointInRect(path[0]!, w, h)
+  type Span = { start: Crossing; end: Crossing; len: number }
+  const spans: Span[] = []
+  let open: Crossing | null = null
+  for (const crossing of unique) {
+    if (expectEnter) {
+      open = crossing
+      expectEnter = false
+    } else if (open) {
+      spans.push({
+        start: open,
+        end: crossing,
+        len: crossing.order - open.order,
+      })
+      open = null
+      expectEnter = true
+    }
+  }
+  if (!spans.length) {
+    spans.push({
+      start: unique[0]!,
+      end: unique[unique.length - 1]!,
+      len: unique[unique.length - 1]!.order - unique[0]!.order,
+    })
+  }
+  spans.sort((a, b) => b.len - a.len)
+  const { start: bestStart, end: bestEnd } = spans[0]!
+  if (bestEnd.order - bestStart.order < 0.05) return null
+
+  const pad = Math.min(3, Math.min(w, h) * 0.02)
+  const seam: TearPoint[] = [bestStart.point]
+  for (let i = 0; i < path.length; i += 1) {
+    if (i <= bestStart.order || i >= bestEnd.order) continue
+    const p = path[i]!
+    // Skip outside / border samples — never clamp them onto the perimeter
+    if (p.x < pad || p.x > w - pad || p.y < pad || p.y > h - pad) continue
+    seam.push(p)
+  }
+  seam.push(bestEnd.point)
+
+  let cleaned = tearStrictInteriorMids(tearDedupePath(seam, 0.4), w, h, pad)
+  cleaned = tearSimplifyPath(cleaned, 0.75)
+  cleaned = tearUncrossSeam(cleaned)
+  cleaned = tearStrictInteriorMids(cleaned, w, h, pad)
+
+  if (cleaned.length < 2 || tearPathLength(cleaned) < 12) return null
+  return cleaned
+}
+
+/** Build both halves; progressively simplify the seam until neither poly twists. */
+const tearBuildHalves = (
+  seamIn: TearPoint[],
+  w: number,
+  h: number,
+): { seam: TearPoint[]; polyA: TearPoint[]; polyB: TearPoint[] } | null => {
+  const t0 = tearBoundaryParam(seamIn[0]!, w, h)
+  const t1 = tearBoundaryParam(seamIn[seamIn.length - 1]!, w, h)
+  const peri = 2 * (w + h)
+  if (Math.min((t1 - t0 + peri) % peri, (t0 - t1 + peri) % peri) < 1) {
+    return null
+  }
+  const walkA = tearWalkPerimeter(t1, t0, w, h, true)
+  const walkB = tearWalkPerimeter(t0, t1, w, h, true)
+
+  let seam = seamIn
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const seamRev = seam.slice().reverse()
+    // Keep construction order — only normalize winding after we know it’s simple
+    let polyA = tearDedupePath([...seam, ...walkA], 0.35)
+    let polyB = tearDedupePath([...seamRev, ...walkB], 0.35)
+    const twistA = tearPolygonSelfIntersects(polyA)
+    const twistB = tearPolygonSelfIntersects(polyB)
+    if (!twistA && !twistB) {
+      polyA = tearEnsureCcw(polyA)
+      polyB = tearEnsureCcw(polyB)
+      if (Math.abs(tearSignedArea(polyA)) < 1 || Math.abs(tearSignedArea(polyB)) < 1) {
+        return null
+      }
+      return { seam, polyA, polyB }
+    }
+    // Soften the curve a bit more and drop any loop — keep freehand character
+    seam = tearSimplifyPath(seam, 0.75 + attempt * 1.1)
+    seam = tearUncrossSeam(seam)
+    seam = tearStrictInteriorMids(seam, w, h, Math.min(3, Math.min(w, h) * 0.02))
+    if (seam.length < 2) break
+  }
+  return null
+}
+
+export type TearClipResult = {
+  /** Photo fragment clips (clean cut). */
+  image: [string, string]
+  /** White paper backs — jagged randomized tear edge only. */
+  backing: [string, string]
+}
+
+/**
+ * Split a layout rect along a freehand cursor path into two CSS clip-path polygons.
+ * Path points are in the item’s unscaled layout box and may lie outside it.
+ * When `existingClip` is set, each half is intersected with that fragment.
+ * Also builds white backing polygons with a randomized tear edge.
+ */
+export const tearClipPathsForPath = (
+  w: number,
+  h: number,
+  rawPath: TearPoint[],
+  existingClip?: string,
+): TearClipResult | null => {
+  const simplified = tearSimplifyPath(rawPath, 0.6)
+  const cleanSeam = tearSeamFromOpenPath(simplified, w, h)
+  if (!cleanSeam || cleanSeam.length < 2) return null
+
+  let halves = tearBuildHalves(cleanSeam, w, h)
+  if (!halves && cleanSeam.length >= 3) {
+    // Last resort: keep a single mid bend so the cut isn’t forced straight
+    const mid = cleanSeam[Math.floor(cleanSeam.length / 2)]!
+    halves = tearBuildHalves(
+      [cleanSeam[0]!, mid, cleanSeam[cleanSeam.length - 1]!],
+      w,
+      h,
+    )
+  }
+  if (!halves) return null
+
+  let { polyA, polyB } = halves
+  const seamA = halves.seam
+  const seamB = seamA.slice().reverse()
+  const t0 = tearBoundaryParam(seamA[0]!, w, h)
+  const t1 = tearBoundaryParam(seamA[seamA.length - 1]!, w, h)
+  const walkA = tearWalkPerimeter(t1, t0, w, h, true)
+  const walkB = tearWalkPerimeter(t0, t1, w, h, true)
+
+  const amp = Math.min(7.5, Math.max(2.8, Math.min(w, h) * 0.018))
+  let backA = tearEnsureCcw(
+    tearDedupePath([...tearJaggedSeam(seamA, polyA, amp), ...walkA], 0.35),
+  )
+  let backB = tearEnsureCcw(
+    tearDedupePath([...tearJaggedSeam(seamB, polyB, amp), ...walkB], 0.35),
+  )
+  // If jagged backs somehow self-intersect, fall back to the clean photo edge
+  if (tearPolygonSelfIntersects(backA)) backA = polyA
+  if (tearPolygonSelfIntersects(backB)) backB = polyB
+
+  const mask = tearParseClipPath(existingClip, w, h)
+  if (mask) {
+    const maskCcw = tearEnsureCcw(mask)
+    polyA = tearEnsureCcw(tearIntersectPolygons(polyA, maskCcw))
+    polyB = tearEnsureCcw(tearIntersectPolygons(polyB, maskCcw))
+    backA = tearEnsureCcw(tearIntersectPolygons(backA, maskCcw))
+    backB = tearEnsureCcw(tearIntersectPolygons(backB, maskCcw))
+  }
+
+  if (polyA.length < 3 || polyB.length < 3) return null
+  if (Math.abs(tearSignedArea(polyA)) < 1 || Math.abs(tearSignedArea(polyB)) < 1) {
+    return null
+  }
+  if (backA.length < 3 || backB.length < 3) {
+    backA = polyA
+    backB = polyB
+  }
+  return {
+    image: [tearToClipPath(polyA, w, h), tearToClipPath(polyB, w, h)],
+    backing: [tearToClipPath(backA, w, h), tearToClipPath(backB, w, h)],
+  }
 }
 
 export type MoodboardStroke = {
@@ -35,8 +705,19 @@ export const useMoodboard = () => {
   const placements = useState<MoodboardItem[]>('moodboard-placements', () => [])
   const strokes = useState<MoodboardStroke[]>('moodboard-strokes', () => [])
   const activeId = useState<string | null>('moodboard-active', () => null)
+  /** Multi-select set — activeId is the primary (last focused) member. */
+  const selectedIds = useState<string[]>('moodboard-selected', () => [])
   const activeStrokeId = useState<string | null>('moodboard-active-stroke', () => null)
   const zCounter = useState<number>('moodboard-z', () => 1)
+  const tearUndo = useState<{
+    original: MoodboardItem
+    pieceIds: [string, string]
+  } | null>('moodboard-tear-undo', () => null)
+
+  const selectOnly = (id: string | null) => {
+    selectedIds.value = id ? [id] : []
+    activeId.value = id
+  }
 
   const initFromBucket = (
     items: {
@@ -65,23 +746,56 @@ export const useMoodboard = () => {
         scale: 1.5,
       }
     })
-    activeId.value = null
+    selectOnly(null)
   }
 
-  const bringToFront = (id: string) => {
+  const bringToFront = (
+    id: string,
+    opts?: { additive?: boolean; preserveSelection?: boolean },
+  ) => {
+    activeStrokeId.value = null
+
+    // Shift multi-select — only change membership, leave stacking alone
+    if (opts?.additive) {
+      const set = new Set(selectedIds.value)
+      if (set.has(id)) {
+        set.delete(id)
+        selectedIds.value = [...set]
+        activeId.value = selectedIds.value[selectedIds.value.length - 1] ?? null
+      } else {
+        selectedIds.value = [...selectedIds.value, id]
+        activeId.value = id
+      }
+      return
+    }
+
+    // Clicking within an existing multi-selection — keep z as-is
+    if (opts?.preserveSelection && selectedIds.value.includes(id)) {
+      activeId.value = id
+      return
+    }
+
     zCounter.value += 1
     const z = zCounter.value
     placements.value = placements.value.map((item) =>
       item.id === id ? { ...item, z } : item,
     )
-    activeId.value = id
-    activeStrokeId.value = null
+    selectOnly(id)
   }
 
   const updatePosition = (id: string, x: number, y: number) => {
     placements.value = placements.value.map((item) =>
       item.id === id ? { ...item, x, y } : item,
     )
+  }
+
+  const updatePositions = (updates: { id: string; x: number; y: number }[]) => {
+    if (!updates.length) return
+    const byId = new Map(updates.map((entry) => [entry.id, entry]))
+    placements.value = placements.value.map((item) => {
+      const next = byId.get(item.id)
+      return next ? { ...item, x: next.x, y: next.y } : item
+    })
   }
 
   const updateScale = (id: string, scale: number) => {
@@ -91,7 +805,7 @@ export const useMoodboard = () => {
   }
 
   const clearActive = () => {
-    activeId.value = null
+    selectOnly(null)
     activeStrokeId.value = null
   }
 
@@ -112,7 +826,7 @@ export const useMoodboard = () => {
         scale: 1,
       },
     ]
-    activeId.value = id
+    selectOnly(id)
     return id
   }
 
@@ -158,7 +872,7 @@ export const useMoodboard = () => {
         sourceSelectionId: options?.sourceSelectionId,
       },
     ]
-    activeId.value = id
+    selectOnly(id)
     return id
   }
 
@@ -200,10 +914,13 @@ export const useMoodboard = () => {
 
   const selectStroke = (id: string | null) => {
     activeStrokeId.value = id
-    if (id) activeId.value = null
+    if (id) selectOnly(null)
   }
 
-  const addText = (text = 'Double-click to edit') => {
+  const addText = (
+    text = 'Double-click to edit',
+    textStyle: 'mono' | 'handwritten' = 'mono',
+  ) => {
     const id = `text-${Date.now()}-${Math.round(Math.random() * 1000)}`
     zCounter.value += 1
     placements.value = [
@@ -213,13 +930,17 @@ export const useMoodboard = () => {
         kind: 'text',
         title: text,
         text,
+        textStyle,
         x: 160 + (placements.value.length % 5) * 40,
         y: 160 + (placements.value.length % 5) * 40,
         z: zCounter.value,
         scale: 1,
+        // Size is content-driven in the canvas — never a fixed thumb width
+        width: undefined,
+        height: undefined,
       },
     ]
-    activeId.value = id
+    selectOnly(id)
     return id
   }
 
@@ -231,7 +952,16 @@ export const useMoodboard = () => {
 
   const removeItem = (id: string) => {
     placements.value = placements.value.filter((item) => item.id !== id)
-    if (activeId.value === id) activeId.value = null
+    selectedIds.value = selectedIds.value.filter((entry) => entry !== id)
+    if (activeId.value === id) {
+      activeId.value = selectedIds.value[selectedIds.value.length - 1] ?? null
+    }
+    if (
+      tearUndo.value &&
+      (tearUndo.value.pieceIds[0] === id || tearUndo.value.pieceIds[1] === id)
+    ) {
+      tearUndo.value = null
+    }
   }
 
   const cloneItem = (id: string) => {
@@ -246,16 +976,140 @@ export const useMoodboard = () => {
     // Clone is board-only — don't reclaim the parked cart item twice
     delete copy.sourceBucketItemId
     delete copy.sourceSelectionId
+    delete copy.tearRestore
     placements.value = [...placements.value, copy]
-    activeId.value = copy.id
+    selectOnly(copy.id)
     return copy.id
+  }
+
+  /**
+   * Split an image along a freehand cursor path (local unscaled layout coords).
+   */
+  const tearItem = (
+    id: string,
+    path: { x: number; y: number }[],
+    size: { width: number; height: number },
+  ) => {
+    const source = placements.value.find((item) => item.id === id)
+    if (!source || source.kind !== 'image' || !source.imageUrl) return null
+
+    const clips = tearClipPathsForPath(
+      size.width,
+      size.height,
+      path,
+      source.clipPath,
+    )
+    if (!clips) return null
+
+    const stamp = Date.now()
+    const original = JSON.parse(JSON.stringify(source)) as MoodboardItem
+    const base = JSON.parse(JSON.stringify(source)) as MoodboardItem
+    // Only one fragment keeps the cart link so close doesn’t restore twice
+    // Nudge halves apart so white backing reads on both torn edges
+    const polyA = tearParseClipPath(clips.image[0], size.width, size.height)
+    const polyB = tearParseClipPath(clips.image[1], size.width, size.height)
+    let sepX = 6
+    let sepY = 0
+    if (polyA && polyB) {
+      const cA = tearCentroid(polyA)
+      const cB = tearCentroid(polyB)
+      const dx = cB.x - cA.x
+      const dy = cB.y - cA.y
+      const len = Math.hypot(dx, dy) || 1
+      const sep = Math.min(14, Math.max(8, Math.min(size.width, size.height) * 0.04))
+      sepX = (dx / len) * sep
+      sepY = (dy / len) * sep
+    }
+
+    const idA = `${source.id}-tear-a-${stamp}`
+    const idB = `${source.id}-tear-b-${stamp}`
+    // Fresh restore target = piece before this tear (drop nested restore)
+    delete base.tearRestore
+    const pieceA: MoodboardItem = {
+      ...base,
+      id: idA,
+      clipPath: clips.image[0],
+      tearBackClipPath: clips.backing[0],
+      width: size.width,
+      height: size.height,
+      x: base.x - sepX / 2,
+      y: base.y - sepY / 2,
+      z: ++zCounter.value,
+      tearRestore: { original, siblingId: idB },
+    }
+    const pieceB: MoodboardItem = {
+      ...base,
+      id: idB,
+      clipPath: clips.image[1],
+      tearBackClipPath: clips.backing[1],
+      width: size.width,
+      height: size.height,
+      x: base.x + sepX / 2,
+      y: base.y + sepY / 2,
+      z: ++zCounter.value,
+      tearRestore: { original, siblingId: idA },
+    }
+    delete pieceB.sourceBucketItemId
+    delete pieceB.sourceSelectionId
+
+    placements.value = placements.value.flatMap((item) =>
+      item.id === id ? [pieceA, pieceB] : [item],
+    )
+    // Clear selection so the next click grabs one side (not both as a group)
+    selectedIds.value = []
+    activeId.value = null
+    activeStrokeId.value = null
+    tearUndo.value = { original, pieceIds: [pieceA.id, pieceB.id] }
+    return { a: pieceA.id, b: pieceB.id }
+  }
+
+  /** Restore the pre-tear image from either torn half. */
+  const restoreTearPiece = (id: string) => {
+    const piece = placements.value.find((item) => item.id === id)
+    const restore = piece?.tearRestore
+    if (!piece || !restore) return false
+
+    const siblingId = restore.siblingId
+    const restored = JSON.parse(JSON.stringify(restore.original)) as MoodboardItem
+    delete restored.tearRestore
+
+    placements.value = placements.value.flatMap((item) => {
+      if (item.id === id) return [restored]
+      if (item.id === siblingId) return []
+      return [item]
+    })
+    selectOnly(restored.id)
+
+    if (
+      tearUndo.value &&
+      (tearUndo.value.pieceIds[0] === id ||
+        tearUndo.value.pieceIds[1] === id ||
+        tearUndo.value.pieceIds[0] === siblingId ||
+        tearUndo.value.pieceIds[1] === siblingId)
+    ) {
+      tearUndo.value = null
+    }
+    return true
+  }
+
+  const undoTear = () => {
+    const undo = tearUndo.value
+    if (!undo) return false
+    const [idA, idB] = undo.pieceIds
+    if (restoreTearPiece(idA)) return true
+    return restoreTearPiece(idB)
+  }
+
+  const clearTearUndo = () => {
+    tearUndo.value = null
   }
 
   const reset = () => {
     placements.value = []
     strokes.value = []
-    activeId.value = null
+    selectOnly(null)
     activeStrokeId.value = null
+    tearUndo.value = null
     zCounter.value = 1
   }
 
@@ -265,8 +1119,9 @@ export const useMoodboard = () => {
   ) => {
     placements.value = JSON.parse(JSON.stringify(nextPlacements)) as MoodboardItem[]
     strokes.value = JSON.parse(JSON.stringify(nextStrokes)) as MoodboardStroke[]
-    activeId.value = null
+    selectOnly(null)
     activeStrokeId.value = null
+    tearUndo.value = null
     zCounter.value = placements.value.reduce((max, item) => Math.max(max, item.z), 1)
   }
 
@@ -279,12 +1134,15 @@ export const useMoodboard = () => {
     placements,
     strokes,
     activeId,
+    selectedIds,
     activeStrokeId,
+    tearUndo,
     initFromBucket,
     loadBoard,
     snapshot,
     bringToFront,
     updatePosition,
+    updatePositions,
     updateScale,
     clearActive,
     addColour,
@@ -299,6 +1157,10 @@ export const useMoodboard = () => {
     updateText,
     removeItem,
     cloneItem,
+    tearItem,
+    restoreTearPiece,
+    undoTear,
+    clearTearUndo,
     reset,
   }
 }

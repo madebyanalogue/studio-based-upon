@@ -17,7 +17,7 @@
       </button>
     </header>
 
-    <div ref="scrollEl" class="library-panel__scroll">
+    <div ref="scrollEl" class="library-panel__scroll" data-moodboard-scroll data-lenis-prevent>
       <section
         v-for="group in groups"
         :key="group.value"
@@ -118,11 +118,12 @@ const groups = computed(() =>
 
 <style scoped>
 .library-panel {
-  position: absolute;
+  /* Fixed + body-teleported — above selection stack (310) while board editing */
+  position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 350;
+  z-index: 320;
   width: min(22rem, 88vw);
   display: flex;
   flex-direction: column;
@@ -171,6 +172,7 @@ const groups = computed(() =>
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: 0.75rem 1rem 2rem;
 }
 

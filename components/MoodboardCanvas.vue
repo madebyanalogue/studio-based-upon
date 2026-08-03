@@ -7,27 +7,38 @@
         'moodboard--ready': surfaceReady,
         'moodboard--panel-ready': panelReady,
         'moodboard--items-out': itemsOut,
+        'moodboard--capturing': isCapturingPreview,
       }"
       role="dialog"
       aria-modal="true"
       aria-label="Moodboard composer"
+      @wheel.capture="onOverlayWheel"
     >
       <div class="moodboard__workspace">
-        <MoodboardLibraryPanel
-          :open="libraryOpen"
-          @close="libraryOpen = false"
-          @select="onLibrarySelect"
-        />
+        <!-- Body teleport: must sit above BucketStack (.stack--moodboard = 310) -->
+        <Teleport to="body">
+          <MoodboardLibraryPanel
+            :open="libraryOpen"
+            @close="libraryOpen = false"
+            @select="onLibrarySelect"
+          />
+        </Teleport>
 
         <div
           ref="canvasEl"
           class="moodboard__canvas grid-bg"
-          :class="{ 'moodboard__canvas--drawing': isDrawing }"
-          @click.self="clearActive"
+          :class="{
+            'moodboard__canvas--drawing': isDrawing,
+            'moodboard__canvas--tearing': isTearing,
+            'moodboard__canvas--tear-ready': tearStrokeReady,
+          }"
+          @click.self="onCanvasClickSelf"
         >
         <svg
           class="moodboard__draw-layer"
-          :class="{ 'moodboard__draw-layer--active': isDrawing }"
+          :class="{
+            'moodboard__draw-layer--active': isDrawing || tearStrokeReady,
+          }"
           @pointerdown="onDrawLayerPointerDown"
           @pointermove="onDrawMove"
           @pointerup="onDrawEnd"
@@ -127,15 +138,23 @@
           :class="[
             `moodboard__item--${item.kind}`,
             {
-              'moodboard__item--active': activeId === item.id,
+              'moodboard__item--active': selectedIds.includes(item.id),
+              'moodboard__item--multi':
+                selectedIds.includes(item.id) && selectedIds.length > 1,
+              'moodboard__item--primary': activeId === item.id,
               'moodboard__item--resizing': resizeState?.id === item.id,
               'moodboard__item--contain': item.objectFit === 'contain',
               'moodboard__item--natural': !!item.height,
               'moodboard__item--returning': returningId === item.id,
+              'moodboard__item--handwritten':
+                item.kind === 'text' && item.textStyle === 'handwritten',
             },
           ]"
           :style="{
-            width: `${item.width || 210}px`,
+            width:
+              item.kind === 'text'
+                ? 'max-content'
+                : `${item.width || 210}px`,
             height: item.height ? `${item.height}px` : undefined,
             transform: `translate(${item.x}px, ${item.y}px) scale(${item.scale})`,
             transformOrigin: 'top left',
@@ -143,16 +162,29 @@
             '--inv-scale': 1 / item.scale,
           }"
           @pointerdown="onPointerDown($event, item.id)"
-          @click="bringToFront(item.id)"
         >
           <template v-if="item.kind === 'image'">
-            <img :src="item.imageUrl" :alt="item.title" draggable="false" />
+            <div
+              v-if="item.tearBackClipPath"
+              class="moodboard__tear-back"
+              aria-hidden="true"
+              :style="{ clipPath: item.tearBackClipPath }"
+            />
+            <img
+              :src="item.imageUrl"
+              :alt="item.title"
+              class="moodboard__image"
+              :style="item.clipPath ? { clipPath: item.clipPath } : undefined"
+              draggable="false"
+            />
             <ImageCycleArrows
-              v-if="(item.imageUrls?.length || 0) > 1"
+              v-if="!item.clipPath && (item.imageUrls?.length || 0) > 1"
               class="moodboard__cycle"
-              :style="{ transform: `translateX(-50%) scale(${1 / item.scale})` }"
+              :style="{ transform: `scale(${1 / item.scale})` }"
               :index="item.imageIndex ?? 0"
               :count="item.imageUrls?.length || 0"
+              hide-count
+              boxed
               @prev="cycleItemImage(item.id, -1)"
               @next="cycleItemImage(item.id, 1)"
             />
@@ -167,10 +199,15 @@
 
           <template v-else-if="item.kind === 'text'">
             <div
-              class="moodboard__text  interface"
+              class="moodboard__text"
+              :class="
+                item.textStyle === 'handwritten'
+                  ? 'moodboard__text--handwritten'
+                  : 'interface'
+              "
               :data-editing="item.id"
               :contenteditable="editingId === item.id"
-              @dblclick="startEditing(item.id)"
+              @dblclick.stop="onTextDblClick($event, item.id)"
               @blur="onTextBlur($event, item.id)"
               @keydown.enter.prevent="($event.target as HTMLElement).blur()"
               @pointerdown="onTextPointerDown($event, item.id)"
@@ -178,8 +215,22 @@
           </template>
 
           <button
+            v-if="item.tearRestore"
             type="button"
-            class="moodboard__clone"
+            class="moodboard__chip moodboard__restore"
+            aria-label="Restore torn piece"
+            title="Restore"
+            :style="{ transform: `scale(${1 / item.scale})` }"
+            @pointerdown.stop
+            @click.stop="restoreTearPiece(item.id)"
+          >
+            Restore
+          </button>
+
+          <button
+            v-if="item.kind !== 'text'"
+            type="button"
+            class="moodboard__chip moodboard__clone"
             aria-label="Clone item"
             title="Clone"
             :style="{ transform: `scale(${1 / item.scale})` }"
@@ -189,7 +240,21 @@
             Clone
           </button>
 
+          <button
+            v-if="item.kind === 'text'"
+            type="button"
+            class="moodboard__chip moodboard__remove-chip"
+            aria-label="Remove text"
+            title="Remove"
+            :style="{ transform: `translate(50%, -50%) scale(${1 / item.scale})` }"
+            @pointerdown.stop
+            @click.stop="onRemovePlacement(item.id)"
+          >
+            Remove
+          </button>
+
           <div
+            v-else
             class="moodboard__remove"
             :style="{ transform: `scale(${1 / item.scale})` }"
             @pointerdown.stop
@@ -201,7 +266,13 @@
             />
           </div>
 
-          <template v-if="activeId === item.id && editingId !== item.id">
+          <template
+            v-if="
+              activeId === item.id &&
+              editingId !== item.id &&
+              item.kind !== 'text'
+            "
+          >
             <span
               v-for="corner in corners"
               :key="corner"
@@ -212,6 +283,21 @@
             />
           </template>
         </div>
+
+        <svg
+          v-if="tearState"
+          class="moodboard__tear-line"
+          aria-hidden="true"
+        >
+          <polyline
+            :points="tearCanvasPointsAttr"
+            fill="none"
+            stroke="var(--charcoal)"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
       </div>
       </div>
 
@@ -247,6 +333,15 @@
           @click="onAddText"
         >
           <span class="moodboard__action-text">T</span>
+        </button>
+        <button
+          type="button"
+          class="moodboard__action"
+          aria-label="Add handwritten text"
+          title="Add handwritten text"
+          @click="onAddHandwrittenText"
+        >
+          <span class="moodboard__action-text moodboard__action-text--script">A</span>
         </button>
         <button
           type="button"
@@ -289,7 +384,77 @@
             <path d="m13 6 6 6-6 6" />
           </svg>
         </button>
+        <button
+          type="button"
+          class="moodboard__action"
+          :class="{ 'moodboard__action--active': drawTool === 'tear' }"
+          :aria-pressed="drawTool === 'tear'"
+          aria-label="Tear image"
+          title="Tear image"
+          @click="toggleDrawTool('tear')"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 4c2 3 2 5 0 8s-2 5 0 8" />
+            <path d="M12 4c2 3 2 5 0 8s-2 5 0 8" />
+            <path d="M20 4c2 3 2 5 0 8s-2 5 0 8" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="moodboard__action moodboard__action--theme"
+          :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+          :aria-pressed="isDark"
+          :title="isDark ? 'Light mode' : 'Dark mode'"
+          @click="toggleTheme"
+        >
+          <svg
+            class="moodboard__theme-icon moodboard__theme-icon--sun"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
+          </svg>
+          <svg
+            class="moodboard__theme-icon moodboard__theme-icon--moon"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
+          </svg>
+        </button>
       </div>
+
+      <p v-if="drawTool === 'tear'" class="moodboard__tear-hint interface">
+        {{
+          tearStrokeReady
+            ? 'Draw a tear line — start and end outside the image'
+            : 'Select an image to tear'
+        }}
+      </p>
+
+      <button
+        v-if="tearUndo && !drawTool"
+        type="button"
+        class="moodboard__tear-undo btn"
+        @click="onUndoTear"
+      >
+        Undo tear
+      </button>
 
       <div v-if="drawTool === 'pen'" class="moodboard__pen-bar">
         <label class="moodboard__pen-swatch" :style="{ background: penColour }" title="Pen colour">
@@ -470,9 +635,11 @@ const {
   placements,
   strokes,
   activeId,
+  selectedIds,
   activeStrokeId,
   bringToFront,
   updatePosition,
+  updatePositions,
   updateScale,
   clearActive,
   addColour,
@@ -487,12 +654,17 @@ const {
   updateText,
   removeItem,
   cloneItem,
+  tearItem,
+  tearUndo,
+  restoreTearPiece,
+  undoTear,
   loadBoard,
   reset,
   snapshot,
 } = useMoodboard()
 const { openFromMoodboard } = useEnquiryForm()
 const { imageUrl: buildLibraryUrl } = useSanityImage()
+const { isDark, toggleTheme } = useTheme()
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br'
 const corners: Corner[] = ['tl', 'tr', 'bl', 'br']
@@ -500,6 +672,8 @@ const corners: Corner[] = ['tl', 'tr', 'bl', 'br']
 const canvasEl = ref<HTMLElement | null>(null)
 const switcherRef = ref<HTMLElement | null>(null)
 const switchOpen = ref(false)
+/** Hide selection chrome while capturing a board thumbnail. */
+const isCapturingPreview = ref(false)
 const colourInput = ref<HTMLInputElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const pendingColour = ref('#c8a86b')
@@ -529,11 +703,37 @@ const cancelTitleEdit = () => {
   titleEditing.value = false
 }
 
-type DrawTool = 'pen' | 'arrow'
+type DrawTool = 'pen' | 'arrow' | 'tear'
 const ARROW_COLOR = '#1a1a1a'
 const ARROW_WIDTH = 3
 const drawTool = ref<DrawTool | null>(null)
-const isDrawing = computed(() => drawTool.value !== null)
+/** Pen / arrow use the draw layer; tear keeps items interactive. */
+const isDrawing = computed(
+  () => drawTool.value === 'pen' || drawTool.value === 'arrow',
+)
+const isTearing = computed(() => drawTool.value === 'tear')
+/** Image chosen in tear mode — stroke is drawn on the canvas overlay. */
+const tearTargetId = computed(() => {
+  if (drawTool.value !== 'tear' || !activeId.value) return null
+  const item = placements.value.find((entry) => entry.id === activeId.value)
+  return item?.kind === 'image' ? item.id : null
+})
+const tearStrokeReady = computed(() => !!tearTargetId.value)
+const tearState = ref<{
+  id: string
+  layoutW: number
+  layoutH: number
+  originX: number
+  originY: number
+  scale: number
+  localPath: { x: number; y: number }[]
+  canvasPath: { x: number; y: number }[]
+} | null>(null)
+const tearCanvasPointsAttr = computed(() =>
+  (tearState.value?.canvasPath || [])
+    .map((p) => `${p.x},${p.y}`)
+    .join(' '),
+)
 const libraryOpen = ref(false)
 const penColour = ref('#1a1a1a')
 const penWidth = ref(4)
@@ -544,7 +744,19 @@ const currentStroke = ref<{
   points: { x: number; y: number }[]
 } | null>(null)
 const arrowHandleDrag = ref<{ id: string; end: 0 | 1 } | null>(null)
-const dragState = ref<{ id: string; offsetX: number; offsetY: number } | null>(null)
+const dragState = ref<{
+  ids: string[]
+  origins: Record<string, { x: number; y: number }>
+  startPointerX: number
+  startPointerY: number
+} | null>(null)
+/** Text: second click (no drag) enters edit; tracks the press for that. */
+const textEditGesture = ref<{
+  id: string
+  x: number
+  y: number
+  wasSelected: boolean
+} | null>(null)
 const resizeState = ref<{
   id: string
   anchorX: number
@@ -567,6 +779,25 @@ const openSnapshot = ref<OpenSnapshot | null>(null)
 let cancelRevertTimer: ReturnType<typeof setTimeout> | null = null
 
 const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** Block wheel from scrolling the page under the overlay; allow nested panels. */
+const onOverlayWheel = (event: WheelEvent) => {
+  const target = event.target as HTMLElement | null
+  const scroller = target?.closest?.(
+    '[data-moodboard-scroll], [data-lenis-prevent]',
+  ) as HTMLElement | null
+  if (scroller) {
+    const { scrollTop, scrollHeight, clientHeight } = scroller
+    const canScroll = scrollHeight > clientHeight + 1
+    if (canScroll) {
+      const atTop = scrollTop <= 0 && event.deltaY < 0
+      const atBottom =
+        scrollTop + clientHeight >= scrollHeight - 1 && event.deltaY > 0
+      if (!atTop && !atBottom) return
+    }
+  }
+  event.preventDefault()
+}
 
 watch(
   isMoodboard,
@@ -881,6 +1112,116 @@ const toggleDrawTool = (tool: DrawTool) => {
   }
   currentStroke.value = null
   arrowHandleDrag.value = null
+  tearState.value = null
+}
+
+const onCanvasClickSelf = () => {
+  // Keep the chosen tear target while drawing outside the image
+  if (drawTool.value === 'tear') return
+  clearActive()
+}
+
+const canvasPointFromEvent = (event: PointerEvent) => {
+  const canvasRect = canvasEl.value?.getBoundingClientRect()
+  if (!canvasRect) return { x: 0, y: 0 }
+  return {
+    x: event.clientX - canvasRect.left,
+    y: event.clientY - canvasRect.top,
+  }
+}
+
+const measureTearTarget = (id: string) => {
+  if (!canvasEl.value) return null
+  const item = placements.value.find((entry) => entry.id === id)
+  if (!item || item.kind !== 'image') return null
+  const itemEl = canvasEl.value.querySelector(
+    `[data-placement-id="${CSS.escape(id)}"]`,
+  ) as HTMLElement | null
+  if (!itemEl) return null
+  const canvasRect = canvasEl.value.getBoundingClientRect()
+  const rect = itemEl.getBoundingClientRect()
+  const scale = item.scale || 1
+  return {
+    id,
+    layoutW: rect.width / scale,
+    layoutH: rect.height / scale,
+    originX: rect.left - canvasRect.left,
+    originY: rect.top - canvasRect.top,
+    scale,
+  }
+}
+
+const canvasToLocal = (
+  canvasPt: { x: number; y: number },
+  target: { originX: number; originY: number; scale: number },
+) => ({
+  x: (canvasPt.x - target.originX) / target.scale,
+  y: (canvasPt.y - target.originY) / target.scale,
+})
+
+const beginTearStroke = (event: PointerEvent) => {
+  const id = tearTargetId.value
+  if (!id || !canvasEl.value) return
+  const measured = measureTearTarget(id)
+  if (!measured) return
+  const canvasPt = canvasPointFromEvent(event)
+  const local = canvasToLocal(canvasPt, measured)
+  tearState.value = {
+    ...measured,
+    localPath: [local],
+    canvasPath: [canvasPt],
+  }
+  ;(event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId)
+}
+
+const updateTear = (event: PointerEvent) => {
+  if (!tearState.value || !canvasEl.value) return
+  const canvasRect = canvasEl.value.getBoundingClientRect()
+  const { originX, originY, scale } = tearState.value
+
+  const samples =
+    typeof event.getCoalescedEvents === 'function' && event.getCoalescedEvents().length
+      ? event.getCoalescedEvents()
+      : [event]
+
+  let localPath = tearState.value.localPath.slice()
+  let canvasPath = tearState.value.canvasPath.slice()
+  for (const sample of samples) {
+    const canvasPt = {
+      x: sample.clientX - canvasRect.left,
+      y: sample.clientY - canvasRect.top,
+    }
+    const local = {
+      x: (canvasPt.x - originX) / scale,
+      y: (canvasPt.y - originY) / scale,
+    }
+    const prev = localPath[localPath.length - 1]
+    if (prev && Math.hypot(local.x - prev.x, local.y - prev.y) < 0.45) continue
+    localPath.push(local)
+    canvasPath.push(canvasPt)
+  }
+
+  tearState.value = {
+    ...tearState.value,
+    localPath,
+    canvasPath,
+  }
+}
+
+const commitTear = () => {
+  const state = tearState.value
+  tearState.value = null
+  if (!state) return
+  tearItem(state.id, state.localPath, {
+    width: state.layoutW,
+    height: state.layoutH,
+  })
+  // Leave tear mode after a completed gesture — back to grab
+  drawTool.value = null
+}
+
+const onUndoTear = () => {
+  undoTear()
 }
 
 type Point = { x: number; y: number }
@@ -942,6 +1283,15 @@ const onDrawLayerPointerDown = (event: PointerEvent) => {
   if ((event.target as Element).closest?.('[data-arrow-id], [data-arrow-handle]')) {
     return
   }
+
+  // Tear stage 2: draw freehand across the canvas (may start outside the image)
+  if (drawTool.value === 'tear') {
+    if (!tearStrokeReady.value) return
+    event.preventDefault()
+    beginTearStroke(event)
+    return
+  }
+
   event.preventDefault()
   selectStroke(null)
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
@@ -956,6 +1306,10 @@ const onDrawLayerPointerDown = (event: PointerEvent) => {
 }
 
 const onDrawMove = (event: PointerEvent) => {
+  if (tearState.value) {
+    updateTear(event)
+    return
+  }
   if (arrowHandleDrag.value) {
     const { id, end } = arrowHandleDrag.value
     const stroke = strokes.value.find((s) => s.id === id)
@@ -976,6 +1330,10 @@ const onDrawMove = (event: PointerEvent) => {
 }
 
 const onDrawEnd = () => {
+  if (tearState.value) {
+    commitTear()
+    return
+  }
   if (arrowHandleDrag.value) {
     arrowHandleDrag.value = null
     return
@@ -1008,6 +1366,19 @@ const onKeyDown = (event: KeyboardEvent) => {
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
     return
   }
+  if (event.key === 'Escape' && drawTool.value === 'tear') {
+    event.preventDefault()
+    if (tearState.value) {
+      tearState.value = null
+      return
+    }
+    if (tearTargetId.value) {
+      clearActive()
+      return
+    }
+    drawTool.value = null
+    return
+  }
   if ((event.key === 'Delete' || event.key === 'Backspace') && activeStrokeId.value) {
     event.preventDefault()
     removeStroke(activeStrokeId.value)
@@ -1019,11 +1390,26 @@ const onAddText = () => {
   nextTick(() => startEditing(id))
 }
 
+const onAddHandwrittenText = () => {
+  const id = addText('Double-click to edit', 'handwritten')
+  nextTick(() => startEditing(id))
+}
+
 const startEditing = (id: string) => {
+  dragState.value = null
+  textEditGesture.value = null
   editingId.value = id
   nextTick(() => {
     const el = document.querySelector<HTMLElement>(`[data-editing="${id}"]`)
-    el?.focus()
+    if (!el) return
+    el.focus()
+    // Place caret at end so the placeholder is easy to replace
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    range.collapse(false)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
   })
 }
 
@@ -1033,24 +1419,67 @@ const onTextBlur = (event: FocusEvent, id: string) => {
   editingId.value = null
 }
 
+const onTextDblClick = (event: MouseEvent, id: string) => {
+  event.preventDefault()
+  event.stopPropagation()
+  startEditing(id)
+}
+
 const onTextPointerDown = (event: PointerEvent, id: string) => {
-  if (editingId.value === id) {
-    event.stopPropagation()
-    return
+  // Don't let the item wrapper also handle this press
+  event.stopPropagation()
+  if (editingId.value === id) return
+
+  const wasSelected =
+    selectedIds.value.length === 1 && selectedIds.value[0] === id
+  textEditGesture.value = {
+    id,
+    x: event.clientX,
+    y: event.clientY,
+    wasSelected,
   }
   onPointerDown(event, id)
 }
 
 const onPointerDown = (event: PointerEvent, id: string) => {
   const target = event.currentTarget as HTMLElement
-  const rect = target.getBoundingClientRect()
+
+  // Tear stage 1: click an image to choose the tear target
+  if (drawTool.value === 'tear') {
+    const item = placements.value.find((entry) => entry.id === id)
+    if (item?.kind === 'image') {
+      selectedIds.value = [id]
+      activeId.value = id
+      activeStrokeId.value = null
+    }
+    return
+  }
+
+  // Shift+click toggles membership — no drag so the click stays a select action
+  if (event.shiftKey) {
+    bringToFront(id, { additive: true })
+    return
+  }
+
+  const keepGroup =
+    selectedIds.value.includes(id) && selectedIds.value.length > 1
+  bringToFront(id, keepGroup ? { preserveSelection: true } : undefined)
+
+  if (!canvasEl.value) return
+  const canvasRect = canvasEl.value.getBoundingClientRect()
+  const ids = keepGroup ? [...selectedIds.value] : [id]
+  const origins: Record<string, { x: number; y: number }> = {}
+  for (const sid of ids) {
+    const item = placements.value.find((entry) => entry.id === sid)
+    if (item) origins[sid] = { x: item.x, y: item.y }
+  }
   dragState.value = {
-    id,
-    offsetX: event.clientX - rect.left,
-    offsetY: event.clientY - rect.top,
+    ids,
+    origins,
+    startPointerX: event.clientX - canvasRect.left,
+    startPointerY: event.clientY - canvasRect.top,
   }
   target.setPointerCapture?.(event.pointerId)
-  bringToFront(id)
 }
 
 const onResizeStart = (event: PointerEvent, id: string, corner: Corner) => {
@@ -1059,6 +1488,8 @@ const onResizeStart = (event: PointerEvent, id: string, corner: Corner) => {
   if (!itemEl) return
 
   const item = placements.value.find((p) => p.id === id)
+  // Text size follows the copy — not a free resize
+  if (!item || item.kind === 'text') return
   const scale = item?.scale ?? 1
   const rect = itemEl.getBoundingClientRect()
   const canvasRect = canvasEl.value.getBoundingClientRect()
@@ -1092,6 +1523,11 @@ const onPointerMove = (event: PointerEvent) => {
   if (!canvasEl.value) return
   const canvasRect = canvasEl.value.getBoundingClientRect()
 
+  if (tearState.value) {
+    updateTear(event)
+    return
+  }
+
   if (arrowHandleDrag.value) {
     const { id, end } = arrowHandleDrag.value
     const stroke = strokes.value.find((s) => s.id === id)
@@ -1123,13 +1559,41 @@ const onPointerMove = (event: PointerEvent) => {
   }
 
   if (dragState.value) {
-    const x = event.clientX - canvasRect.left - dragState.value.offsetX
-    const y = event.clientY - canvasRect.top - dragState.value.offsetY
-    updatePosition(dragState.value.id, x, y)
+    const { ids, origins, startPointerX, startPointerY } = dragState.value
+    const dx = event.clientX - canvasRect.left - startPointerX
+    const dy = event.clientY - canvasRect.top - startPointerY
+    updatePositions(
+      ids.map((sid) => {
+        const origin = origins[sid] || { x: 0, y: 0 }
+        return { id: sid, x: origin.x + dx, y: origin.y + dy }
+      }),
+    )
   }
 }
 
-const onPointerUp = () => {
+const onPointerUp = (event?: PointerEvent) => {
+  if (tearState.value) {
+    commitTear()
+    return
+  }
+
+  const gesture = textEditGesture.value
+  textEditGesture.value = null
+  if (gesture && event && gesture.wasSelected && editingId.value !== gesture.id) {
+    const moved = Math.hypot(
+      event.clientX - gesture.x,
+      event.clientY - gesture.y,
+    )
+    // Second click on an already-selected text box → edit (if it wasn’t a drag)
+    if (moved < 6) {
+      dragState.value = null
+      resizeState.value = null
+      arrowHandleDrag.value = null
+      startEditing(gesture.id)
+      return
+    }
+  }
+
   dragState.value = null
   resizeState.value = null
   arrowHandleDrag.value = null
@@ -1156,23 +1620,54 @@ const captureBoardPreview = async (): Promise<{
   aspect: number
 } | null> => {
   if (!canvasEl.value || !import.meta.client) return null
+  const prevTool = drawTool.value
   clearActive()
+  drawTool.value = null
+  libraryOpen.value = false
+  switchOpen.value = false
+  isCapturingPreview.value = true
   await nextTick()
+  // Let selection/tool chrome paint as hidden before snapshot
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  )
   try {
     const { default: html2canvas } = await import('html2canvas')
+    const bg =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--cream')
+        .trim() || '#f2ecdf'
     const canvas = await html2canvas(canvasEl.value, {
-      backgroundColor: '#f2ecdf',
+      backgroundColor: bg,
       scale: 0.45,
       useCORS: true,
       logging: false,
+      ignoreElements: (el) => {
+        const node = el as HTMLElement
+        if (!node?.classList) return false
+        return (
+          node.classList.contains('moodboard__chip') ||
+          node.classList.contains('moodboard__remove') ||
+          node.classList.contains('moodboard__handle') ||
+          node.classList.contains('moodboard__cycle') ||
+          node.classList.contains('moodboard__tear-line') ||
+          node.classList.contains('moodboard__actions') ||
+          node.classList.contains('moodboard__panel') ||
+          node.classList.contains('moodboard__pen-bar') ||
+          node.classList.contains('moodboard__tear-hint') ||
+          node.classList.contains('moodboard__tear-undo')
+        )
+      },
     })
     return {
       preview: canvas.toDataURL('image/jpeg', 0.72),
-      // Bitmap matches the viewport/canvas at capture time
       aspect: canvas.width / Math.max(canvas.height, 1),
     }
   } catch {
     return null
+  } finally {
+    isCapturingPreview.value = false
+    drawTool.value = prevTool
   }
 }
 
@@ -1226,7 +1721,7 @@ watch(
 
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointerup', onPointerUp as EventListener)
   window.addEventListener('keydown', onKeyDown)
   document.addEventListener('click', onDocumentClick)
 
@@ -1247,7 +1742,7 @@ onUnmounted(() => {
   // Keep cancelRevertTimer alive so discard can finish after this dialog unmounts.
   if (sessionPersistTimer) clearTimeout(sessionPersistTimer)
   window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointerup', onPointerUp as EventListener)
   window.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('click', onDocumentClick)
 })
@@ -1261,6 +1756,7 @@ onUnmounted(() => {
   background: transparent;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
 }
 
 /* Background layer — fades independently of the info panel */
@@ -1285,6 +1781,24 @@ onUnmounted(() => {
   transition: opacity 0.32s ease;
 }
 
+/* Thumbnail capture — board content only, no selection/tools chrome */
+.moodboard--capturing .moodboard__item--active,
+.moodboard--capturing .moodboard__item--active.moodboard__item--multi {
+  box-shadow: none !important;
+}
+
+.moodboard--capturing .moodboard__chip,
+.moodboard--capturing .moodboard__remove,
+.moodboard--capturing .moodboard__handle,
+.moodboard--capturing .moodboard__cycle,
+.moodboard--capturing .moodboard__tear-line,
+.moodboard--capturing .moodboard__arrow-handle,
+.moodboard--capturing .moodboard__arrow--active .moodboard__arrow-hit {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .moodboard__actions,
 .moodboard__pen-bar {
   opacity: 0;
@@ -1307,6 +1821,14 @@ onUnmounted(() => {
 .moodboard--panel-ready .moodboard__actions,
 .moodboard--panel-ready .moodboard__pen-bar {
   opacity: 1;
+  pointer-events: auto;
+}
+
+.moodboard--panel-ready .moodboard__tear-hint {
+  opacity: 1;
+}
+
+.moodboard--panel-ready .moodboard__tear-undo {
   pointer-events: auto;
 }
 
@@ -1487,6 +2009,54 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* Stage 1: pick an image. Stage 2 (tear-ready): overlay captures the stroke. */
+.moodboard__canvas--tearing:not(.moodboard__canvas--tear-ready) .moodboard__item--image {
+  cursor: pointer;
+}
+
+.moodboard__canvas--tear-ready .moodboard__item {
+  pointer-events: none;
+}
+
+.moodboard__canvas--tear-ready {
+  cursor: crosshair;
+}
+
+.moodboard__tear-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 260;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.moodboard__tear-hint {
+  position: absolute;
+  top: var(--gutter);
+  left: 50%;
+  z-index: 400;
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  transform: translateX(-50%);
+  font-size: var(--text-sm);
+  color: var(--charcoal);
+  background: var(--panel-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.moodboard__tear-undo {
+  position: absolute;
+  top: var(--gutter);
+  left: 50%;
+  z-index: 400;
+  transform: translateX(-50%);
+  min-width: 7.5rem;
+}
+
 .moodboard__item {
   position: absolute;
   top: 0;
@@ -1497,6 +2067,20 @@ onUnmounted(() => {
   transform-origin: center;
   opacity: 1;
   transition: box-shadow 0.2s ease, opacity 0.32s ease;
+}
+
+/*
+ * Outline is drawn in local space under scale() — multiply by --inv-scale
+ * so it always reads as 1px (or 2px when multi-selected) on screen.
+ */
+.moodboard__item--active {
+  box-shadow: 0 0 0 calc(1px * var(--inv-scale, 1))
+    color-mix(in srgb, var(--charcoal) 40%, transparent);
+}
+
+.moodboard__item--active.moodboard__item--multi {
+  box-shadow: 0 0 0 calc(2px * var(--inv-scale, 1))
+    color-mix(in srgb, var(--charcoal) 40%, transparent);
 }
 
 .moodboard__item--contain img {
@@ -1553,18 +2137,32 @@ onUnmounted(() => {
   cursor: nwse-resize;
 }
 
+.moodboard__tear-back {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #fff;
+  pointer-events: none;
+}
+
 .moodboard__item img {
+  position: relative;
+  z-index: 1;
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
 }
 
+/* Match cart cell prev/next — boxed, bottom-right inset */
 .moodboard__cycle {
   position: absolute;
-  left: 50%;
-  bottom: 8px;
+  right: var(--thumb-ctrl-inset, 4px);
+  bottom: var(--thumb-ctrl-inset, 4px);
   z-index: 3;
-  transform-origin: center bottom;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  transform-origin: bottom right;
 }
 
 /* Colour card */
@@ -1597,14 +2195,18 @@ onUnmounted(() => {
   transform-origin: center top;
 }
 
-/* Text item */
+/* Text item — box hugs the copy; not freely resized */
 .moodboard__item--text {
-  width: auto;
-  max-width: 320px;
+  width: max-content;
+  max-width: none;
+  min-width: 0;
 }
 
 .moodboard__text {
-  padding: 0.35rem 0.5rem;
+  display: block;
+  width: max-content;
+  max-width: min(70vw, 36rem);
+  padding: 0.2rem 0.15rem;
   font-family: monospace;
   font-size: clamp(0.75rem, 1.25vw, 1rem);
   line-height: 1.25;
@@ -1612,22 +2214,43 @@ onUnmounted(() => {
   outline: none;
   white-space: pre-wrap;
   cursor: grab;
-  /* Keep type size stable when the item is scaled */
-  transform: scale(var(--inv-scale, 1));
-  transform-origin: top left;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.moodboard__text--handwritten {
+  font-family: var(--handwritten);
+  font-size: clamp(1.25rem, 2.2vw, 1.85rem);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  text-transform: none;
+  color: var(--handwritten-color, var(--charcoal));
+  max-width: min(85vw, 42rem);
+  padding: 0.15rem 0.25rem;
 }
 
 .moodboard__text[contenteditable='true'] {
   cursor: text;
-  background: var(--panel-bg);
-  box-shadow: 0 0 0 1px var(--grid-line);
+  background: transparent;
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--charcoal) 40%, transparent);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
-/* Clone + remove */
-.moodboard__clone {
+.moodboard__item--handwritten.moodboard__item--active {
+  /* Keep selection as a light line only — no filled box */
+  background: transparent;
+}
+
+/* Shared chip controls (clone / restore / text remove) */
+.moodboard__chip {
   position: absolute;
   top: -0.6rem;
-  right: 1.15rem;
+  z-index: 4;
   height: 1.5rem;
   padding: 0 0.45rem;
   display: grid;
@@ -1644,9 +2267,24 @@ onUnmounted(() => {
   transition: opacity 0.15s ease;
   cursor: pointer;
   white-space: nowrap;
+  pointer-events: none;
 }
 
-/* Match cart cell remove control position */
+.moodboard__clone {
+  right: 1.15rem;
+}
+
+.moodboard__restore {
+  right: 4.35rem;
+}
+
+.moodboard__remove-chip {
+  top: 0;
+  right: 0;
+  transform-origin: center center;
+}
+
+/* Match cart cell remove control position (images / swatches) */
 .moodboard__remove {
   position: absolute;
   top: var(--thumb-ctrl-inset, 4px);
@@ -1659,10 +2297,12 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.moodboard__item:hover .moodboard__clone,
+.moodboard__item:hover .moodboard__chip,
 .moodboard__item:hover .moodboard__remove,
-.moodboard__item--active .moodboard__clone,
-.moodboard__item--active .moodboard__remove {
+.moodboard__item:hover .moodboard__cycle,
+.moodboard__item--primary .moodboard__chip,
+.moodboard__item--primary .moodboard__remove,
+.moodboard__item--primary .moodboard__cycle {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1704,6 +2344,23 @@ onUnmounted(() => {
 .moodboard__action--active:hover {
   background: var(--charcoal);
   color: var(--warm-white);
+}
+
+.moodboard__action--theme {
+  position: relative;
+}
+
+.moodboard__theme-icon--moon {
+  display: none;
+}
+
+/* Full :global — matches AppHeader theme icon swap */
+:global(html.dark .moodboard__theme-icon--sun) {
+  display: none;
+}
+
+:global(html.dark .moodboard__theme-icon--moon) {
+  display: block;
 }
 
 /* Cart-style panel — bottom right */
@@ -1860,6 +2517,16 @@ onUnmounted(() => {
 .moodboard__action-text {
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.moodboard__action-text--script {
+  font-family: var(--handwritten);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.35rem;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .moodboard__colour-input {

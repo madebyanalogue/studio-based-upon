@@ -1,5 +1,6 @@
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey } from '~/composables/useSanityImage'
+import { lockPageScroll, unlockPageScroll } from '~/composables/usePageScrollLock'
 
 export type BucketItem = {
   id: string
@@ -894,8 +895,12 @@ export const useBucket = () => {
     if (!opts?.resume) {
       parkedSelectionItems.value = []
     }
+    const wasOpen = isMoodboard.value
     isMoodboard.value = true
     isOpen.value = false
+    // Own the page scroll lock here (not only via BucketStack watchers) so
+    // dropping the cart stage under the board can’t re-enable scroll.
+    if (!wasOpen) lockPageScroll()
   }
 
   const consumeMoodboardSkipBgFade = () => {
@@ -905,6 +910,7 @@ export const useBucket = () => {
   }
 
   const closeMoodboard = () => {
+    const wasOpen = isMoodboard.value
     // Items dragged onto the board return to their selection piles
     restoreAllParkedSelectionItems()
     clearMoodboardSession()
@@ -914,6 +920,7 @@ export const useBucket = () => {
     // Return to the underlying page (don’t reopen selections/boards cart)
     isOpen.value = false
     reopenCartAfterMoodboard.value = false
+    if (wasOpen) unlockPageScroll()
   }
 
   const setParkedSelectionItems = (items: ParkedSelectionItem[]) => {
