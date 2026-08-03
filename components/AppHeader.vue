@@ -236,7 +236,7 @@ const onSelectBoard = async (id: string) => {
   if (!board) return
   setActiveBoard(id)
   loadBoard(board.placements, board.strokes)
-  openMoodboard()
+  openMoodboard({ reopenCart: false })
 }
 
 const onSelectionsClick = () => {

@@ -1526,18 +1526,36 @@ const boardsCountLabel = computed(() => {
   return `${n} ${n === 1 ? 'board' : 'boards'}`
 })
 
+/** Keep pile + grid on the same square cell size so Flip doesn’t rescale. */
+const layoutLocked = ref(false)
+const frozenCellSize = ref(0)
+const frozenCols = ref(0)
+const frozenBoardSpan = ref<{ cols: number; rows: number } | null>(null)
+
 /** Board footprint in the square grid. */
-const boardSpan = computed(() =>
-  stackCols.value >= 6 ? { cols: 3, rows: 2 } : { cols: 1, rows: 1 },
-)
+const boardSpan = computed(() => {
+  if (frozenBoardSpan.value) return frozenBoardSpan.value
+  return stackCols.value >= 6 ? { cols: 3, rows: 2 } : { cols: 1, rows: 1 }
+})
 
 const boardCellStyle = computed(() => {
   const { cols, rows } = boardSpan.value
+  const size =
+    layoutLocked.value && frozenCellSize.value > 0
+      ? frozenCellSize.value
+      : cellSizePx.value
   return {
     gridColumn: `span ${cols}`,
     gridRow: `span ${rows}`,
     '--board-span-cols': String(cols),
     '--board-span-rows': String(rows),
+    // Bake px height while Flip closes so tracks can’t reflow mid-flight
+    ...(layoutLocked.value && size > 0
+      ? {
+          height: `${size * rows}px`,
+          minHeight: `${size * rows}px`,
+        }
+      : {}),
   }
 })
 
@@ -1561,9 +1579,11 @@ const boardCellClass = (entry: SelectionBoardEntry) => {
 const showBoardsRail = computed(
   () =>
     boardsRailList.value.length > 0 &&
+    !isMoodboard.value &&
     (keepBoardsPileForFlip.value ||
-      (!isOpen.value && !stagePresent.value)) &&
-    !isMoodboard.value,
+      // Keep mounted under the stage while the boards cart is up (no remount on close)
+      (panelTab.value === 'boards' && stagePresent.value) ||
+      (!isOpen.value && !stagePresent.value)),
 )
 
 /** Oldest → newest so the newest board sits on top of the pile. */
@@ -1694,9 +1714,31 @@ const softEnterStyle = (index: number) => {
   return { animationDelay: `${delay}s` }
 }
 
+const lockStackLayout = () => {
+  syncCellSize()
+  frozenCellSize.value = cellSizePx.value
+  frozenCols.value = stackCols.value
+  frozenBoardSpan.value =
+    stackCols.value >= 6 ? { cols: 3, rows: 2 } : { cols: 1, rows: 1 }
+  layoutLocked.value = true
+}
+
+const unlockStackLayout = () => {
+  layoutLocked.value = false
+  frozenCellSize.value = 0
+  frozenCols.value = 0
+  frozenBoardSpan.value = null
+}
+
 const stackCssVars = computed(() => {
-  const size = cellSizePx.value
-  const cols = stackCols.value
+  const size =
+    layoutLocked.value && frozenCellSize.value > 0
+      ? frozenCellSize.value
+      : cellSizePx.value
+  const cols =
+    layoutLocked.value && frozenCols.value > 0
+      ? frozenCols.value
+      : stackCols.value
   return {
     '--stack-cols': String(cols),
     '--stack-cell-size': size > 0 ? `${size}px` : `calc(100vw / ${cols})`,
@@ -1704,13 +1746,21 @@ const stackCssVars = computed(() => {
   }
 })
 
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${stackCols.value}, var(--stack-cell-size))`,
-  gridAutoRows: `var(--stack-cell-size)`,
-}))
-
-/** Keep pile + grid on the same square cell size so Flip doesn’t rescale. */
-const layoutLocked = ref(false)
+const gridStyle = computed(() => {
+  const size =
+    layoutLocked.value && frozenCellSize.value > 0
+      ? frozenCellSize.value
+      : cellSizePx.value
+  const cols =
+    layoutLocked.value && frozenCols.value > 0
+      ? frozenCols.value
+      : stackCols.value
+  const track = size > 0 ? `${size}px` : 'var(--stack-cell-size)'
+  return {
+    gridTemplateColumns: `repeat(${cols}, ${track})`,
+    gridAutoRows: track,
+  }
+})
 
 const syncCellSize = () => {
   if (!import.meta.client || layoutLocked.value) return
@@ -2943,8 +2993,8 @@ const onBuildMoodboard = async () => {
   if (isOpen.value || stagePresent.value) {
     // Gather Flip while keeping the cream cart backdrop, then hand off to board
     await closeToPile({ handoffBackdrop: true })
-    // Cart already closed for handoff — still reopen after save so the board tile appears
-    openMoodboard({ skipBgFade: true, reopenCart: true })
+    // Closing the board returns to the page — not the cart
+    openMoodboard({ skipBgFade: true, reopenCart: false })
     // Wait until board cream is painted before dropping the cart stage
     await nextTick()
     await waitFrames(2)
@@ -2952,7 +3002,7 @@ const onBuildMoodboard = async () => {
     return
   }
 
-  openMoodboard()
+  openMoodboard({ reopenCart: false })
 }
 
 const openSavedBoard = async (id: string) => {
@@ -2963,14 +3013,14 @@ const openSavedBoard = async (id: string) => {
 
   if (isOpen.value || stagePresent.value) {
     await closeToPile({ handoffBackdrop: true })
-    openMoodboard({ skipBgFade: true, reopenCart: true })
+    openMoodboard({ skipBgFade: true, reopenCart: false })
     await nextTick()
     await waitFrames(2)
     await dropStageInstant()
     return
   }
 
-  openMoodboard()
+  openMoodboard({ reopenCart: false })
 }
 
 const markArriving = (id: string) => {
@@ -3041,7 +3091,12 @@ const staggerDelayForEl = (
 const runFlip = (
   state: ReturnType<typeof Flip.getState>,
   targets: ArrayLike<Element>,
-  opts?: { mode?: 'open' | 'close'; boardStagger?: boolean; ids?: string[] },
+  opts?: {
+    mode?: 'open' | 'close'
+    boardStagger?: boolean
+    ids?: string[]
+    scale?: boolean
+  },
 ) =>
   new Promise<void>((resolve) => {
     const mode = opts?.mode || 'open'
@@ -3059,7 +3114,8 @@ const runFlip = (
         }),
       ease: 'power3.inOut',
       fade: false,
-      scale: false,
+      // Boards: scale (match open Flip.fit) so aspect-ratio faces don’t reflow height
+      scale: opts?.scale ?? false,
       clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
       onComplete: () => resolve(),
     })
@@ -3135,7 +3191,7 @@ const fadeOutStage = async () => {
   resetShelvedRail()
   parkInactiveRailBelow()
   keepBoardsPileForFlip.value = false
-  layoutLocked.value = false
+  unlockStackLayout()
   syncCellSize()
 }
 
@@ -3233,8 +3289,7 @@ const openFromBoardsPile = async () => {
   await revealStage()
   openDrawer('boards')
   await nextTick()
-  syncCellSize()
-  layoutLocked.value = true
+  lockStackLayout()
   await waitFrames(2)
   await fitPileCardsToCells({
     pile: boardsPileRef.value,
@@ -3246,7 +3301,7 @@ const openFromBoardsPile = async () => {
   keepBoardsPileForFlip.value = false
   boardsPileFanned.value = false
   isFlipping.value = false
-  layoutLocked.value = false
+  unlockStackLayout()
   await fadeGridLinesIn()
 }
 
@@ -3280,7 +3335,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     flipSurface.value = 'pile'
     keepPileForFlip.value = handoff
     keepBoardsPileForFlip.value = false
-    layoutLocked.value = false
+    unlockStackLayout()
     pileCountVisible.value = true
     return
   }
@@ -3313,8 +3368,13 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
       return
     }
 
-    syncCellSize()
-    layoutLocked.value = true
+    // Remount left rail under the stage before measuring — any reflow settles first
+    keepPileForFlip.value = true
+    await nextTick()
+    parkInactiveRailBelow()
+    await nextTick()
+
+    lockStackLayout()
     const medias = gridRef.value?.querySelectorAll(
       '.stack__cell-figure--board[data-flip-id]',
     )
@@ -3324,11 +3384,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     flipSurface.value = 'pile'
     keepBoardsPileForFlip.value = true
     boardsPileFanned.value = true
-    // Remount left selection stack for the close (stays under the stage)
-    keepPileForFlip.value = true
     dismissDrawer()
-    await nextTick()
-    parkInactiveRailBelow()
     await nextTick()
     const cards = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
     if (state && cards?.length) {
@@ -3336,6 +3392,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
         mode: 'close',
         boardStagger: true,
         ids: boardsGridFlipIds.value,
+        scale: true,
       })
       gsap.set(cards, {
         clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
@@ -3859,7 +3916,8 @@ onBeforeUnmount(() => {
 
 /*
  * Boards cart open/closing: stage above the left selection stack so it doesn’t
- * pop through the cream. Boards pile stays above the stage for Flip landings.
+ * pop through the cream. Boards pile stays mounted under the stage while viewing,
+ * then rises above for Flip landings.
  */
 .stack--boards-cart .stack__rail {
   z-index: 200;
@@ -3870,7 +3928,19 @@ onBeforeUnmount(() => {
 }
 
 .stack--boards-cart .stack__boards-rail {
+  z-index: 210;
+}
+
+/* Tuck under the cream only while the cart is settled open (not during Flip/close) */
+.stack--boards-cart.stack--cells-ready:not(.stack--flipping) .stack__boards-rail {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.stack--boards-cart.stack--flipping .stack__boards-rail {
   z-index: 230;
+  visibility: visible;
+  pointer-events: none;
 }
 
 .stack--boards-cart .stack__controls {
@@ -4524,13 +4594,13 @@ onBeforeUnmount(() => {
     opacity 0.3s ease;
 }
 
-/* Saved board — spans 1×1 (mobile) or 3×2 (≥1000px / 6-col); lock to track size */
+/* Saved board — spans 1×1 (mobile) or 3×2 (≥1000px / 6-col); height from span ratio */
 .stack__cell--board {
-  aspect-ratio: auto;
+  /* Same stability model as selection squares: size from track width, not stretch */
+  aspect-ratio: var(--board-span-cols, 1) / var(--board-span-rows, 1);
   width: 100%;
-  /* Explicit track height — avoids stretch-to-stage when auto rows hiccup on close */
-  height: calc(var(--stack-cell-size) * var(--board-span-rows, 1));
-  min-height: calc(var(--stack-cell-size) * var(--board-span-rows, 1));
+  height: auto;
+  min-height: 0;
   align-self: start;
   z-index: 1;
 }

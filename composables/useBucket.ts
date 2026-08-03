@@ -904,8 +904,8 @@ export const useBucket = () => {
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
     isMoodboard.value = false
-    // Always return to the cart when leaving the board composer
-    isOpen.value = true
+    // Return to the underlying page (don’t reopen selections/boards cart)
+    isOpen.value = false
     reopenCartAfterMoodboard.value = false
   }
 

@@ -59,6 +59,16 @@
         <div class="pdp__actions">
           <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
           <button
+            v-if="hasRelatedItems"
+            type="button"
+            class="pdp__save"
+            :class="{ 'pdp__save--active': relatedUi === 'panel' }"
+            :disabled="relatedBusy"
+            @click="toggleRelatedPanel"
+          >
+            {{ relatedUi === 'panel' ? 'Hide related' : 'More like this' }}
+          </button>
+          <button
             type="button"
             class="pdp__save"
             :class="{ 'pdp__save--active': isCurrentImageSaved }"
@@ -794,10 +804,33 @@ const isCurrentImageSaved = computed(() => {
   return isSaved(product.value._id, index)
 })
 
+const toggleRelatedPanel = () => {
+  if (relatedUi.value === 'panel') {
+    void hideRelatedPanel()
+    return
+  }
+  void showRelatedPanel()
+}
+
+/** Same fly-to-pile as the hero heart — always the current gallery image. */
 const onAddToSelection = () => {
-  if (!activeEntry.value) return
-  onToggleImage(activeEntry.value, selectedIndex.value)
-  // heroRef used as fly source inside onToggleImage when no event
+  if (!product.value || !activeEntry.value) return
+  const entry = activeEntry.value
+  const index = selectedIndex.value
+  const urls = galleryEntries.value.map((g) => g.src)
+  const source = heroRef.value
+  requestSave(
+    {
+      id: product.value._id,
+      title: product.value.title,
+      imageUrl: entry.src,
+      itemType: product.value.series || 'item',
+      link: `/materials-and-forms/${product.value.slug}`,
+      imageUrls: urls.length > 1 ? urls : undefined,
+      imageIndex: urls.length > 1 ? index : undefined,
+    },
+    { source },
+  )
 }
 
 const sendEnquiry = () => {

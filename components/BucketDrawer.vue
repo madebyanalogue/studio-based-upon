@@ -429,8 +429,7 @@ const openSavedBoard = (id: string) => {
   if (!board) return
   setActiveBoard(id)
   loadBoard(board.placements, board.strokes)
-  // openMoodboard remembers that the cart was open and restores it on close
-  openMoodboard()
+  openMoodboard({ reopenCart: false })
 }
 
 const onNew = () => {
@@ -497,7 +496,7 @@ const onBuildMoodboard = () => {
   // Empty canvas — selections stay in the rail; drag them on when ready
   reset()
   createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
-  openMoodboard()
+  openMoodboard({ reopenCart: false })
 }
 
 const sendEnquiry = () => {

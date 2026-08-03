@@ -237,7 +237,7 @@ const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
     materials: [],
     colours: [],
     search: '',
-    columns: 4,
+    columns: 6,
   }),
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
@@ -253,7 +253,7 @@ const SEARCH_DEBOUNCE_MS = 350
 const columns = ref(
   allowedColumns.includes(prefs.value.columns as (typeof allowedColumns)[number])
     ? prefs.value.columns
-    : 4,
+    : 6,
 )
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
