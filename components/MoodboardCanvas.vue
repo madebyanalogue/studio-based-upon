@@ -1710,7 +1710,7 @@ onUnmounted(() => {
 .moodboard__panel {
   position: absolute;
   right: var(--gutter);
-  bottom: var(--gutter);
+  bottom: calc(var(--gutter) + var(--boards-rail-push, 0px));
   z-index: 420;
   display: flex;
   flex-direction: column;

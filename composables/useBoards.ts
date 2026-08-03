@@ -244,6 +244,43 @@ export const useBoards = () => {
     return entries
   }
 
+  /** Live boards + undo placeholders for the global boards cart. */
+  const boardsCartEntries = (): SelectionBoardEntry[] => {
+    const live = boards.value
+      .filter((board) => boardHasContent(board))
+      .slice()
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((board) => ({
+        kind: 'board' as const,
+        board,
+      }))
+    const pendings = pendingBoardRemovals.value
+      .slice()
+      .sort((a, b) => a.index - b.index || a.seq - b.seq)
+    if (!pendings.length) return live
+
+    const total = live.length + pendings.length
+    const pendingBySlot = new Map(pendings.map((entry) => [entry.index, entry]))
+    const entries: SelectionBoardEntry[] = []
+    let liveIdx = 0
+    for (let slot = 0; slot < total; slot++) {
+      const pending = pendingBySlot.get(slot)
+      if (pending) {
+        entries.push({ kind: 'undo', key: pending.key, board: pending.board })
+        continue
+      }
+      const next = live[liveIdx]
+      if (!next) break
+      entries.push(next)
+      liveIdx += 1
+    }
+    while (liveIdx < live.length) {
+      entries.push(live[liveIdx]!)
+      liveIdx += 1
+    }
+    return entries
+  }
+
   const clearBoardRemovalTimer = (key: string) => {
     const timer = boardRemovalTimers.get(key)
     if (timer) clearTimeout(timer)
@@ -261,12 +298,8 @@ export const useBoards = () => {
   const softRemoveBoard = (id: string) => {
     const board = boards.value.find((entry) => entry.id === id)
     if (!board) return
-    const selectionId = board.selectionId
-    if (!selectionId) {
-      deleteBoard(id)
-      return
-    }
-    const visualIndex = selectionBoardEntries(selectionId).findIndex(
+    const selectionId = board.selectionId || '__global__'
+    const visualIndex = boardsCartEntries().findIndex(
       (entry) => entry.kind === 'board' && entry.board.id === id,
     )
     const index = visualIndex >= 0 ? visualIndex : 0
@@ -276,7 +309,9 @@ export const useBoards = () => {
     boards.value = boards.value.filter((entry) => entry.id !== id)
     if (activeBoardId.value === id) {
       activeBoardId.value =
-        boardsForSelection(selectionId)[0]?.id || boards.value[0]?.id || null
+        boards.value.find((entry) => boardHasContent(entry))?.id ||
+        boards.value[0]?.id ||
+        null
     }
     persist()
 
@@ -360,6 +395,7 @@ export const useBoards = () => {
     deleteBoard,
     boardsForSelection,
     selectionBoardEntries,
+    boardsCartEntries,
     softRemoveBoard,
     undoBoardRemove,
     dismissBoardRemoval,

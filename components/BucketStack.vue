@@ -8,6 +8,7 @@
         'stack--soft-enter': softEnter,
         'stack--cells-ready': cellsReady,
         'stack--moodboard': isMoodboard,
+        'stack--boards-cart': stagePresent && panelTab === 'boards',
         'stack--above-pdp': productOverlayOpen && !isOpen && !stagePresent,
       }"
       :style="stackCssVars"
@@ -19,7 +20,7 @@
         class="stack__rail"
         :class="{
           'stack__rail--hot': railHot,
-          'stack__rail--multi': moodboards.length > 1,
+          'stack__rail--multi': railBoards.length > 1,
           'stack__rail--expanded': railExpanded,
         }"
         @mouseenter="onRailEnter"
@@ -33,16 +34,16 @@
           :class="{
             'stack__pile-wrap--empty': board.items.length === 0,
             'stack__pile-wrap--receiving':
-              moodboards.length > 1 && board.id === activeMoodboardId,
+              railBoards.length > 1 && board.id === activeMoodboardId,
             'stack__pile-wrap--parked':
-              moodboards.length > 1 &&
+              railBoards.length > 1 &&
               !railExpanded &&
               board.id !== activeMoodboardId,
           }"
           @mouseenter="onPileMouseEnter(board.id)"
           @mouseleave="onPileMouseLeave(board.id)"
         >
-          <!-- Empty additional stack — frosted slot with remove -->
+          <!-- Empty additional stack — frosted slot with remove (cart only) -->
           <div
             v-if="board.items.length === 0"
             :ref="(el) => setPileRef(board.id, el)"
@@ -86,10 +87,7 @@
               v-for="(card, index) in stackPileCards(board)"
               :key="card.id"
               class="stack__pile-card stack__pile-card--fan"
-              :class="{
-                'stack__pile-card--arriving': arrivingIds.includes(card.id),
-                'stack__pile-card--board': card.kind === 'board',
-              }"
+              :class="{ 'stack__pile-card--arriving': arrivingIds.includes(card.id) }"
               :data-item-id="card.id"
               :data-flip-id="
                 flipSurface === 'pile' && board.id === activeMoodboardId
@@ -103,14 +101,13 @@
                 :src="card.imageUrl"
                 :alt="card.title"
                 class="stack__pile-image"
-                :class="{ 'stack__pile-image--board': card.kind === 'board' }"
                 draggable="false"
               />
             </span>
           </button>
 
           <p
-            v-if="moodboards.length > 1"
+            v-if="showSelectionTips"
             class="stack__pile-tip"
             :class="{ 'stack__pile-tip--visible': showPileTip(board.id) }"
             aria-hidden="true"
@@ -191,6 +188,54 @@
         </button>
       </div>
 
+      <!-- Boards pile (bottom-right) — stacked cards Flip into the boards cart -->
+      <div v-if="showBoardsRail && boardsPileCards.length" class="stack__boards-rail">
+        <div class="stack__pile-wrap stack__pile-wrap--board">
+          <button
+            ref="boardsPileRef"
+            type="button"
+            class="stack__pile stack__pile--board"
+            :class="{ 'stack__pile--fanned': boardsPileFanned }"
+            :aria-label="`Open boards, ${boardsPileCards.length}`"
+            @click="onBoardsPileClick"
+            @mouseenter="onBoardsPileEnter"
+            @mouseleave="onBoardsPileLeave"
+          >
+            <span
+              v-for="board in boardsPileCards"
+              :key="board.id"
+              class="stack__pile-card stack__pile-card--fan stack__pile-card--board"
+              :style="boardStackCardStyle(board.id)"
+            >
+              <!-- Flip target: same aspect as grid face so proportion doesn’t jump -->
+              <span
+                class="stack__pile-board-face"
+                :data-flip-id="
+                  flipSurface === 'pile' ? boardFlipId(board.id) : undefined
+                "
+                :style="{
+                  '--board-aspect':
+                    board.previewAspect && board.previewAspect > 0
+                      ? board.previewAspect
+                      : 16 / 9,
+                }"
+              >
+                <img
+                  v-if="board.preview"
+                  :src="board.preview"
+                  :alt="`${board.name} preview`"
+                  class="stack__pile-image stack__pile-image--board"
+                  draggable="false"
+                />
+                <span v-else class="stack__board-pile-label interface">{{
+                  board.name
+                }}</span>
+              </span>
+            </span>
+          </button>
+        </div>
+      </div>
+
       <!-- Expanded fullscreen (hidden in board builder) -->
       <div
         v-if="!isMoodboard"
@@ -198,7 +243,7 @@
         :class="{ 'stack__stage--visible': stageVisible }"
         role="dialog"
         aria-modal="true"
-        aria-label="My selection"
+        :aria-label="panelTab === 'boards' ? 'Boards' : 'My selection'"
       >
         <div class="stack__backdrop" @click="requestClose" />
 
@@ -210,73 +255,10 @@
           :class="{
             'stack__grid--lines': gridLinesVisible,
             'stack__grid--pdp-focus': !!pdpFocusItemId,
-            'stack__grid--with-boards': activeBoardEntries.length > 0,
           }"
           :style="gridStyle"
           data-lenis-prevent
         >
-          <!-- Saved boards for this selection — 2×2 top-right (+ undo slots) -->
-          <div
-            v-for="entry in activeBoardEntries"
-            :key="
-              entry.kind === 'undo' ? `undo-${entry.key}` : `board-${entry.board.id}`
-            "
-            class="stack__cell stack__cell--board"
-            :class="boardCellClass(entry)"
-            :style="boardPlacementStyles[entry.kind === 'undo' ? entry.key : entry.board.id]"
-          >
-            <div
-              v-if="entry.kind === 'undo'"
-              class="stack__cell-media stack__cell-media--undo"
-            >
-              <div class="stack__cell-frame stack__cell-frame--board">
-                <button
-                  type="button"
-                  class="stack__undo interface"
-                  @click="onUndoBoardClick(entry.key, entry.board)"
-                >
-                  Undo
-                </button>
-              </div>
-            </div>
-            <div
-              v-else
-              class="stack__cell-media"
-              :data-stack-id="boardFlipId(entry.board.id)"
-              :data-flip-id="
-                flipSurface === 'cells' ? boardFlipId(entry.board.id) : undefined
-              "
-            >
-              <div class="stack__cell-frame stack__cell-frame--board">
-                <div class="stack__cell-figure stack__cell-figure--board">
-                  <button
-                    type="button"
-                    class="stack__board-hit"
-                    :aria-label="`Open ${entry.board.name}`"
-                    @click="openSavedBoard(entry.board.id)"
-                  >
-                    <img
-                      v-if="entry.board.preview"
-                      :src="entry.board.preview"
-                      :alt="`${entry.board.name} preview`"
-                      class="stack__board-preview"
-                      @load="onBoardPreviewLoad(entry.board.id, $event)"
-                    />
-                    <span v-else class="stack__board-placeholder interface">{{
-                      entry.board.name
-                    }}</span>
-                  </button>
-                  <AddButton
-                    class="stack__cell-ctrl stack__cell-ctrl--remove"
-                    variant="remove"
-                    :label="`Remove ${entry.board.name}`"
-                    @click.stop="onRemoveBoardClick(entry.board)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div
             v-for="(entry, index) in selectionEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
@@ -348,83 +330,240 @@
           </div>
         </div>
 
-        <!-- Boards panel hidden until further notice (also avoided flash during stage prelude) -->
+        <!-- Boards cart — same square grid; boards span 1×1 (<1000) or 3×2 (≥1000 / 6-col) -->
+        <div
+          v-if="showBoardsGrid"
+          ref="gridRef"
+          class="stack__grid stack__grid--boards"
+          :class="{ 'stack__grid--lines': gridLinesVisible }"
+          :style="gridStyle"
+          data-lenis-prevent
+        >
+          <div
+            v-for="(entry, index) in boardsGridEntries"
+            :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.board.id"
+            class="stack__cell stack__cell--board"
+            :class="boardCellClass(entry)"
+            :style="[
+              boardCellStyle,
+              softEnter ? softEnterStyle(index) : undefined,
+            ]"
+          >
+            <div
+              v-if="entry.kind === 'undo'"
+              class="stack__cell-media stack__cell-media--undo"
+            >
+              <div class="stack__cell-frame stack__cell-frame--board">
+                <button
+                  type="button"
+                  class="stack__undo interface"
+                  @click="onUndoBoardClick(entry.key, entry.board)"
+                >
+                  Undo
+                </button>
+              </div>
+            </div>
+            <div v-else class="stack__cell-media">
+              <div class="stack__cell-frame stack__cell-frame--board">
+                <div
+                  class="stack__cell-figure stack__cell-figure--board"
+                  :data-stack-id="boardFlipId(entry.board.id)"
+                  :data-flip-id="
+                    flipSurface === 'cells'
+                      ? boardFlipId(entry.board.id)
+                      : undefined
+                  "
+                  :style="{
+                    '--board-aspect': entry.board.previewAspect || 16 / 9,
+                  }"
+                >
+                  <button
+                    type="button"
+                    class="stack__board-hit"
+                    :aria-label="`Open ${entry.board.name}`"
+                    @click="openSavedBoard(entry.board.id)"
+                  >
+                    <img
+                      v-if="entry.board.preview"
+                      :src="entry.board.preview"
+                      :alt="`${entry.board.name} preview`"
+                      class="stack__board-preview"
+                    />
+                    <span v-else class="stack__board-placeholder interface">{{
+                      entry.board.name
+                    }}</span>
+                  </button>
+                  <div class="stack__board-actions" aria-label="Board actions">
+                    <button
+                      type="button"
+                      class="stack__board-action"
+                      :aria-label="`Edit ${entry.board.name}`"
+                      @click.stop="openSavedBoard(entry.board.id)"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 20h9" />
+                        <path
+                          d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="stack__board-action"
+                      :aria-label="`Delete ${entry.board.name}`"
+                      @click.stop="onRemoveBoardClick(entry.board)"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path
+                          d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"
+                        />
+                        <path d="M10 11v6M14 11v6" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="stack__board-action"
+                      :aria-label="`Send ${entry.board.name} as enquiry`"
+                      @click.stop="sendBoardEnquiry(entry.board)"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M22 2 11 13" />
+                        <path d="M22 2 15 22l-4-9-9-4Z" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Sibling of stage/pile so z-index can sit above flipping cards -->
       <aside
         class="stack__controls"
         :class="{ 'stack__controls--visible': controlsVisible }"
-        aria-label="Selection actions"
+        :aria-label="panelTab === 'boards' ? 'Board actions' : 'Selection actions'"
       >
-        <div class="stack__controls-head">
-          <input
-            v-if="isEditing"
-            ref="titleInput"
-            v-model="editName"
-            type="text"
-            class="stack__title-input"
-            aria-label="Selection name"
-            @keydown.enter.prevent="saveName"
-            @keydown.esc.prevent="cancelEdit"
-            @blur="saveName"
-          />
-          <p v-else class="stack__title">
-            {{ activeMoodboard?.name || 'My Selection' }}
+        <template v-if="panelTab === 'boards'">
+          <div class="stack__controls-head">
+            <p class="stack__title">Boards</p>
+            <button
+              type="button"
+              class="stack__close"
+              aria-label="Close boards"
+              @click="requestClose"
+            >
+              <span class="stack__close-icon" aria-hidden="true" />
+            </button>
+          </div>
+          <p class="stack__count interface">{{ boardsCountLabel }}</p>
+          <button type="button" class="btn btn--filled" @click="onBuildMoodboard">
+            Create Board
+          </button>
+        </template>
+        <template v-else>
+          <div class="stack__controls-head">
+            <input
+              v-if="isEditing"
+              ref="titleInput"
+              v-model="editName"
+              type="text"
+              class="stack__title-input"
+              aria-label="Selection name"
+              @keydown.enter.prevent="saveName"
+              @keydown.esc.prevent="cancelEdit"
+              @blur="saveName"
+            />
+            <p v-else class="stack__title">
+              {{ activeMoodboard?.name || 'My Selection' }}
+            </p>
+            <button
+              type="button"
+              class="stack__close"
+              aria-label="Close selection"
+              @click="requestClose"
+            >
+              <span class="stack__close-icon" aria-hidden="true" />
+            </button>
+          </div>
+
+          <p class="stack__count interface">
+            {{ countLabel }}
           </p>
+
+          <div class="stack__control-links">
+            <button type="button" class="stack__link interface" @click="startEdit">
+              Rename
+            </button>
+            <button
+              v-if="activePendingRemovals.length && !items.length"
+              type="button"
+              class="stack__link interface"
+              :disabled="bulkBusy"
+              @click="onUndoAll"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              class="stack__link interface"
+              :disabled="bulkBusy"
+              @click="confirmingDelete = true"
+            >
+              Delete selection
+            </button>
+          </div>
+
           <button
             type="button"
-            class="stack__close"
-            aria-label="Close selection"
-            @click="requestClose"
+            class="btn"
+            :disabled="!items.length"
+            @click="sendEnquiry"
           >
-            <span class="stack__close-icon" aria-hidden="true" />
-          </button>
-        </div>
-
-        <p class="stack__count interface">
-          {{ countLabel }}
-        </p>
-
-        <div class="stack__control-links">
-          <button type="button" class="stack__link interface" @click="startEdit">
-            Rename
-          </button>
-          <button
-            v-if="activePendingRemovals.length && !items.length"
-            type="button"
-            class="stack__link interface"
-            :disabled="bulkBusy"
-            @click="onUndoAll"
-          >
-            Undo
+            Send as enquiry
           </button>
           <button
             type="button"
-            class="stack__link interface"
-            :disabled="bulkBusy"
-            @click="confirmingDelete = true"
+            class="btn btn--filled"
+            :disabled="!items.length"
+            @click="onBuildMoodboard"
           >
-            Delete selection
+            Create Board
           </button>
-        </div>
-
-        <button
-          type="button"
-          class="btn"
-          :disabled="!items.length"
-          @click="sendEnquiry"
-        >
-          Send as enquiry
-        </button>
-        <button
-          type="button"
-          class="btn btn--filled"
-          :disabled="!items.length"
-          @click="onBuildMoodboard"
-        >
-          Create Board
-        </button>
+        </template>
       </aside>
 
       <div
@@ -440,10 +579,6 @@
             “{{ activeMoodboard?.name || 'My Selection' }}” and its
             {{ items.length }}
             {{ items.length === 1 ? 'item' : 'items' }}
-            <template v-if="selectionBoards.length">
-              and {{ selectionBoards.length }}
-              {{ selectionBoards.length === 1 ? 'board' : 'boards' }}
-            </template>
             will be permanently removed.
           </p>
           <div class="stack__confirm-actions">
@@ -511,16 +646,15 @@ const { reset: resetMoodboard, addImage, loadBoard } = useMoodboard()
 const {
   createBoard,
   boards,
-  boardsForSelection,
-  selectionBoardEntries,
-  softRemoveBoard,
-  undoBoardRemove,
+  boardsCartEntries,
   clearPendingBoardRemovals,
   deleteBoardsForSelection,
+  softRemoveBoard,
+  undoBoardRemove,
   setActiveBoard,
-  updateBoard,
+  activeBoardId,
 } = useBoards()
-const { openFromBucket } = useEnquiryForm()
+const { openFromBucket, openFromMoodboard } = useEnquiryForm()
 const {
   open,
   returnImage,
@@ -596,7 +730,7 @@ const UNDO_FADE_MS = 220
 /** Pause after scale-out before Undo appears */
 const UNDO_ENTER_DELAY_MS = 350
 /** Fixed column count — cell = pile = 1/6 viewport width, square */
-/** Cart grid columns by viewport. */
+/** Cart grid columns by viewport (selections). */
 const stackColsForWidth = (width: number) => {
   if (width >= 1600) return 6
   if (width >= 1440) return 5
@@ -604,6 +738,9 @@ const stackColsForWidth = (width: number) => {
   if (width >= 660) return 3
   return 2
 }
+
+/** Boards cart: 1-col mobile, 6-col from 1000px (boards span 3×2). */
+const boardsGridColsForWidth = (width: number) => (width >= 1000 ? 6 : 1)
 
 const stackCols = ref(6)
 
@@ -754,32 +891,20 @@ const settledItems = computed(() => {
   return items.value.filter((item) => !hide.has(item.id))
 })
 
-const boardFlipId = (boardId: string) => `board:${boardId}`
-
 type StackPileCard = {
   id: string
   imageUrl: string
   title: string
-  kind: 'item' | 'board'
+  kind: 'item'
 }
 
-/** Pile cards for a selection — saved boards at the bottom, product items on top. */
+/** Pile cards for a selection — products only (boards live in the boards rail). */
 const stackPileCards = (selection: { id: string; items: typeof items.value }) => {
   const hide = new Set<string>()
   if (pendingFly.value?.itemId && selection.id === activeMoodboardId.value) {
     hide.add(pendingFly.value.itemId)
   }
-  // Last in array = top of pile. Boards sit under the product stack.
-  const boardCards: StackPileCard[] = boardsForSelection(selection.id)
-    .slice()
-    .reverse()
-    .map((board) => ({
-      id: boardFlipId(board.id),
-      imageUrl: board.preview || '',
-      title: board.name,
-      kind: 'board' as const,
-    }))
-  const itemCards: StackPileCard[] = selection.items
+  return selection.items
     .filter((item) => !hide.has(item.id))
     .map((item) => ({
       id: item.id,
@@ -788,7 +913,6 @@ const stackPileCards = (selection: { id: string; items: typeof items.value }) =>
       kind: 'item' as const,
     }))
     .reverse()
-  return [...boardCards, ...itemCards]
 }
 
 /** Kept for restack pose math (items only). */
@@ -811,24 +935,21 @@ const boardColumnItems = (board: { id: string; items: typeof items.value }) => {
   return board.items.filter((item) => !hide.has(item.id))
 }
 
-const selectionHasBoards = (selectionId: string) =>
-  boardsForSelection(selectionId).length > 0 ||
-  selectionBoardEntries(selectionId).some((entry) => entry.kind === 'undo')
-
 const showRail = computed(
   () =>
     keepPileForFlip.value ||
     isMoodboard.value ||
     (!isOpen.value &&
       !stagePresent.value &&
-      (moodboards.value.some(
-        (b) => b.items.length > 0 || selectionHasBoards(b.id),
-      ) ||
+      (moodboards.value.some((b) => b.items.length > 0) ||
         arrivingIds.value.length > 0)),
 )
 
-/** New-selection “+” — rendered whenever the rail is up. */
+/** New-selection “+” — cart only, never inside the board composer. */
 const showCreateSlot = computed(() => showRail.value && !isMoodboard.value)
+
+/** Tips when more than one visible selection is on the rail. */
+const showSelectionTips = computed(() => railBoards.value.length > 1)
 
 /**
  * Stable rail display order. Active is first at rest; only re-synced after
@@ -837,47 +958,44 @@ const showCreateSlot = computed(() => showRail.value && !isMoodboard.value)
 const railOrderIds = ref<string[]>([])
 
 const syncRailOrder = (preferActiveFirst = true) => {
-  const boards = moodboards.value
-  if (!boards.length) {
+  const source = isMoodboard.value
+    ? moodboards.value.filter((board) => board.items.length > 0)
+    : moodboards.value
+  if (!source.length) {
     railOrderIds.value = []
     return
   }
-  if (boards.length === 1 || !preferActiveFirst) {
-    railOrderIds.value = boards.map((board) => board.id)
+  if (source.length === 1 || !preferActiveFirst) {
+    railOrderIds.value = source.map((board) => board.id)
     return
   }
   const activeId = activeMoodboardId.value
-  const active = boards.find((board) => board.id === activeId) || boards[0]!
-  const rest = boards.filter((board) => board.id !== active.id).map((board) => board.id)
-  // Keep prior relative order of the rest when possible
+  const active = source.find((board) => board.id === activeId) || source[0]!
+  const rest = source.filter((board) => board.id !== active.id).map((board) => board.id)
   const prevRest = railOrderIds.value.filter((id) => id !== active.id && rest.includes(id))
   const missing = rest.filter((id) => !prevRest.includes(id))
   railOrderIds.value = [active.id, ...prevRest, ...missing]
 }
 
-/** Board view: only the active stack. Otherwise ordered rail list. */
+/**
+ * Rail list. In the board composer: non-empty selections only (no empties).
+ * Otherwise: full selection list for the cart rail.
+ */
 const railBoards = computed(() => {
-  if (isMoodboard.value) {
-    const active =
-      moodboards.value.find((board) => board.id === activeMoodboardId.value) ||
-      moodboards.value[0]
-    return active ? [active] : []
-  }
-  const byId = new Map(moodboards.value.map((board) => [board.id, board]))
+  const source = isMoodboard.value
+    ? moodboards.value.filter((board) => board.items.length > 0)
+    : moodboards.value
+  const byId = new Map(source.map((board) => [board.id, board]))
   if (!railOrderIds.value.length) {
     const activeId = activeMoodboardId.value
-    const active =
-      moodboards.value.find((board) => board.id === activeId) || moodboards.value[0]
+    const active = source.find((board) => board.id === activeId) || source[0]
     if (!active) return []
-    return [
-      active,
-      ...moodboards.value.filter((board) => board.id !== active.id),
-    ]
+    return [active, ...source.filter((board) => board.id !== active.id)]
   }
   const ordered = railOrderIds.value
     .map((id) => byId.get(id))
     .filter((board): board is (typeof moodboards.value)[number] => !!board)
-  for (const board of moodboards.value) {
+  for (const board of source) {
     if (!ordered.some((entry) => entry.id === board.id)) ordered.push(board)
   }
   return ordered
@@ -899,9 +1017,9 @@ const railCellSize = () => {
 }
 
 const parkInactiveRailBelow = () => {
-  if (!import.meta.client || moodboards.value.length <= 1) return
+  if (!import.meta.client || railBoards.value.length <= 1) return
   const activeId = activeMoodboardId.value
-  for (const board of moodboards.value) {
+  for (const board of railBoards.value) {
     if (board.id === activeId) continue
     const el = pileWrapEls.value[board.id]
     if (!el) continue
@@ -925,8 +1043,8 @@ const parkInactiveRailBelow = () => {
 
 const expandRail = async () => {
   if (!import.meta.client) return
-  if (moodboards.value.length <= 1 || railExpanded.value) return
-  if (isOpen.value || stagePresent.value || isFlipping.value || isMoodboard.value) return
+  if (railBoards.value.length <= 1 || railExpanded.value) return
+  if (isOpen.value || stagePresent.value || isFlipping.value) return
   const token = ++railAnimToken
   railExpanded.value = true
   railHot.value = true
@@ -967,6 +1085,11 @@ const expandRail = async () => {
   }
 
   if (token !== railAnimToken) return
+  // No (+) inside the board composer
+  if (isMoodboard.value) {
+    createPlusReady.value = false
+    return
+  }
   const create = createSlotRef.value
   if (create) {
     gsap.killTweensOf(create)
@@ -997,7 +1120,7 @@ const collapseRail = async () => {
   if (!import.meta.client) return
   // Click + mouseleave were both starting a drop (second call reset y → 0 then fell again)
   if (railCollapsing.value) return
-  if (moodboards.value.length <= 1) {
+  if (railBoards.value.length <= 1) {
     railExpanded.value = false
     createPlusReady.value = false
     return
@@ -1364,58 +1487,58 @@ const onRemoveEmptyStack = async (boardId: string) => {
 }
 
 /** Same grid DOM for prelude, open, and close — stays mounted through fade-out. */
-/** Live boards for the active selection (no undo slots). */
-const selectionBoards = computed(() => boardsForSelection(activeMoodboardId.value))
-
-/** Live boards + undo placeholders for the active selection. */
-const activeBoardEntries = computed(() =>
-  selectionBoardEntries(activeMoodboardId.value),
-)
-
-/** Flip order in the grid: boards first, then product items. */
-const gridFlipIds = computed(() => [
-  ...activeBoardEntries.value
-    .filter((entry): entry is Extract<SelectionBoardEntry, { kind: 'board' }> =>
-      entry.kind === 'board',
-    )
-    .map((entry) => boardFlipId(entry.board.id)),
-  ...selectionEntries.value
+/** Flip order in the grid — product cells only. */
+const gridFlipIds = computed(() =>
+  selectionEntries.value
     .filter((entry): entry is Extract<SelectionEntry, { kind: 'item' }> =>
       entry.kind === 'item',
     )
     .map((entry) => entry.item.id),
-])
+)
 
-/** Pin boards in fixed 2×2 cells, top-right, packing left then down. */
-const boardPlacementStyles = computed(() => {
-  const cols = stackCols.value
-  const span = Math.min(2, cols)
-  const slotsPerBand = Math.max(1, Math.floor(cols / span))
-  const styles: Record<
-    string,
-    {
-      gridColumn: string
-      gridRow: string
-      '--board-aspect': string
-    }
-  > = {}
+const showSelectionGrid = computed(
+  () =>
+    stagePresent.value &&
+    panelTab.value === 'selections' &&
+    selectionEntries.value.length > 0,
+)
 
-  activeBoardEntries.value.forEach((entry, index) => {
-    const board = entry.board
-    const styleKey = entry.kind === 'undo' ? entry.key : board.id
-    const aspect =
-      board.previewAspect && board.previewAspect > 0 ? board.previewAspect : 16 / 9
-    const band = Math.floor(index / slotsPerBand)
-    const posInBand = index % slotsPerBand
-    const colStart = cols - span * (posInBand + 1) + 1
-    const rowStart = band * span + 1
-    styles[styleKey] = {
-      gridColumn: `${colStart} / span ${span}`,
-      gridRow: `${rowStart} / span ${span}`,
-      '--board-aspect': String(aspect),
-    }
-  })
-  return styles
+const showBoardsGrid = computed(
+  () =>
+    stagePresent.value &&
+    panelTab.value === 'boards' &&
+    boardsGridEntries.value.length > 0,
+)
+
+/** Boards with a preview / content — global boards pile (not per-selection). */
+const boardsRailList = computed(() =>
+  boards.value
+    .filter((board) => board.placements.length > 0 || !!board.preview)
+    .slice()
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+)
+
+/** Boards cart cells — live boards + undo placeholders. */
+const boardsGridEntries = computed(() => boardsCartEntries())
+
+const boardsCountLabel = computed(() => {
+  const n = boardsGridEntries.value.filter((entry) => entry.kind === 'board').length
+  return `${n} ${n === 1 ? 'board' : 'boards'}`
+})
+
+/** Board footprint in the square grid. */
+const boardSpan = computed(() =>
+  stackCols.value >= 6 ? { cols: 3, rows: 2 } : { cols: 1, rows: 1 },
+)
+
+const boardCellStyle = computed(() => {
+  const { cols, rows } = boardSpan.value
+  return {
+    gridColumn: `span ${cols}`,
+    gridRow: `span ${rows}`,
+    '--board-span-cols': String(cols),
+    '--board-span-rows': String(rows),
+  }
 })
 
 const boardCellClass = (entry: SelectionBoardEntry) => {
@@ -1435,17 +1558,128 @@ const boardCellClass = (entry: SelectionBoardEntry) => {
   }
 }
 
-const showSelectionGrid = computed(
+const showBoardsRail = computed(
   () =>
-    stagePresent.value &&
-    panelTab.value === 'selections' &&
-    (selectionEntries.value.length > 0 || activeBoardEntries.value.length > 0),
+    boardsRailList.value.length > 0 &&
+    (keepBoardsPileForFlip.value ||
+      (!isOpen.value && !stagePresent.value)) &&
+    !isMoodboard.value,
 )
+
+/** Oldest → newest so the newest board sits on top of the pile. */
+const boardFlipId = (id: string) => `board:${id}`
+
+const boardsPileCards = computed(() => boardsRailList.value.slice().reverse())
+
+const boardsGridFlipIds = computed(() =>
+  boardsGridEntries.value
+    .filter((entry): entry is Extract<SelectionBoardEntry, { kind: 'board' }> =>
+      entry.kind === 'board',
+    )
+    .map((entry) => boardFlipId(entry.board.id)),
+)
+
+const boardsPileRef = ref<HTMLElement | null>(null)
+const keepBoardsPileForFlip = ref(false)
+const boardsPileFanned = ref(false)
+
+const boardStackCardStyle = (boardId: string) => {
+  const cards: StackPileCard[] = boardsPileCards.value.map((board) => ({
+    id: board.id,
+    imageUrl: board.preview || '',
+    title: board.name,
+    kind: 'item',
+  }))
+  const board = boardsPileCards.value.find((entry) => entry.id === boardId)
+  const aspect =
+    board?.previewAspect && board.previewAspect > 0 ? board.previewAspect : 16 / 9
+  return {
+    ...pileCardStyle(boardId, cards),
+    '--board-aspect': String(aspect),
+    '--pile-r': '0deg',
+    '--pile-hover-r': '0deg',
+  }
+}
+
+const onBoardsPileEnter = () => {
+  if (isFlipping.value || keepBoardsPileForFlip.value) return
+  boardsPileFanned.value = true
+}
+
+const onBoardsPileLeave = () => {
+  if (isFlipping.value || keepBoardsPileForFlip.value) return
+  boardsPileFanned.value = false
+}
+
+const onRemoveBoardClick = async (board: SavedBoard) => {
+  const id = board.id
+  if (cellPhase.value[id] || bulkBusy.value) return
+  const undoKey = `board::${id}`
+  setCellPhase(id, 'scale-out')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] !== 'scale-out') return
+  softRemoveBoard(id)
+  clearCellPhase(id)
+  await nextTick()
+  await waitFrames(2)
+  if (!boardsGridEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
+    return
+  }
+  await wait(UNDO_ENTER_DELAY_MS)
+  if (!boardsGridEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
+    return
+  }
+  setCellPhase(undoKey, 'undo-ready')
+}
+
+const onUndoBoardClick = async (key: string, board: SavedBoard) => {
+  const phase = cellPhase.value[key]
+  if (
+    bulkBusy.value ||
+    phase === 'undo-leaving' ||
+    phase === 'scale-in' ||
+    phase === 'scaled-in'
+  ) {
+    return
+  }
+  setCellPhase(key, 'undo-leaving')
+  await wait(UNDO_FADE_MS)
+  if (cellPhase.value[key] !== 'undo-leaving') return
+  undoBoardRemove(key)
+  clearCellPhase(key)
+  const id = board.id
+  setCellPhase(id, 'scale-in')
+  await nextTick()
+  await waitFrames(2)
+  if (cellPhase.value[id] !== 'scale-in') return
+  setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+}
+
+const sendBoardEnquiry = (board: SavedBoard) => {
+  if (!board.placements.length && !board.preview) return
+  openFromMoodboard(board.placements, board.preview || null)
+}
+
+const onBoardsPileClick = () => {
+  const top = boardsPileCards.value[boardsPileCards.value.length - 1]
+  if (top) setActiveBoard(top.id)
+  void openFromBoardsPile()
+}
 
 /** All settled items in the active pile (reversed so newest sits on top) — Flip ids. */
 const pilePreview = computed(() => settledItems.value.slice().reverse())
 
 const gridDims = computed(() => {
+  if (panelTab.value === 'boards') {
+    const span = boardSpan.value
+    const n = Math.max(boardsGridEntries.value.length, 1)
+    const cols = stackCols.value
+    const cellsPerBoard = span.cols * span.rows
+    const rows = Math.ceil((n * cellsPerBoard) / cols) || span.rows
+    return { cols, rows }
+  }
   const n = Math.max(selectionEntries.value.length, 1)
   const cols = stackCols.value
   const rows = Math.ceil(n / cols)
@@ -1453,8 +1687,11 @@ const gridDims = computed(() => {
 })
 
 const softEnterStyle = (index: number) => {
-  // Match Flip open: top-right first
-  return { animationDelay: `${staggerDelayForIndex(index, 'open')}s` }
+  const delay =
+    panelTab.value === 'boards'
+      ? staggerDelayForBoardIndex(index, 'open')
+      : staggerDelayForIndex(index, 'open')
+  return { animationDelay: `${delay}s` }
 }
 
 const stackCssVars = computed(() => {
@@ -1473,9 +1710,17 @@ const gridStyle = computed(() => ({
 }))
 
 /** Keep pile + grid on the same square cell size so Flip doesn’t rescale. */
+const layoutLocked = ref(false)
+
 const syncCellSize = () => {
-  if (!import.meta.client) return
-  stackCols.value = stackColsForWidth(window.innerWidth)
+  if (!import.meta.client || layoutLocked.value) return
+  // Keep boards column count through close Flip (isOpen drops before stage fades)
+  const boardsMode =
+    panelTab.value === 'boards' &&
+    (isOpen.value || stagePresent.value || keepBoardsPileForFlip.value || isFlipping.value)
+  stackCols.value = boardsMode
+    ? boardsGridColsForWidth(window.innerWidth)
+    : stackColsForWidth(window.innerWidth)
   const cols = stackCols.value
   const grid = gridRef.value
   if (grid) {
@@ -1608,18 +1853,19 @@ const showPileTip = (boardId: string) =>
 const onPileMouseEnter = (boardId: string) => {
   if (isFlipping.value) return
   railHot.value = true
+  // Board editor: only raise other selections when this stack is closed
   if (expandedBoardIds.value.includes(boardId)) return
   pileFanSeed.value += 1
   pileFannedId.value = boardId
   pileFanned.value = true
   // Multi-rail: hover the active corner stack to raise the others
+  // (cart + board composer — composer has no empties / no +)
   if (
-    moodboards.value.length > 1 &&
+    railBoards.value.length > 1 &&
     boardId === activeMoodboardId.value &&
     !railExpanded.value &&
     !isOpen.value &&
-    !stagePresent.value &&
-    !isMoodboard.value
+    !stagePresent.value
   ) {
     void expandRail()
   }
@@ -2420,20 +2666,22 @@ const restackBoard = async (boardId: string) => {
   if (restackingBoardId.value === boardId) restackingBoardId.value = null
 }
 
-const onPileClick = (boardId: string) => {
+const onPileClick = async (boardId: string) => {
   const board = moodboards.value.find((entry) => entry.id === boardId)
   const wasActive = boardId === activeMoodboardId.value
-  setActiveMoodboard(boardId)
-  pileRef.value = pileEls.value[boardId] || null
-  // Switching target selection — collapse rail so the new active settles bottom-left
-  if (!wasActive) {
-    if (moodboards.value.length > 1) void collapseRail()
+  // Switching selection inside the board composer: restack → collapse → disperse
+  if (!wasActive && isMoodboard.value) {
+    await switchSelectionInMoodboard(boardId)
     return
   }
-  if (!board?.items.length && !selectionHasBoards(boardId)) return
+  setActiveMoodboard(boardId)
+  pileRef.value = pileEls.value[boardId] || null
+  if (!wasActive) {
+    if (railBoards.value.length > 1) void collapseRail()
+    return
+  }
+  if (!board?.items.length) return
   if (isMoodboard.value) {
-    // Column disperse needs product items; boards stay in the cart grid
-    if (!board?.items.length) return
     if (expandedBoardIds.value.includes(boardId)) {
       void restackBoard(boardId)
     } else {
@@ -2442,6 +2690,44 @@ const onPileClick = (boardId: string) => {
     return
   }
   void openFromPile()
+}
+
+const railSwitchBusy = ref(false)
+
+/** Pick another selection while editing a board. */
+const switchSelectionInMoodboard = async (boardId: string) => {
+  if (!import.meta.client || railSwitchBusy.value) return
+  const next = moodboards.value.find((entry) => entry.id === boardId)
+  if (!next?.items.length) return
+
+  railSwitchBusy.value = true
+  railHoldOpen.value = true
+  clearRailLeaveTimer()
+  try {
+    const prevId = activeMoodboardId.value
+    if (prevId && expandedBoardIds.value.includes(prevId)) {
+      await restackBoard(prevId)
+    }
+    setActiveMoodboard(boardId)
+    pileRef.value = pileEls.value[boardId] || null
+    if (railExpanded.value || createPlusReady.value) {
+      await collapseRail()
+    } else {
+      syncRailOrder(true)
+      await nextTick()
+      parkInactiveRailBelow()
+    }
+    await nextTick()
+    await waitFrames(2)
+    if (!expandedBoardIds.value.includes(boardId)) {
+      await disperseBoard(boardId)
+    }
+  } finally {
+    railSwitchBusy.value = false
+    window.setTimeout(() => {
+      railHoldOpen.value = false
+    }, 200)
+  }
 }
 
 /**
@@ -2687,61 +2973,6 @@ const openSavedBoard = async (id: string) => {
   openMoodboard()
 }
 
-const onRemoveBoardClick = async (board: SavedBoard) => {
-  const id = board.id
-  if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
-  const undoKey = `board::${id}`
-  setCellPhase(id, 'scale-out')
-  await wait(CELL_SCALE_MS)
-  if (cellPhase.value[id] !== 'scale-out') return
-  softRemoveBoard(id)
-  clearCellPhase(id)
-  await nextTick()
-  await waitFrames(2)
-  if (!activeBoardEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
-    return
-  }
-  await wait(UNDO_ENTER_DELAY_MS)
-  if (!activeBoardEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) {
-    return
-  }
-  setCellPhase(undoKey, 'undo-ready')
-}
-
-const onUndoBoardClick = async (key: string, board: SavedBoard) => {
-  const phase = cellPhase.value[key]
-  if (
-    bulkBusy.value ||
-    phase === 'undo-leaving' ||
-    phase === 'scale-in' ||
-    phase === 'scaled-in'
-  ) {
-    return
-  }
-  setCellPhase(key, 'undo-leaving')
-  await wait(UNDO_FADE_MS)
-  if (cellPhase.value[key] !== 'undo-leaving') return
-  undoBoardRemove(key)
-  clearCellPhase(key)
-  const id = board.id
-  setCellPhase(id, 'scale-in')
-  await nextTick()
-  await waitFrames(2)
-  if (cellPhase.value[id] !== 'scale-in') return
-  setCellPhase(id, 'scaled-in')
-  await wait(CELL_SCALE_MS)
-  if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
-}
-
-/** Backfill aspect for boards saved before previewAspect existed. */
-const onBoardPreviewLoad = (id: string, event: Event) => {
-  const board = boards.value.find((entry) => entry.id === id)
-  if (!board || (board.previewAspect && board.previewAspect > 0)) return
-  const img = event.target as HTMLImageElement | null
-  if (!img?.naturalWidth || !img.naturalHeight) return
-  updateBoard(id, { previewAspect: img.naturalWidth / img.naturalHeight })
-}
-
 const markArriving = (id: string) => {
   if (arrivingIds.value.includes(id)) return
   arrivingIds.value = [...arrivingIds.value, id]
@@ -2779,16 +3010,38 @@ const staggerDelayForIndex = (index: number, mode: 'open' | 'close') => {
   return dist * FLIP_STAGGER
 }
 
-const staggerDelayForEl = (el: Element, mode: 'open' | 'close') => {
+/** Boards cart — fill from top-left; close toward bottom-right (pile corner). */
+const staggerDelayForBoardIndex = (index: number, mode: 'open' | 'close') => {
+  const span = boardSpan.value
+  const cols = stackCols.value
+  const boardsPerRow = Math.max(1, Math.floor(cols / span.cols))
+  const row = Math.floor(index / boardsPerRow)
+  const col = index % boardsPerRow
+  const rows = Math.max(1, Math.ceil(boardsGridEntries.value.length / boardsPerRow))
+  const dist =
+    mode === 'open'
+      ? row + col
+      : rows - 1 - row + (boardsPerRow - 1 - col)
+  return dist * FLIP_STAGGER
+}
+
+const staggerDelayForEl = (
+  el: Element,
+  mode: 'open' | 'close',
+  opts?: { boardStagger?: boolean; ids?: string[] },
+) => {
   const id = el.getAttribute('data-flip-id') || ''
-  const index = gridFlipIds.value.indexOf(id)
-  return staggerDelayForIndex(index >= 0 ? index : 0, mode)
+  const ids = opts?.ids ?? gridFlipIds.value
+  const index = ids.indexOf(id)
+  const i = index >= 0 ? index : 0
+  if (opts?.boardStagger) return staggerDelayForBoardIndex(i, mode)
+  return staggerDelayForIndex(i, mode)
 }
 
 const runFlip = (
   state: ReturnType<typeof Flip.getState>,
   targets: ArrayLike<Element>,
-  opts?: { mode?: 'open' | 'close' },
+  opts?: { mode?: 'open' | 'close'; boardStagger?: boolean; ids?: string[] },
 ) =>
   new Promise<void>((resolve) => {
     const mode = opts?.mode || 'open'
@@ -2799,21 +3052,29 @@ const runFlip = (
       absolute: true,
       absoluteOnLeave: false,
       duration: FLIP_DURATION,
-      // Stagger by grid index — keep target DOM order so pile z-index/order stays put
-      stagger: (_i: number, target: Element) => staggerDelayForEl(target, mode),
+      stagger: (_i: number, target: Element) =>
+        staggerDelayForEl(target, mode, {
+          boardStagger: opts?.boardStagger,
+          ids: opts?.ids,
+        }),
       ease: 'power3.inOut',
       fade: false,
       scale: false,
-      // Never clear zIndex — that was reshuffling the pile stack
       clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
       onComplete: () => resolve(),
     })
   })
 
 /** Open: fly pile cards (free, unclipped) into each cell — mirrors close. */
-const fitPileCardsToCells = () =>
+const fitPileCardsToCells = (opts?: {
+  pile?: HTMLElement | null
+  ids?: string[]
+  boardStagger?: boolean
+}) =>
   new Promise<void>((resolve) => {
-    const cards = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
+    const pile = opts?.pile ?? pileRef.value
+    const ids = opts?.ids ?? gridFlipIds.value
+    const cards = pile?.querySelectorAll<HTMLElement>('[data-flip-id]')
     if (!cards?.length || !gridRef.value) {
       resolve()
       return
@@ -2829,17 +3090,21 @@ const fitPileCardsToCells = () =>
       if (pending <= 0) resolve()
     }
 
-    gridFlipIds.value.forEach((id, index) => {
+    ids.forEach((id, index) => {
       const card = cardById.get(id)
       const media = gridRef.value?.querySelector<HTMLElement>(
-        `.stack__cell-media[data-stack-id="${CSS.escape(id)}"]`,
+        `[data-stack-id="${CSS.escape(id)}"]`,
       )
       if (!card || !media) return
       pending += 1
+      const delay = opts?.boardStagger
+        ? staggerDelayForBoardIndex(index, 'open')
+        : staggerDelayForIndex(index, 'open')
       Flip.fit(card, media, {
         absolute: true,
+        scale: true,
         duration: FLIP_DURATION,
-        delay: staggerDelayForIndex(index, 'open'),
+        delay,
         ease: 'power3.inOut',
         onComplete: done,
       })
@@ -2869,6 +3134,9 @@ const fadeOutStage = async () => {
   // Clear cart-shelve leftovers, then re-park so multi-rail stays collapsed
   resetShelvedRail()
   parkInactiveRailBelow()
+  keepBoardsPileForFlip.value = false
+  layoutLocked.value = false
+  syncCellSize()
 }
 
 const revealStage = async () => {
@@ -2940,6 +3208,48 @@ const openFromPile = async () => {
   await fadeGridLinesIn()
 }
 
+/** Open the boards cart from the bottom-right pile (Flip stack → grid). */
+const openFromBoardsPile = async () => {
+  if (!import.meta.client || isOpen.value || isFlipping.value) return
+  if (!boardsGridEntries.value.some((entry) => entry.kind === 'board')) return
+
+  railAnimToken += 1
+  railExpanded.value = false
+  createPlusReady.value = false
+
+  boardsPileFanned.value = true
+  pileCountVisible.value = false
+  isFlipping.value = true
+  cellsReady.value = false
+  softEnter.value = false
+  flipSurface.value = 'pile'
+  keepBoardsPileForFlip.value = true
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+  scheduleControlsFadeIn()
+
+  shelveInactiveRail()
+  panelTab.value = 'boards'
+  await revealStage()
+  openDrawer('boards')
+  await nextTick()
+  syncCellSize()
+  layoutLocked.value = true
+  await waitFrames(2)
+  await fitPileCardsToCells({
+    pile: boardsPileRef.value,
+    ids: boardsGridFlipIds.value,
+    boardStagger: true,
+  })
+  flipSurface.value = 'cells'
+  cellsReady.value = true
+  keepBoardsPileForFlip.value = false
+  boardsPileFanned.value = false
+  isFlipping.value = false
+  layoutLocked.value = false
+  await fadeGridLinesIn()
+}
+
 const settlePendingRemovals = () => {
   clearPendingRemovals()
   clearPendingBoardRemovals()
@@ -2954,8 +3264,7 @@ const finishClose = async () => {
 
 const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   const handoff = !!opts?.handoffBackdrop
-  const hasFlipContent =
-    items.value.length > 0 || selectionBoards.value.length > 0
+  const hasFlipContent = items.value.length > 0
 
   if (!import.meta.client || isFlipping.value) {
     clearAllCellPhases()
@@ -2970,6 +3279,8 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     cellsReady.value = false
     flipSurface.value = 'pile'
     keepPileForFlip.value = handoff
+    keepBoardsPileForFlip.value = false
+    layoutLocked.value = false
     pileCountVisible.value = true
     return
   }
@@ -2982,10 +3293,64 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     await finishClose()
     return
   }
-  if (
-    panelTab.value !== 'selections' ||
-    (!selectionEntries.value.length && !activeBoardEntries.value.length)
-  ) {
+  if (panelTab.value === 'boards') {
+    void wait(CONTROLS_FADE_OUT_DELAY_MS).then(() => {
+      controlsVisible.value = false
+    })
+    await fadeGridLinesOut()
+    if (handoff) {
+      clearAllCellPhases()
+      settlePendingRemovals()
+      dismissDrawer()
+      return
+    }
+    if (!boardsGridEntries.value.some((entry) => entry.kind === 'board')) {
+      keepPileForFlip.value = true
+      dismissDrawer()
+      await nextTick()
+      parkInactiveRailBelow()
+      await finishClose()
+      return
+    }
+
+    syncCellSize()
+    layoutLocked.value = true
+    const medias = gridRef.value?.querySelectorAll(
+      '.stack__cell-figure--board[data-flip-id]',
+    )
+    const state = medias?.length ? Flip.getState(medias) : null
+    isFlipping.value = true
+    cellsReady.value = false
+    flipSurface.value = 'pile'
+    keepBoardsPileForFlip.value = true
+    boardsPileFanned.value = true
+    // Remount left selection stack for the close (stays under the stage)
+    keepPileForFlip.value = true
+    dismissDrawer()
+    await nextTick()
+    parkInactiveRailBelow()
+    await nextTick()
+    const cards = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
+    if (state && cards?.length) {
+      await runFlip(state, cards, {
+        mode: 'close',
+        boardStagger: true,
+        ids: boardsGridFlipIds.value,
+      })
+      gsap.set(cards, {
+        clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
+      })
+      void boardsPileRef.value?.offsetHeight
+    }
+    isFlipping.value = false
+    boardsPileFanned.value = false
+    await fadeOutStage()
+    clearAllCellPhases()
+    settlePendingRemovals()
+    return
+  }
+
+  if (panelTab.value !== 'selections' || !selectionEntries.value.length) {
     if (handoff) {
       clearAllCellPhases()
       settlePendingRemovals()
@@ -3304,7 +3669,18 @@ watch(isMoodboard, (on) => {
     preparingBoardId.value = null
     columnReturningId.value = null
     restackingBoardId.value = null
+  } else {
+    syncRailOrder(true)
+    nextTick(() => parkInactiveRailBelow())
   }
+})
+
+watch(showBoardsRail, (show) => {
+  if (!import.meta.client) return
+  document.documentElement.style.setProperty(
+    '--boards-rail-push',
+    show ? 'var(--stack-cell-size, 0px)' : '0px',
+  )
 })
 
 /** After board bg + info panel fade in, open this selection’s column. */
@@ -3321,6 +3697,12 @@ watch(moodboardSurfaceReady, async (ready) => {
 })
 
 watch(showSelectionGrid, async (show) => {
+  if (!show || !import.meta.client) return
+  await nextTick()
+  syncCellSize()
+})
+
+watch(showBoardsGrid, async (show) => {
   if (!show || !import.meta.client) return
   await nextTick()
   syncCellSize()
@@ -3352,14 +3734,17 @@ const onWinResize = () => {
 watch(
   moodboards,
   () => {
+    const source = isMoodboard.value
+      ? moodboards.value.filter((board) => board.items.length > 0)
+      : moodboards.value
     if (railExpanded.value) {
       // Append any brand-new boards without reshuffling mid-expand
       const known = new Set(railOrderIds.value)
-      for (const board of moodboards.value) {
+      for (const board of source) {
         if (!known.has(board.id)) railOrderIds.value = [...railOrderIds.value, board.id]
       }
       railOrderIds.value = railOrderIds.value.filter((id) =>
-        moodboards.value.some((board) => board.id === id),
+        source.some((board) => board.id === id),
       )
       return
     }
@@ -3398,7 +3783,9 @@ onMounted(() => {
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
-    nextTick(() => parkInactiveRailBelow())
+    nextTick(() => {
+      parkInactiveRailBelow()
+    })
   }
 })
 
@@ -3454,6 +3841,98 @@ onBeforeUnmount(() => {
   gap: 0;
   pointer-events: none;
   overflow: visible;
+}
+
+/* Boards pile — mirror of selection rail, anchored bottom-right */
+.stack__boards-rail {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 210;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-end;
+  gap: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/*
+ * Boards cart open/closing: stage above the left selection stack so it doesn’t
+ * pop through the cream. Boards pile stays above the stage for Flip landings.
+ */
+.stack--boards-cart .stack__rail {
+  z-index: 200;
+}
+
+.stack--boards-cart .stack__stage {
+  z-index: 220;
+}
+
+.stack--boards-cart .stack__boards-rail {
+  z-index: 230;
+}
+
+.stack--boards-cart .stack__controls {
+  z-index: 240;
+}
+
+.stack__boards-rail .stack__pile-wrap {
+  pointer-events: auto;
+}
+
+.stack__pile-card--board {
+  /* Full pile cell footprint for stacking; Flip uses the inner face */
+  left: 0;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  aspect-ratio: auto;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Same aspect as grid board face — Flip scales without proportion jump */
+.stack__pile-board-face {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 2 * var(--stack-cell-pad, 17%));
+  max-height: calc(100% - 2 * var(--stack-cell-pad, 17%));
+  aspect-ratio: var(--board-aspect, 16 / 9);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  background: transparent;
+}
+
+.stack__pile-board-face .stack__pile-image--board {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  object-fit: contain;
+  background: transparent;
+}
+
+.stack__pile-board-face .stack__board-pile-label {
+  width: 100%;
+  height: 100%;
+}
+
+.stack__board-pile-label {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0.5rem;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
 }
 
 .stack__pile-wrap {
@@ -3565,8 +4044,9 @@ onBeforeUnmount(() => {
   inset: -48px 0 -80px -56px;
 }
 
-/* Above stage backdrop/grid, below controls */
-.stack--flipping .stack__rail {
+/* Above stage backdrop/grid, below controls (selection Flip).
+ * Boards cart keeps the left rail under the stage via .stack--boards-cart. */
+.stack--flipping:not(.stack--boards-cart) .stack__rail {
   z-index: 2;
 }
 
@@ -3690,7 +4170,7 @@ onBeforeUnmount(() => {
 
 /* Pile footprint reserved at the bottom — last thumb sits on its top edge */
 .stack__column-foot {
-  flex: 0 0 var(--stack-cell-size);
+  flex: 0 0 70px;
   width: 100%;
   pointer-events: none;
 }
@@ -3774,7 +4254,7 @@ onBeforeUnmount(() => {
 
 .stack__column-close {
   position: fixed;
-  bottom: 20px;
+  bottom: 30px;
   z-index: 320;
   width: 3.25rem;
   height: 3.25rem;
@@ -3888,6 +4368,7 @@ onBeforeUnmount(() => {
 
 /* Only suppress transitions while GSAP is driving the cards */
 .stack--flipping .stack__pile-card,
+.stack--flipping .stack__pile-board-face,
 .stack__pile--restacking .stack__pile-card {
   transition: none;
 }
@@ -4043,13 +4524,19 @@ onBeforeUnmount(() => {
     opacity 0.3s ease;
 }
 
-/* Saved board — fixed 2×2 footprint; screenshot keeps capture aspect inside */
+/* Saved board — spans 1×1 (mobile) or 3×2 (≥1000px / 6-col); lock to track size */
 .stack__cell--board {
   aspect-ratio: auto;
   width: 100%;
-  height: 100%;
-  align-self: stretch;
+  /* Explicit track height — avoids stretch-to-stage when auto rows hiccup on close */
+  height: calc(var(--stack-cell-size) * var(--board-span-rows, 1));
+  min-height: calc(var(--stack-cell-size) * var(--board-span-rows, 1));
+  align-self: start;
   z-index: 1;
+}
+
+.stack__grid--boards {
+  grid-auto-flow: dense;
 }
 
 .stack__cell--board .stack__cell-media {
@@ -4059,22 +4546,31 @@ onBeforeUnmount(() => {
 
 .stack__cell-frame--board {
   position: absolute;
-  /* 2×2 tile: half the 1×1 % pad → same pixels as a single cell */
-  inset: calc(var(--stack-cell-pad, 17%) / 2);
+  /*
+   * Match selection cart pad in absolute px: 17% of one cell.
+   * Boards span 2 rows → half that (same visual inset as items).
+   * Use --stack-cell-size so % of the wide board cell can’t shift on close.
+   */
+  inset: calc(var(--stack-cell-size) * 0.17 / var(--board-span-rows, 1));
   width: auto;
   height: auto;
   display: grid;
   place-items: center;
 }
 
-/* Shrink-wrap to the screenshot so [-] sits on the image (same as items) */
+/* Same aspect box as pile face — continuous Flip proportion */
 .stack__cell-figure--board {
-  max-width: 100%;
+  position: relative;
+  width: 100%;
   max-height: 100%;
+  aspect-ratio: var(--board-aspect, 16 / 9);
+  overflow: hidden;
 }
 
 .stack__board-hit {
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   padding: 0;
@@ -4085,16 +4581,56 @@ onBeforeUnmount(() => {
   line-height: 0;
 }
 
+.stack__board-actions {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.stack__cell-figure--board:hover .stack__board-actions,
+.stack__cell-figure--board:focus-within .stack__board-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.stack__board-action {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #1f1c18;
+  color: #faf7f2;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.stack__board-action:hover {
+  transform: scale(1.06);
+  background: #161412;
+}
+
+.stack__board-action svg {
+  display: block;
+}
+
 .stack__board-preview {
   display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: var(--board-aspect, 16 / 9);
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   pointer-events: none;
-  background: #f2ecdf;
+  background: transparent;
 }
 
 .stack__board-placeholder {
@@ -4210,7 +4746,10 @@ onBeforeUnmount(() => {
 /* Remove: hide controls, scale image out — then undo fades in */
 .stack__cell--scale-out .stack__cell-ctrl,
 .stack__cell--scale-in .stack__cell-ctrl,
-.stack__cell--scaled-in .stack__cell-ctrl {
+.stack__cell--scaled-in .stack__cell-ctrl,
+.stack__cell--scale-out .stack__board-actions,
+.stack__cell--scale-in .stack__board-actions,
+.stack__cell--scaled-in .stack__board-actions {
   opacity: 0 !important;
   pointer-events: none !important;
   transition: none;

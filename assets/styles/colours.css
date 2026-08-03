@@ -23,6 +23,7 @@
   );
   /* 0 when closed; set to cart footprint when open (pushes page content) */
   --bucket-push: 0px;
+  --boards-rail-push: 0px;
 }
 
 html.bucket-push {
