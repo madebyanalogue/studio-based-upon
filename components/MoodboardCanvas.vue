@@ -31,6 +31,7 @@
             'moodboard__canvas--drawing': isDrawing,
             'moodboard__canvas--tearing': isTearing,
             'moodboard__canvas--tear-ready': tearStrokeReady,
+            'moodboard__canvas--placing-text': !!placingTextStyle,
           }"
           @click.self="onCanvasClickSelf"
         >
@@ -165,7 +166,7 @@
         >
           <template v-if="item.kind === 'image'">
             <div
-              v-if="item.tearBackClipPath"
+              v-if="item.tearBackClipPath && !isLikelyTransparentImage(item.imageUrl)"
               class="moodboard__tear-back"
               aria-hidden="true"
               :style="{ clipPath: item.tearBackClipPath }"
@@ -242,6 +243,7 @@
 
           <button
             v-if="item.kind === 'text'"
+            v-show="editingId !== item.id"
             type="button"
             class="moodboard__chip moodboard__remove-chip"
             aria-label="Remove text"
@@ -250,7 +252,7 @@
             @pointerdown.stop
             @click.stop="onRemovePlacement(item.id)"
           >
-            Remove
+            <span class="moodboard__remove-minus" aria-hidden="true" />
           </button>
 
           <div
@@ -298,6 +300,13 @@
             stroke-linejoin="round"
           />
         </svg>
+
+        <div
+          v-if="placingTextStyle"
+          class="moodboard__place-layer"
+          aria-hidden="true"
+          @pointerdown.prevent="onPlaceText"
+        />
       </div>
       </div>
 
@@ -316,18 +325,63 @@
             <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H11l2 2h5.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
           </svg>
         </button>
+        <div ref="colourToolRef" class="moodboard__colour-tool">
+          <button
+            type="button"
+            class="moodboard__action"
+            :class="{ 'moodboard__action--active': colourPickerOpen }"
+            :aria-pressed="colourPickerOpen"
+            aria-label="Add colour swatch"
+            title="Add colour swatch"
+            @click="toggleColourPicker"
+          >
+            <span class="moodboard__action-swatch" />
+          </button>
+          <div
+            v-if="colourPickerOpen"
+            class="moodboard__colour-popover"
+            role="dialog"
+            aria-label="Colour picker"
+          >
+            <input
+              ref="hexInput"
+              v-model="hexDraft"
+              type="text"
+              class="moodboard__colour-hex interface"
+              spellcheck="false"
+              autocomplete="off"
+              maxlength="7"
+              aria-label="Hex colour"
+              @input="onHexDraftInput"
+              @keydown.enter.prevent="commitColour"
+              @keydown.escape.prevent="colourPickerOpen = false"
+            />
+            <label
+              class="moodboard__colour-preview"
+              :style="{ background: colourDraft }"
+              title="Pick colour"
+            >
+              <input
+                v-model="colourDraft"
+                type="color"
+                class="moodboard__colour-input"
+                @input="onColourDraftInput"
+              />
+            </label>
+            <button
+              type="button"
+              class="moodboard__colour-add interface"
+              @click="commitColour"
+            >
+              Add
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           class="moodboard__action"
-          aria-label="Add colour swatch"
-          title="Add colour swatch"
-          @click="openColourPicker"
-        >
-          <span class="moodboard__action-swatch" />
-        </button>
-        <button
-          type="button"
-          class="moodboard__action"
+          :class="{ 'moodboard__action--active': placingTextStyle === 'mono' }"
+          :aria-pressed="placingTextStyle === 'mono'"
           aria-label="Add text"
           title="Add text"
           @click="onAddText"
@@ -337,6 +391,8 @@
         <button
           type="button"
           class="moodboard__action"
+          :class="{ 'moodboard__action--active': placingTextStyle === 'handwritten' }"
+          :aria-pressed="placingTextStyle === 'handwritten'"
           aria-label="Add handwritten text"
           title="Add handwritten text"
           @click="onAddHandwrittenText"
@@ -456,6 +512,40 @@
         Undo tear
       </button>
 
+      <div
+        class="moodboard__history"
+        role="group"
+        aria-label="Undo and redo"
+      >
+        <button
+          type="button"
+          class="moodboard__history-btn"
+          aria-label="Undo"
+          title="Undo"
+          :disabled="!canUndo"
+          @click="undoBoard"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+            <path d="M9 14 4 9l5-5" />
+            <path d="M4 9h11a5 5 0 0 1 0 10h-2" />
+          </svg>
+        </button>
+        <span class="moodboard__history-divider" aria-hidden="true" />
+        <button
+          type="button"
+          class="moodboard__history-btn"
+          aria-label="Redo"
+          title="Redo"
+          :disabled="!canRedo"
+          @click="redoBoard"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+            <path d="m15 14 5-5-5-5" />
+            <path d="M20 9H9a5 5 0 0 0 0 10h2" />
+          </svg>
+        </button>
+      </div>
+
       <div v-if="drawTool === 'pen'" class="moodboard__pen-bar">
         <label class="moodboard__pen-swatch" :style="{ background: penColour }" title="Pen colour">
           <input type="color" v-model="penColour" class="moodboard__colour-input" />
@@ -476,38 +566,30 @@
       <aside class="moodboard__panel" aria-label="Board actions">
         <div class="moodboard__panel-head">
           <div ref="switcherRef" class="moodboard__switcher">
-            <form
-              v-if="titleEditing"
-              class="moodboard__title-edit"
-              @submit.prevent="saveTitleEdit"
-            >
-              <input
-                ref="titleInput"
-                v-model="titleDraft"
-                type="text"
-                class="moodboard__title-input interface"
-                aria-label="Board name"
+            <div class="moodboard__switcher-toggle">
+              <span
+                ref="titleEl"
+                class="moodboard__panel-title"
+                :contenteditable="titleEditing"
+                :role="titleEditing ? 'textbox' : undefined"
+                :aria-label="titleEditing ? 'Board name' : undefined"
+                :aria-expanded="!titleEditing ? switchOpen : undefined"
+                @click="onTitleClick"
                 @blur="saveTitleEdit"
-                @keydown.esc="cancelTitleEdit"
-              />
-            </form>
-            <template v-else>
+                @keydown.enter.prevent="saveTitleEdit"
+                @keydown.escape.prevent="cancelTitleEdit"
+              >{{ activeBoard?.name || activeMoodboard?.name || 'My Board 1' }}</span>
               <button
+                v-if="selectionBoards.length > 1 && !titleEditing"
                 type="button"
-                class="moodboard__switcher-toggle interface"
+                class="moodboard__switcher-caret-btn"
                 :aria-expanded="switchOpen"
+                aria-label="Switch board"
                 @click="switchOpen = !switchOpen"
               >
-                <span class="moodboard__panel-title">{{
-                  activeBoard?.name || activeMoodboard?.name || 'My Board 1'
-                }}</span>
-                <span
-                  v-if="selectionBoards.length > 1"
-                  class="moodboard__switcher-caret"
-                  aria-hidden="true"
-                />
+                <span class="moodboard__switcher-caret" aria-hidden="true" />
               </button>
-            </template>
+            </div>
             <div
               v-if="switchOpen && selectionBoards.length > 1"
               class="moodboard__switcher-menu"
@@ -534,44 +616,104 @@
           </button>
         </div>
 
-        <p class="moodboard__panel-meta interface">
-          {{ placements.length }} {{ placements.length === 1 ? 'item' : 'items' }}
-        </p>
-
-        <div class="moodboard__panel-links">
-          <button type="button" class="moodboard__panel-link interface" @click="startTitleEdit">
-            Rename
-          </button>
-          <button type="button" class="moodboard__panel-link interface" @click="onCancelEdits">
-            Cancel edits
-          </button>
-          <button type="button" class="moodboard__panel-link interface" @click="onDeleteBoard">
-            Delete board
-          </button>
+        <div class="moodboard__panel-meta">
+          <p class="moodboard__panel-count interface">
+            {{ placements.length }} {{ placements.length === 1 ? 'item' : 'items' }}
+          </p>
+          <div class="moodboard__panel-tools" aria-label="Board tools">
+            <button
+              type="button"
+              class="moodboard__panel-tool"
+              aria-label="Share as enquiry"
+              title="Share"
+              @click="sendEnquiry"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                <path d="M21 3 10 14" />
+                <path d="M21 3 14 21l-4-7-7-4Z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="moodboard__panel-tool"
+              aria-label="Download screenshot"
+              title="Download"
+              @click="downloadScreenshot"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                <path d="M12 3v12" />
+                <path d="m8 11 4 4 4-4" />
+                <path d="M5 20h14" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="moodboard__panel-tool"
+              aria-label="Rename board"
+              title="Rename"
+              @click="startTitleEdit"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                <path d="M14 6 18 10" />
+                <path d="M4 20h4L18 10l-4-4L4 16v4Z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="moodboard__panel-tool"
+              aria-label="Delete board"
+              title="Delete"
+              @click="confirmingDelete = true"
+            >
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+                <path d="M4 7h16" />
+                <path d="M9 4h6" />
+                <path d="M7 7v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <button type="button" class="btn" @click="downloadScreenshot">
-          Download screenshot
+        <button type="button" class="moodboard__panel-link interface" @click="onCancelEdits">
+          Cancel edits
         </button>
+
         <button type="button" class="btn btn--filled" @click="sendEnquiry">
           Send as enquiry
         </button>
       </aside>
 
-      <input
-        ref="colourInput"
-        type="color"
-        class="moodboard__colour-input"
-        :value="pendingColour"
-        @input="onColourInput"
-        @change="onColourChange"
-      />
+      <div
+        v-if="confirmingDelete"
+        class="moodboard__confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete board"
+      >
+        <div class="moodboard__confirm-box">
+          <p class="moodboard__confirm-title interface">Delete this board?</p>
+          <p class="moodboard__confirm-text">
+            “{{ activeBoard?.name || activeMoodboard?.name || 'My Board' }}” and its
+            {{ placements.length }}
+            {{ placements.length === 1 ? 'item' : 'items' }}
+            will be permanently removed.
+          </p>
+          <div class="moodboard__confirm-actions">
+            <button type="button" class="btn" @click="confirmingDelete = false">
+              Cancel
+            </button>
+            <button type="button" class="btn btn--filled" @click="onDeleteBoard">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
 
       <input
         ref="imageInput"
         type="file"
         accept="image/*"
-        class="moodboard__colour-input"
+        class="moodboard__sr-input"
         @change="onImageSelected"
       />
     </div>
@@ -674,38 +816,168 @@ const switcherRef = ref<HTMLElement | null>(null)
 const switchOpen = ref(false)
 /** Hide selection chrome while capturing a board thumbnail. */
 const isCapturingPreview = ref(false)
-const colourInput = ref<HTMLInputElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const pendingColour = ref('#c8a86b')
+const colourPickerOpen = ref(false)
+const colourToolRef = ref<HTMLElement | null>(null)
+const hexInput = ref<HTMLInputElement | null>(null)
+const colourDraft = ref('#c8a86b')
+const hexDraft = ref('#C8A86B')
 const editingId = ref<string | null>(null)
+/** Click-to-place mode for mono / handwritten text. */
+const placingTextStyle = ref<'mono' | 'handwritten' | null>(null)
 const titleEditing = ref(false)
-const titleDraft = ref('')
-const titleInput = ref<HTMLInputElement | null>(null)
+const titleEl = ref<HTMLElement | null>(null)
+const confirmingDelete = ref(false)
+
+/** Board edit history — snapshots of placements / strokes / tear undo. */
+type BoardHistorySnap = {
+  placements: typeof placements.value
+  strokes: typeof strokes.value
+  tearUndo: typeof tearUndo.value
+  selectedIds: string[]
+  activeId: string | null
+  activeStrokeId: string | null
+}
+const historyPast = ref<string[]>([])
+const historyFuture = ref<string[]>([])
+const canUndo = computed(() => historyPast.value.length > 0)
+const canRedo = computed(() => historyFuture.value.length > 0)
+let historyBaseline = ''
+let historyApplying = false
+let historyTimer: ReturnType<typeof setTimeout> | null = null
+
+const encodeHistory = () =>
+  JSON.stringify({
+    placements: placements.value,
+    strokes: strokes.value,
+    tearUndo: tearUndo.value,
+    selectedIds: selectedIds.value,
+    activeId: activeId.value,
+    activeStrokeId: activeStrokeId.value,
+  } satisfies BoardHistorySnap)
+
+const resetHistory = () => {
+  if (historyTimer) {
+    clearTimeout(historyTimer)
+    historyTimer = null
+  }
+  historyPast.value = []
+  historyFuture.value = []
+  historyBaseline = encodeHistory()
+}
+
+const commitHistory = () => {
+  if (historyApplying || !isMoodboard.value || !surfacePresent.value) return
+  const next = encodeHistory()
+  if (next === historyBaseline) return
+  historyPast.value = [...historyPast.value, historyBaseline].slice(-60)
+  historyFuture.value = []
+  historyBaseline = next
+}
+
+const queueHistoryCommit = () => {
+  if (historyApplying || !isMoodboard.value || !surfacePresent.value) return
+  if (historyTimer) clearTimeout(historyTimer)
+  historyTimer = setTimeout(() => {
+    historyTimer = null
+    commitHistory()
+  }, 280)
+}
+
+const flushHistoryCommit = () => {
+  if (historyTimer) {
+    clearTimeout(historyTimer)
+    historyTimer = null
+  }
+  commitHistory()
+}
+
+const applyHistory = (raw: string) => {
+  const snap = JSON.parse(raw) as BoardHistorySnap
+  historyApplying = true
+  placements.value = snap.placements
+  strokes.value = snap.strokes
+  tearUndo.value = snap.tearUndo
+  selectedIds.value = snap.selectedIds || []
+  activeId.value = snap.activeId ?? null
+  activeStrokeId.value = snap.activeStrokeId ?? null
+  historyBaseline = raw
+  nextTick(() => {
+    historyApplying = false
+  })
+}
+
+const undoBoard = () => {
+  flushHistoryCommit()
+  if (!historyPast.value.length) return
+  const current = historyBaseline
+  const prev = historyPast.value[historyPast.value.length - 1]!
+  historyPast.value = historyPast.value.slice(0, -1)
+  historyFuture.value = [...historyFuture.value, current]
+  applyHistory(prev)
+}
+
+const redoBoard = () => {
+  if (!historyFuture.value.length) return
+  const current = historyBaseline
+  const next = historyFuture.value[historyFuture.value.length - 1]!
+  historyFuture.value = historyFuture.value.slice(0, -1)
+  historyPast.value = [...historyPast.value, current]
+  applyHistory(next)
+}
+
+const boardTitleLabel = () =>
+  activeBoard.value?.name || activeMoodboard.value?.name || 'My Board 1'
 
 const startTitleEdit = () => {
-  titleDraft.value = activeBoard.value?.name || activeMoodboard.value?.name || ''
   titleEditing.value = true
   switchOpen.value = false
-  nextTick(() => titleInput.value?.focus())
+  nextTick(() => {
+    const el = titleEl.value
+    if (!el) return
+    el.focus()
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    range.collapse(false)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+  })
 }
 
 const saveTitleEdit = () => {
   if (!titleEditing.value) return
-  const next = titleDraft.value.trim()
+  const next = (titleEl.value?.innerText || '').replace(/\n/g, ' ').trim()
   if (next) {
     if (activeBoardId.value) renameBoard(activeBoardId.value, next)
     else if (activeMoodboardId.value) renameMoodboard(activeMoodboardId.value, next)
+  } else if (titleEl.value) {
+    titleEl.value.textContent = boardTitleLabel()
   }
   titleEditing.value = false
 }
 
 const cancelTitleEdit = () => {
+  if (titleEl.value) titleEl.value.textContent = boardTitleLabel()
   titleEditing.value = false
+}
+
+const onTitleClick = () => {
+  if (titleEditing.value) return
+  if (selectionBoards.value.length > 1) {
+    switchOpen.value = !switchOpen.value
+  }
 }
 
 type DrawTool = 'pen' | 'arrow' | 'tear'
 const ARROW_COLOR = '#1a1a1a'
 const ARROW_WIDTH = 3
+
+/** White paper tear-back looks wrong under alpha — skip for PNG sources. */
+const isLikelyTransparentImage = (url?: string | null) =>
+  !!url && /\.png(?:$|[?#])/i.test(url)
+
 const drawTool = ref<DrawTool | null>(null)
 /** Pen / arrow use the draw layer; tear keeps items interactive. */
 const isDrawing = computed(
@@ -917,6 +1189,9 @@ const exitMoodboard = async () => {
   switchOpen.value = false
   libraryOpen.value = false
   drawTool.value = null
+  placingTextStyle.value = null
+  colourPickerOpen.value = false
+  confirmingDelete.value = false
 
   await requestMoodboardRestack()
   await waitMs(40)
@@ -978,6 +1253,8 @@ const onDeleteBoard = async () => {
   const id = activeBoardId.value
   if (!id) return
 
+  confirmingDelete.value = false
+
   if (cancelRevertTimer) {
     clearTimeout(cancelRevertTimer)
     cancelRevertTimer = null
@@ -1007,6 +1284,7 @@ const onDeleteBoard = async () => {
     placements: JSON.parse(JSON.stringify(next.placements)),
     strokes: JSON.parse(JSON.stringify(next.strokes)),
   }
+  nextTick(() => resetHistory())
 }
 
 const switchSavedBoard = async (id: string) => {
@@ -1029,30 +1307,81 @@ const switchSavedBoard = async (id: string) => {
   if (board) loadBoard(board.placements, board.strokes)
   switchOpen.value = false
   clearActive()
+  nextTick(() => resetHistory())
 }
 
 const onDocumentClick = (event: MouseEvent) => {
   if (!switcherRef.value?.contains(event.target as Node)) {
     switchOpen.value = false
   }
+  if (
+    colourPickerOpen.value &&
+    !colourToolRef.value?.contains(event.target as Node)
+  ) {
+    colourPickerOpen.value = false
+  }
 }
 
-const openColourPicker = () => {
-  colourInput.value?.click()
+const normalizeHex = (value: string) => {
+  let next = value.trim()
+  if (!next.startsWith('#')) next = `#${next}`
+  if (/^#[0-9a-fA-F]{3}$/.test(next)) {
+    next = `#${next[1]}${next[1]}${next[2]}${next[2]}${next[3]}${next[3]}`
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(next)) return null
+  return next.toUpperCase()
 }
 
-const onColourInput = (event: Event) => {
-  pendingColour.value = (event.target as HTMLInputElement).value
+const toggleColourPicker = () => {
+  colourPickerOpen.value = !colourPickerOpen.value
+  if (!colourPickerOpen.value) return
+  placingTextStyle.value = null
+  drawTool.value = null
+  currentStroke.value = null
+  libraryOpen.value = false
+  colourDraft.value = pendingColour.value.toLowerCase()
+  hexDraft.value = pendingColour.value.toUpperCase()
+  nextTick(() => {
+    hexInput.value?.focus()
+    hexInput.value?.select()
+  })
 }
 
-const onColourChange = (event: Event) => {
-  const hex = (event.target as HTMLInputElement).value
+const onColourDraftInput = () => {
+  hexDraft.value = colourDraft.value.toUpperCase()
+}
+
+const onHexDraftInput = () => {
+  const normalized = normalizeHex(hexDraft.value)
+  if (normalized) colourDraft.value = normalized.toLowerCase()
+}
+
+const commitColour = () => {
+  const hex =
+    normalizeHex(hexDraft.value) || normalizeHex(colourDraft.value)
+  if (!hex) return
   pendingColour.value = hex
+  hexDraft.value = hex
+  colourDraft.value = hex.toLowerCase()
   addColour(hex)
+  colourPickerOpen.value = false
 }
 
 const openImagePicker = () => {
   imageInput.value?.click()
+}
+
+/** Center of the board canvas, with a light cascade so repeats don’t stack perfectly. */
+const centerPlacementPosition = (width = 210, height = 210) => {
+  const rect = canvasEl.value?.getBoundingClientRect()
+  const cascade = (placements.value.length % 5) * 28
+  if (!rect) {
+    return { x: 140 + cascade, y: 140 + cascade }
+  }
+  return {
+    x: Math.max(24, (rect.width - width) / 2 + cascade),
+    y: Math.max(24, (rect.height - height) / 2 + cascade),
+  }
 }
 
 const onImageSelected = (event: Event) => {
@@ -1062,7 +1391,8 @@ const onImageSelected = (event: Event) => {
   const reader = new FileReader()
   reader.onload = () => {
     if (typeof reader.result === 'string') {
-      addImage(reader.result, file.name.replace(/\.[^.]+$/, ''))
+      const { x, y } = centerPlacementPosition()
+      addImage(reader.result, file.name.replace(/\.[^.]+$/, ''), { x, y })
     }
   }
   reader.readAsDataURL(file)
@@ -1074,6 +1404,8 @@ const toggleLibrary = () => {
   if (libraryOpen.value) {
     drawTool.value = null
     currentStroke.value = null
+    placingTextStyle.value = null
+    colourPickerOpen.value = false
   }
 }
 
@@ -1105,6 +1437,8 @@ const onLibrarySelect = (item: {
 }
 
 const toggleDrawTool = (tool: DrawTool) => {
+  placingTextStyle.value = null
+  colourPickerOpen.value = false
   drawTool.value = drawTool.value === tool ? null : tool
   if (drawTool.value) {
     clearActive()
@@ -1118,6 +1452,7 @@ const toggleDrawTool = (tool: DrawTool) => {
 const onCanvasClickSelf = () => {
   // Keep the chosen tear target while drawing outside the image
   if (drawTool.value === 'tear') return
+  if (placingTextStyle.value) return
   clearActive()
 }
 
@@ -1361,9 +1696,35 @@ const onDrawEnd = () => {
 }
 
 const onKeyDown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && confirmingDelete.value) {
+    event.preventDefault()
+    confirmingDelete.value = false
+    return
+  }
+  if (event.key === 'Escape' && colourPickerOpen.value) {
+    event.preventDefault()
+    colourPickerOpen.value = false
+    return
+  }
   if (editingId.value || titleEditing.value) return
   const target = event.target as HTMLElement | null
   if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    return
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) redoBoard()
+    else undoBoard()
+    return
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+    event.preventDefault()
+    redoBoard()
+    return
+  }
+  if (event.key === 'Escape' && placingTextStyle.value) {
+    event.preventDefault()
+    placingTextStyle.value = null
     return
   }
   if (event.key === 'Escape' && drawTool.value === 'tear') {
@@ -1385,13 +1746,28 @@ const onKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-const onAddText = () => {
-  const id = addText()
-  nextTick(() => startEditing(id))
+const armTextPlacement = (style: 'mono' | 'handwritten') => {
+  drawTool.value = null
+  currentStroke.value = null
+  tearState.value = null
+  colourPickerOpen.value = false
+  placingTextStyle.value = placingTextStyle.value === style ? null : style
+  if (placingTextStyle.value) {
+    clearActive()
+    libraryOpen.value = false
+  }
 }
 
-const onAddHandwrittenText = () => {
-  const id = addText('Double-click to edit', 'handwritten')
+const onAddText = () => armTextPlacement('mono')
+
+const onAddHandwrittenText = () => armTextPlacement('handwritten')
+
+const onPlaceText = (event: PointerEvent) => {
+  const style = placingTextStyle.value
+  if (!style) return
+  const { x, y } = canvasPointFromEvent(event)
+  placingTextStyle.value = null
+  const id = addText('', style, { x, y })
   nextTick(() => startEditing(id))
 }
 
@@ -1399,14 +1775,15 @@ const startEditing = (id: string) => {
   dragState.value = null
   textEditGesture.value = null
   editingId.value = id
+  const item = placements.value.find((entry) => entry.id === id)
+  const isEmpty = !(item?.text || '').trim()
   nextTick(() => {
     const el = document.querySelector<HTMLElement>(`[data-editing="${id}"]`)
     if (!el) return
     el.focus()
-    // Place caret at end so the placeholder is easy to replace
     const range = document.createRange()
     range.selectNodeContents(el)
-    range.collapse(false)
+    range.collapse(isEmpty) // empty → start; existing → end
     const sel = window.getSelection()
     sel?.removeAllRanges()
     sel?.addRange(range)
@@ -1415,8 +1792,12 @@ const startEditing = (id: string) => {
 
 const onTextBlur = (event: FocusEvent, id: string) => {
   const value = (event.target as HTMLElement).innerText.trim()
-  updateText(id, value || 'Text')
   editingId.value = null
+  if (!value) {
+    removeItem(id)
+    return
+  }
+  updateText(id, value)
 }
 
 const onTextDblClick = (event: MouseEvent, id: string) => {
@@ -1597,6 +1978,7 @@ const onPointerUp = (event?: PointerEvent) => {
   dragState.value = null
   resizeState.value = null
   arrowHandleDrag.value = null
+  flushHistoryCommit()
 }
 
 const downloadScreenshot = async () => {
@@ -1614,6 +1996,93 @@ const downloadScreenshot = async () => {
   link.click()
 }
 
+/** Remote images can't use crossOrigin on Sanity (403) — proxy for canvas export. */
+const isRemoteImageUrl = (url?: string | null) => {
+  if (!url || !import.meta.client) return false
+  if (url.startsWith('data:') || url.startsWith('blob:')) return false
+  if (!/^https?:\/\//i.test(url)) return false
+  try {
+    return new URL(url, window.location.href).origin !== window.location.origin
+  } catch {
+    return true
+  }
+}
+
+const proxiedImageUrl = (url: string) => {
+  if (!isRemoteImageUrl(url)) return url
+  return `/api/image-proxy?url=${encodeURIComponent(url)}`
+}
+
+const loadCaptureImage = (url: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error(`Failed to load ${url}`))
+    // Same-origin proxy — no crossOrigin attribute (avoids Sanity CORS 403)
+    img.src = proxiedImageUrl(url)
+  })
+
+const boardCaptureBg = () =>
+  getComputedStyle(document.documentElement)
+    .getPropertyValue('--cream')
+    .trim() || '#f2ecdf'
+
+/** Draw board items onto a canvas via same-origin proxied images. */
+const captureBoardPreviewFromItems = async (): Promise<{
+  preview: string
+  aspect: number
+} | null> => {
+  if (!canvasEl.value) return null
+  const rect = canvasEl.value.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return null
+  const scale = 0.35
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(rect.width * scale))
+  canvas.height = Math.max(1, Math.round(rect.height * scale))
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = boardCaptureBg()
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  const ordered = [...placements.value].sort((a, b) => a.z - b.z)
+  for (const item of ordered) {
+    const x = item.x * scale
+    const y = item.y * scale
+    const itemScale = (item.scale || 1) * scale
+    if (item.kind === 'image' && item.imageUrl) {
+      try {
+        const img = await loadCaptureImage(item.imageUrl)
+        const w = (item.width || 210) * itemScale
+        const h = item.height
+          ? item.height * itemScale
+          : (img.naturalHeight / Math.max(img.naturalWidth, 1)) * w
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.drawImage(img, 0, 0, w, h)
+        ctx.restore()
+      } catch {
+        /* skip image that won't load */
+      }
+    } else if (item.kind === 'colour' && item.colour) {
+      const size = 160 * itemScale
+      ctx.fillStyle = item.colour
+      ctx.fillRect(x, y, size, size)
+    } else if (item.kind === 'text' && item.text) {
+      ctx.fillStyle =
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--charcoal')
+          .trim() || '#1a1a1a'
+      ctx.font = `${14 * itemScale}px sans-serif`
+      ctx.fillText(item.text.slice(0, 80), x, y + 14 * itemScale)
+    }
+  }
+
+  return {
+    preview: canvas.toDataURL('image/jpeg', 0.72),
+    aspect: canvas.width / Math.max(canvas.height, 1),
+  }
+}
+
 /** Compact JPEG for board list thumbnails (kept small for localStorage). */
 const captureBoardPreview = async (): Promise<{
   preview: string
@@ -1625,23 +2094,36 @@ const captureBoardPreview = async (): Promise<{
   drawTool.value = null
   libraryOpen.value = false
   switchOpen.value = false
+  colourPickerOpen.value = false
+  confirmingDelete.value = false
   isCapturingPreview.value = true
   await nextTick()
-  // Let selection/tool chrome paint as hidden before snapshot
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   )
   try {
+    // Prefer proxied draw — Sanity CDN blocks browser CORS (crossOrigin → 403)
+    const shot = await captureBoardPreviewFromItems()
+    if (shot?.preview) return shot
+
     const { default: html2canvas } = await import('html2canvas')
-    const bg =
-      getComputedStyle(document.documentElement)
-        .getPropertyValue('--cream')
-        .trim() || '#f2ecdf'
     const canvas = await html2canvas(canvasEl.value, {
-      backgroundColor: bg,
-      scale: 0.45,
+      backgroundColor: boardCaptureBg(),
+      scale: 0.4,
       useCORS: true,
+      allowTaint: false,
+      imageTimeout: 15000,
       logging: false,
+      onclone: (_doc, element) => {
+        element.classList.remove('grid-bg')
+        element.style.backgroundImage = 'none'
+        element.querySelectorAll('img').forEach((img) => {
+          const src = img.getAttribute('src') || ''
+          if (!isRemoteImageUrl(src)) return
+          img.removeAttribute('crossorigin')
+          img.src = proxiedImageUrl(src)
+        })
+      },
       ignoreElements: (el) => {
         const node = el as HTMLElement
         if (!node?.classList) return false
@@ -1655,12 +2137,15 @@ const captureBoardPreview = async (): Promise<{
           node.classList.contains('moodboard__panel') ||
           node.classList.contains('moodboard__pen-bar') ||
           node.classList.contains('moodboard__tear-hint') ||
-          node.classList.contains('moodboard__tear-undo')
+          node.classList.contains('moodboard__tear-undo') ||
+          node.classList.contains('moodboard__history') ||
+          node.classList.contains('moodboard__confirm') ||
+          node.classList.contains('moodboard__colour-popover')
         )
       },
     })
     return {
-      preview: canvas.toDataURL('image/jpeg', 0.72),
+      preview: canvas.toDataURL('image/jpeg', 0.7),
       aspect: canvas.width / Math.max(canvas.height, 1),
     }
   } catch {
@@ -1719,6 +2204,19 @@ watch(
   { deep: true },
 )
 
+watch(
+  [placements, strokes, tearUndo],
+  () => {
+    queueHistoryCommit()
+  },
+  { deep: true },
+)
+
+watch(surfacePresent, (present) => {
+  if (present) nextTick(() => resetHistory())
+  else resetHistory()
+})
+
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp as EventListener)
@@ -1741,6 +2239,7 @@ onMounted(() => {
 onUnmounted(() => {
   // Keep cancelRevertTimer alive so discard can finish after this dialog unmounts.
   if (sessionPersistTimer) clearTimeout(sessionPersistTimer)
+  if (historyTimer) clearTimeout(historyTimer)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp as EventListener)
   window.removeEventListener('keydown', onKeyDown)
@@ -1782,6 +2281,10 @@ onUnmounted(() => {
 }
 
 /* Thumbnail capture — board content only, no selection/tools chrome */
+.moodboard--capturing .moodboard__canvas.grid-bg {
+  background-image: none !important;
+}
+
 .moodboard--capturing .moodboard__item--active,
 .moodboard--capturing .moodboard__item--active.moodboard__item--multi {
   box-shadow: none !important;
@@ -1793,14 +2296,16 @@ onUnmounted(() => {
 .moodboard--capturing .moodboard__cycle,
 .moodboard--capturing .moodboard__tear-line,
 .moodboard--capturing .moodboard__arrow-handle,
-.moodboard--capturing .moodboard__arrow--active .moodboard__arrow-hit {
+.moodboard--capturing .moodboard__arrow--active .moodboard__arrow-hit,
+.moodboard--capturing .moodboard__history {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
 .moodboard__actions,
-.moodboard__pen-bar {
+.moodboard__pen-bar,
+.moodboard__history {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.32s ease;
@@ -1819,7 +2324,8 @@ onUnmounted(() => {
 }
 
 .moodboard--panel-ready .moodboard__actions,
-.moodboard--panel-ready .moodboard__pen-bar {
+.moodboard--panel-ready .moodboard__pen-bar,
+.moodboard--panel-ready .moodboard__history {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1838,9 +2344,63 @@ onUnmounted(() => {
 }
 
 .moodboard--items-out .moodboard__actions,
-.moodboard--items-out .moodboard__pen-bar {
+.moodboard--items-out .moodboard__pen-bar,
+.moodboard--items-out .moodboard__history {
   opacity: 0;
   pointer-events: none;
+}
+
+.moodboard__history {
+  --history-cell: 36px;
+  position: absolute;
+  left: 50%;
+  bottom: var(--history-cell);
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  width: calc(calc(var(--history-cell) * 2) + 10px);
+  height: var(--history-cell);
+  transform: translateX(-50%);
+  background: var(--warm-white);
+  border: 1px solid var(--grid-line);
+  border-radius: 0px;
+  box-sizing: border-box;
+  overflow: hidden;
+  gap: 7px;
+  padding: 0 5px;
+}
+
+.moodboard__history-btn {
+  flex: 1;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.moodboard__history-btn:hover:not(:disabled) {
+  color: var(--charcoal);
+}
+
+.moodboard__history-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.moodboard__history-btn svg {
+  display: block;
+}
+
+.moodboard__history-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 1rem;
+  background: var(--grid-line);
 }
 
 .moodboard__switcher {
@@ -1861,12 +2421,6 @@ onUnmounted(() => {
   border: 0;
   background: transparent;
   color: var(--charcoal);
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.moodboard__switcher-toggle:hover {
-  color: var(--accent, var(--charcoal));
 }
 
 .moodboard__panel-title {
@@ -1876,49 +2430,56 @@ onUnmounted(() => {
   white-space: nowrap;
   font-family: var(--serif);
   font-size: var(--text-md);
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
   text-transform: capitalize;
-}
-
-.moodboard__switcher-toggle,
-.moodboard__switcher-option,
-.moodboard__title-input {
-  text-transform: capitalize;
-}
-
-.moodboard__title-edit {
-  flex: 1;
-  min-width: 0;
-}
-
-.moodboard__title-input {
-  width: 100%;
-  margin: 0;
-  padding: 0.35rem 0.5rem;
-  font: inherit;
-  font-size: var(--text-sm);
   color: var(--charcoal);
-  background: var(--cream);
-  border: 1px solid var(--grid-line);
-  box-sizing: border-box;
+  caret-color: var(--charcoal);
+  outline: none;
+  cursor: pointer;
 }
 
-.moodboard__title-input:focus {
-  outline: none;
-  border-color: var(--charcoal);
+.moodboard__panel-title[contenteditable='true'] {
+  cursor: text;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.moodboard__switcher-option {
+  text-transform: capitalize;
+}
+
+.moodboard__switcher-caret-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.moodboard__switcher-caret-btn:hover {
+  color: var(--charcoal);
 }
 
 .moodboard__switcher-caret {
-  flex-shrink: 0;
+  display: block;
   width: 7px;
   height: 7px;
-  border-right: 1px solid var(--muted);
-  border-bottom: 1px solid var(--muted);
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
   transform: rotate(45deg);
   transition: transform 0.2s ease;
   margin-bottom: 3px;
 }
 
-.moodboard__switcher-toggle[aria-expanded='true'] .moodboard__switcher-caret {
+.moodboard__switcher-caret-btn[aria-expanded='true'] .moodboard__switcher-caret {
   transform: rotate(225deg);
   margin-bottom: -3px;
 }
@@ -2022,6 +2583,23 @@ onUnmounted(() => {
   cursor: crosshair;
 }
 
+/* I-beam with top/bottom spurs — ready to place handwritten text */
+.moodboard__place-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  /* white halo then charcoal stroke so it reads on light and dark boards */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%231a1a1a' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
+      8 12,
+    text;
+}
+
+html.dark .moodboard__place-layer {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='%231a1a1a' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%23f5f0e8' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
+      8 12,
+    text;
+}
+
 .moodboard__tear-line {
   position: absolute;
   inset: 0;
@@ -2105,11 +2683,11 @@ onUnmounted(() => {
 /* Resize handles */
 .moodboard__handle {
   position: absolute;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   background: var(--elevated-bg);
-  border: 0.075em solid var(--charcoal);
-  border-radius: 2px;
+  border: 0.05em solid var(--charcoal);
+  border-radius: 0px;
   z-index: 10;
 }
 
@@ -2174,7 +2752,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background: var(--warm-white);
-  border: 1px solid var(--grid-line);
+  border: none;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
 }
 
@@ -2205,10 +2783,9 @@ onUnmounted(() => {
 .moodboard__text {
   display: block;
   width: max-content;
-  max-width: min(70vw, 36rem);
-  padding: 0.2rem 0.15rem;
-  font-family: monospace;
-  font-size: clamp(0.75rem, 1.25vw, 1rem);
+  max-width: 400px;
+  padding: 0.2rem 0.4rem;
+  font-size: clamp(0.75rem, 1.2vw, 0.9rem);
   line-height: 1.25;
   color: var(--charcoal);
   outline: none;
@@ -2221,29 +2798,66 @@ onUnmounted(() => {
 
 .moodboard__text--handwritten {
   font-family: var(--handwritten);
-  font-size: clamp(1.25rem, 2.2vw, 1.85rem);
-  font-style: italic;
+  font-size: clamp(0.95rem, 1.35vw, 1.3rem);
+  font-style: normal;
   font-weight: 400;
   letter-spacing: 0.02em;
   line-height: 1.4;
   text-transform: none;
   color: var(--handwritten-color, var(--charcoal));
-  max-width: min(85vw, 42rem);
-  padding: 0.15rem 0.25rem;
+  max-width: 400px;
+  padding: 0.1rem 0.15rem;
 }
 
 .moodboard__text[contenteditable='true'] {
   cursor: text;
   background: transparent;
-  box-shadow: 0 0 0 1px
-    color-mix(in srgb, var(--charcoal) 40%, transparent);
+  box-shadow: none;
+  min-width: 0.65em;
+  min-height: 1.2em;
+  caret-color: var(--charcoal);
   user-select: text;
   -webkit-user-select: text;
+}
+
+.moodboard__text--handwritten[contenteditable='true'] {
+  caret-color: var(--handwritten-color, var(--charcoal));
+}
+
+/* Spurred I-beam while waiting for the first character */
+.moodboard__text[contenteditable='true']:empty::before,
+.moodboard__text[contenteditable='true']:has(> br:only-child)::before {
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+  height: 1.15em;
+  vertical-align: -0.1em;
+  background:
+    linear-gradient(currentColor, currentColor) top / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) bottom / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) center / 1.5px 100% no-repeat;
+  animation: moodboard-caret-blink 1.05s step-end infinite;
+  pointer-events: none;
+}
+
+.moodboard__text[contenteditable='true']:empty,
+.moodboard__text[contenteditable='true']:has(> br:only-child) {
+  caret-color: transparent;
+}
+
+@keyframes moodboard-caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .moodboard__item--handwritten.moodboard__item--active {
   /* Keep selection as a light line only — no filled box */
   background: transparent;
+}
+
+.moodboard__item--text.moodboard__item--active:has([contenteditable='true']) {
+  box-shadow: none;
 }
 
 /* Shared chip controls (clone / restore / text remove) */
@@ -2281,7 +2895,17 @@ onUnmounted(() => {
 .moodboard__remove-chip {
   top: 0;
   right: 0;
+  width: 1.5rem;
+  padding: 0;
+  border-radius: 2px;
   transform-origin: center center;
+}
+
+.moodboard__remove-minus {
+  display: block;
+  width: 0.65rem;
+  height: 1.5px;
+  background: currentColor;
 }
 
 /* Match cart cell remove control position (images / swatches) */
@@ -2371,7 +2995,7 @@ onUnmounted(() => {
   z-index: 420;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 1.5rem;
   width: var(--side-column-width, 16rem);
   max-width: calc(100vw - (var(--gutter) * 2));
   padding: var(--gutter);
@@ -2436,18 +3060,52 @@ onUnmounted(() => {
 }
 
 .moodboard__panel-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.moodboard__panel-count {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--muted);
+  min-width: 0;
 }
 
-.moodboard__panel-links {
+.moodboard__panel-tools {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.moodboard__panel-tool {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.moodboard__panel-tool:hover {
+  color: var(--charcoal);
+}
+
+.moodboard__panel-tool svg {
+  display: block;
+  shape-rendering: geometricPrecision;
 }
 
 .moodboard__panel-link {
+  align-self: flex-start;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2463,6 +3121,62 @@ onUnmounted(() => {
 }
 
 .moodboard__panel .btn {
+  width: 100%;
+  border-radius: 0;
+}
+
+.moodboard__panel .btn--filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--warm-white);
+}
+
+.moodboard__panel .btn--filled:hover {
+  background: var(--charcoal);
+  border-color: var(--charcoal);
+  color: var(--warm-white);
+}
+
+.moodboard__confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  padding: var(--gutter);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--charcoal) 28%, transparent);
+  pointer-events: auto;
+}
+
+.moodboard__confirm-box {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.5rem;
+  background: var(--panel-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  box-sizing: border-box;
+}
+
+.moodboard__confirm-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-lg);
+  color: var(--charcoal);
+}
+
+.moodboard__confirm-text {
+  margin: 0 0 1.5rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.moodboard__confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.moodboard__confirm-actions .btn {
   width: 100%;
   border-radius: 0;
 }
@@ -2521,7 +3235,7 @@ onUnmounted(() => {
 
 .moodboard__action-text--script {
   font-family: var(--handwritten);
-  font-style: italic;
+  font-style: normal;
   font-weight: 400;
   font-size: 1.35rem;
   line-height: 1;
@@ -2529,7 +3243,73 @@ onUnmounted(() => {
   letter-spacing: 0;
 }
 
+.moodboard__colour-tool {
+  position: relative;
+}
+
+.moodboard__colour-popover {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 0.65rem);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.5rem;
+  transform: translateY(-50%);
+  background: var(--elevated-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+}
+
+.moodboard__colour-hex {
+  width: 5.75rem;
+  height: 2rem;
+  padding: 0 0.55rem;
+  border: 1px solid var(--grid-line);
+  background: var(--warm-white);
+  color: var(--charcoal);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.moodboard__colour-hex:focus {
+  outline: none;
+  border-color: var(--charcoal);
+}
+
+.moodboard__colour-preview {
+  position: relative;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid var(--grid-line);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.moodboard__colour-add {
+  height: 2rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--charcoal);
+  background: var(--charcoal);
+  color: var(--warm-white);
+  cursor: pointer;
+}
+
 .moodboard__colour-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
+.moodboard__sr-input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2550,5 +3330,6 @@ onUnmounted(() => {
     width: 2.5rem;
     height: 2.5rem;
   }
+
 }
 </style>

@@ -307,7 +307,7 @@ const onSelectBoard = async (id: string) => {
   if (!board) return
   setActiveBoard(id)
   loadBoard(board.placements, board.strokes)
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const onSelectSelection = (id: string) => {
@@ -334,7 +334,7 @@ const onNewBoard = () => {
   createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
   loadBoard([], [])
   clearActive()
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const onSelectionsHover = (hot: boolean) => {
@@ -639,8 +639,8 @@ onBeforeUnmount(() => {
 
 .header__enquire {
   margin-left: 0.35rem;
-  padding: 8px 13px;
-  border-radius: 6px;
+  padding: 6px 12px;
+  border-radius: 5px;
   font-size: var(--text-sm);
   color: var(--warm-white);
   background: var(--charcoal);

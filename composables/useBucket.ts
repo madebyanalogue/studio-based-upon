@@ -88,6 +88,8 @@ let moodboardReturnHandler:
       item?: BucketItem
     }) => Promise<void>)
   | null = null
+/** After closing the board composer — reopen boards cart (Flip / empty stage). */
+let moodboardCloseReturnHandler: (() => void) | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -808,6 +810,10 @@ export const useBucket = () => {
     moodboardReturnHandler = handler
   }
 
+  const registerMoodboardCloseReturn = (handler: (() => void) | null) => {
+    moodboardCloseReturnHandler = handler
+  }
+
   const requestMoodboardReturnToColumn = async (opts: {
     selectionId: string
     itemId: string
@@ -917,10 +923,15 @@ export const useBucket = () => {
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
     isMoodboard.value = false
-    // Return to the underlying page (don’t reopen selections/boards cart)
-    isOpen.value = false
     reopenCartAfterMoodboard.value = false
     if (wasOpen) unlockPageScroll()
+    // Always restore the boards cart (not the underlying page)
+    panelTab.value = 'boards'
+    if (moodboardCloseReturnHandler) {
+      moodboardCloseReturnHandler()
+    } else {
+      isOpen.value = true
+    }
   }
 
   const setParkedSelectionItems = (items: ParkedSelectionItem[]) => {
@@ -1037,6 +1048,7 @@ export const useBucket = () => {
     requestMoodboardRestack,
     registerMoodboardReturnToColumn,
     requestMoodboardReturnToColumn,
+    registerMoodboardCloseReturn,
     closeDrawer,
     dismissDrawer,
     registerAnimatedClose,

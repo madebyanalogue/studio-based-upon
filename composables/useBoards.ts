@@ -33,8 +33,11 @@ const createId = () => `board-${Date.now()}-${Math.round(Math.random() * 1000)}`
 const boardRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let boardRemovalSeq = 0
 
+/** Board has placements, strokes, or a saved thumbnail. */
 const boardHasContent = (board: SavedBoard) =>
-  board.placements.length > 0 || !!board.preview
+  board.placements.length > 0 ||
+  board.strokes.length > 0 ||
+  !!board.preview
 
 const boardName = (index = 1) => `My Board ${index}`
 
@@ -66,7 +69,22 @@ export const useBoards = () => {
 
   const persist = () => {
     if (!import.meta.client) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(boards.value))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(boards.value))
+    } catch {
+      // Quota exceeded — drop oldest previews and retry once
+      try {
+        const stripped = boards.value.map((board, index) =>
+          index < boards.value.length - 4
+            ? { ...board, preview: undefined }
+            : board,
+        )
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped))
+        boards.value = stripped
+      } catch {
+        /* give up — in-memory state still has the update */
+      }
+    }
   }
 
   const hydrate = () => {
@@ -123,6 +141,7 @@ export const useBoards = () => {
     name?: string,
     preview?: string,
     selectionId?: string,
+    previewAspect?: number,
   ) => {
     const board: SavedBoard = {
       id: createId(),
@@ -130,6 +149,7 @@ export const useBoards = () => {
       placements: clone(placements),
       strokes: clone(strokes),
       preview: preview || undefined,
+      previewAspect: previewAspect || undefined,
       selectionId: selectionId || undefined,
       updatedAt: new Date().toISOString(),
     }
@@ -179,7 +199,14 @@ export const useBoards = () => {
       })
       return activeBoardId.value
     }
-    return createBoard(placements, strokes, undefined, preview).id
+    return createBoard(
+      placements,
+      strokes,
+      undefined,
+      preview,
+      undefined,
+      previewAspect,
+    ).id
   }
 
   const renameBoard = (id: string, name: string) => {
@@ -200,9 +227,7 @@ export const useBoards = () => {
   const boardsForSelection = (selectionId: string | null | undefined) => {
     if (!selectionId) return [] as SavedBoard[]
     return boards.value
-      .filter(
-        (board) => board.selectionId === selectionId && boardHasContent(board),
-      )
+      .filter((board) => board.selectionId === selectionId)
       .slice()
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
@@ -247,7 +272,6 @@ export const useBoards = () => {
   /** Live boards + undo placeholders for the global boards cart. */
   const boardsCartEntries = (): SelectionBoardEntry[] => {
     const live = boards.value
-      .filter((board) => boardHasContent(board))
       .slice()
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map((board) => ({

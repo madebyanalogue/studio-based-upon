@@ -323,6 +323,11 @@
               <div class="stack__cell-frame stack__cell-frame--board">
                 <div
                   class="stack__cell-figure stack__cell-figure--board"
+                  :class="{
+                    'stack__cell-figure--board-empty':
+                      !entry.board.placements.length &&
+                      !entry.board.strokes.length,
+                  }"
                   :data-stack-id="boardFlipId(entry.board.id)"
                   :data-flip-id="
                     flipSurface === 'cells'
@@ -450,24 +455,22 @@
             </button>
           </div>
           <p class="stack__count interface">{{ boardsCountLabel }}</p>
-          <button type="button" class="btn btn--filled" @click="onBuildMoodboard">
+          <button type="button" class="btn btn--filled" @click="onCreateBoardInCart">
             Create Board
           </button>
         </template>
         <template v-else>
           <div class="stack__controls-head">
-            <input
-              v-if="isEditing"
+            <p
               ref="titleInput"
-              v-model="editName"
-              type="text"
-              class="stack__title-input"
-              aria-label="Selection name"
+              class="stack__title"
+              :contenteditable="isEditing"
+              :role="isEditing ? 'textbox' : undefined"
+              :aria-label="isEditing ? 'Selection name' : undefined"
               @keydown.enter.prevent="saveName"
               @keydown.esc.prevent="cancelEdit"
               @blur="saveName"
-            />
-            <p v-else class="stack__title">
+            >
               {{ activeMoodboard?.name || 'My Selection' }}
             </p>
             <button
@@ -665,6 +668,7 @@ const {
   moodboardSurfaceReady,
   registerMoodboardRestack,
   registerMoodboardReturnToColumn,
+  registerMoodboardCloseReturn,
 } = useBucket()
 const { reset: resetMoodboard, addImage, loadBoard } = useMoodboard()
 const {
@@ -706,9 +710,8 @@ const pileFannedId = ref<string | null>(null)
 const expandedBoardIds = ref<string[]>([])
 /** Column thumb id reserved (hidden) while a board item Flips back in. */
 const columnReturningId = ref<string | null>(null)
-const titleInput = ref<HTMLInputElement | null>(null)
+const titleInput = ref<HTMLElement | null>(null)
 const isEditing = ref(false)
-const editName = ref('')
 const pileAnchor = ref<DOMRect | null>(null)
 /** Item ids mid fly-in — hidden from the pile until the flyer lands. */
 const arrivingIds = ref<string[]>([])
@@ -1561,10 +1564,9 @@ const showBoardsGrid = computed(
     boardsGridEntries.value.length > 0,
 )
 
-/** Boards with a preview / content — global boards pile (not per-selection). */
+/** All saved boards — global boards pile (not per-selection). */
 const boardsRailList = computed(() =>
   boards.value
-    .filter((board) => board.placements.length > 0 || !!board.preview)
     .slice()
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
 )
@@ -1595,11 +1597,15 @@ const boardCellStyle = computed(() => {
     layoutLocked.value && frozenCellSize.value > 0
       ? frozenCellSize.value
       : cellSizePx.value
+  // 2-up (3×2): 8.5% of one track; 1-up (1×1): 17% like selection cells
+  const twoUp = cols > 1 || rows > 1
   return {
     gridColumn: `span ${cols}`,
     gridRow: `span ${rows}`,
     '--board-span-cols': String(cols),
     '--board-span-rows': String(rows),
+    '--stack-cell-pad': twoUp ? '8.5%' : '17%',
+    '--stack-board-pad-frac': twoUp ? '0.085' : '0.17',
     // Bake px height while Flip closes so tracks can’t reflow mid-flight
     ...(layoutLocked.value && size > 0
       ? {
@@ -3043,24 +3049,36 @@ watch(productOverlayOpen, (on) => {
   }
 })
 
+const selectionTitleLabel = () => activeMoodboard.value?.name || 'My Selection'
+
 const startEdit = () => {
-  editName.value = activeMoodboard.value?.name || ''
   isEditing.value = true
   nextTick(() => {
-    titleInput.value?.focus()
-    titleInput.value?.select()
+    const el = titleInput.value
+    if (!el) return
+    el.focus()
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    range.collapse(false)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
   })
 }
 
 const saveName = () => {
   if (!isEditing.value) return
-  if (activeMoodboardId.value && editName.value.trim()) {
-    renameMoodboard(activeMoodboardId.value, editName.value)
+  const next = (titleInput.value?.innerText || '').replace(/\n/g, ' ').trim()
+  if (activeMoodboardId.value && next) {
+    renameMoodboard(activeMoodboardId.value, next)
+  } else if (titleInput.value) {
+    titleInput.value.textContent = selectionTitleLabel()
   }
   isEditing.value = false
 }
 
 const cancelEdit = () => {
+  if (titleInput.value) titleInput.value.textContent = selectionTitleLabel()
   isEditing.value = false
 }
 
@@ -3086,6 +3104,11 @@ const dropStageInstant = async () => {
   parkInactiveRailBelow()
 }
 
+/** Boards panel — add an empty board to the cart without opening the composer. */
+const onCreateBoardInCart = () => {
+  createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
+}
+
 const onBuildMoodboard = async () => {
   // Empty canvas — selections stay in the rail; drag them on when ready
   resetMoodboard()
@@ -3094,8 +3117,7 @@ const onBuildMoodboard = async () => {
   if (isOpen.value || stagePresent.value) {
     // Gather Flip while keeping the cream cart backdrop, then hand off to board
     await closeToPile({ handoffBackdrop: true })
-    // Closing the board returns to the page — not the cart
-    openMoodboard({ skipBgFade: true, reopenCart: false })
+    openMoodboard({ skipBgFade: true, reopenCart: true })
     // Wait until board cream is painted before dropping the cart stage
     await nextTick()
     await waitFrames(2)
@@ -3103,7 +3125,7 @@ const onBuildMoodboard = async () => {
     return
   }
 
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const openSavedBoard = async (id: string) => {
@@ -3114,14 +3136,14 @@ const openSavedBoard = async (id: string) => {
 
   if (isOpen.value || stagePresent.value) {
     await closeToPile({ handoffBackdrop: true })
-    openMoodboard({ skipBgFade: true, reopenCart: false })
+    openMoodboard({ skipBgFade: true, reopenCart: true })
     await nextTick()
     await waitFrames(2)
     await dropStageInstant()
     return
   }
 
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const markArriving = (id: string) => {
@@ -3440,6 +3462,37 @@ const openFromBoardsPile = async () => {
   boardsPileFanned.value = false
   isFlipping.value = false
   unlockStackLayout()
+  await fadeGridLinesIn()
+}
+
+/** After closing the composer — restore the boards cart (Flip when possible). */
+const returnToBoardsCart = async () => {
+  if (!import.meta.client || isFlipping.value) return
+  if (isOpen.value && panelTab.value === 'boards' && stagePresent.value) return
+
+  // Boards pile unmounts while the composer is open — wait for remount
+  await nextTick()
+  await waitFrames(2)
+
+  if (boardsGridEntries.value.some((entry) => entry.kind === 'board')) {
+    await openFromBoardsPile()
+    return
+  }
+
+  // Empty boards cart — stage + controls, no Flip
+  railAnimToken += 1
+  railExpanded.value = false
+  createPlusReady.value = false
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+  cellsReady.value = false
+  softEnter.value = false
+  scheduleControlsFadeIn()
+  shelveInactiveRail()
+  panelTab.value = 'boards'
+  await revealStage()
+  openDrawer('boards')
+  cellsReady.value = true
   await fadeGridLinesIn()
 }
 
@@ -4061,6 +4114,9 @@ onMounted(() => {
     await Promise.all(ids.map((id) => restackBoard(id)))
   })
   registerMoodboardReturnToColumn((opts) => returnItemToColumn(opts))
+  registerMoodboardCloseReturn(() => {
+    void returnToBoardsCart()
+  })
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
@@ -4076,6 +4132,7 @@ onBeforeUnmount(() => {
   registerSelectionStackHover(null)
   registerMoodboardRestack(null)
   registerMoodboardReturnToColumn(null)
+  registerMoodboardCloseReturn(null)
   cellRo?.disconnect()
   cellRo = null
   clearColumnPointerListeners()
@@ -4854,12 +4911,10 @@ onBeforeUnmount(() => {
 .stack__cell-frame--board {
   position: absolute;
   /*
-   * 1-up (1×1): same 17% pad as the selection cart.
-   * 2-up (3×2): half → 8.5% of one track cell.
+   * Pad is of one grid track (not the multi-span cell box):
+   * 1-up → 17%, 2-up → 8.5% (--stack-cell-pad / --stack-board-pad-frac).
    */
-  inset: calc(
-    var(--stack-cell-size) * 0.17 / var(--board-span-rows, 1)
-  );
+  inset: calc(var(--stack-cell-size) * var(--stack-board-pad-frac, 0.17));
   width: auto;
   height: auto;
   display: grid;
@@ -4873,6 +4928,11 @@ onBeforeUnmount(() => {
   max-height: 100%;
   aspect-ratio: var(--board-aspect, 16 / 9);
   overflow: hidden;
+  box-sizing: border-box;
+}
+
+.stack__cell-figure--board-empty {
+  border: 1px dashed color-mix(in srgb, var(--charcoal) 40%, transparent);
 }
 
 .stack__board-hit {
@@ -5247,7 +5307,7 @@ onBeforeUnmount(() => {
   z-index: 420;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
+  gap: 1.25rem;
   width: var(--side-column-width);
   max-width: calc(100vw - (var(--gutter) * 2));
   padding: var(--gutter);
@@ -5327,36 +5387,30 @@ onBeforeUnmount(() => {
   margin: 0;
   min-width: 0;
   flex: 1;
-  font-size: var(--text-md);
-  color: var(--charcoal);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--serif);
+  font-size: var(--text-md);
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: normal;
+  line-height: 1.5;
+  color: var(--charcoal);
+  caret-color: var(--charcoal);
+  outline: none;
+}
+
+.stack__title[contenteditable='true'] {
+  cursor: text;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .stack__count {
   margin: 0;
   font-size: var(--text-xs);
   color: var(--muted);
-}
-
-.stack__title-input {
-  min-width: 0;
-  flex: 1;
-  margin: 0;
-  padding: 0.35rem 0.5rem;
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  background: var(--cream);
-  border: 1px solid var(--grid-line);
-  box-sizing: border-box;
-}
-
-.stack__title-input:focus {
-  outline: none;
-  border-color: var(--charcoal);
 }
 
 .stack__confirm {

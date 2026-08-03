@@ -2,10 +2,10 @@ export type SerifFace = 'serif' | 'sans'
 
 const STORAGE_KEY = 'sba-serif-face'
 
-/** Toggle --serif between Maison Medium (sans, default) and Ashcroft (serif). */
+/** Toggle --serif between Ashcroft (serif, default) and Maison Medium (sans). */
 export const useSerifFace = () => {
-  // Sans is the default; CSS uses Maison Medium until html.face-serif is set.
-  const face = useState<SerifFace>('serif-face', () => 'sans')
+  // Serif is the default; html.face-serif is on unless the user chose sans.
+  const face = useState<SerifFace>('serif-face', () => 'serif')
 
   const applyDom = (next: SerifFace) => {
     if (!import.meta.client) return

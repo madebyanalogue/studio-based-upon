@@ -920,6 +920,7 @@ export const useMoodboard = () => {
   const addText = (
     text = 'Double-click to edit',
     textStyle: 'mono' | 'handwritten' = 'mono',
+    position?: { x: number; y: number },
   ) => {
     const id = `text-${Date.now()}-${Math.round(Math.random() * 1000)}`
     zCounter.value += 1
@@ -931,8 +932,8 @@ export const useMoodboard = () => {
         title: text,
         text,
         textStyle,
-        x: 160 + (placements.value.length % 5) * 40,
-        y: 160 + (placements.value.length % 5) * 40,
+        x: position?.x ?? 160 + (placements.value.length % 5) * 40,
+        y: position?.y ?? 160 + (placements.value.length % 5) * 40,
         z: zCounter.value,
         scale: 1,
         // Size is content-driven in the canvas — never a fixed thumb width
@@ -1063,41 +1064,67 @@ export const useMoodboard = () => {
     return { a: pieceA.id, b: pieceB.id }
   }
 
-  /** Restore the pre-tear image from either torn half. */
+  /**
+   * Turn this torn half into a full board clone of the pre-tear image.
+   * The sibling half stays put (and can restore to its own clone).
+   */
   const restoreTearPiece = (id: string) => {
     const piece = placements.value.find((item) => item.id === id)
     const restore = piece?.tearRestore
     if (!piece || !restore) return false
 
-    const siblingId = restore.siblingId
     const restored = JSON.parse(JSON.stringify(restore.original)) as MoodboardItem
+    restored.id = `${id}-full-${Date.now()}`
+    restored.x = piece.x
+    restored.y = piece.y
+    restored.scale = piece.scale
+    zCounter.value += 1
+    restored.z = zCounter.value
     delete restored.tearRestore
+    delete restored.clipPath
+    delete restored.tearBackClipPath
+    // Independent board copy — don't reclaim the cart item twice
+    delete restored.sourceBucketItemId
+    delete restored.sourceSelectionId
 
-    placements.value = placements.value.flatMap((item) => {
-      if (item.id === id) return [restored]
-      if (item.id === siblingId) return []
-      return [item]
-    })
+    placements.value = placements.value.map((item) =>
+      item.id === id ? restored : item,
+    )
     selectOnly(restored.id)
 
     if (
       tearUndo.value &&
-      (tearUndo.value.pieceIds[0] === id ||
-        tearUndo.value.pieceIds[1] === id ||
-        tearUndo.value.pieceIds[0] === siblingId ||
-        tearUndo.value.pieceIds[1] === siblingId)
+      (tearUndo.value.pieceIds[0] === id || tearUndo.value.pieceIds[1] === id)
     ) {
       tearUndo.value = null
     }
     return true
   }
 
+  /** Revert the last tear: put the original back and drop both halves. */
   const undoTear = () => {
     const undo = tearUndo.value
     if (!undo) return false
     const [idA, idB] = undo.pieceIds
-    if (restoreTearPiece(idA)) return true
-    return restoreTearPiece(idB)
+    const hasA = placements.value.some((item) => item.id === idA)
+    const hasB = placements.value.some((item) => item.id === idB)
+    // Only when both halves are untouched — Restore turns a half into a clone
+    if (!hasA || !hasB) {
+      tearUndo.value = null
+      return false
+    }
+
+    const original = JSON.parse(JSON.stringify(undo.original)) as MoodboardItem
+    delete original.tearRestore
+
+    placements.value = placements.value.flatMap((item) => {
+      if (item.id === idA) return [original]
+      if (item.id === idB) return []
+      return [item]
+    })
+    selectOnly(original.id)
+    tearUndo.value = null
+    return true
   }
 
   const clearTearUndo = () => {

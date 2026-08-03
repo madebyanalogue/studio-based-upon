@@ -429,7 +429,7 @@ const openSavedBoard = (id: string) => {
   if (!board) return
   setActiveBoard(id)
   loadBoard(board.placements, board.strokes)
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const onNew = () => {
@@ -496,7 +496,7 @@ const onBuildMoodboard = () => {
   // Empty canvas — selections stay in the rail; drag them on when ready
   reset()
   createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
-  openMoodboard({ reopenCart: false })
+  openMoodboard({ reopenCart: true })
 }
 
 const sendEnquiry = () => {
