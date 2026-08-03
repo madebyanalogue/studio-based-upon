@@ -1547,14 +1547,15 @@ watch(
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-.pdp__save:hover,
-.pdp__save--active {
+.pdp__save:hover:not(:disabled) {
   background: var(--charcoal);
   color: var(--cream);
 }
 
-.pdp__save--active:hover {
-  opacity: 0.9;
+/* Active stays outline — only hover fills */
+.pdp__save--active {
+  background: transparent;
+  color: var(--charcoal);
 }
 
 .pdp__links {

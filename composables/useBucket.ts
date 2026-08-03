@@ -68,6 +68,8 @@ const removalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 let removalSeq = 0
 /** Optional animated close (bucket UI v2). */
 let animatedCloseHandler: (() => void) | null = null
+/** Optional animated open (bucket UI v2) — same path as clicking the selection stack. */
+let animatedOpenHandler: (() => void) | null = null
 /** Shared across useBucket() callers — must be module-scoped like animatedCloseHandler. */
 let moodboardRestackHandler: (() => Promise<void>) | null = null
 let moodboardReturnHandler:
@@ -940,9 +942,22 @@ export const useBucket = () => {
     animatedCloseHandler = handler
   }
 
+  const registerAnimatedOpen = (handler: (() => void) | null) => {
+    animatedOpenHandler = handler
+  }
+
   const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
     panelTab.value = tab
     isOpen.value = true
+  }
+
+  /** Open selections cart — Flip from pile when v2 is registered. */
+  const openSelectionStack = () => {
+    if (animatedOpenHandler) {
+      animatedOpenHandler()
+      return
+    }
+    openDrawer('selections')
   }
 
   onMounted(hydrate)
@@ -1002,6 +1017,8 @@ export const useBucket = () => {
     closeDrawer,
     dismissDrawer,
     registerAnimatedClose,
+    registerAnimatedOpen,
+    openSelectionStack,
     openDrawer,
     pendingFly,
     consumePendingFly,

@@ -25,10 +25,12 @@ import { isHomepagePath } from '~/composables/useHomepagePreloader'
 
 const { seoTitle, seoDescription, disablePreloader } = useSiteSettings()
 const { version: bucketUi, initBucketUi } = useBucketUi()
+const { initSerifFace } = useSerifFace()
 const route = useRoute()
 
 onMounted(() => {
   initBucketUi()
+  initSerifFace()
 })
 
 const preloaderReady = ref(

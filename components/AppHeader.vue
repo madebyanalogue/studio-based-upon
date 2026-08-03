@@ -28,10 +28,10 @@
         <button
           type="button"
           class="header__version interface"
-          :aria-label="`Bucket UI ${bucketUiVersion}. Switch to ${bucketUiVersion === 'v1' ? 'v2' : 'v1'}`"
-          @click="toggleBucketUi"
+          :aria-label="`Display face ${serifFace}. Switch to ${serifFace === 'serif' ? 'sans' : 'serif'}`"
+          @click="toggleSerifFace"
         >
-          {{ bucketUiVersion }}
+          {{ serifFace }}
         </button>
 
         <button
@@ -86,6 +86,49 @@
           </template>
         </button>
 
+        <div ref="selectionsMenuRef" class="header__boards">
+          <button
+            type="button"
+            class="header__version header__boards-toggle interface"
+            :class="{ 'header__boards-toggle--open': selectionsOpen }"
+            :aria-expanded="selectionsOpen"
+            aria-haspopup="listbox"
+            aria-label="Selections"
+            @click="onSelectionsToggle"
+          >
+            <span>Selections</span>
+            <span class="header__boards-caret" aria-hidden="true" />
+          </button>
+          <div
+            v-if="selectionsOpen"
+            class="header__boards-menu"
+            role="listbox"
+            aria-label="Selections"
+          >
+            <button
+              v-for="selection in moodboards"
+              :key="selection.id"
+              type="button"
+              class="header__boards-option interface"
+              role="option"
+              :aria-selected="selection.id === activeMoodboardId"
+              :class="{
+                'header__boards-option--active': selection.id === activeMoodboardId,
+              }"
+              @click="onSelectSelection(selection.id)"
+            >
+              {{ selection.name }}
+            </button>
+            <button
+              type="button"
+              class="header__boards-option header__boards-option--new interface"
+              @click="onNewSelection"
+            >
+              New selection +
+            </button>
+          </div>
+        </div>
+
         <div ref="boardsMenuRef" class="header__boards">
           <button
             type="button"
@@ -117,9 +160,13 @@
             >
               {{ board.name }}
             </button>
-            <p v-if="!boards.length" class="header__boards-empty interface">
-              No boards yet
-            </p>
+            <button
+              type="button"
+              class="header__boards-option header__boards-option--new interface"
+              @click="onNewBoard"
+            >
+              New board +
+            </button>
           </div>
         </div>
 
@@ -130,7 +177,7 @@
             'header__icon-btn--active': isOpen && panelTab === 'selections',
             'header__icon-btn--tooltip-hidden': hiddenTooltip === 'selections',
           }"
-          aria-label="Open selections"
+          :aria-label="`Open ${activeMoodboard?.name || 'selection'}`"
           @click="onSelectionsClick"
           @mouseleave="clearTooltipHide('selections')"
         >
@@ -148,7 +195,9 @@
               d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
             />
           </svg>
-          <span class="header__tooltip interface" aria-hidden="true">Selections</span>
+          <span class="header__tooltip interface" aria-hidden="true">{{
+            activeMoodboard?.name || 'Selection'
+          }}</span>
         </button>
 
         <NuxtLink to="/enquire" class="header__enquire interface">
@@ -165,29 +214,42 @@ const {
   isOpen,
   panelTab,
   openDrawer,
-  closeDrawer,
   isMoodboard,
   openMoodboard,
+  moodboards,
+  activeMoodboard,
+  activeMoodboardId,
+  setActiveMoodboard,
+  createMoodboard,
+  openSelectionStack,
 } = useBucket()
-const { version: bucketUiVersion, toggleVersion } = useBucketUi()
+const { face: serifFace, toggleFace: toggleSerifFace } = useSerifFace()
 const {
   boards,
   activeBoardId,
   boardsOpen,
   setActiveBoard,
   saveActiveBoard,
+  createBoard,
   toggleDropdown,
   closeDropdown,
 } = useBoards()
-const { loadBoard, placements, strokes, clearActive } = useMoodboard()
+const {
+  loadBoard,
+  placements,
+  strokes,
+  clearActive,
+  reset: resetMoodboard,
+} = useMoodboard()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
 const boardsMenuRef = ref<HTMLElement | null>(null)
+const selectionsMenuRef = ref<HTMLElement | null>(null)
+const selectionsOpen = ref(false)
 
-const toggleBucketUi = () => {
-  closeDrawer()
-  toggleVersion()
+const closeSelectionsDropdown = () => {
+  selectionsOpen.value = false
 }
 
 type TooltipId = 'theme' | 'selections'
@@ -216,11 +278,18 @@ const onThemeClick = () => {
 }
 
 const onBoardsToggle = () => {
+  closeSelectionsDropdown()
   toggleDropdown()
+}
+
+const onSelectionsToggle = () => {
+  closeDropdown()
+  selectionsOpen.value = !selectionsOpen.value
 }
 
 const onSelectBoard = async (id: string) => {
   closeDropdown()
+  closeSelectionsDropdown()
   if (isMoodboard.value) {
     if (id === activeBoardId.value) return
     if (activeBoardId.value) {
@@ -239,20 +308,56 @@ const onSelectBoard = async (id: string) => {
   openMoodboard({ reopenCart: false })
 }
 
-const onSelectionsClick = () => {
-  hideTooltip('selections')
-  if (isOpen.value && panelTab.value === 'selections') {
-    closeDrawer()
-    return
-  }
+const onSelectSelection = (id: string) => {
+  closeSelectionsDropdown()
+  closeDropdown()
+  setActiveMoodboard(id)
   openDrawer('selections')
 }
 
+const onNewSelection = () => {
+  closeSelectionsDropdown()
+  closeDropdown()
+  createMoodboard({ open: true, activate: true })
+  openDrawer('selections')
+}
+
+const onNewBoard = () => {
+  closeDropdown()
+  closeSelectionsDropdown()
+  if (isMoodboard.value && activeBoardId.value) {
+    saveActiveBoard(placements.value, strokes.value)
+  }
+  resetMoodboard()
+  createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
+  loadBoard([], [])
+  clearActive()
+  openMoodboard({ reopenCart: false })
+}
+
+const onSelectionsClick = () => {
+  hideTooltip('selections')
+  closeSelectionsDropdown()
+  closeDropdown()
+  openSelectionStack()
+}
+
 const onDocumentPointerDown = (event: PointerEvent) => {
-  if (!boardsOpen.value) return
   const target = event.target as Node | null
-  if (boardsMenuRef.value && target && !boardsMenuRef.value.contains(target)) {
+  if (!target) return
+  if (
+    boardsOpen.value &&
+    boardsMenuRef.value &&
+    !boardsMenuRef.value.contains(target)
+  ) {
     closeDropdown()
+  }
+  if (
+    selectionsOpen.value &&
+    selectionsMenuRef.value &&
+    !selectionsMenuRef.value.contains(target)
+  ) {
+    closeSelectionsDropdown()
   }
 }
 
@@ -420,6 +525,13 @@ onBeforeUnmount(() => {
 
 .header__boards-option--active {
   font-weight: 500;
+}
+
+.header__boards-option--new {
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--grid-line);
+  border-radius: 0 0 3px 3px;
+  color: var(--charcoal);
 }
 
 .header__boards-empty {

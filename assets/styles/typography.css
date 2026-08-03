@@ -23,6 +23,15 @@
 }
 
 @font-face {
+  font-family: 'Maison Bold';
+  src: url('../fonts/Maison-Bold.otf') format('opentype');
+  /* Map to 400 so existing serif usages (weight 400) pick up the Bold cut */
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Biro Script Plus';
   src: url('../fonts/BiroScriptPlusSloppyUS.ttf') format('truetype');
   font-weight: 400;
@@ -45,6 +54,11 @@
   --text-xl: 1.8rem;
   --text-2xl: 2rem;
   --text-3xl: clamp(2rem, 4vw, 3.5rem);
+}
+
+/* Nav serif/sans toggle — swaps display face used by --serif */
+html.serif-sans {
+  --serif: 'Maison Bold', 'Maison Neue', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 body {

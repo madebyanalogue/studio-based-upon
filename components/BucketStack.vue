@@ -619,6 +619,7 @@ const {
   activeMoodboardId,
   dismissDrawer,
   registerAnimatedClose,
+  registerAnimatedOpen,
   openDrawer,
   openMoodboard,
   createMoodboard,
@@ -1603,21 +1604,37 @@ const boardsPileRef = ref<HTMLElement | null>(null)
 const keepBoardsPileForFlip = ref(false)
 const boardsPileFanned = ref(false)
 
+/**
+ * Boards pile — file-stack hover: each card under the top is smaller and
+ * shifted up, kept centred (no sideways fan / rotation).
+ */
 const boardStackCardStyle = (boardId: string) => {
-  const cards: StackPileCard[] = boardsPileCards.value.map((board) => ({
-    id: board.id,
-    imageUrl: board.preview || '',
-    title: board.name,
-    kind: 'item',
-  }))
-  const board = boardsPileCards.value.find((entry) => entry.id === boardId)
+  const cards = boardsPileCards.value
+  const index = cards.findIndex((entry) => entry.id === boardId)
+  const total = Math.max(cards.length, 1)
+  const depth = Math.max(0, total - 1 - index) // 0 = top (newest)
+  const board = cards[index]
   const aspect =
     board?.previewAspect && board.previewAspect > 0 ? board.previewAspect : 16 / 9
+
+  // Rest: tight stack with a slight depth peek
+  const restScale = 1 - depth * 0.025
+  const restY = -depth * 3
+  // Hover: open into a centred file cascade
+  const hoverScale = 1 - depth * 0.085
+  const hoverY = -depth * 16
+
   return {
-    ...pileCardStyle(boardId, cards),
-    '--board-aspect': String(aspect),
+    '--pile-x': '0px',
+    '--pile-y': `${restY}px`,
     '--pile-r': '0deg',
+    '--pile-scale': String(restScale),
+    '--pile-hover-x': '0px',
+    '--pile-hover-y': `${hoverY}px`,
     '--pile-hover-r': '0deg',
+    '--pile-hover-scale': String(hoverScale),
+    '--board-aspect': String(aspect),
+    zIndex: index + 1,
   }
 }
 
@@ -3116,7 +3133,10 @@ const runFlip = (
       fade: false,
       // Boards: scale (match open Flip.fit) so aspect-ratio faces don’t reflow height
       scale: opts?.scale ?? false,
-      clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
+      // Above cream stage while gathering / dispersing
+      zIndex: 260,
+      clearProps:
+        'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
       onComplete: () => resolve(),
     })
   })
@@ -3296,6 +3316,14 @@ const openFromBoardsPile = async () => {
     ids: boardsGridFlipIds.value,
     boardStagger: true,
   })
+  // Pile stays mounted under the cart — drop Flip.fit leftovers or close can’t gather
+  const fitted = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
+  if (fitted?.length) {
+    gsap.set(fitted, {
+      clearProps:
+        'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
+    })
+  }
   flipSurface.value = 'cells'
   cellsReady.value = true
   keepBoardsPileForFlip.value = false
@@ -3381,11 +3409,15 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     const state = medias?.length ? Flip.getState(medias) : null
     isFlipping.value = true
     cellsReady.value = false
+    // Hand flip ids to pile faces (same pattern as selection close)
     flipSurface.value = 'pile'
     keepBoardsPileForFlip.value = true
-    boardsPileFanned.value = true
+    // Land in the compact stack — not the hover file-fan
+    boardsPileFanned.value = false
     dismissDrawer()
     await nextTick()
+    await nextTick()
+    await waitFrames(2)
     const cards = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
     if (state && cards?.length) {
       await runFlip(state, cards, {
@@ -3395,12 +3427,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
         scale: true,
       })
       gsap.set(cards, {
-        clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
+        clearProps:
+          'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
       })
       void boardsPileRef.value?.offsetHeight
     }
     isFlipping.value = false
-    boardsPileFanned.value = false
     await fadeOutStage()
     clearAllCellPhases()
     settlePendingRemovals()
@@ -3828,9 +3860,30 @@ watch(
   { flush: 'post' },
 )
 
+/** Nav heart — same open path as clicking the active selection stack. */
+const openSelectionStackFromNav = () => {
+  if (isMoodboard.value || isFlipping.value) return
+  if (isOpen.value && panelTab.value === 'selections') {
+    void closeToPile()
+    return
+  }
+  if (isOpen.value || stagePresent.value) return
+  const id = activeMoodboardId.value
+  if (!id) return
+  const board = moodboards.value.find((entry) => entry.id === id)
+  // Match pile click: only Flip-open when the active selection has items
+  if (!board?.items.length) return
+  setActiveMoodboard(id)
+  pileRef.value = pileEls.value[id] || pileRef.value
+  void openFromPile()
+}
+
 onMounted(() => {
   registerAnimatedClose(() => {
     void closeToPile()
+  })
+  registerAnimatedOpen(() => {
+    openSelectionStackFromNav()
   })
   registerMoodboardRestack(async () => {
     const ids = [...expandedBoardIds.value]
@@ -3848,6 +3901,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   registerAnimatedClose(null)
+  registerAnimatedOpen(null)
   registerMoodboardRestack(null)
   registerMoodboardReturnToColumn(null)
   cellRo?.disconnect()
@@ -3931,15 +3985,15 @@ onBeforeUnmount(() => {
   z-index: 210;
 }
 
-/* Tuck under the cream only while the cart is settled open (not during Flip/close) */
+/* Tuck under the cream while settled open — opacity keeps layout for Flip end poses */
 .stack--boards-cart.stack--cells-ready:not(.stack--flipping) .stack__boards-rail {
-  visibility: hidden;
+  opacity: 0;
   pointer-events: none;
 }
 
 .stack--boards-cart.stack--flipping .stack__boards-rail {
   z-index: 230;
-  visibility: visible;
+  opacity: 1;
   pointer-events: none;
 }
 
@@ -4419,7 +4473,8 @@ onBeforeUnmount(() => {
   background: transparent;
   box-shadow: none;
   transform-origin: center center;
-  transform: translate(var(--pile-x, 0px), var(--pile-y, 0px)) rotate(var(--pile-r, 0deg));
+  transform: translate(var(--pile-x, 0px), var(--pile-y, 0px))
+    rotate(var(--pile-r, 0deg)) scale(var(--pile-scale, 1));
   will-change: transform;
   box-sizing: border-box;
 }
@@ -4444,7 +4499,8 @@ onBeforeUnmount(() => {
 }
 
 .stack__pile--fanned .stack__pile-card--fan {
-  transform: translate(var(--pile-hover-x), var(--pile-hover-y)) rotate(var(--pile-hover-r));
+  transform: translate(var(--pile-hover-x), var(--pile-hover-y))
+    rotate(var(--pile-hover-r)) scale(var(--pile-hover-scale, 1));
 }
 
 @media (prefers-reduced-motion: reduce) {
