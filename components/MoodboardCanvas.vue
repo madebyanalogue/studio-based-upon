@@ -6,7 +6,10 @@
       :class="{
         'moodboard--ready': surfaceReady,
         'moodboard--panel-ready': panelReady,
+        'moodboard--chrome-out': chromeOut,
         'moodboard--items-out': itemsOut,
+        'moodboard--grid-out': gridOut,
+        'moodboard--instant-hide': instantHide,
         'moodboard--capturing': isCapturingPreview,
       }"
       role="dialog"
@@ -732,24 +735,38 @@ const {
   renameMoodboard,
   markMoodboardSurfaceReady,
   consumeMoodboardSkipBgFade,
+  consumeMoodboardStagedOpen,
   requestMoodboardRestack,
+  requestMoodboardStackExit,
+  closeMoodboardToBoards,
   requestMoodboardReturnToColumn,
   persistMoodboardSession,
   clearMoodboardSession,
   readMoodboardSession,
   setParkedSelectionItems,
   parkedSelectionItems,
+  registerMoodboardStagedReveal,
+  registerMoodboardChromeEnter,
 } = useBucket()
 
 const MOODBOARD_FADE_MS = 420
 const MOODBOARD_PANEL_FADE_MS = 320
-const MOODBOARD_ITEMS_FADE_MS = 320
+const MOODBOARD_PAUSE_MS = 160
+const MOODBOARD_CHROME_EXIT_MS = 450
+const MOODBOARD_GRID_FADE_MS = 320
 
 const surfacePresent = ref(false)
 const surfaceReady = ref(false)
 const panelReady = ref(false)
+const chromeOut = ref(false)
 const itemsOut = ref(false)
+/** Canvas grid lines — faded for staged open/close. */
+const gridOut = ref(false)
+/** Instantly kill the whole composer (no translucent cream flash). */
+const instantHide = ref(false)
 const isExiting = ref(false)
+/** Preview captured on save — used for Flip into boards cart. */
+const exitPreview = ref<string | null>(null)
 const {
   boards,
   activeBoard,
@@ -1086,10 +1103,26 @@ watch(
         placements: state.placements,
         strokes: state.strokes,
       }
-      itemsOut.value = false
+      instantHide.value = false
       isExiting.value = false
       const skipBgFade = consumeMoodboardSkipBgFade()
+      const stagedOpen = consumeMoodboardStagedOpen()
       surfacePresent.value = true
+
+      if (stagedOpen) {
+        // Reverse open: Flip first, then grid, then tools — hold chrome/grid
+        surfaceReady.value = true
+        panelReady.value = false
+        chromeOut.value = true
+        itemsOut.value = true
+        gridOut.value = true
+        await nextTick()
+        return
+      }
+
+      itemsOut.value = false
+      chromeOut.value = false
+      gridOut.value = false
       panelReady.value = false
       if (skipBgFade) {
         // Cart cream already covers the page — keep continuous, no bg fade
@@ -1116,6 +1149,9 @@ watch(
       surfaceReady.value = false
       panelReady.value = false
       itemsOut.value = false
+      gridOut.value = false
+      instantHide.value = false
+      chromeOut.value = false
       surfacePresent.value = false
     }
   },
@@ -1182,7 +1218,9 @@ const onRemovePlacement = async (id: string) => {
   removeItem(id)
 }
 
-/** Restack → fade panel/items → fade background → close. */
+/**
+ * Pause → restack → chrome/stack exit → Flip board into cart → peers fade → toolbox.
+ */
 const exitMoodboard = async () => {
   if (isExiting.value) return
   isExiting.value = true
@@ -1193,19 +1231,64 @@ const exitMoodboard = async () => {
   colourPickerOpen.value = false
   confirmingDelete.value = false
 
+  // 1) Pause
+  await waitMs(MOODBOARD_PAUSE_MS)
+
+  // 2) Stack closes down
   await requestMoodboardRestack()
   await waitMs(40)
 
-  itemsOut.value = true
-  panelReady.value = false
-  await waitMs(MOODBOARD_ITEMS_FADE_MS)
+  // 3) Tools → X, toolbox → Y, selection stack → Y (together)
+  chromeOut.value = true
+  await Promise.all([
+    requestMoodboardStackExit(),
+    waitMs(MOODBOARD_CHROME_EXIT_MS),
+  ])
 
-  surfaceReady.value = false
-  await waitMs(MOODBOARD_FADE_MS)
+  const canvasRect = canvasEl.value?.getBoundingClientRect()
+  const from =
+    canvasRect && canvasRect.width > 2
+      ? {
+          left: canvasRect.left,
+          top: canvasRect.top,
+          width: canvasRect.width,
+          height: canvasRect.height,
+        }
+      : null
 
-  surfacePresent.value = false
-  itemsOut.value = false
-  closeMoodboard()
+  if (!exitPreview.value) {
+    const shot = await captureBoardPreview()
+    exitPreview.value = shot?.preview || activeBoard.value?.preview || null
+  }
+  const preview = exitPreview.value
+
+  // 4–6) Boards ready → park flyer → hide composer instantly → Flip → peers → toolbox
+  await closeMoodboardToBoards({
+    boardId: activeBoardId.value,
+    preview,
+    from,
+    beforeFlip: async () => {
+      // Flyer already covers the shot — kill edit UI instantly (no cream fade flash)
+      itemsOut.value = true
+      gridOut.value = true
+      instantHide.value = true
+      surfaceReady.value = false
+      await nextTick()
+    },
+    afterLand: async () => {
+      // Drop composer as soon as the thumb owns the cell — don’t leave an
+      // invisible overlay that can flash when it finally unmounts.
+      surfacePresent.value = false
+      itemsOut.value = false
+      gridOut.value = false
+      chromeOut.value = false
+      panelReady.value = false
+      instantHide.value = false
+      exitPreview.value = null
+      await closeMoodboard({ skipCartReturn: true })
+    },
+  })
+
   isExiting.value = false
 }
 
@@ -1216,6 +1299,7 @@ const onSaveAndClose = async () => {
   }
   if (isExiting.value) return
   const shot = await captureBoardPreview()
+  exitPreview.value = shot?.preview || null
   saveActiveBoard(
     placements.value,
     strokes.value,
@@ -1985,7 +2069,7 @@ const downloadScreenshot = async () => {
   if (!canvasEl.value || !import.meta.client) return
   const { default: html2canvas } = await import('html2canvas')
   const canvas = await html2canvas(canvasEl.value, {
-    backgroundColor: '#f2ecdf',
+    backgroundColor: '#F1EDE4',
     scale: 2,
     useCORS: true,
     logging: false,
@@ -2025,7 +2109,7 @@ const loadCaptureImage = (url: string) =>
 const boardCaptureBg = () =>
   getComputedStyle(document.documentElement)
     .getPropertyValue('--cream')
-    .trim() || '#f2ecdf'
+    .trim() || '#F1EDE4'
 
 /** Draw board items onto a canvas via same-origin proxied images. */
 const captureBoardPreviewFromItems = async (): Promise<{
@@ -2166,7 +2250,7 @@ const sendEnquiry = async () => {
   if (canvasEl.value) {
     const { default: html2canvas } = await import('html2canvas')
     const canvas = await html2canvas(canvasEl.value, {
-      backgroundColor: '#f2ecdf',
+      backgroundColor: '#F1EDE4',
       scale: 1,
       useCORS: true,
       logging: false,
@@ -2223,6 +2307,22 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   document.addEventListener('click', onDocumentClick)
 
+  // Staged open: after Flip — show items + fade canvas grid in
+  registerMoodboardStagedReveal(async () => {
+    instantHide.value = false
+    itemsOut.value = false
+    gridOut.value = false
+    await waitMs(MOODBOARD_GRID_FADE_MS)
+  })
+
+  // Staged open: tools + toolbox enter after grid
+  registerMoodboardChromeEnter(async () => {
+    chromeOut.value = false
+    panelReady.value = true
+    markMoodboardSurfaceReady()
+    await waitMs(MOODBOARD_PANEL_FADE_MS)
+  })
+
   // Resume board composer after refresh
   const session = readMoodboardSession()
   if (session?.open) {
@@ -2240,6 +2340,8 @@ onUnmounted(() => {
   // Keep cancelRevertTimer alive so discard can finish after this dialog unmounts.
   if (sessionPersistTimer) clearTimeout(sessionPersistTimer)
   if (historyTimer) clearTimeout(historyTimer)
+  registerMoodboardStagedReveal(null)
+  registerMoodboardChromeEnter(null)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp as EventListener)
   window.removeEventListener('keydown', onKeyDown)
@@ -2274,15 +2376,57 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+/* Close / staged open — kill composer instantly (flyer covers the board shot) */
+.moodboard--instant-hide {
+  opacity: 0 !important;
+  transition: none !important;
+  pointer-events: none !important;
+}
+
+.moodboard--instant-hide::before {
+  opacity: 0 !important;
+  transition: none !important;
+}
+
 .moodboard--items-out .moodboard__item,
 .moodboard--items-out .moodboard__draw-layer {
   opacity: 0 !important;
   transition: opacity 0.32s ease;
 }
 
+/* Canvas grid as overlay so it can fade independently of cream/items */
+.moodboard__canvas.grid-bg {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+
+.moodboard__canvas.grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 1;
+  transition: opacity 0.32s ease;
+}
+
+.moodboard--grid-out .moodboard__canvas.grid-bg::before {
+  opacity: 0;
+  transition: none;
+}
+
 /* Thumbnail capture — board content only, no selection/tools chrome */
 .moodboard--capturing .moodboard__canvas.grid-bg {
   background-image: none !important;
+}
+
+.moodboard--capturing .moodboard__canvas.grid-bg::before {
+  opacity: 0 !important;
+  visibility: hidden !important;
 }
 
 .moodboard--capturing .moodboard__item--active,
@@ -2308,14 +2452,16 @@ onUnmounted(() => {
 .moodboard__history {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.32s ease;
+  transition:
+    opacity 0.32s ease,
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .moodboard__panel {
   opacity: 1;
   pointer-events: none;
   transform: translateY(calc(100% + var(--gutter) + 1rem));
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .moodboard--panel-ready .moodboard__panel {
@@ -2328,6 +2474,11 @@ onUnmounted(() => {
 .moodboard--panel-ready .moodboard__history {
   opacity: 1;
   pointer-events: auto;
+  transform: translateX(0);
+}
+
+.moodboard--panel-ready .moodboard__history {
+  transform: translateX(-50%);
 }
 
 .moodboard--panel-ready .moodboard__tear-hint {
@@ -2336,6 +2487,25 @@ onUnmounted(() => {
 
 .moodboard--panel-ready .moodboard__tear-undo {
   pointer-events: auto;
+}
+
+/* Close: tools slide off to the right, toolbox down */
+.moodboard--chrome-out .moodboard__panel {
+  pointer-events: none;
+  transform: translateY(calc(100% + var(--gutter) + 1rem));
+}
+
+.moodboard--chrome-out .moodboard__actions,
+.moodboard--chrome-out .moodboard__pen-bar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + var(--gutter) + 1rem));
+}
+
+.moodboard--chrome-out .moodboard__history {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 2.5rem);
 }
 
 .moodboard--items-out .moodboard__panel {
@@ -3153,7 +3323,7 @@ html.dark .moodboard__place-layer {
   width: 100%;
   max-width: 22rem;
   padding: 1.5rem;
-  background: var(--panel-bg, var(--warm-white));
+  background: var(--elevated-bg, var(--cream));
   border: 1px solid var(--grid-line);
   box-sizing: border-box;
 }

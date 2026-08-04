@@ -162,10 +162,10 @@ const shuffleMedia = (items: DiscoveryMediaItem[]) => {
 
 const readThemeColors = () => {
   if (!import.meta.client) {
-    return { background: '#f2ecdf', fog: '#f2ecdf' }
+    return { background: '#F1EDE4', fog: '#F1EDE4' }
   }
   const styles = getComputedStyle(document.documentElement)
-  const cream = styles.getPropertyValue('--cream').trim() || '#f2ecdf'
+  const cream = styles.getPropertyValue('--cream').trim() || '#F1EDE4'
   return { background: cream, fog: cream }
 }
 

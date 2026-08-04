@@ -151,8 +151,8 @@ export const createInfiniteCanvas = (
 
   let media = options.media.slice()
   let layoutSeed = options.layoutSeed ?? Math.floor(Math.random() * 1_000_000_000)
-  let backgroundColor = options.backgroundColor ?? '#f2ecdf'
-  let fogColor = options.fogColor ?? '#f2ecdf'
+  let backgroundColor = options.backgroundColor ?? '#F1EDE4'
+  let fogColor = options.fogColor ?? '#F1EDE4'
 
   clearPlaneCache()
 

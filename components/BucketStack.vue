@@ -7,7 +7,11 @@
         'stack--flipping': isFlipping,
         'stack--soft-enter': softEnter,
         'stack--cells-ready': cellsReady,
-        'stack--moodboard': isMoodboard,
+        'stack--moodboard': isMoodboard && !boardsCartRevealing,
+        'stack--boards-revealing': boardsCartRevealing,
+        'stack--boards-intro': boardsGridIntro,
+        'stack--boards-landed': boardsLanded,
+        'stack--boards-handoff': boardsGridHandoff,
         'stack--boards-cart': stagePresent && panelTab === 'boards',
         'stack--above-pdp': productOverlayOpen && !isOpen && !stagePresent,
       }"
@@ -22,6 +26,7 @@
           'stack__rail--hot': railHot,
           'stack__rail--multi': railBoards.length > 1,
           'stack__rail--expanded': railExpanded,
+          'stack__rail--exiting': railExiting,
         }"
         @mouseenter="onRailEnter"
         @mouseleave="onRailLeave"
@@ -192,13 +197,18 @@
         </button>
       </div>
 
-      <!-- Expanded fullscreen (hidden in board builder) -->
+      <!-- Cart stage — stays mounted under the composer so cream is already waiting -->
       <div
-        v-if="!isMoodboard"
+        v-if="stagePresent"
         class="stack__stage"
-        :class="{ 'stack__stage--visible': stageVisible }"
+        :class="{
+          'stack__stage--visible': stageVisible,
+          'stack__stage--under-composer':
+            isMoodboard && stageVisible && !boardsCartRevealing,
+        }"
         role="dialog"
         aria-modal="true"
+        :aria-hidden="isMoodboard ? 'true' : undefined"
         :aria-label="panelTab === 'boards' ? 'Boards' : 'My selection'"
       >
         <div class="stack__backdrop" @click="requestClose" />
@@ -299,7 +309,14 @@
             v-for="(entry, index) in boardsGridEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.board.id"
             class="stack__cell stack__cell--board"
-            :class="boardCellClass(entry)"
+            :class="[
+              boardCellClass(entry),
+              {
+                'stack__cell--board-landing':
+                  entry.kind === 'board' &&
+                  entry.board.id === landingBoardId,
+              },
+            ]"
             :style="[
               boardCellStyle,
               softEnter ? softEnterStyle(index) : undefined,
@@ -319,7 +336,16 @@
                 </button>
               </div>
             </div>
-            <div v-else class="stack__cell-media">
+            <div
+              v-else
+              class="stack__cell-media"
+              :data-stack-id="boardFlipId(entry.board.id)"
+              :data-flip-id="
+                flipSurface === 'cells'
+                  ? boardFlipId(entry.board.id)
+                  : undefined
+              "
+            >
               <div class="stack__cell-frame stack__cell-frame--board">
                 <div
                   class="stack__cell-figure stack__cell-figure--board"
@@ -328,12 +354,6 @@
                       !entry.board.placements.length &&
                       !entry.board.strokes.length,
                   }"
-                  :data-stack-id="boardFlipId(entry.board.id)"
-                  :data-flip-id="
-                    flipSurface === 'cells'
-                      ? boardFlipId(entry.board.id)
-                      : undefined
-                  "
                   :style="{
                     '--board-aspect': entry.board.previewAspect || 16 / 9,
                   }"
@@ -588,13 +608,14 @@
             v-for="board in boardsPileCards"
             :key="board.id"
             class="stack__pile-card stack__pile-card--fan stack__pile-card--board"
+            :data-flip-id="
+              flipSurface === 'pile' ? boardFlipId(board.id) : undefined
+            "
             :style="boardStackCardStyle(board.id)"
           >
             <span
               class="stack__pile-board-face"
-              :data-flip-id="
-                flipSurface === 'pile' ? boardFlipId(board.id) : undefined
-              "
+              :class="{ 'stack__pile-board-face--empty': !board.preview }"
               :style="{
                 '--board-aspect':
                   board.previewAspect && board.previewAspect > 0
@@ -615,6 +636,13 @@
             </span>
           </span>
         </button>
+        <p
+          class="stack__boards-label "
+          :class="{ 'stack__boards-label--visible': showBoardsLabel }"
+          aria-hidden="true"
+        >
+          My Boards
+        </p>
       </div>
     </div>
   </Teleport>
@@ -669,6 +697,11 @@ const {
   registerMoodboardRestack,
   registerMoodboardReturnToColumn,
   registerMoodboardCloseReturn,
+  registerMoodboardCloseToBoards,
+  registerMoodboardStackExit,
+  requestMoodboardStagedReveal,
+  requestMoodboardChromeEnter,
+  consumeMoodboardEnterSelection,
 } = useBucket()
 const { reset: resetMoodboard, addImage, loadBoard } = useMoodboard()
 const {
@@ -720,6 +753,18 @@ const isFlipping = ref(false)
 const stagePresent = ref(false)
 /** CSS fade class — toggled after mount / before unmount so opacity can transition. */
 const stageVisible = ref(false)
+/** Boards cart painted under composer cream — stack sits below moodboard z-index. */
+const boardsCartRevealing = ref(false)
+/** Board cells start hidden; active board lands via Flip, then peers fade in. */
+const boardsGridIntro = ref(false)
+const boardsLanded = ref(false)
+/** Instant opacity (close mount / flyer handoff) vs animated fade (open outro). */
+const boardsGridHandoff = ref(false)
+const landingBoardId = ref<string | null>(null)
+/** Selection rail fading / sliding out before boards cart reveal. */
+const railExiting = ref(false)
+/** Boards → Board: keep selection as a pile (no auto column open). */
+const skipMoodboardAutoDisperse = ref(false)
 /** Grid borders — shown only after items land (open), hidden before they leave (close). */
 const gridLinesVisible = ref(false)
 /** Controls fade independently — out earlier than the backdrop on close. */
@@ -975,12 +1020,13 @@ const boardColumnItems = (board: { id: string; items: typeof items.value }) => {
 
 const showRail = computed(
   () =>
-    keepPileForFlip.value ||
-    isMoodboard.value ||
-    (!isOpen.value &&
-      !stagePresent.value &&
-      (moodboards.value.some((b) => b.items.length > 0) ||
-        arrivingIds.value.length > 0)),
+    !boardsCartRevealing.value &&
+    (keepPileForFlip.value ||
+      isMoodboard.value ||
+      (!isOpen.value &&
+        !stagePresent.value &&
+        (moodboards.value.some((b) => b.items.length > 0) ||
+          arrivingIds.value.length > 0))),
 )
 
 /** New-selection “+” — cart only, never inside the board composer. */
@@ -1388,69 +1434,104 @@ const onRailLeave = () => {
   }
 }
 
+/** Keep (+) visible/interactive while a new empty slot rises into the rail. */
+const keepCreatePlusOut = () => {
+  createPlusReady.value = true
+  const create = createSlotRef.value
+  if (!create || !import.meta.client) return
+  gsap.killTweensOf(create)
+  gsap.set(create, {
+    width: '2.5rem',
+    paddingLeft: 20,
+    xPercent: 0,
+    opacity: 1,
+    overflow: 'visible',
+  })
+}
+
+/** Rise a newly created empty wrap; width opens so (+) slides right without tucking. */
+const riseNewRailSlot = async (el: HTMLElement) => {
+  const cell = railCellSize() || el.scrollWidth || 120
+  gsap.killTweensOf(el)
+  // Start collapsed + below so the first paint never flashes the full slot
+  gsap.set(el, {
+    width: 0,
+    minWidth: 0,
+    overflow: 'visible',
+    pointerEvents: 'auto',
+    yPercent: 110,
+  })
+  await new Promise<void>((resolve) => {
+    gsap.to(el, {
+      width: cell,
+      minWidth: cell,
+      yPercent: 0,
+      duration: 0.4,
+      ease: 'power3.out',
+      overwrite: true,
+      onComplete: () => resolve(),
+    })
+  })
+  keepCreatePlusOut()
+}
+
 const onCreateSelection = async () => {
   // Keep the current active selection and leave the rail open
   railHoldOpen.value = true
+  railHot.value = true
   clearRailLeaveTimer()
+  const wasExpanded = railExpanded.value
   try {
     const board = createMoodboard({ open: false, activate: false })
     if (!railOrderIds.value.includes(board.id)) {
       railOrderIds.value = [...railOrderIds.value, board.id]
     }
+    // Pin (+) out before await — 1→2 flips to multi-rail and would otherwise
+    // drop pointer-events on (+), fire rail mouseleave, and park the new slot.
+    railExpanded.value = true
+    keepCreatePlusOut()
     await nextTick()
-    await waitFrames(1)
 
     const el = pileWrapEls.value[board.id]
-    if (!el) return
-
-    if (railExpanded.value) {
-      const cell = railCellSize() || el.scrollWidth || 120
-      gsap.killTweensOf(el)
+    if (!el) {
+      await waitFrames(2)
+      const retry = pileWrapEls.value[board.id]
+      if (!retry) {
+        if (!wasExpanded && moodboards.value.length > 1) await expandRail()
+        return
+      }
+      railAnimToken += 1
+      await riseNewRailSlot(retry)
+    } else {
+      // Collapse before the browser paints the full-size wrap
       gsap.set(el, {
-        width: cell,
-        minWidth: cell,
+        width: 0,
+        minWidth: 0,
         overflow: 'visible',
         pointerEvents: 'auto',
         yPercent: 110,
       })
-      // Tuck (+) briefly, rise the new slot, then slide (+) back out
-      const create = createSlotRef.value
-      if (create && createPlusReady.value) {
-        gsap.killTweensOf(create)
-        await new Promise<void>((resolve) => {
-          gsap.to(create, {
-            xPercent: -100,
-            opacity: 0,
-            duration: 0.16,
-            ease: 'power3.in',
-            overwrite: true,
-            onComplete: () => resolve(),
-          })
-        })
-      }
-      await new Promise<void>((resolve) => {
-        gsap.to(el, {
+      railAnimToken += 1
+      await riseNewRailSlot(el)
+    }
+
+    // First expand from a single stack: reveal any other inactive peers
+    if (!wasExpanded && moodboards.value.length > 2) {
+      const cell = railCellSize() || 120
+      const activeId = activeMoodboardId.value
+      for (const entry of railBoards.value) {
+        if (entry.id === activeId || entry.id === board.id) continue
+        const wrap = pileWrapEls.value[entry.id]
+        if (!wrap) continue
+        gsap.killTweensOf(wrap)
+        gsap.set(wrap, {
+          width: cell,
+          minWidth: cell,
           yPercent: 0,
-          duration: 0.4,
-          ease: 'power3.out',
-          overwrite: true,
-          onComplete: () => resolve(),
+          overflow: 'visible',
+          pointerEvents: 'auto',
         })
-      })
-      if (create) {
-        gsap.set(create, { width: '2.5rem', paddingLeft: 20, overflow: 'visible' })
-        createPlusReady.value = true
-        gsap.fromTo(
-          create,
-          { xPercent: -100, opacity: 0 },
-          { xPercent: 0, opacity: 1, duration: 0.22, ease: 'power3.out', overwrite: true },
-        )
       }
-    } else if (moodboards.value.length > 1 && railHot.value) {
-      // First extra selection while (+) is open — expand the rail so it appears
-      await expandRail()
-    } else {
-      parkInactiveRailBelow()
     }
   } finally {
     // Keep hold briefly so the pointer can settle back over the rail
@@ -1485,11 +1566,25 @@ const onRemoveEmptyStack = async (boardId: string) => {
     const el = pileWrapEls.value[boardId]
     if (el && railExpanded.value) {
       gsap.killTweensOf(el)
+      // 1) Drop the empty slot down
       await new Promise<void>((resolve) => {
         gsap.to(el, {
           yPercent: 110,
           duration: 0.28,
           ease: 'power3.in',
+          overwrite: true,
+          onComplete: () => resolve(),
+        })
+      })
+      // 2) Then close the gap so neighbours ease together
+      await new Promise<void>((resolve) => {
+        gsap.to(el, {
+          width: 0,
+          minWidth: 0,
+          paddingLeft: 0,
+          paddingRight: 0,
+          duration: 0.32,
+          ease: 'power2.inOut',
           overwrite: true,
           onComplete: () => resolve(),
         })
@@ -1503,8 +1598,20 @@ const onRemoveEmptyStack = async (boardId: string) => {
     deleteMoodboard(boardId)
     await nextTick()
 
+    // Back to a single selection — restore CSS-driven (+) hover
+    if (moodboards.value.length <= 1) {
+      railExpanded.value = false
+      createPlusReady.value = false
+      const create = createSlotRef.value
+      if (create) {
+        gsap.killTweensOf(create)
+        gsap.set(create, { clearProps: 'transform,width,padding,opacity,xPercent' })
+      }
+      return
+    }
+
     // Keep the selector open with remaining stacks still in view
-    if (keepExpanded && moodboards.value.length > 1) {
+    if (keepExpanded) {
       railExpanded.value = true
       const cell = railCellSize() || 120
       for (const entry of railBoards.value) {
@@ -1520,18 +1627,7 @@ const onRemoveEmptyStack = async (boardId: string) => {
           pointerEvents: 'auto',
         })
       }
-      const create = createSlotRef.value
-      if (create) {
-        gsap.killTweensOf(create)
-        gsap.set(create, {
-          width: '2.5rem',
-          paddingLeft: 20,
-          opacity: 1,
-          xPercent: 0,
-          overflow: 'visible',
-        })
-        createPlusReady.value = true
-      }
+      keepCreatePlusOut()
     }
   } finally {
     window.setTimeout(() => {
@@ -1593,26 +1689,11 @@ const boardSpan = computed(() => {
 
 const boardCellStyle = computed(() => {
   const { cols, rows } = boardSpan.value
-  const size =
-    layoutLocked.value && frozenCellSize.value > 0
-      ? frozenCellSize.value
-      : cellSizePx.value
-  // 2-up (3×2): 8.5% of one track; 1-up (1×1): 17% like selection cells
-  const twoUp = cols > 1 || rows > 1
   return {
     gridColumn: `span ${cols}`,
     gridRow: `span ${rows}`,
     '--board-span-cols': String(cols),
     '--board-span-rows': String(rows),
-    '--stack-cell-pad': twoUp ? '8.5%' : '17%',
-    '--stack-board-pad-frac': twoUp ? '0.085' : '0.17',
-    // Bake px height while Flip closes so tracks can’t reflow mid-flight
-    ...(layoutLocked.value && size > 0
-      ? {
-          height: `${size * rows}px`,
-          minHeight: `${size * rows}px`,
-        }
-      : {}),
   }
 })
 
@@ -1637,10 +1718,10 @@ const showBoardsRail = computed(
   () =>
     boardsRailList.value.length > 0 &&
     !isMoodboard.value &&
+    // Stay mounted under selection + boards carts so close never remounts/pops
     (keepBoardsPileForFlip.value ||
-      // Keep mounted under the stage while the boards cart is up (no remount on close)
-      (panelTab.value === 'boards' && stagePresent.value) ||
-      (!isOpen.value && !stagePresent.value)),
+      stagePresent.value ||
+      !isOpen.value),
 )
 
 /** Oldest → newest so the newest board sits on top of the pile. */
@@ -1660,42 +1741,111 @@ const boardsPileRef = ref<HTMLElement | null>(null)
 const keepBoardsPileForFlip = ref(false)
 const boardsPileFanned = ref(false)
 
+/** Props Flip.fit / Flip.from leave on pile cards (blocks CSS hover transitions). */
+const BOARD_PILE_CLEAR_PROPS =
+  'transform,x,y,z,rotation,scale,scaleX,scaleY,top,left,right,bottom,width,height,maxWidth,maxHeight,position,margin,zIndex,opacity,visibility,transformOrigin'
+
 /**
- * Boards pile — file-stack hover: each card under the top is smaller and
- * shifted up, kept centred (no sideways fan / rotation).
+ * Strip Flip leftovers without remounting (remount flashes).
+ * transition:none while clearing so the snap isn’t animated, then restore CSS transitions.
+ */
+const sanitizeBoardsPileCards = () => {
+  if (!import.meta.client) return
+  const cards = boardsPileRef.value?.querySelectorAll<HTMLElement>(
+    '.stack__pile-card--board',
+  )
+  if (!cards?.length) return
+  gsap.killTweensOf(cards)
+  cards.forEach((card) => {
+    card.style.setProperty('transition', 'none')
+  })
+  gsap.set(cards, { clearProps: BOARD_PILE_CLEAR_PROPS })
+  cards.forEach((card) => {
+    ;[
+      'transform',
+      'translate',
+      'rotate',
+      'scale',
+      'top',
+      'left',
+      'right',
+      'bottom',
+      'width',
+      'height',
+      'max-width',
+      'max-height',
+      'position',
+      'margin',
+      'z-index',
+      'opacity',
+      'visibility',
+      'transform-origin',
+    ].forEach((prop) => card.style.removeProperty(prop))
+  })
+  void boardsPileRef.value?.offsetHeight
+  cards.forEach((card) => {
+    card.style.removeProperty('transition')
+  })
+}
+
+/** Salt so under-cards reshuffle tilt like the selection pile. */
+const boardsPileSalt = computed(() =>
+  boardsPileCards.value.map((entry) => entry.id).join('|'),
+)
+
+/**
+ * Boards pile — same rest offset + hover fan/rotation as the selection stack.
  */
 const boardStackCardStyle = (boardId: string) => {
   const cards = boardsPileCards.value
   const index = cards.findIndex((entry) => entry.id === boardId)
   const total = Math.max(cards.length, 1)
-  const depth = Math.max(0, total - 1 - index) // 0 = top (newest)
-  const board = cards[index]
+  const t = total <= 1 ? 0 : Math.max(index, 0) / (total - 1)
+  const x = (t - 0.5) * 10
+  const y = (0.5 - t) * 6
+  const isTop = index === total - 1
+  const rot = isTop
+    ? hashAngle(boardId)
+    : hashAngle(boardId, boardsPileSalt.value)
+  const fan = pileFanOffset(boardId, Math.max(index, 0), total)
+  const hoverX = fan ? x + fan.x : x
+  const hoverY = fan ? y + fan.y : y
+  const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
+  const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
+  const board = index >= 0 ? cards[index] : null
   const aspect =
     board?.previewAspect && board.previewAspect > 0 ? board.previewAspect : 16 / 9
 
-  // Rest: tight stack with a slight depth peek
-  const restScale = 1 - depth * 0.025
-  const restY = -depth * 2
-  // Hover: open into a centred file cascade
-  const hoverScale = 1 - depth * 0.085
-  const hoverY = -depth * 8
-
   return {
-    '--pile-x': '0px',
-    '--pile-y': `${restY}px`,
-    '--pile-r': '0deg',
-    '--pile-scale': String(restScale),
-    '--pile-hover-x': '0px',
+    '--pile-x': `${x}px`,
+    '--pile-y': `${y}px`,
+    '--pile-r': `${rot}deg`,
+    '--pile-scale': '1',
+    '--pile-hover-x': `${hoverX}px`,
     '--pile-hover-y': `${hoverY}px`,
-    '--pile-hover-r': '0deg',
-    '--pile-hover-scale': String(hoverScale),
+    '--pile-hover-r': `${hoverRot}deg`,
+    '--pile-hover-scale': '1',
     '--board-aspect': String(aspect),
     zIndex: index + 1,
   }
 }
 
-const onBoardsPileEnter = () => {
+/** Label over the boards pile — hidden while the cart is open / flipping. */
+const showBoardsLabel = computed(
+  () =>
+    boardsPileCards.value.length > 0 &&
+    !isFlipping.value &&
+    !stagePresent.value &&
+    !isOpen.value &&
+    !isMoodboard.value &&
+    !keepBoardsPileForFlip.value,
+)
+
+const onBoardsPileEnter = async () => {
   if (isFlipping.value || keepBoardsPileForFlip.value) return
+  // Seed hover vars while still at rest, then fan so transform interpolates
+  pileFanSeed.value += 1
+  await nextTick()
   boardsPileFanned.value = true
 }
 
@@ -3104,6 +3254,18 @@ const dropStageInstant = async () => {
   parkInactiveRailBelow()
 }
 
+/** Keep boards cart state while the composer covers it (stage unmounts via v-if). */
+const parkBoardsCartForComposer = async () => {
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+  pileCountVisible.value = true
+  // Leave stagePresent / stageVisible / cellsReady — remount under cream on close
+  unshelveInactiveRail()
+  await nextTick()
+  resetShelvedRail()
+  parkInactiveRailBelow()
+}
+
 /** Boards panel — add an empty board to the cart without opening the composer. */
 const onCreateBoardInCart = () => {
   createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
@@ -3115,13 +3277,28 @@ const onBuildMoodboard = async () => {
   createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
 
   if (isOpen.value || stagePresent.value) {
+    const fromBoards = panelTab.value === 'boards'
     // Gather Flip while keeping the cream cart backdrop, then hand off to board
     await closeToPile({ handoffBackdrop: true })
-    openMoodboard({ skipBgFade: true, reopenCart: true })
-    // Wait until board cream is painted before dropping the cart stage
+    // Reverse open: grid fades in → tools (selection already on rail from selection cart)
+    openMoodboard({
+      skipBgFade: true,
+      reopenCart: true,
+      stagedOpen: true,
+      enterSelection: fromBoards,
+    })
+    // Wait until board cream is painted before adjusting the cart stage
     await nextTick()
     await waitFrames(2)
-    await dropStageInstant()
+    if (fromBoards) {
+      railExiting.value = true
+      await parkBoardsCartForComposer()
+      await nextTick()
+    } else {
+      await dropStageInstant()
+    }
+    await requestMoodboardStagedReveal()
+    await finishStagedMoodboardChrome(fromBoards)
     return
   }
 
@@ -3135,15 +3312,44 @@ const openSavedBoard = async (id: string) => {
   loadBoard(board.placements, board.strokes)
 
   if (isOpen.value || stagePresent.value) {
+    const fromBoards = panelTab.value === 'boards'
+    if (fromBoards) {
+      await openBoardFromBoardsCart(board)
+      return
+    }
     await closeToPile({ handoffBackdrop: true })
-    openMoodboard({ skipBgFade: true, reopenCart: true })
+    openMoodboard({
+      skipBgFade: true,
+      reopenCart: true,
+      stagedOpen: true,
+      enterSelection: false,
+    })
     await nextTick()
     await waitFrames(2)
     await dropStageInstant()
+    await requestMoodboardStagedReveal()
+    await finishStagedMoodboardChrome(false)
     return
   }
 
   openMoodboard({ reopenCart: true })
+}
+
+/** Tools + toolbox enter; from boards cart also slides selection pile up (no disperse). */
+const finishStagedMoodboardChrome = async (enterSelection: boolean) => {
+  consumeMoodboardEnterSelection()
+  if (enterSelection) {
+    // Stay piled — only translate Y in with the toolbox
+    skipMoodboardAutoDisperse.value = true
+    railExiting.value = true
+    await nextTick()
+    await waitFrames(1)
+  }
+  const chrome = requestMoodboardChromeEnter()
+  if (enterSelection) {
+    railExiting.value = false
+  }
+  await chrome
 }
 
 const markArriving = (id: string) => {
@@ -3237,12 +3443,11 @@ const runFlip = (
         }),
       ease: 'power3.inOut',
       fade: false,
-      // Boards: scale (match open Flip.fit) so aspect-ratio faces don’t reflow height
+      // Selection open/close may use scale; boards keep scale:false for crisp 1px borders
       scale: opts?.scale ?? false,
       // Above cream stage while gathering / dispersing
       zIndex: 260,
-      clearProps:
-        'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
+      clearProps: BOARD_PILE_CLEAR_PROPS,
       onComplete: () => resolve(),
     })
   })
@@ -3282,10 +3487,11 @@ const fitPileCardsToCells = (opts?: {
       const delay = opts?.boardStagger
         ? staggerDelayForBoardIndex(index, 'open')
         : staggerDelayForIndex(index, 'open')
+
       // Selection: grow pad 12% → 17% so the image scales down into the grid
-      const img = !opts?.boardStagger
-        ? card.querySelector<HTMLElement>('.stack__pile-image')
-        : null
+      const img = opts?.boardStagger
+        ? null
+        : card.querySelector<HTMLElement>('.stack__pile-image')
       if (img) {
         gsap.fromTo(
           img,
@@ -3300,12 +3506,12 @@ const fitPileCardsToCells = (opts?: {
       }
       Flip.fit(card, media, {
         absolute: true,
-        scale: true,
+        // Boards keep scale:false for crisp 1px borders (same as close)
+        scale: !opts?.boardStagger,
         duration: FLIP_DURATION,
         delay,
         ease: 'power3.inOut',
         onComplete: () => {
-          // Lock final pad so a late style recalc can’t snap back to 12%
           if (img) gsap.set(img, { padding: '17%' })
           done()
         },
@@ -3424,53 +3630,305 @@ const openFromBoardsPile = async () => {
   railAnimToken += 1
   railExpanded.value = false
   createPlusReady.value = false
-
+  // Lock hover fan so Flip.fit starts from spread positions (no snap-back)
+  keepBoardsPileForFlip.value = true
   boardsPileFanned.value = true
   pileCountVisible.value = false
   isFlipping.value = true
   cellsReady.value = false
   softEnter.value = false
   flipSurface.value = 'pile'
-  keepBoardsPileForFlip.value = true
   controlsVisible.value = false
   gridLinesVisible.value = false
   scheduleControlsFadeIn()
-
+  // 1) Backdrop fade in — other stacks drop away on the same beat
   shelveInactiveRail()
   panelTab.value = 'boards'
   await revealStage()
+  // 2) Boards disperse into cells over plain backdrop
   openDrawer('boards')
   await nextTick()
   lockStackLayout()
-  await waitFrames(2)
+  syncCellSize()
   await fitPileCardsToCells({
     pile: boardsPileRef.value,
     ids: boardsGridFlipIds.value,
     boardStagger: true,
   })
-  // Pile stays mounted under the cart — drop Flip.fit leftovers or close can’t gather
-  const fitted = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
-  if (fitted?.length) {
-    gsap.set(fitted, {
-      clearProps:
-        'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
-    })
-  }
-  flipSurface.value = 'cells'
+  // 3) Hide Flip cards, then reveal cells under them (rail stays opaque until
+  //    cells-ready; CSS hides the whole rail once cells own the surface).
+  const landed = boardsPileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
+  if (landed?.length) gsap.set(landed, { autoAlpha: 0 })
   cellsReady.value = true
+  await nextTick()
   keepBoardsPileForFlip.value = false
   boardsPileFanned.value = false
+  await nextTick()
+  flipSurface.value = 'cells'
   isFlipping.value = false
-  unlockStackLayout()
+  // Leave layout locked while the cart is open — unlocking here reflows thumbs (flash).
+  // fadeOutStage unlocks on close.
   await fadeGridLinesIn()
 }
 
-/** After closing the composer — restore the boards cart (Flip when possible). */
+const BOARD_FLIP_MS = 700
+const BOARDS_FADE_MS = 400
+const STACK_EXIT_MS = 450
+
+/** After restack — slide selection rail off the bottom. */
+const exitSelectionStack = async () => {
+  if (!showRail.value) return
+  railExiting.value = true
+  await wait(STACK_EXIT_MS)
+}
+
+/**
+ * Boards → Board open (reverse of close):
+ * fade peers + grid → Flip screenshot up → moodboard grid → tools + selection pile.
+ */
+const openBoardFromBoardsCart = async (board: {
+  id: string
+  preview?: string | null
+}) => {
+  if (!import.meta.client) return
+
+  controlsVisible.value = false
+  boardsGridHandoff.value = false
+  landingBoardId.value = board.id
+  boardsLanded.value = true
+  // Fade out other boards + grid lines before the selected thumb lifts
+  boardsGridIntro.value = true
+  await Promise.all([fadeGridLinesOut(), wait(BOARDS_FADE_MS)])
+
+  const face = document.querySelector(
+    `[data-stack-id="${CSS.escape(boardFlipId(board.id))}"] .stack__cell-figure--board`,
+  ) as HTMLElement | null
+  const from = face?.getBoundingClientRect()
+
+  let flyer: HTMLElement | null = null
+  if (from && from.width > 2) {
+    flyer = document.createElement(board.preview ? 'img' : 'div')
+    flyer.className = 'stack__board-close-flyer'
+    if (board.preview && flyer instanceof HTMLImageElement) {
+      flyer.src = board.preview
+      flyer.alt = ''
+    }
+    Object.assign(flyer.style, {
+      position: 'fixed',
+      left: `${from.left}px`,
+      top: `${from.top}px`,
+      width: `${from.width}px`,
+      height: `${from.height}px`,
+      zIndex: '360',
+      margin: '0',
+      padding: '0',
+      objectFit: 'contain',
+      boxSizing: 'border-box',
+      pointerEvents: 'none',
+      border: '1px solid currentColor',
+      background: 'var(--cream, #F1EDE4)',
+      color: 'var(--charcoal, #1a1a1a)',
+    })
+    document.body.appendChild(flyer)
+    // Hide selected cell under the flyer
+    boardsLanded.value = false
+  }
+
+  // Selection starts parked below; slides up with tools after grid
+  railExiting.value = true
+  openMoodboard({
+    skipBgFade: true,
+    reopenCart: true,
+    stagedOpen: true,
+    enterSelection: true,
+  })
+  await nextTick()
+  await waitFrames(2)
+
+  const canvas = document.querySelector('.moodboard__canvas') as HTMLElement | null
+  const to = canvas?.getBoundingClientRect()
+
+  if (flyer && to && to.width > 2) {
+    await new Promise<void>((resolve) => {
+      gsap.to(flyer!, {
+        left: to.left,
+        top: to.top,
+        width: to.width,
+        height: to.height,
+        duration: BOARD_FLIP_MS / 1000,
+        ease: 'power3.inOut',
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  // Composer cream ready under flyer — drop boards cart chrome, then grid fade
+  await parkBoardsCartForComposer()
+  boardsGridIntro.value = false
+  boardsLanded.value = false
+  landingBoardId.value = null
+
+  // Reveal items + grid under flyer, then remove flyer
+  await requestMoodboardStagedReveal()
+  flyer?.remove()
+
+  await finishStagedMoodboardChrome(true)
+}
+
+/** Ensure boards cart stage is up under the composer, peers hidden. */
+const mountBoardsCartIntro = async (boardId: string | null) => {
+  panelTab.value = 'boards'
+  boardsCartRevealing.value = true
+  boardsGridHandoff.value = true
+  boardsGridIntro.value = true
+  boardsLanded.value = false
+  landingBoardId.value = boardId
+  controlsVisible.value = false
+  gridLinesVisible.value = false
+  softEnter.value = false
+  keepBoardsPileForFlip.value = false
+  flipSurface.value = 'cells'
+  stagePresent.value = true
+  stageVisible.value = true
+  cellsReady.value = true
+  openDrawer('boards')
+  await nextTick()
+  await waitFrames(2)
+  syncCellSize()
+  await nextTick()
+}
+
+/**
+ * Close choreography (after chrome has exited):
+ * boards grid ready (peers hidden) → park flyer → clear cream → Flip in → fade peers → toolbox.
+ */
+const closeMoodboardToBoardsCart = async (opts: {
+  boardId: string | null
+  preview: string | null
+  from: { left: number; top: number; width: number; height: number } | null
+  beforeFlip?: () => void | Promise<void>
+  afterLand?: () => void | Promise<void>
+}) => {
+  if (!import.meta.client) return
+  await mountBoardsCartIntro(opts.boardId)
+
+  // Park flyer above cream so the board stays visible as cream lifts
+  let flyer: HTMLElement | null = null
+  if (opts.from && opts.boardId) {
+    flyer = document.createElement(opts.preview ? 'img' : 'div')
+    flyer.className = 'stack__board-close-flyer'
+    if (opts.preview && flyer instanceof HTMLImageElement) {
+      flyer.src = opts.preview
+      flyer.alt = ''
+    }
+    Object.assign(flyer.style, {
+      position: 'fixed',
+      left: `${opts.from.left}px`,
+      top: `${opts.from.top}px`,
+      width: `${opts.from.width}px`,
+      height: `${opts.from.height}px`,
+      zIndex: '360',
+      margin: '0',
+      padding: '0',
+      objectFit: 'contain',
+      boxSizing: 'border-box',
+      pointerEvents: 'none',
+      border: '1px solid currentColor',
+      background: 'var(--cream, #F1EDE4)',
+      color: 'var(--charcoal, #1a1a1a)',
+    })
+    document.body.appendChild(flyer)
+  }
+
+  if (opts.beforeFlip) await opts.beforeFlip()
+
+  const target = opts.boardId
+    ? (document.querySelector(
+        `[data-stack-id="${CSS.escape(boardFlipId(opts.boardId))}"] .stack__cell-figure--board`,
+      ) as HTMLElement | null)
+    : null
+  const to = target?.getBoundingClientRect()
+
+  if (flyer && to && to.width > 2) {
+    await new Promise<void>((resolve) => {
+      gsap.to(flyer!, {
+        left: to.left,
+        top: to.top,
+        width: to.width,
+        height: to.height,
+        duration: BOARD_FLIP_MS / 1000,
+        ease: 'power3.inOut',
+        onComplete: () => resolve(),
+      })
+    })
+  }
+
+  // Paint landing thumb at full opacity under the flyer before removing it
+  boardsLanded.value = true
+  await nextTick()
+  await waitFrames(2)
+
+  // Peer + grid fade in while flyer still covers the landing cell
+  boardsGridHandoff.value = false
+  boardsGridIntro.value = false
+  await nextTick()
+  await waitFrames(1)
+
+  if (flyer) {
+    await new Promise<void>((resolve) => {
+      gsap.to(flyer!, {
+        autoAlpha: 0,
+        duration: 0.12,
+        ease: 'power1.out',
+        onComplete: () => {
+          flyer?.remove()
+          resolve()
+        },
+      })
+    })
+  }
+
+  boardsLanded.value = false
+  landingBoardId.value = null
+
+  // Composer off now that the grid cell owns the thumb (keep boardsCartRevealing
+  // so the selection rail can’t flash over the cart).
+  if (opts.afterLand) await opts.afterLand()
+
+  // Wait for peers to finish fading, then toolbox slides up — no extra delay
+  await Promise.all([fadeGridLinesIn(), wait(BOARDS_FADE_MS)])
+  controlsVisible.value = true
+  await wait(450)
+  boardsCartRevealing.value = false
+  railExiting.value = false
+}
+
+/** Fallback when close sequence wasn’t used — restore boards cart. */
 const returnToBoardsCart = async () => {
   if (!import.meta.client || isFlipping.value) return
+
+  panelTab.value = 'boards'
+  boardsCartRevealing.value = false
+  boardsGridIntro.value = false
+  boardsLanded.value = false
+  boardsGridHandoff.value = false
+  landingBoardId.value = null
+  railExiting.value = false
+
+  if (stagePresent.value && stageVisible.value) {
+    openDrawer('boards')
+    flipSurface.value = 'cells'
+    cellsReady.value = true
+    softEnter.value = false
+    keepBoardsPileForFlip.value = false
+    await nextTick()
+    scheduleControlsFadeIn()
+    await fadeGridLinesIn()
+    return
+  }
+
   if (isOpen.value && panelTab.value === 'boards' && stagePresent.value) return
 
-  // Boards pile unmounts while the composer is open — wait for remount
   await nextTick()
   await waitFrames(2)
 
@@ -3479,7 +3937,6 @@ const returnToBoardsCart = async () => {
     return
   }
 
-  // Empty boards cart — stage + controls, no Flip
   railAnimToken += 1
   railExpanded.value = false
   createPlusReady.value = false
@@ -3559,44 +4016,44 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
       return
     }
 
-    // Remount left rail under the stage before measuring — any reflow settles first
-    keepPileForFlip.value = true
-    await nextTick()
-    parkInactiveRailBelow()
-    await nextTick()
-
-    lockStackLayout()
+    syncCellSize()
     const medias = gridRef.value?.querySelectorAll(
-      '.stack__cell-figure--board[data-flip-id]',
+      '.stack__cell-media[data-flip-id]',
     )
     const state = medias?.length ? Flip.getState(medias) : null
+    lockStackLayout()
     isFlipping.value = true
     cellsReady.value = false
-    // Hand flip ids to pile faces (same pattern as selection close)
     flipSurface.value = 'pile'
     keepBoardsPileForFlip.value = true
-    // Land in the compact stack — not the hover file-fan
     boardsPileFanned.value = false
     dismissDrawer()
     await nextTick()
     await nextTick()
-    await waitFrames(2)
+
     const cards = boardsPileRef.value?.querySelectorAll('[data-flip-id]')
     if (state && cards?.length) {
+      // Undo open-handoff hide so Flip.from can drive the cards
+      gsap.set(cards, { clearProps: 'opacity,visibility' })
       await runFlip(state, cards, {
         mode: 'close',
         boardStagger: true,
         ids: boardsGridFlipIds.value,
-        scale: true,
+        scale: false,
       })
-      gsap.set(cards, {
-        clearProps:
-          'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
-      })
-      void boardsPileRef.value?.offsetHeight
+      // Flip.from clearProps already restored CSS pose — don’t sanitize while visible
     }
-    isFlipping.value = false
+
+    // Selection rail under cream only after Flip has landed
+    keepPileForFlip.value = true
+    await nextTick()
+    parkInactiveRailBelow()
+
+    // Keep --flipping through backdrop fade so pile stays above cream without a pop
     await fadeOutStage()
+    isFlipping.value = false
+    // Stage gone — safe to strip any leftover GSAP props for hover transitions
+    sanitizeBoardsPileCards()
     clearAllCellPhases()
     settlePendingRemovals()
     return
@@ -3909,6 +4366,8 @@ watch(isOpen, async (open) => {
   }
   // Flip opens own the sequence — skip soft-enter path
   if (isFlipping.value) return
+  // Stage already up (parked under board composer / remount) — don’t reset
+  if (stagePresent.value && stageVisible.value) return
 
   // Header / non-Flip open: backdrop → items → grid lines
   pileCountVisible.value = false
@@ -3965,6 +4424,10 @@ watch(showBoardsRail, (show) => {
 /** After board bg + info panel fade in, open this selection’s column. */
 watch(moodboardSurfaceReady, async (ready) => {
   if (!ready || !import.meta.client) return
+  if (skipMoodboardAutoDisperse.value) {
+    skipMoodboardAutoDisperse.value = false
+    return
+  }
   const id = activeMoodboardId.value
   if (!id) return
   const board = moodboards.value.find((entry) => entry.id === id)
@@ -4114,9 +4577,9 @@ onMounted(() => {
     await Promise.all(ids.map((id) => restackBoard(id)))
   })
   registerMoodboardReturnToColumn((opts) => returnItemToColumn(opts))
-  registerMoodboardCloseReturn(() => {
-    void returnToBoardsCart()
-  })
+  registerMoodboardStackExit(() => exitSelectionStack())
+  registerMoodboardCloseToBoards((opts) => closeMoodboardToBoardsCart(opts))
+  registerMoodboardCloseReturn(() => returnToBoardsCart())
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
@@ -4132,6 +4595,8 @@ onBeforeUnmount(() => {
   registerSelectionStackHover(null)
   registerMoodboardRestack(null)
   registerMoodboardReturnToColumn(null)
+  registerMoodboardStackExit(null)
+  registerMoodboardCloseToBoards(null)
   registerMoodboardCloseReturn(null)
   cellRo?.disconnect()
   cellRo = null
@@ -4176,7 +4641,54 @@ onBeforeUnmount(() => {
 }
 
 .stack--moodboard {
-  z-index: 310; /* above MoodboardCanvas (300) */
+  z-index: 310; /* above MoodboardCanvas (300) — selection rail over the board */
+}
+
+/* Boards cart cream sitting under the fading composer cream */
+.stack--boards-revealing {
+  z-index: 280;
+}
+
+.stack--boards-revealing .stack__backdrop {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+.stack__cell--board .stack__cell-media {
+  transition: opacity 0.4s ease;
+}
+
+/* Instant handoff during pile↔grid Flip — never crossfade into a second size */
+.stack--flipping.stack--boards-cart .stack__cell--board .stack__cell-media {
+  transition: none !important;
+}
+
+/* Peers hidden during open outro / close intro — animate unless handoff */
+.stack--boards-intro .stack__cell--board .stack__cell-media {
+  opacity: 0;
+}
+
+.stack--boards-intro.stack--boards-landed
+  .stack__cell--board-landing
+  .stack__cell-media {
+  opacity: 1;
+}
+
+/* Close mount + flyer handoff: no opacity tween (avoids empty-cell flash) */
+.stack--boards-handoff.stack--boards-intro .stack__cell--board .stack__cell-media,
+.stack--boards-handoff.stack--boards-intro.stack--boards-landed
+  .stack__cell--board-landing
+  .stack__cell-media {
+  transition: none;
+}
+
+.stack__rail--exiting {
+  transform: translateY(calc(100% + 2rem));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.35s ease;
 }
 
 .stack__rail {
@@ -4190,6 +4702,7 @@ onBeforeUnmount(() => {
   gap: 0;
   pointer-events: none;
   overflow: visible;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
 }
 
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
@@ -4222,14 +4735,16 @@ onBeforeUnmount(() => {
   z-index: 270;
 }
 
-.stack__boards-rail--cart.stack__boards-rail--cells-ready:not(
-    .stack__boards-rail--flipping
-  ) {
+/*
+ * Hide the boards pile as soon as cells own the surface — even while --flipping.
+ * (Previously :not(--flipping) kept the Flip cards visible over the new grid = flash.)
+ */
+.stack__boards-rail--cart.stack__boards-rail--cells-ready {
   opacity: 0;
   pointer-events: none;
 }
 
-.stack__boards-rail--flipping {
+.stack__boards-rail--flipping:not(.stack__boards-rail--cells-ready) {
   z-index: 290;
   opacity: 1;
   pointer-events: none;
@@ -4239,8 +4754,46 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.stack__pile-wrap--board {
+  position: relative;
+}
+
+/* Centered over the boards pile — fades with cart open / close */
+.stack__boards-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 30;
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  border: 0;
+  border-radius: 6px;
+  background: var(--text-color);
+  color: var(--background-color);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.32s ease;
+}
+
+:global(html.dark) .stack__boards-label {
+  background: color-mix(in srgb, var(--background-color) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-color);
+}
+
+.stack__boards-label--visible {
+  opacity: 1;
+}
+
 .stack__pile-card--board {
-  /* Full pile cell footprint for stacking; Flip uses the inner face */
+  /* Full pile cell footprint — Flip.fit / Flip.from drive this card like selection */
   left: 0;
   top: 0;
   right: auto;
@@ -4253,9 +4806,11 @@ onBeforeUnmount(() => {
   aspect-ratio: auto;
   background: transparent;
   box-shadow: none;
+  /* Explicit — don’t rely on later .stack__pile-card rule winning after Flip */
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Same aspect as grid board face — Flip scales without proportion jump */
+/* Same aspect as grid board face — letterboxed inside the Flip card */
 .stack__pile-board-face {
   position: absolute;
   left: 50%;
@@ -4265,7 +4820,20 @@ onBeforeUnmount(() => {
   aspect-ratio: var(--board-aspect, 16 / 9);
   transform: translate(-50%, -50%);
   overflow: hidden;
-  background: transparent;
+  /* Never show through the stack — cream behind letterboxed previews */
+  background: var(--cream, var(--background-color, #f1ede4));
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+}
+
+.stack__pile-board-face--empty {
+  background: color-mix(in srgb, var(--background-color) 55%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+:global(html.dark) .stack__pile-board-face--empty {
+  background: color-mix(in srgb, var(--background-color) 72%, transparent);
 }
 
 .stack__pile-board-face .stack__pile-image--board {
@@ -4330,16 +4898,19 @@ onBeforeUnmount(() => {
 
 .stack__pile-empty-remove {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: 5px;
+  right: 5px;
+  left: auto;
   z-index: 2;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.35rem;
+  height: 1.35rem;
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--background-color) 72%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -4512,11 +5083,14 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0;
   padding: 0;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   pointer-events: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+}
+
+.stack__column-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* Pushes thumbs down when there aren't enough to fill the viewport */
@@ -4811,6 +5385,18 @@ onBeforeUnmount(() => {
   transition: visibility 0s linear 0s;
 }
 
+/* Parked under the board composer — keep cream painted, don’t remount/fade */
+.stack__stage--under-composer {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+.stack__stage--under-composer .stack__backdrop {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
 .stack__backdrop {
   position: absolute;
   inset: 0;
@@ -4908,31 +5494,17 @@ onBeforeUnmount(() => {
   inset: 0;
 }
 
-.stack__cell-frame--board {
-  position: absolute;
-  /*
-   * Pad is of one grid track (not the multi-span cell box):
-   * 1-up → 17%, 2-up → 8.5% (--stack-cell-pad / --stack-board-pad-frac).
-   */
-  inset: calc(var(--stack-cell-size) * var(--stack-board-pad-frac, 0.17));
-  width: auto;
-  height: auto;
-  display: grid;
-  place-items: center;
-}
-
 /* Same aspect box as pile face — continuous Flip proportion */
 .stack__cell-figure--board {
-  position: relative;
-  width: 100%;
-  max-height: 100%;
-  aspect-ratio: var(--board-aspect, 16 / 9);
   overflow: hidden;
   box-sizing: border-box;
+  border: 1px solid currentColor;
 }
 
 .stack__cell-figure--board-empty {
+  width: 100%;
   border: 1px dashed color-mix(in srgb, var(--charcoal) 40%, transparent);
+  background: var(--background-color, var(--cream));
 }
 
 .stack__board-hit {
@@ -5163,13 +5735,36 @@ onBeforeUnmount(() => {
   container-type: size;
 }
 
+/*
+ * Board pad — 8.5% of the board cell on every side.
+ * Must follow .stack__cell-frame so the generic 17% inset doesn’t win.
+ */
+.stack__cell-frame.stack__cell-frame--board {
+  /* inset: 8.5%; */
+  width: auto;
+  height: auto;
+}
+
 /* Shrink-wraps to the contained image so controls sit on the image, not the square */
-.stack__cell-figure {
+.stack__cell-figure:not(.stack__cell-figure--board) {
   position: relative;
   max-width: 100%;
   max-height: 100%;
   width: fit-content;
   height: fit-content;
+  line-height: 0;
+  transform-origin: center center;
+}
+
+.stack__cell-figure.stack__cell-figure--board {
+  position: relative;
+  /* Fill the board frame — Flip / gsap land on the full cell, image letterboxes */
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: var(--board-aspect, 16/9);
+  margin: 0;
   line-height: 0;
   transform-origin: center center;
 }

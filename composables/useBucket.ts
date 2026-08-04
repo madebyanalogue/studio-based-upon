@@ -88,8 +88,26 @@ let moodboardReturnHandler:
       item?: BucketItem
     }) => Promise<void>)
   | null = null
-/** After closing the board composer — reopen boards cart (Flip / empty stage). */
-let moodboardCloseReturnHandler: (() => void) | null = null
+/** After closing the board composer — reopen boards cart (awaited so cream can cover it). */
+let moodboardCloseReturnHandler: (() => void | Promise<void>) | null = null
+/** Full close choreography: boards grid intro → Flip board in → fade peers → controls. */
+let moodboardCloseToBoardsHandler:
+  | ((opts: {
+      boardId: string | null
+      preview: string | null
+      from: { left: number; top: number; width: number; height: number } | null
+      /** Fade composer cream once boards cart is mounted underneath. */
+      beforeFlip?: () => void | Promise<void>
+      /** After flyer hands off to the grid cell — tear down composer here. */
+      afterLand?: () => void | Promise<void>
+    }) => Promise<void>)
+  | null = null
+/** Selection rail slides down after restack (close exit). */
+let moodboardStackExitHandler: (() => Promise<void>) | null = null
+/** Staged open: cream/items/grid reveal after Flip lands. */
+let moodboardStagedRevealHandler: (() => Promise<void>) | null = null
+/** Staged open: tools + toolbox enter (after grid). */
+let moodboardChromeEnterHandler: (() => Promise<void>) | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -795,6 +813,10 @@ export const useBucket = () => {
   const moodboardSurfaceReady = useState('moodboard-surface-ready', () => false)
   /** Cart→board: reuse cream backdrop — skip moodboard bg fade-in. */
   const moodboardSkipBgFade = useState('moodboard-skip-bg-fade', () => false)
+  /** Open: hold chrome/grid until Flip + staged reveal finish. */
+  const moodboardStagedOpen = useState('moodboard-staged-open', () => false)
+  /** Open from boards cart: selection rail translates Y in with tools. */
+  const moodboardEnterSelection = useState('moodboard-enter-selection', () => false)
 
   const registerMoodboardRestack = (handler: (() => Promise<void>) | null) => {
     moodboardRestackHandler = handler
@@ -810,8 +832,63 @@ export const useBucket = () => {
     moodboardReturnHandler = handler
   }
 
-  const registerMoodboardCloseReturn = (handler: (() => void) | null) => {
+  const registerMoodboardCloseReturn = (
+    handler: (() => void | Promise<void>) | null,
+  ) => {
     moodboardCloseReturnHandler = handler
+  }
+
+  const registerMoodboardCloseToBoards = (
+    handler: typeof moodboardCloseToBoardsHandler,
+  ) => {
+    moodboardCloseToBoardsHandler = handler
+  }
+
+  const registerMoodboardStackExit = (
+    handler: (() => Promise<void>) | null,
+  ) => {
+    moodboardStackExitHandler = handler
+  }
+
+  /** Slide selection rail away after restack. */
+  const requestMoodboardStackExit = async () => {
+    if (moodboardStackExitHandler) await moodboardStackExitHandler()
+  }
+
+  const registerMoodboardStagedReveal = (
+    handler: (() => Promise<void>) | null,
+  ) => {
+    moodboardStagedRevealHandler = handler
+  }
+
+  /** After Flip lands — show board items + fade canvas grid in. */
+  const requestMoodboardStagedReveal = async () => {
+    if (moodboardStagedRevealHandler) await moodboardStagedRevealHandler()
+  }
+
+  const registerMoodboardChromeEnter = (
+    handler: (() => Promise<void>) | null,
+  ) => {
+    moodboardChromeEnterHandler = handler
+  }
+
+  /** Tools + toolbox slide in (after grid). */
+  const requestMoodboardChromeEnter = async () => {
+    if (moodboardChromeEnterHandler) await moodboardChromeEnterHandler()
+  }
+
+  /** Boards cart under cream → Flip active board in → fade peers → toolbox up. */
+  const closeMoodboardToBoards = async (opts: {
+    boardId: string | null
+    preview: string | null
+    from: { left: number; top: number; width: number; height: number } | null
+    beforeFlip?: () => void | Promise<void>
+    /** After flyer hands off to the grid cell — tear down composer here. */
+    afterLand?: () => void | Promise<void>
+  }) => {
+    if (moodboardCloseToBoardsHandler) {
+      await moodboardCloseToBoardsHandler(opts)
+    }
   }
 
   const requestMoodboardReturnToColumn = async (opts: {
@@ -888,6 +965,10 @@ export const useBucket = () => {
     resume?: boolean
     /** Force cart reopen on close (e.g. cart was closed for handoff before open). */
     reopenCart?: boolean
+    /** Hold grid/chrome until Flip + staged reveal (reverse of close). */
+    stagedOpen?: boolean
+    /** With stagedOpen: selection rail translates Y in with tools (Boards → Board). */
+    enterSelection?: boolean
   }) => {
     // Remember cart state so closing the board can restore it.
     reopenCartAfterMoodboard.value = opts?.resume
@@ -897,6 +978,8 @@ export const useBucket = () => {
         : isOpen.value
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = !!opts?.skipBgFade
+    moodboardStagedOpen.value = !!opts?.stagedOpen
+    moodboardEnterSelection.value = !!opts?.enterSelection
     // Fresh open clears parks; resume keeps the parked list from the session draft
     if (!opts?.resume) {
       parkedSelectionItems.value = []
@@ -915,20 +998,40 @@ export const useBucket = () => {
     return skip
   }
 
-  const closeMoodboard = () => {
+  const consumeMoodboardStagedOpen = () => {
+    const staged = moodboardStagedOpen.value
+    moodboardStagedOpen.value = false
+    return staged
+  }
+
+  const consumeMoodboardEnterSelection = () => {
+    const enter = moodboardEnterSelection.value
+    moodboardEnterSelection.value = false
+    return enter
+  }
+
+  const closeMoodboard = async (opts?: { skipCartReturn?: boolean }) => {
     const wasOpen = isMoodboard.value
     // Items dragged onto the board return to their selection piles
     restoreAllParkedSelectionItems()
     clearMoodboardSession()
     moodboardSurfaceReady.value = false
     moodboardSkipBgFade.value = false
+    moodboardStagedOpen.value = false
+    moodboardEnterSelection.value = false
     isMoodboard.value = false
     reopenCartAfterMoodboard.value = false
+    // Always release the composer lock; cart stage keeps its own if still up
     if (wasOpen) unlockPageScroll()
+    if (opts?.skipCartReturn) {
+      panelTab.value = 'boards'
+      isOpen.value = true
+      return
+    }
     // Always restore the boards cart (not the underlying page)
     panelTab.value = 'boards'
     if (moodboardCloseReturnHandler) {
-      moodboardCloseReturnHandler()
+      await moodboardCloseReturnHandler()
     } else {
       isOpen.value = true
     }
@@ -1037,6 +1140,8 @@ export const useBucket = () => {
     isSavedIn,
     openMoodboard,
     closeMoodboard,
+    closeMoodboardToBoards,
+    requestMoodboardStackExit,
     persistMoodboardSession,
     clearMoodboardSession,
     readMoodboardSession,
@@ -1044,11 +1149,19 @@ export const useBucket = () => {
     moodboardSurfaceReady,
     markMoodboardSurfaceReady,
     consumeMoodboardSkipBgFade,
+    consumeMoodboardStagedOpen,
+    consumeMoodboardEnterSelection,
     registerMoodboardRestack,
     requestMoodboardRestack,
     registerMoodboardReturnToColumn,
     requestMoodboardReturnToColumn,
     registerMoodboardCloseReturn,
+    registerMoodboardCloseToBoards,
+    registerMoodboardStackExit,
+    registerMoodboardStagedReveal,
+    requestMoodboardStagedReveal,
+    registerMoodboardChromeEnter,
+    requestMoodboardChromeEnter,
     closeDrawer,
     dismissDrawer,
     registerAnimatedClose,
