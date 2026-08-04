@@ -370,9 +370,9 @@
                       :alt="`${entry.board.name} preview`"
                       class="stack__board-preview"
                     />
-                    <span v-else class="stack__board-placeholder interface">{{
-                      entry.board.name
-                    }}</span>
+                    <span v-else class="stack__board-placeholder interface"
+                      >Empty board</span
+                    >
                   </button>
                   <div class="stack__board-actions" aria-label="Board actions">
                     <button
@@ -630,9 +630,6 @@
                 class="stack__pile-image stack__pile-image--board"
                 draggable="false"
               />
-              <span v-else class="stack__board-pile-label interface">{{
-                board.name
-              }}</span>
             </span>
           </span>
         </button>
@@ -3656,25 +3653,25 @@ const openFromBoardsPile = async () => {
     ids: boardsGridFlipIds.value,
     boardStagger: true,
   })
-  // 3) Reveal cells and hide Flip cards in the same beat (no nextTick gap = no flash)
+  // 3) Open handoff: hide Flip cards → show cells in the same paint.
+  //    Rail CSS (--cells-ready) drops the whole Flip layer even while --flipping.
   const landed = boardsPileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
-  cellsReady.value = true
   if (landed?.length) gsap.set(landed, { autoAlpha: 0 })
+  cellsReady.value = true
   await nextTick()
   keepBoardsPileForFlip.value = false
   boardsPileFanned.value = false
   await nextTick()
   flipSurface.value = 'cells'
   isFlipping.value = false
-  // Pile is under --cells-ready — strip Flip leftovers for a clean close later
+  // Rail is opacity 0 — safe to strip Flip leftovers for close later
   sanitizeBoardsPileCards()
   const hidden = boardsPileRef.value?.querySelectorAll<HTMLElement>(
     '.stack__pile-card--board',
   )
   if (hidden?.length) gsap.set(hidden, { autoAlpha: 0 })
+  // Keep layout locked while cart is open — unlocking here reflows landed thumbs
   await fadeGridLinesIn()
-  unlockStackLayout()
-  syncCellSize()
 }
 
 const BOARD_FLIP_MS = 700
@@ -4028,7 +4025,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     )
     const state = medias?.length ? Flip.getState(medias) : null
     lockStackLayout()
+    // Flip on first so "Empty board" labels fade out with the grid (cells still up)
     isFlipping.value = true
+    const hasEmptyBoardLabel = boardsGridEntries.value.some(
+      (entry) => entry.kind === 'board' && !entry.board.preview,
+    )
+    if (hasEmptyBoardLabel) await wait(350)
     cellsReady.value = false
     flipSurface.value = 'pile'
     keepBoardsPileForFlip.value = true
@@ -4047,8 +4049,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
         ids: boardsGridFlipIds.value,
         scale: false,
       })
-      // Strip Flip leftovers under transition:none (no remount flash)
-      sanitizeBoardsPileCards()
+      // Don’t sanitize here — clearing transforms while visible flashes the restack
     }
 
     // Selection rail under cream only after Flip has landed
@@ -4056,11 +4057,11 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     await nextTick()
     parkInactiveRailBelow()
 
-    // Re-enable CSS transitions before backdrop fade
-    isFlipping.value = false
-
-    // Keep pile above cream through fade via keepBoardsPileForFlip
+    // Keep --flipping through backdrop fade (pile stays above cream, no z-index pop)
     await fadeOutStage()
+    isFlipping.value = false
+    // Stage gone — strip Flip leftovers for CSS hover transitions
+    sanitizeBoardsPileCards()
     clearAllCellPhases()
     settlePendingRemovals()
     return
@@ -4665,6 +4666,11 @@ onBeforeUnmount(() => {
   transition: opacity 0.4s ease;
 }
 
+/* Open handoff: cells must appear instantly under Flip cards (no 0.4s fade gap) */
+.stack--flipping.stack--boards-cart .stack__cell--board .stack__cell-media {
+  transition: none !important;
+}
+
 /* Peers hidden during open outro / close intro — animate unless handoff */
 .stack--boards-intro .stack__cell--board .stack__cell-media {
   opacity: 0;
@@ -4737,14 +4743,16 @@ onBeforeUnmount(() => {
   z-index: 270;
 }
 
-.stack__boards-rail--cart.stack__boards-rail--cells-ready:not(
-    .stack__boards-rail--flipping
-  ) {
+/*
+ * Open handoff: hide the Flip pile the moment cells are ready — even while
+ * --flipping is still on. Otherwise Flip cards sit over the new grid for a beat.
+ */
+.stack__boards-rail--cart.stack__boards-rail--cells-ready {
   opacity: 0;
   pointer-events: none;
 }
 
-.stack__boards-rail--flipping {
+.stack__boards-rail--flipping:not(.stack__boards-rail--cells-ready) {
   z-index: 290;
   opacity: 1;
   pointer-events: none;
@@ -5589,6 +5597,14 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--muted);
   font-size: var(--text-sm);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+/* Fade in after Flip land; fade out while flipping / peers intro (with the grid) */
+.stack--cells-ready:not(.stack--flipping):not(.stack--boards-intro)
+  .stack__board-placeholder {
+  opacity: 1;
 }
 
 .stack__cell--board.stack__cell--scale-out .stack__cell-figure--board {
