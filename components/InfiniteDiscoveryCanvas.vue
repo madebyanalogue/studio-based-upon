@@ -116,7 +116,9 @@ const parseDimensions = (asset?: { url?: string; _id?: string }) => {
 const toCanvasTextureUrl = (remoteUrl: string, width = 900) => {
   if (!remoteUrl) return ''
   if (remoteUrl.startsWith('/') || remoteUrl.startsWith('blob:')) return remoteUrl
-  return `/_ipx/w_${width}/${remoteUrl}`
+  // encodeURIComponent keeps `https://` intact — raw `//` in the path collapses to `/`
+  // and IPX 404s on `https:/cdn.sanity.io/...`
+  return `/_ipx/w_${width}/${encodeURIComponent(remoteUrl)}`
 }
 
 const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
