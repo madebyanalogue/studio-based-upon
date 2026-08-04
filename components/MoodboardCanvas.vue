@@ -214,7 +214,11 @@
           </template>
 
           <template v-else-if="item.kind === 'colour'">
-            <div class="moodboard__swatch">
+            <div
+              class="moodboard__swatch"
+              title="Double-click to change colour"
+              @dblclick.stop="onColourDblClick(item.id)"
+            >
               <span class="moodboard__swatch-fill" :style="{ background: item.colour }" />
               <span class="moodboard__swatch-hex">{{ item.colour }}</span>
             </div>
@@ -341,7 +345,7 @@
             :class="{ 'moodboard__action--active': colourPickerOpen }"
             :aria-pressed="colourPickerOpen"
             aria-label="Add colour swatch"
-            title="Add colour swatch"
+            :title="editingColourId ? 'Edit colour' : 'Add colour swatch'"
             @click="toggleColourPicker"
           >
             <span class="moodboard__action-swatch" />
@@ -363,7 +367,7 @@
               aria-label="Hex colour"
               @input="onHexDraftInput"
               @keydown.enter.prevent="commitColour"
-              @keydown.escape.prevent="colourPickerOpen = false"
+              @keydown.escape.prevent="closeColourPicker"
             />
             <label
               class="moodboard__colour-preview"
@@ -382,7 +386,7 @@
               class="moodboard__colour-add interface"
               @click="commitColour"
             >
-              Add
+              {{ editingColourId ? 'Update' : 'Add' }}
             </button>
           </div>
         </div>
@@ -808,6 +812,7 @@ const {
   updateScale,
   clearActive,
   addColour,
+  updateColour,
   addImage,
   cycleItemImage,
   addStroke,
@@ -845,6 +850,8 @@ const colourToolRef = ref<HTMLElement | null>(null)
 const hexInput = ref<HTMLInputElement | null>(null)
 const colourDraft = ref('#c8a86b')
 const hexDraft = ref('#C8A86B')
+/** When set, the colour popover updates this swatch instead of adding a new one. */
+const editingColourId = ref<string | null>(null)
 const editingId = ref<string | null>(null)
 /** Click-to-place mode for mono / handwritten text. */
 const placingTextStyle = ref<'mono' | 'handwritten' | null>(null)
@@ -1407,7 +1414,7 @@ const onDocumentClick = (event: MouseEvent) => {
     colourPickerOpen.value &&
     !colourToolRef.value?.contains(event.target as Node)
   ) {
-    colourPickerOpen.value = false
+    closeColourPicker()
   }
 }
 
@@ -1421,19 +1428,40 @@ const normalizeHex = (value: string) => {
   return next.toUpperCase()
 }
 
-const toggleColourPicker = () => {
-  colourPickerOpen.value = !colourPickerOpen.value
-  if (!colourPickerOpen.value) return
+const openColourPopover = (seed: string) => {
+  colourDraft.value = seed.toLowerCase()
+  hexDraft.value = seed.toUpperCase()
+  colourPickerOpen.value = true
   placingTextStyle.value = null
   drawTool.value = null
   currentStroke.value = null
   libraryOpen.value = false
-  colourDraft.value = pendingColour.value.toLowerCase()
-  hexDraft.value = pendingColour.value.toUpperCase()
   nextTick(() => {
     hexInput.value?.focus()
     hexInput.value?.select()
   })
+}
+
+const closeColourPicker = () => {
+  colourPickerOpen.value = false
+  editingColourId.value = null
+}
+
+const toggleColourPicker = () => {
+  if (colourPickerOpen.value) {
+    closeColourPicker()
+    return
+  }
+  editingColourId.value = null
+  openColourPopover(pendingColour.value)
+}
+
+const onColourDblClick = (id: string) => {
+  const item = placements.value.find((entry) => entry.id === id)
+  if (!item || item.kind !== 'colour' || !item.colour) return
+  editingColourId.value = id
+  bringToFront(id)
+  openColourPopover(item.colour)
 }
 
 const onColourDraftInput = () => {
@@ -1452,24 +1480,42 @@ const commitColour = () => {
   pendingColour.value = hex
   hexDraft.value = hex
   colourDraft.value = hex.toLowerCase()
-  addColour(hex)
-  colourPickerOpen.value = false
+  if (editingColourId.value) {
+    updateColour(editingColourId.value, hex)
+    editingColourId.value = null
+  } else {
+    // Swatch face is 160×160; hex label sits below — centre on the face
+    const colourCount = placements.value.filter((item) => item.kind === 'colour')
+      .length
+    const { x, y } = centerPlacementPosition(160, 160, colourCount)
+    addColour(hex, { x, y })
+  }
+  closeColourPicker()
 }
 
 const openImagePicker = () => {
   imageInput.value?.click()
 }
 
-/** Center of the board canvas, with a light cascade so repeats don’t stack perfectly. */
-const centerPlacementPosition = (width = 210, height = 210) => {
+/**
+ * Center of the board canvas.
+ * `cascadeIndex` staggers repeats in a short row so they don’t land on top of each other.
+ */
+const centerPlacementPosition = (
+  width = 210,
+  height = 210,
+  cascadeIndex = 0,
+) => {
   const rect = canvasEl.value?.getBoundingClientRect()
-  const cascade = (placements.value.length % 5) * 28
+  const step = cascadeIndex % 6
+  const cascadeX = step * 36
+  const cascadeY = step * 28
   if (!rect) {
-    return { x: 140 + cascade, y: 140 + cascade }
+    return { x: 140 + cascadeX, y: 140 + cascadeY }
   }
   return {
-    x: Math.max(24, (rect.width - width) / 2 + cascade),
-    y: Math.max(24, (rect.height - height) / 2 + cascade),
+    x: Math.max(24, (rect.width - width) / 2 + cascadeX),
+    y: Math.max(24, (rect.height - height) / 2 + cascadeY),
   }
 }
 
@@ -1792,7 +1838,7 @@ const onKeyDown = (event: KeyboardEvent) => {
   }
   if (event.key === 'Escape' && colourPickerOpen.value) {
     event.preventDefault()
-    colourPickerOpen.value = false
+    closeColourPicker()
     return
   }
   if (editingId.value || titleEditing.value) return
@@ -2992,6 +3038,7 @@ html.dark .moodboard__place-layer {
   background: var(--warm-white);
   border: none;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+  cursor: inherit;
 }
 
 .moodboard__swatch-fill {

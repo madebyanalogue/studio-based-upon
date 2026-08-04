@@ -5956,7 +5956,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--grid-line);
+  border: 1px solid currentColor;
   background: var(--elevated-bg, #fff);
   color: var(--charcoal);
   box-sizing: border-box;

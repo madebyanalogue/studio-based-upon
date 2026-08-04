@@ -906,10 +906,18 @@ export const useMoodboard = () => {
     activeStrokeId.value = null
   }
 
-  const addColour = (colour: string) => {
+  const addColour = (
+    colour: string,
+    options?: {
+      x?: number
+      y?: number
+    },
+  ) => {
     const hex = colour.toUpperCase()
     const id = `colour-${Date.now()}-${Math.round(Math.random() * 1000)}`
     zCounter.value += 1
+    const colourCount = placements.value.filter((item) => item.kind === 'colour').length
+    const cascade = colourCount % 6
     placements.value = [
       ...placements.value,
       {
@@ -917,14 +925,23 @@ export const useMoodboard = () => {
         kind: 'colour',
         title: hex,
         colour: hex,
-        x: 120 + (placements.value.length % 5) * 40,
-        y: 120 + (placements.value.length % 5) * 40,
+        x: options?.x ?? 120 + cascade * 36,
+        y: options?.y ?? 120 + cascade * 36,
         z: zCounter.value,
         scale: 1,
       },
     ]
     selectOnly(id)
     return id
+  }
+
+  const updateColour = (id: string, colour: string) => {
+    const hex = colour.toUpperCase()
+    placements.value = placements.value.map((item) =>
+      item.id === id && item.kind === 'colour'
+        ? { ...item, colour: hex, title: hex }
+        : item,
+    )
   }
 
   const addImage = (
@@ -1274,6 +1291,7 @@ export const useMoodboard = () => {
     updateScale,
     clearActive,
     addColour,
+    updateColour,
     addImage,
     cycleItemImage,
     addStroke,
