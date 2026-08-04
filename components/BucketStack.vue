@@ -5956,7 +5956,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--charcoal);
+  border: 1px solid var(--grid-line);
   background: var(--elevated-bg, #fff);
   color: var(--charcoal);
   box-sizing: border-box;
@@ -6066,6 +6066,7 @@ onBeforeUnmount(() => {
 .stack__confirm-actions .btn {
   width: 100%;
   border-radius: 0;
+  border: 1px solid var(--grid-line);
 }
 
 .stack__control-links {
@@ -6097,6 +6098,7 @@ onBeforeUnmount(() => {
 .stack__controls .btn {
   width: 100%;
   border-radius: 0;
+  border: 1px solid var(--grid-line);
 }
 
 .stack__controls .btn:disabled {

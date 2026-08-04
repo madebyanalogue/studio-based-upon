@@ -23,6 +23,14 @@ export type MoodboardItem = {
   clipPath?: string
   /** White paper backing — same fragment with a jagged randomized tear edge. */
   tearBackClipPath?: string
+  /**
+   * After a tear, the item box is shrunk to the clip AABB.
+   * Image stays at full pre-tear size and is offset by crop so pixels still align.
+   */
+  cropX?: number
+  cropY?: number
+  sourceWidth?: number
+  sourceHeight?: number
   /** Restore the pre-tear piece from either half of a tear. */
   tearRestore?: {
     original: MoodboardItem
@@ -623,6 +631,95 @@ export type TearClipResult = {
   backing: [string, string]
 }
 
+/** Axis-aligned bounds of a polygon (optional pad). */
+const tearPolygonBounds = (pts: TearPoint[], pad = 0) => {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of pts) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
+  }
+  return {
+    minX: minX - pad,
+    minY: minY - pad,
+    maxX: maxX + pad,
+    maxY: maxY + pad,
+  }
+}
+
+/**
+ * Shrink a torn piece’s layout box to its clip silhouette and offset the
+ * source image so the visible fragment stays pixel-aligned.
+ */
+export const fitTornPieceToClip = (piece: MoodboardItem): MoodboardItem => {
+  const w = piece.width || 210
+  const h = piece.height || w
+  const imagePoly = tearParseClipPath(piece.clipPath, w, h)
+  if (!imagePoly || imagePoly.length < 3) return piece
+
+  const polys = [imagePoly]
+  const backPoly = tearParseClipPath(piece.tearBackClipPath, w, h)
+  if (backPoly && backPoly.length >= 3) polys.push(backPoly)
+
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const poly of polys) {
+    const b = tearPolygonBounds(poly, 1)
+    minX = Math.min(minX, b.minX)
+    minY = Math.min(minY, b.minY)
+    maxX = Math.max(maxX, b.maxX)
+    maxY = Math.max(maxY, b.maxY)
+  }
+  minX = Math.max(0, minX)
+  minY = Math.max(0, minY)
+  maxX = Math.min(w, maxX)
+  maxY = Math.min(h, maxY)
+  const newW = Math.max(8, maxX - minX)
+  const newH = Math.max(8, maxY - minY)
+  // Already tight enough — avoid churn from float noise
+  if (newW >= w - 1.5 && newH >= h - 1.5 && minX < 1.5 && minY < 1.5) {
+    return piece
+  }
+
+  const s = piece.scale || 1
+  const remap = (clip?: string) => {
+    const pts = tearParseClipPath(clip, w, h)
+    if (!pts) return clip
+    return tearToClipPath(
+      pts.map((p) => ({ x: p.x - minX, y: p.y - minY })),
+      newW,
+      newH,
+    )
+  }
+
+  return {
+    ...piece,
+    x: piece.x + minX * s,
+    y: piece.y + minY * s,
+    width: newW,
+    height: newH,
+    sourceWidth: piece.sourceWidth ?? w,
+    sourceHeight: piece.sourceHeight ?? h,
+    cropX: (piece.cropX ?? 0) + minX,
+    cropY: (piece.cropY ?? 0) + minY,
+    clipPath: remap(piece.clipPath),
+    tearBackClipPath: remap(piece.tearBackClipPath),
+  }
+}
+
+/** Parse a CSS polygon() clip-path into layout points (for canvas export). */
+export const parseMoodboardClipPath = (
+  clip: string | undefined,
+  w: number,
+  h: number,
+) => tearParseClipPath(clip, w, h)
+
 /**
  * Split a layout rect along a freehand cursor path into two CSS clip-path polygons.
  * Path points are in the item’s unscaled layout box and may lie outside it.
@@ -1026,7 +1123,7 @@ export const useMoodboard = () => {
     const idB = `${source.id}-tear-b-${stamp}`
     // Fresh restore target = piece before this tear (drop nested restore)
     delete base.tearRestore
-    const pieceA: MoodboardItem = {
+    const pieceA: MoodboardItem = fitTornPieceToClip({
       ...base,
       id: idA,
       clipPath: clips.image[0],
@@ -1037,8 +1134,8 @@ export const useMoodboard = () => {
       y: base.y - sepY / 2,
       z: ++zCounter.value,
       tearRestore: { original, siblingId: idB },
-    }
-    const pieceB: MoodboardItem = {
+    })
+    const pieceB: MoodboardItem = fitTornPieceToClip({
       ...base,
       id: idB,
       clipPath: clips.image[1],
@@ -1049,7 +1146,7 @@ export const useMoodboard = () => {
       y: base.y + sepY / 2,
       z: ++zCounter.value,
       tearRestore: { original, siblingId: idA },
-    }
+    })
     delete pieceB.sourceBucketItemId
     delete pieceB.sourceSelectionId
 
@@ -1083,6 +1180,10 @@ export const useMoodboard = () => {
     delete restored.tearRestore
     delete restored.clipPath
     delete restored.tearBackClipPath
+    delete restored.cropX
+    delete restored.cropY
+    delete restored.sourceWidth
+    delete restored.sourceHeight
     // Independent board copy — don't reclaim the cart item twice
     delete restored.sourceBucketItemId
     delete restored.sourceSelectionId

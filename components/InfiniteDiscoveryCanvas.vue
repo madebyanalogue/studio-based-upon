@@ -112,13 +112,16 @@ const parseDimensions = (asset?: { url?: string; _id?: string }) => {
   return { width: 1200, height: 1200 }
 }
 
-/** Sanity CDN rejects CORS for WebGL — serve textures via same-origin IPX. */
-const toCanvasTextureUrl = (remoteUrl: string, width = 900) => {
+/**
+ * Sanity CDN rejects CORS for WebGL textures.
+ * Use the same-origin image proxy (query param) — never put `https://…` in a
+ * path segment: browsers collapse `//`, and fully encoding the URL 404s as a
+ * literal path like `/https%3A%2F%2Fcdn.sanity.io/…`.
+ */
+const toCanvasTextureUrl = (remoteUrl: string) => {
   if (!remoteUrl) return ''
   if (remoteUrl.startsWith('/') || remoteUrl.startsWith('blob:')) return remoteUrl
-  // encodeURIComponent keeps `https://` intact — raw `//` in the path collapses to `/`
-  // and IPX 404s on `https:/cdn.sanity.io/...`
-  return `/_ipx/w_${width}/${encodeURIComponent(remoteUrl)}`
+  return `/api/image-proxy?url=${encodeURIComponent(remoteUrl)}`
 }
 
 const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
@@ -132,7 +135,7 @@ const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
       imageUrl(item.image, 900) ||
       getImageSrc(item.image?.asset) ||
       (item.gallery?.[0] ? imageUrl(item.gallery[0], 900) : '')
-    const url = toCanvasTextureUrl(remote, 900)
+    const url = toCanvasTextureUrl(remote)
     if (!url) continue
 
     const dims = parseDimensions(item.image?.asset || item.gallery?.[0]?.asset)

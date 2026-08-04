@@ -174,7 +174,26 @@
               aria-hidden="true"
               :style="{ clipPath: item.tearBackClipPath }"
             />
+            <div
+              v-if="item.clipPath && item.sourceWidth != null"
+              class="moodboard__image-clip"
+              :style="{ clipPath: item.clipPath }"
+            >
+              <img
+                :src="item.imageUrl"
+                :alt="item.title"
+                class="moodboard__image moodboard__image--cropped"
+                :style="{
+                  width: `${item.sourceWidth}px`,
+                  height: `${item.sourceHeight}px`,
+                  left: `${-(item.cropX || 0)}px`,
+                  top: `${-(item.cropY || 0)}px`,
+                }"
+                draggable="false"
+              />
+            </div>
             <img
+              v-else
               :src="item.imageUrl"
               :alt="item.title"
               class="moodboard__image"
@@ -221,7 +240,7 @@
           <button
             v-if="item.tearRestore"
             type="button"
-            class="moodboard__chip moodboard__restore"
+            class="moodboard__restore"
             aria-label="Restore torn piece"
             title="Restore"
             :style="{ transform: `scale(${1 / item.scale})` }"
@@ -229,19 +248,6 @@
             @click.stop="restoreTearPiece(item.id)"
           >
             Restore
-          </button>
-
-          <button
-            v-if="item.kind !== 'text'"
-            type="button"
-            class="moodboard__chip moodboard__clone"
-            aria-label="Clone item"
-            title="Clone"
-            :style="{ transform: `scale(${1 / item.scale})` }"
-            @pointerdown.stop
-            @click.stop="cloneItem(item.id)"
-          >
-            Clone
           </button>
 
           <button
@@ -628,19 +634,18 @@
               type="button"
               class="moodboard__panel-tool"
               aria-label="Share as enquiry"
-              title="Share"
               @click="sendEnquiry"
             >
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
                 <path d="M21 3 10 14" />
                 <path d="M21 3 14 21l-4-7-7-4Z" />
               </svg>
+              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Share</span>
             </button>
             <button
               type="button"
               class="moodboard__panel-tool"
               aria-label="Download screenshot"
-              title="Download"
               @click="downloadScreenshot"
             >
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
@@ -648,24 +653,24 @@
                 <path d="m8 11 4 4 4-4" />
                 <path d="M5 20h14" />
               </svg>
+              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Download</span>
             </button>
             <button
               type="button"
               class="moodboard__panel-tool"
               aria-label="Rename board"
-              title="Rename"
               @click="startTitleEdit"
             >
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
                 <path d="M14 6 18 10" />
                 <path d="M4 20h4L18 10l-4-4L4 16v4Z" />
               </svg>
+              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Rename</span>
             </button>
             <button
               type="button"
               class="moodboard__panel-tool"
               aria-label="Delete board"
-              title="Delete"
               @click="confirmingDelete = true"
             >
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
@@ -673,6 +678,7 @@
                 <path d="M9 4h6" />
                 <path d="M7 7v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7" />
               </svg>
+              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Delete</span>
             </button>
           </div>
         </div>
@@ -812,7 +818,6 @@ const {
   addText,
   updateText,
   removeItem,
-  cloneItem,
   tearItem,
   tearUndo,
   restoreTearPiece,
@@ -2111,6 +2116,24 @@ const boardCaptureBg = () =>
     .getPropertyValue('--cream')
     .trim() || '#F1EDE4'
 
+const applyCaptureClipPath = (
+  ctx: CanvasRenderingContext2D,
+  clip: string | undefined,
+  w: number,
+  h: number,
+) => {
+  const pts = parseMoodboardClipPath(clip, w, h)
+  if (!pts?.length) return false
+  ctx.beginPath()
+  ctx.moveTo(pts[0]!.x, pts[0]!.y)
+  for (let i = 1; i < pts.length; i += 1) {
+    ctx.lineTo(pts[i]!.x, pts[i]!.y)
+  }
+  ctx.closePath()
+  ctx.clip()
+  return true
+}
+
 /** Draw board items onto a canvas via same-origin proxied images. */
 const captureBoardPreviewFromItems = async (): Promise<{
   preview: string
@@ -2136,13 +2159,36 @@ const captureBoardPreviewFromItems = async (): Promise<{
     if (item.kind === 'image' && item.imageUrl) {
       try {
         const img = await loadCaptureImage(item.imageUrl)
-        const w = (item.width || 210) * itemScale
-        const h = item.height
-          ? item.height * itemScale
-          : (img.naturalHeight / Math.max(img.naturalWidth, 1)) * w
+        const layoutW = item.width || 210
+        const layoutH = item.height
+          ? item.height
+          : (img.naturalHeight / Math.max(img.naturalWidth, 1)) * layoutW
+        const w = layoutW * itemScale
+        const h = layoutH * itemScale
         ctx.save()
         ctx.translate(x, y)
-        ctx.drawImage(img, 0, 0, w, h)
+        if (
+          item.tearBackClipPath &&
+          !isLikelyTransparentImage(item.imageUrl)
+        ) {
+          ctx.save()
+          applyCaptureClipPath(ctx, item.tearBackClipPath, w, h)
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, w, h)
+          ctx.restore()
+        }
+        if (item.clipPath) {
+          applyCaptureClipPath(ctx, item.clipPath, w, h)
+        }
+        if (item.sourceWidth != null) {
+          const srcW = item.sourceWidth * itemScale
+          const srcH = (item.sourceHeight || item.sourceWidth) * itemScale
+          const cropX = (item.cropX || 0) * itemScale
+          const cropY = (item.cropY || 0) * itemScale
+          ctx.drawImage(img, -cropX, -cropY, srcW, srcH)
+        } else {
+          ctx.drawImage(img, 0, 0, w, h)
+        }
         ctx.restore()
       } catch {
         /* skip image that won't load */
@@ -2213,6 +2259,7 @@ const captureBoardPreview = async (): Promise<{
         if (!node?.classList) return false
         return (
           node.classList.contains('moodboard__chip') ||
+          node.classList.contains('moodboard__restore') ||
           node.classList.contains('moodboard__remove') ||
           node.classList.contains('moodboard__handle') ||
           node.classList.contains('moodboard__cycle') ||
@@ -2435,6 +2482,7 @@ onUnmounted(() => {
 }
 
 .moodboard--capturing .moodboard__chip,
+.moodboard--capturing .moodboard__restore,
 .moodboard--capturing .moodboard__remove,
 .moodboard--capturing .moodboard__handle,
 .moodboard--capturing .moodboard__cycle,
@@ -2532,7 +2580,8 @@ onUnmounted(() => {
   height: var(--history-cell);
   transform: translateX(-50%);
   background: var(--warm-white);
-  border: 1px solid var(--grid-line);
+  /* Match grid lines as painted on cream (raw --grid-line looks darker on frosted/white) */
+  border: 1px solid color-mix(in srgb, var(--black) 6%, var(--cream));
   border-radius: 0px;
   box-sizing: border-box;
   overflow: hidden;
@@ -2803,6 +2852,9 @@ html.dark .moodboard__place-layer {
   z-index: 400;
   transform: translateX(-50%);
   min-width: 7.5rem;
+  background: var(--warm-white);
+  border: 1px solid var(--grid-line);
+  border-radius: 0;
 }
 
 .moodboard__item {
@@ -2836,7 +2888,7 @@ html.dark .moodboard__place-layer {
 }
 
 /* Natural drop size — box is already fitted to stack content proportions */
-.moodboard__item--natural img {
+.moodboard__item--natural img:not(.moodboard__image--cropped) {
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
@@ -2893,12 +2945,28 @@ html.dark .moodboard__place-layer {
   pointer-events: none;
 }
 
+.moodboard__image-clip {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .moodboard__item img {
   position: relative;
   z-index: 1;
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
+}
+
+.moodboard__image--cropped {
+  position: absolute;
+  z-index: 1;
+  max-width: none;
+  aspect-ratio: auto;
+  object-fit: fill;
+  pointer-events: none;
 }
 
 /* Match cart cell prev/next — boxed, bottom-right inset */
@@ -3026,11 +3094,12 @@ html.dark .moodboard__place-layer {
   background: transparent;
 }
 
-.moodboard__item--text.moodboard__item--active:has([contenteditable='true']) {
+/* Text: no selection outline unless part of a multi-select */
+.moodboard__item--text.moodboard__item--active:not(.moodboard__item--multi) {
   box-shadow: none;
 }
 
-/* Shared chip controls (clone / restore / text remove) */
+/* Shared chip controls (text remove) */
 .moodboard__chip {
   position: absolute;
   top: -0.6rem;
@@ -3054,12 +3123,30 @@ html.dark .moodboard__place-layer {
   pointer-events: none;
 }
 
-.moodboard__clone {
-  right: 1.15rem;
-}
-
+/* Match [-] remove control: inset, cream face, thumb radius */
 .moodboard__restore {
-  right: 4.35rem;
+  position: absolute;
+  top: var(--thumb-ctrl-inset, 4px);
+  left: var(--thumb-ctrl-inset, 4px);
+  z-index: 4;
+  height: var(--thumb-ctrl-size, 23px);
+  padding: 0 0.45rem;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--thumb-ctrl-color, var(--charcoal));
+  background: var(--thumb-ctrl-bg, var(--cream));
+  border: 0;
+  border-radius: var(--thumb-ctrl-radius, 4px);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+  pointer-events: none;
+  transform-origin: top left;
 }
 
 .moodboard__remove-chip {
@@ -3092,9 +3179,11 @@ html.dark .moodboard__place-layer {
 }
 
 .moodboard__item:hover .moodboard__chip,
+.moodboard__item:hover .moodboard__restore,
 .moodboard__item:hover .moodboard__remove,
 .moodboard__item:hover .moodboard__cycle,
 .moodboard__item--primary .moodboard__chip,
+.moodboard__item--primary .moodboard__restore,
 .moodboard__item--primary .moodboard__remove,
 .moodboard__item--primary .moodboard__cycle {
   opacity: 1;
@@ -3171,7 +3260,7 @@ html.dark .moodboard__place-layer {
   padding: var(--gutter);
   box-sizing: border-box;
   background: var(--panel-bg, var(--warm-white));
-  border: 1px solid var(--grid-line);
+  border: 1px solid color-mix(in srgb, var(--black) 6%, var(--cream));
   backdrop-filter: blur(50px);
   -webkit-backdrop-filter: blur(50px);
 }
@@ -3247,17 +3336,20 @@ html.dark .moodboard__place-layer {
 .moodboard__panel-tools {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: 0;
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .moodboard__panel-tool {
+  position: relative;
   width: 24px;
   height: 24px;
   display: grid;
   place-items: center;
-  padding: 0;
+  /* Padding replaces gap so hover/tooltip stays continuous between icons */
+  padding: 0.25rem;
+  box-sizing: content-box;
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -3272,6 +3364,42 @@ html.dark .moodboard__place-layer {
 .moodboard__panel-tool svg {
   display: block;
   shape-rendering: geometricPrecision;
+}
+
+.moodboard__panel-tooltip {
+  position: absolute;
+  bottom: calc(100% + 0.15rem);
+  left: 50%;
+  z-index: 5;
+  padding: 0.35rem 0.55rem;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
+  white-space: nowrap;
+  background: var(--elevated-bg);
+  border: 1px solid var(--grid-line);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.moodboard__panel-tool:hover .moodboard__panel-tooltip,
+.moodboard__panel-tool:focus-visible .moodboard__panel-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Keep trailing tooltips inside the panel */
+.moodboard__panel-tool:last-child .moodboard__panel-tooltip {
+  left: auto;
+  right: 0;
+  transform: translateX(0) translateY(2px);
+}
+
+.moodboard__panel-tool:last-child:hover .moodboard__panel-tooltip,
+.moodboard__panel-tool:last-child:focus-visible .moodboard__panel-tooltip {
+  transform: translateX(0) translateY(0);
 }
 
 .moodboard__panel-link {
@@ -3293,6 +3421,7 @@ html.dark .moodboard__place-layer {
 .moodboard__panel .btn {
   width: 100%;
   border-radius: 0;
+  border: 1px solid var(--grid-line);
 }
 
 .moodboard__panel .btn--filled {
@@ -3349,6 +3478,7 @@ html.dark .moodboard__place-layer {
 .moodboard__confirm-actions .btn {
   width: 100%;
   border-radius: 0;
+  border: 1px solid var(--grid-line);
 }
 
 .moodboard__pen-bar {
