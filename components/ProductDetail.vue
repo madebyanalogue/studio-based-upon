@@ -273,6 +273,7 @@ import { Flip } from 'gsap/Flip'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productSlug } from '~/composables/useProductCatalog'
+import { PRODUCT_OVERLAY_BACKDROP_CLOSE_MS } from '~/composables/useProductOverlay'
 
 const props = withDefaults(
   defineProps<{
@@ -296,9 +297,11 @@ const {
   getFlipSource,
   getFlipImageUrl,
   clearPendingFlip,
+  setBackdropReady,
   hideFlipSource,
   restoreFlipSource,
   waitForFlipOpenGate,
+  pendingFlip,
   closingFlip,
   openImageIndex,
   setReturnImage,
@@ -872,6 +875,7 @@ const downloadSpec = () => {
 
 const revealWithoutFlip = () => {
   restoreFlipSource()
+  setBackdropReady(true)
   clearPendingFlip()
   contentReady.value = true
   sidesVisible.value = true
@@ -962,32 +966,52 @@ const runFlipOpen = async () => {
   // Cover with flyer, then hide source — no blank frame / no hover-opacity dip
   hideFlipSource(source)
 
+  // Backdrop fades in → hold → flyer scales → PDP UI
+  const BACKDROP_FADE_MS = 350
+  const FLYER_PAUSE_MS = 350
+  const waitMs = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms)
+    })
+
+  setBackdropReady(true)
+  await nextTick()
+  await waitMs(BACKDROP_FADE_MS)
+  await waitMs(FLYER_PAUSE_MS)
+
+  // Re-measure hero in case layout settled during the fade
+  const toAfter = hero.getBoundingClientRect()
+  const dest = toAfter.width >= 2 ? toAfter : to
+
   const state = Flip.getState(flyer)
 
   gsap.set(flyer, {
-    top: to.top,
-    left: to.left,
-    width: to.width,
-    height: to.height,
+    top: dest.top,
+    left: dest.left,
+    width: dest.width,
+    height: dest.height,
     borderRadius: '0px',
     objectFit: heroFit,
   })
 
-  // Snappy expand with a soft landing
+  // Slightly slower expand with a soft landing
   Flip.from(state, {
-    duration: 0.45,
-    ease: 'power3.out',
+    duration: 0.7,
+    ease: 'power2.inOut',
     onComplete: () => {
-      flyer.remove()
+      // Reveal hero under the flyer first so removing it can’t flash empty
       gsap.set(hero, { visibility: 'visible' })
-      contentReady.value = true
-      sidesVisible.value = true
-      clearPendingFlip()
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          flyer.remove()
+          // PDP chrome only after the flyer has landed
+          clearPendingFlip()
+          contentReady.value = true
+          sidesVisible.value = true
+          galleryVisible.value = true
+        })
+      })
     },
-  })
-
-  gsap.delayedCall(0.3, () => {
-    galleryVisible.value = true
   })
 }
 
@@ -1003,7 +1027,21 @@ const runFlipClose = async () => {
     return
   }
 
-  // Push the currently selected gallery image back onto grid / cart thumbs
+  const UI_FADE_MS = 420
+  const BACKDROP_FADE_MS = PRODUCT_OVERLAY_BACKDROP_CLOSE_MS
+  const waitMs = (ms: number) =>
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms)
+    })
+
+  // 1) PDP UI fades out first — flyer must not move until this finishes
+  const uiFadeStarted = performance.now()
+  contentReady.value = false
+  sidesVisible.value = false
+  galleryVisible.value = false
+  await nextTick()
+
+  // Prep return thumb while UI is fading (under the solid backdrop)
   setReturnImage(product.value._id, selectedIndex.value)
   await nextTick()
   await nextTick()
@@ -1017,16 +1055,53 @@ const runFlipClose = async () => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   })
 
-  contentReady.value = false
-  sidesVisible.value = false
-  galleryVisible.value = false
+  const uiElapsed = performance.now() - uiFadeStarted
+  await waitMs(Math.max(0, UI_FADE_MS - uiElapsed))
+
+  // Panel cream can drop now that chrome is gone
+  pendingFlip.value = true
   await nextTick()
 
   const from = hero.getBoundingClientRect()
   const to = source.getBoundingClientRect()
 
+  /** Non-interactive cream veil so we can unmount the overlay (clicks work) while fading */
+  const spawnCloseVeil = () => {
+    const veil = document.createElement('div')
+    veil.setAttribute('data-pdp-close-veil', '')
+    const bg =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--background-color')
+        .trim() || getComputedStyle(document.body).backgroundColor
+    Object.assign(veil.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '319',
+      background: bg,
+      opacity: '1',
+      pointerEvents: 'none',
+      transition: `opacity ${BACKDROP_FADE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+    })
+    document.body.appendChild(veil)
+    return veil
+  }
+
+  const fadeVeilAndCleanup = (veil: HTMLElement, flyer?: HTMLElement) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        veil.style.opacity = '0'
+      })
+    })
+    window.setTimeout(() => {
+      flyer?.remove()
+      veil.remove()
+    }, BACKDROP_FADE_MS)
+  }
+
   if (from.width < 2 || to.width < 2) {
+    const veil = spawnCloseVeil()
     finishClose()
+    fadeVeilAndCleanup(veil)
     return
   }
 
@@ -1037,6 +1112,7 @@ const runFlipClose = async () => {
   flyer.src = hero.currentSrc || hero.src
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
+  flyer.setAttribute('data-pdp-close-flyer', '')
   const heroFit = getComputedStyle(hero).objectFit || 'contain'
   const sourceFit = getComputedStyle(source).objectFit || 'cover'
   Object.assign(flyer.style, {
@@ -1054,6 +1130,7 @@ const runFlipClose = async () => {
   document.body.appendChild(flyer)
   if (!flyer.complete) await waitForImage(flyer)
 
+  // 2) Flyer returns to the grid thumb
   const state = Flip.getState(flyer)
 
   gsap.set(flyer, {
@@ -1066,12 +1143,20 @@ const runFlipClose = async () => {
   })
 
   Flip.from(state, {
-    duration: 0.4,
-    ease: 'power3.out',
+    duration: 0.65,
+    ease: 'power2.inOut',
     onComplete: () => {
-      flyer.remove()
-      // finishClose → restoreFlipSource (instant, no CSS fade flash)
+      // Restore thumb under the flyer, then unmount the overlay immediately.
+      // A body-level veil (pointer-events: none) continues the cream fade so
+      // the grid is clickable while it dissolves — the overlay shell was
+      // blocking hits even at opacity 0.
+      source.style.transition = 'none'
+      source.style.visibility = ''
+      source.style.opacity = '1'
+      source.style.filter = 'grayscale(0)'
+      const veil = spawnCloseVeil()
       finishClose()
+      fadeVeilAndCleanup(veil, flyer)
     },
   })
 }

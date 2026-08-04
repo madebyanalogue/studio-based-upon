@@ -18,6 +18,9 @@ export type ProductReturnImage = {
   bucketItemId?: string
 }
 
+/** Close backdrop fade — CSS + finishClose timeout must share this */
+export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS = 1500
+
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null
 let flipImageUrl: string | null = null
@@ -59,17 +62,19 @@ const lockFlipSourceFull = (el: HTMLElement) => {
 const hideFlipSource = (el: HTMLElement) => {
   el.style.transition = 'none'
   el.style.opacity = '0'
+  el.style.visibility = 'hidden'
   el.style.filter = 'grayscale(0)'
 }
 
 const restoreFlipSource = () => {
   if (!import.meta.client || !flipSourceEl) return
   const el = flipSourceEl
-  const saved = !!el.closest('.product-card--saved')
+  const saved = !!el.closest('.product-card--saved') || !!el.closest('.grid-item--saved')
 
   if (saved) {
     // Flyer hands off at full opacity, then ease into the saved dim (0.1)
     el.style.transition = 'none'
+    el.style.visibility = ''
     el.style.opacity = '1'
     el.style.filter = 'grayscale(0)'
     void el.offsetWidth
@@ -91,12 +96,16 @@ const restoreFlipSource = () => {
     return
   }
 
-  // Instant handoff — CSS image opacity transitions would flash a fade-in
+  // Instant handoff — keep visibility/opacity locked until styles clear together
+  // so CSS opacity transitions can’t flash a hide→show
   el.style.transition = 'none'
-  el.style.opacity = ''
+  el.style.visibility = ''
+  el.style.opacity = '1'
   void el.offsetWidth
+  el.style.removeProperty('opacity')
+  el.style.removeProperty('filter')
   requestAnimationFrame(() => {
-    if (el.style.transition === 'none') el.style.transition = ''
+    if (el.style.transition === 'none') el.style.removeProperty('transition')
   })
 }
 
@@ -111,6 +120,8 @@ export const useProductOverlay = () => {
   const returnUrl = useState<string | null>('product-overlay-return', () => null)
   const pendingFlip = useState<boolean>('product-overlay-pending-flip', () => false)
   const closingFlip = useState<boolean>('product-overlay-closing-flip', () => false)
+  /** Backdrop fades in over the page before the flyer moves (flyer sits above it). */
+  const backdropReady = useState<boolean>('product-overlay-backdrop', () => false)
   const openImageIndex = useState<number>('product-overlay-image-index', () => 0)
   const returnImage = useState<ProductReturnImage | null>(
     'product-overlay-return-image',
@@ -118,10 +129,18 @@ export const useProductOverlay = () => {
   )
   const isOpen = computed(() => !!openSlug.value)
 
+  const clearCloseArtifacts = () => {
+    if (!import.meta.client) return
+    document
+      .querySelectorAll('[data-pdp-close-flyer], [data-pdp-close-veil]')
+      .forEach((el) => el.remove())
+  }
+
   const open = (slug: string, options: ProductOverlayOpenOptions = {}) => {
     const alreadyOpen = !!openSlug.value
 
     if (import.meta.client && !alreadyOpen) {
+      clearCloseArtifacts()
       returnUrl.value =
         window.location.pathname + window.location.search + window.location.hash
 
@@ -138,6 +157,7 @@ export const useProductOverlay = () => {
         pendingFlip.value = false
       }
       closingFlip.value = false
+      backdropReady.value = false
       openImageIndex.value =
         typeof options.imageIndex === 'number' && options.imageIndex >= 0
           ? options.imageIndex
@@ -147,6 +167,7 @@ export const useProductOverlay = () => {
       clearFlipSource()
       pendingFlip.value = false
       closingFlip.value = false
+      backdropReady.value = false
       openImageIndex.value = 0
     }
 
@@ -164,6 +185,7 @@ export const useProductOverlay = () => {
         clearFlipSource()
         pendingFlip.value = false
         closingFlip.value = false
+        backdropReady.value = false
         openImageIndex.value = 0
       } else {
         window.history.pushState(state, '', url)
@@ -180,6 +202,10 @@ export const useProductOverlay = () => {
 
   const clearPendingFlip = () => {
     pendingFlip.value = false
+  }
+
+  const setBackdropReady = (ready: boolean) => {
+    backdropReady.value = ready
   }
 
   const setReturnImage = (productId: string, index: number) => {
@@ -199,6 +225,7 @@ export const useProductOverlay = () => {
     restoreFlipSource()
     clearFlipSource()
     clearFlipOpenGate()
+    backdropReady.value = false
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -215,10 +242,12 @@ export const useProductOverlay = () => {
       nextTick(() => {
         pendingFlip.value = false
         closingFlip.value = false
+        backdropReady.value = false
       })
     } else {
       pendingFlip.value = false
       closingFlip.value = false
+      backdropReady.value = false
     }
   }
 
@@ -234,8 +263,9 @@ export const useProductOverlay = () => {
       flipSourceEl &&
       document.contains(flipSourceEl)
     ) {
+      // Keep backdrop + panel cream while PDP UI fades; pendingFlip is set
+      // after that fade so the flyer doesn’t start early.
       closingFlip.value = true
-      pendingFlip.value = true
       return
     }
 
@@ -251,6 +281,7 @@ export const useProductOverlay = () => {
     clearFlipOpenGate()
     pendingFlip.value = false
     closingFlip.value = false
+    backdropReady.value = false
     returnUrl.value = null
     if (import.meta.client) {
       unlockPageScroll()
@@ -267,6 +298,7 @@ export const useProductOverlay = () => {
     getFlipSource,
     getFlipImageUrl,
     clearPendingFlip,
+    setBackdropReady,
     hideFlipSource,
     restoreFlipSource,
     beginFlipOpenGate,
@@ -274,6 +306,7 @@ export const useProductOverlay = () => {
     waitForFlipOpenGate,
     pendingFlip,
     closingFlip,
+    backdropReady,
     openImageIndex,
     returnImage,
     setReturnImage,

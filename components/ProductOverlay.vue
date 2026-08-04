@@ -7,7 +7,13 @@
       <div
         v-if="isOpen"
         class="product-overlay"
-        :class="{ 'product-overlay--flipping': pendingFlip || closingFlip }"
+        :class="{
+          /* pendingFlip only — keep cream while closingFlip fades PDP UI first */
+          'product-overlay--flipping': pendingFlip,
+          'product-overlay--backdrop': backdropReady,
+          'product-overlay--closing': closingFlip,
+        }"
+        :style="{ '--backdrop-close-ms': `${PRODUCT_OVERLAY_BACKDROP_CLOSE_MS}ms` }"
         role="dialog"
         aria-modal="true"
         aria-label="Product detail"
@@ -28,8 +34,18 @@
 </template>
 
 <script setup lang="ts">
-const { openSlug, isOpen, open, close, syncFromHistory, pendingFlip, closingFlip } =
-  useProductOverlay()
+import { PRODUCT_OVERLAY_BACKDROP_CLOSE_MS } from '~/composables/useProductOverlay'
+
+const {
+  openSlug,
+  isOpen,
+  open,
+  close,
+  syncFromHistory,
+  pendingFlip,
+  closingFlip,
+  backdropReady,
+} = useProductOverlay()
 const { isOpen: bucketOpen, pickerItem, closeDrawer, closePicker } = useBucket()
 
 const onNavigate = (slug: string) => {
@@ -77,12 +93,20 @@ onUnmounted(() => {
 .product-overlay__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(26, 26, 26, 0);
-  transition: background var(--theme-ms) var(--theme-ease);
+  background: var(--background-color);
+  opacity: 0;
+  /* Fixed duration — don’t rely on --theme-ms (0 until theme-ready) */
+  transition: opacity 0.35s ease;
 }
 
-.product-overlay:not(.product-overlay--flipping) .product-overlay__backdrop {
-  background: rgba(26, 26, 26, 0.12);
+/* Slower fade-out after the close flyer lands — duration from PRODUCT_OVERLAY_BACKDROP_CLOSE_MS */
+.product-overlay--closing .product-overlay__backdrop {
+  transition: opacity var(--backdrop-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Fades in before the flyer moves; flyer is body-level z-index 500 above this */
+.product-overlay--backdrop .product-overlay__backdrop {
+  opacity: 1;
 }
 
 .product-overlay__panel {
@@ -92,7 +116,8 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: transparent;
-  transition: background var(--theme-ms) var(--theme-ease);
+  /* Match backdrop fade — don’t use --theme-ms (can be 0) */
+  transition: background 0.35s ease;
 }
 
 .product-overlay:not(.product-overlay--flipping) .product-overlay__panel {
