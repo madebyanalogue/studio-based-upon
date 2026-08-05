@@ -4084,15 +4084,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     return
   }
 
-  // Controls fade out shortly after click — before the backdrop
-  void wait(CONTROLS_FADE_OUT_DELAY_MS).then(() => {
-    controlsVisible.value = false
-  })
+  // Toolbox slides out and grid lines fade on the same beat as the restack —
+  // neither blocks the Flip, so items leave on the click frame
+  controlsVisible.value = false
+  gridLinesVisible.value = false
 
-  // 1) Grid lines out first so items don’t travel over them
-  await fadeGridLinesOut()
-
-  // Only undo placeholders left — already faded with grid lines
+  // Only undo placeholders left — they fade with the backdrop
   if (!hasFlipContent) {
     if (handoff) {
       clearAllCellPhases()

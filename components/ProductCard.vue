@@ -243,23 +243,6 @@ const onToggle = (event?: MouseEvent) => {
   padding: var(--card-pad);
 }
 
-.product-card__cycle {
-  position: absolute;
-  left: var(--thumb-ctrl-inset);
-  bottom: var(--thumb-ctrl-inset);
-  z-index: 2;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  pointer-events: none;
-}
-
-.product-card:hover .product-card__cycle {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
 .product-card__media {
   position: relative;
   display: grid;
@@ -314,17 +297,40 @@ const onToggle = (event?: MouseEvent) => {
   right: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
   z-index: 3;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.product-card:hover .product-card__add,
-.product-card--saved .product-card__add {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+.product-card__cycle {
+  position: absolute;
+  left: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
+  z-index: 2;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Narrow: heart stays put and there's no room for the gallery arrows */
+@media (max-width: 999px) {
+  .product-card__cycle {
+    display: none;
+  }
+}
+
+/* Wide: both controls ride the hover, but a saved heart stays readable */
+@media (min-width: 1000px) {
+  .product-card__add,
+  .product-card__cycle {
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+  }
+
+  .product-card:hover .product-card__add,
+  .product-card:hover .product-card__cycle,
+  .product-card--saved .product-card__add {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
 }
 
 .product-card__meta {
@@ -353,6 +359,37 @@ const onToggle = (event?: MouseEvent) => {
 /* Title only when the image/media is hovered — not pad or meta area */
 .product-card:has(.product-card__media:hover) .product-card__meta {
   opacity: 1;
+}
+
+/*
+ * Touch: iOS treats a hover-triggered reveal as the first of two taps, so the
+ * card would need tapping twice to open. Keep the meta static instead.
+ */
+@media (hover: none) {
+  .product-card__meta {
+    opacity: 1;
+  }
+
+  .product-card:hover .product-card__type-label {
+    color: var(--charcoal);
+  }
+
+  /* Wide touch screens (tablets) follow the narrow rules, not the hover ones */
+  .product-card__cycle {
+    display: none;
+  }
+
+  .product-card__add {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+@media (max-width: 999px) {
+  .product-card__meta {
+    display: none;
+  }
 }
 
 .product-card__meta-link {
