@@ -60,7 +60,7 @@ const clearFlipOpenGate = () => {
   releaseFlipOpenGateFn?.()
 }
 
-/** Keep thumb at hover look while opening — overlay steals :hover and saved CSS would dim/gray. */
+/** Keep thumb fully visible while opening — overlay steals :hover. */
 const lockFlipSourceFull = (el: HTMLElement) => {
   el.style.transition = 'none'
   el.style.opacity = '1'
@@ -77,41 +77,17 @@ const hideFlipSource = (el: HTMLElement) => {
 const restoreFlipSource = () => {
   if (!import.meta.client || !flipSourceEl) return
   const el = flipSourceEl
-  const saved = !!el.closest('.product-card--saved') || !!el.closest('.grid-item--saved')
-
-  if (saved) {
-    // Flyer hands off at full opacity, then ease into the saved dim (0.1)
-    el.style.transition = 'none'
-    el.style.visibility = ''
-    el.style.opacity = '1'
-    el.style.filter = 'grayscale(0)'
-    void el.offsetWidth
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.style.transition = 'opacity 0.7s ease, filter 0.7s ease'
-        el.style.opacity = '0.1'
-        el.style.filter = 'grayscale(1)'
-        const cleanup = (event: TransitionEvent) => {
-          if (event.propertyName !== 'opacity') return
-          el.removeEventListener('transitionend', cleanup)
-          el.style.removeProperty('opacity')
-          el.style.removeProperty('filter')
-          el.style.removeProperty('transition')
-        }
-        el.addEventListener('transitionend', cleanup)
-      })
-    })
-    return
-  }
 
   // Instant handoff — keep visibility/opacity locked until styles clear together
   // so CSS opacity transitions can’t flash a hide→show
   el.style.transition = 'none'
   el.style.visibility = ''
   el.style.opacity = '1'
+  el.style.filter = 'grayscale(0)'
   void el.offsetWidth
   el.style.removeProperty('opacity')
   el.style.removeProperty('filter')
+  el.style.removeProperty('visibility')
   requestAnimationFrame(() => {
     if (el.style.transition === 'none') el.style.removeProperty('transition')
   })

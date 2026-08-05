@@ -294,16 +294,6 @@ const onToggle = (event?: MouseEvent) => {
   aspect-ratio: var(--product-card-aspect-ratio);
 }
 
-.product-card--saved .product-card__image {
-  opacity: 0.1;
-  filter: grayscale(1);
-}
-
-.product-card--saved:hover .product-card__image {
-  opacity: 1;
-  filter: grayscale(0);
-}
-
 .product-card__type-label {
   font-size: 15cqi;
   line-height: 0.95;
@@ -330,7 +320,8 @@ const onToggle = (event?: MouseEvent) => {
   pointer-events: none;
 }
 
-.product-card:hover .product-card__add {
+.product-card:hover .product-card__add,
+.product-card--saved .product-card__add {
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;

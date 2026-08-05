@@ -4240,8 +4240,6 @@ const flyIntoPile = async (payload: FlyPayload) => {
 
   /** Native CSS fade — GSAP opacity tweens fight `transition: opacity` on the thumb. */
   const fadeSourceBack = () => {
-    // PDP: restore full opacity. Grid thumbs: settle at 0.1 (hover brings them back).
-    const targetOpacity = productOverlayOpen.value ? '1' : '0.1'
     window.setTimeout(() => {
       const el = resolveFlySource()
       if (!el) return
@@ -4249,7 +4247,7 @@ const flyIntoPile = async (payload: FlyPayload) => {
       el.style.setProperty('transition', `opacity ${FLY_RETURN_FADE_MS}ms ease`)
       el.style.setProperty('opacity', '0')
       void el.offsetWidth
-      el.style.setProperty('opacity', targetOpacity)
+      el.style.setProperty('opacity', '1')
       fadeCycleControlBack(el)
       const handoff = () => {
         el.style.removeProperty('transition')
