@@ -21,6 +21,7 @@
       <!-- Selection piles + create slot (bottom-left) -->
       <div
         v-if="showRail"
+        ref="railRef"
         class="stack__rail"
         :class="{
           'stack__rail--hot': railHot,
@@ -649,7 +650,13 @@
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import type { BucketItem, SelectionEntry } from '~/composables/useBucket'
-import { productIdFromBucketId } from '~/composables/useBucket'
+import {
+  productIdFromBucketId,
+  hideCycleControl,
+  fadeCycleControlBack,
+  clearCycleControl,
+  FLY_RETURN_FADE_MS,
+} from '~/composables/useBucket'
 import type { SavedBoard, SelectionBoardEntry } from '~/composables/useBoards'
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
@@ -729,6 +736,7 @@ const pileEls = ref<Record<string, HTMLElement | null>>({})
 const pileWrapEls = ref<Record<string, HTMLElement | null>>({})
 const columnEls = ref<Record<string, HTMLElement | null>>({})
 const createSlotRef = ref<HTMLElement | null>(null)
+const railRef = ref<HTMLElement | null>(null)
 const railHot = ref(false)
 /** Fixed column geometry keyed by board id (viewport coords). */
 const columnLayouts = ref<
@@ -794,6 +802,9 @@ const PDP_CART_FADE_MS = 300
 const pdpFocusItemId = ref<string | null>(null)
 const FLIP_DURATION = 0.95
 const FLIP_STAGGER = 0.075
+/** Must mirror --stack-cell-pad in this component’s CSS (pile and grid share it) */
+const STACK_CELL_PAD_PCT = 17
+const STACK_CELL_PAD = `${STACK_CELL_PAD_PCT}%`
 const CELL_SCALE_MS = 280
 const UNDO_FADE_MS = 220
 /** Pause after scale-out before Undo appears */
@@ -1088,6 +1099,15 @@ const createPlusReady = ref(false)
 let railAnimToken = 0
 
 const createPlusVisible = computed(() => {
+  // While the cart is up the rail only exists to host the flip — a stale
+  // railHot from before the open would otherwise slide (+) in mid-close
+  if (
+    isOpen.value ||
+    stagePresent.value ||
+    isFlipping.value ||
+    keepPileForFlip.value
+  )
+    return false
   if (moodboards.value.length <= 1) return railHot.value
   return createPlusReady.value
 })
@@ -1342,6 +1362,8 @@ const shelveInactiveRail = () => {
   if (!import.meta.client) return
   railExpanded.value = false
   createPlusReady.value = false
+  // The rail unmounts under the pointer, so mouseleave never fires
+  railHot.value = false
   const duration = BACKDROP_OPEN_MS / 1000
   for (const el of inactiveRailEls()) {
     gsap.killTweensOf(el)
@@ -1962,7 +1984,7 @@ const stackCssVars = computed(() => {
   return {
     '--stack-cols': String(cols),
     '--stack-cell-size': size > 0 ? `${size}px` : `calc(100vw / ${cols})`,
-    '--stack-cell-pad': '17%',
+    '--stack-cell-pad': STACK_CELL_PAD,
   }
 })
 
@@ -2018,20 +2040,20 @@ const pileRestPose = (id: string, index: number, total: number, salt: string) =>
   return { x, y, rot }
 }
 
-/** Pad for pile landings — reads the rail’s 12% stack pad. */
+/** Pad for pile landings — reads the rail’s stack pad. */
 const readStackCellPad = (cellSize?: number) => {
   const size = cellSize || cellSizePx.value || 100
-  if (!import.meta.client) return size * 0.12
+  if (!import.meta.client) return (size * STACK_CELL_PAD_PCT) / 100
   const padEl =
     document.querySelector('.stack__rail') || document.querySelector('.stack')
-  if (!padEl) return size * 0.12
+  if (!padEl) return (size * STACK_CELL_PAD_PCT) / 100
   const raw = getComputedStyle(padEl).getPropertyValue('--stack-cell-pad').trim()
   if (raw.endsWith('%')) {
     const pct = Number.parseFloat(raw)
-    return (size * (Number.isFinite(pct) ? pct : 12)) / 100
+    return (size * (Number.isFinite(pct) ? pct : STACK_CELL_PAD_PCT)) / 100
   }
   const px = Number.parseFloat(raw)
-  return Number.isFinite(px) ? px : size * 0.12
+  return Number.isFinite(px) ? px : (size * STACK_CELL_PAD_PCT) / 100
 }
 
 /** Visual image size inside a padded square stack cell (natural aspect ratio). */
@@ -3486,22 +3508,8 @@ const fitPileCardsToCells = (opts?: {
         ? staggerDelayForBoardIndex(index, 'open')
         : staggerDelayForIndex(index, 'open')
 
-      // Selection: grow pad 12% → 17% so the image scales down into the grid
-      const img = opts?.boardStagger
-        ? null
-        : card.querySelector<HTMLElement>('.stack__pile-image')
-      if (img) {
-        gsap.fromTo(
-          img,
-          { padding: '12%' },
-          {
-            padding: '17%',
-            duration: FLIP_DURATION,
-            delay,
-            ease: 'power3.inOut',
-          },
-        )
-      }
+      // Pile and grid share --stack-cell-pad, so the inset needs no tween —
+      // Flip.fit scales the percentage padding along with the card.
       Flip.fit(card, media, {
         absolute: true,
         // Boards keep scale:false for crisp 1px borders (same as close)
@@ -3509,10 +3517,7 @@ const fitPileCardsToCells = (opts?: {
         duration: FLIP_DURATION,
         delay,
         ease: 'power3.inOut',
-        onComplete: () => {
-          if (img) gsap.set(img, { padding: '17%' })
-          done()
-        },
+        onComplete: done,
       })
     })
 
@@ -3540,6 +3545,8 @@ const fadeOutStage = async () => {
   // Clear cart-shelve leftovers, then re-park so multi-rail stays collapsed
   resetShelvedRail()
   parkInactiveRailBelow()
+  // Backdrop is gone, so the rail can finally report real hover again
+  railHot.value = !!railRef.value?.matches(':hover')
   keepBoardsPileForFlip.value = false
   unlockStackLayout()
   syncCellSize()
@@ -3607,7 +3614,7 @@ const openFromPile = async () => {
   await fitPileCardsToCells()
   // 3) Reveal cell media, hide Flip faces in the same beat, then unmount the
   // pile before rebinding flip ids. Ending isFlipping while cards are still
-  // visible lets rail CSS (--stack-cell-pad: 12%) flash before the 17% grid.
+  // visible lets the rail's pile pose flash before the grid takes over.
   cellsReady.value = true
   await nextTick()
   const landed = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
@@ -4113,39 +4120,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
-    // Shrink pad 17% → 12% while gathering so images grow back into the stack
-    cards.forEach((card) => {
-      const img = (card as HTMLElement).querySelector<HTMLElement>(
-        '.stack__pile-image',
-      )
-      if (!img) return
-      const id = (card as HTMLElement).getAttribute('data-flip-id') || ''
-      const index = Math.max(0, gridFlipIds.value.indexOf(id))
-      gsap.fromTo(
-        img,
-        { padding: '17%' },
-        {
-          padding: '12%',
-          duration: FLIP_DURATION,
-          delay: staggerDelayForIndex(index, 'close'),
-          ease: 'power3.inOut',
-        },
-      )
-    })
     // 2) Items gather back to the pile
     await runFlip(state, cards, { mode: 'close' })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, {
       clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
     })
-    gsap.set(
-      Array.from(cards).flatMap((card) =>
-        Array.from(
-          (card as HTMLElement).querySelectorAll<HTMLElement>('.stack__pile-image'),
-        ),
-      ),
-      { clearProps: 'padding' },
-    )
     void pileRef.value?.offsetHeight
   }
   // Re-enable CSS transitions before backdrop fade — otherwise a hover during
@@ -4172,7 +4152,7 @@ const requestClose = () => {
 
 type FlyPayload = NonNullable<ReturnType<typeof consumePendingFly>>
 
-const flyIntoPile = (payload: FlyPayload) => {
+const flyIntoPile = async (payload: FlyPayload) => {
   if (!import.meta.client) {
     clearArriving(payload.itemId)
     pileLandingId.value = null
@@ -4187,6 +4167,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       payload.source.style.removeProperty('opacity')
       payload.source.style.removeProperty('transition')
       payload.source.removeAttribute('data-bucket-fly')
+      clearCycleControl(payload.source)
     }
     return
   }
@@ -4197,9 +4178,13 @@ const flyIntoPile = (payload: FlyPayload) => {
     source.setAttribute('data-bucket-fly', payload.itemId)
     source.style.setProperty('transition', 'none')
     source.style.setProperty('opacity', '0')
+    hideCycleControl(source)
   }
 
-  // Match pile card structure (full cell + padded image) so handoff doesn’t pop size
+  // Match source crop (grid cover / PDP contain) so the first frame doesn’t pop
+  const sourceFit =
+    (source && getComputedStyle(source).objectFit) || 'cover'
+
   const wrap = document.createElement('div')
   Object.assign(wrap.style, {
     position: 'fixed',
@@ -4221,7 +4206,7 @@ const flyIntoPile = (payload: FlyPayload) => {
   Object.assign(flyerImg.style, {
     width: '100%',
     height: '100%',
-    objectFit: 'contain',
+    objectFit: sourceFit,
     objectPosition: 'center',
     padding: '0px',
     boxSizing: 'border-box',
@@ -4233,9 +4218,12 @@ const flyIntoPile = (payload: FlyPayload) => {
   document.body.appendChild(wrap)
 
   const destSize = Math.min(dest.width, dest.height)
-  const CELL_PAD = readStackCellPad(destSize)
   const destLeft = dest.left
   const destTop = dest.top
+
+  // Natural content box inside the square pile cell (same as return-to-pile)
+  const natural = await readImageNaturalSize(flyerImg, payload.imageUrl)
+  const fitted = fitStackContentSize(natural.w, natural.h, destSize)
 
   // Playful arch: rise, overshoot into the pile, then settle with inertia
   const midX = payload.from.left + (destLeft - payload.from.left) * 0.45
@@ -4258,10 +4246,11 @@ const flyIntoPile = (payload: FlyPayload) => {
       const el = resolveFlySource()
       if (!el) return
       gsap.killTweensOf(el)
-      el.style.setProperty('transition', 'opacity 2s ease')
+      el.style.setProperty('transition', `opacity ${FLY_RETURN_FADE_MS}ms ease`)
       el.style.setProperty('opacity', '0')
       void el.offsetWidth
       el.style.setProperty('opacity', targetOpacity)
+      fadeCycleControlBack(el)
       const handoff = () => {
         el.style.removeProperty('transition')
         el.style.removeProperty('opacity')
@@ -4276,7 +4265,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       window.setTimeout(() => {
         el.removeEventListener('transitionend', onEnd)
         handoff()
-      }, 2200)
+      }, FLY_RETURN_FADE_MS + 200)
     }, 550)
   }
 
@@ -4284,8 +4273,8 @@ const flyIntoPile = (payload: FlyPayload) => {
   // settledItems already includes the arriving card (hidden via CSS).
   const nextTotal = Math.max(settledItems.value.length, 1)
   const topT = nextTotal <= 1 ? 0 : 1
-  const landLeft = destLeft + (topT - 0.5) * 10
-  const landTop = destTop + (0.5 - topT) * 6
+  const landLeft = destLeft + (topT - 0.5) * 10 + (destSize - fitted.width) / 2
+  const landTop = destTop + (0.5 - topT) * 6 + (destSize - fitted.height) / 2
 
   gsap
     .timeline({
@@ -4300,7 +4289,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       },
     })
     .to(wrap, {
-      // Rise — keep source size
+      // Rise — keep source size / crop
       left: midX,
       top: midY,
       rotate: landRot * 0.45,
@@ -4310,22 +4299,13 @@ const flyIntoPile = (payload: FlyPayload) => {
     .to(
       wrap,
       {
-        // Mid-flight: cell footprint + dive
+        // Dive into the natural-ratio content box (not the square cell) so the
+        // cover crop opens smoothly — same idea as the PDP open Flip.
         left: landLeft,
         top: landTop + 4,
-        width: destSize,
-        height: destSize,
+        width: fitted.width,
+        height: fitted.height,
         rotate: overshootRot,
-        duration: 0.4,
-        ease: 'power2.inOut',
-      },
-      'dive',
-    )
-    .to(
-      flyerImg,
-      {
-        // Match .stack__pile-image padding so the bitmap matches the landed card
-        padding: CELL_PAD,
         duration: 0.4,
         ease: 'power2.inOut',
       },
@@ -4341,7 +4321,7 @@ const flyIntoPile = (payload: FlyPayload) => {
       'dive+=0.3',
     )
     .to(wrap, {
-      // Settle — position + rotation only (size/padding already final)
+      // Settle — position + rotation only (size already final)
       left: landLeft,
       top: landTop,
       rotate: landRot,
@@ -4633,10 +4613,10 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-/* Pile / boards stack — looser pad; Flip animates padding up to 17% into the grid */
+/* Pile / boards stack — same pad as the grid so Flip needs no padding tween */
 .stack__rail,
 .stack__boards-rail {
-  --stack-cell-pad: 12%;
+  --stack-cell-pad: 17%;
 }
 
 .stack--open {
@@ -4977,8 +4957,9 @@ onBeforeUnmount(() => {
 /* Expand hit area for fanned cards — leave the right edge clear for the (+) */
 .stack__pile::after {
   content: '';
-  position: absolute;
-  inset: -48px 0 -80px -56px;
+    position: absolute;
+    inset: var(--gutter);
+    opacity: 0;
 }
 
 /* Above stage backdrop/grid, below controls (selection Flip).

@@ -44,7 +44,7 @@
             <dd>{{ product.comCol }}</dd>
           </div>
           <div v-if="materials.length" class="pdp__spec pdp__spec--toggle">
-            <dt class="serif-italic">Materials</dt>
+            <dt class="serif-italic">Materiality</dt>
             <dd>
               <button type="button" class="pdp__disclosure" @click="showMaterials = !showMaterials">
                 Options <span class="pdp__disclosure-mark">{{ showMaterials ? '−' : '+' }}</span>
@@ -273,7 +273,11 @@ import { Flip } from 'gsap/Flip'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productSlug } from '~/composables/useProductCatalog'
-import { PRODUCT_OVERLAY_BACKDROP_CLOSE_MS } from '~/composables/useProductOverlay'
+import {
+  PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
+  PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS,
+  PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS,
+} from '~/composables/useProductOverlay'
 
 const props = withDefaults(
   defineProps<{
@@ -857,7 +861,7 @@ const downloadSpec = () => {
     product.value.style ? `Style: ${product.value.style}` : '',
     product.value.dimensions ? `Dimensions: ${product.value.dimensions}` : '',
     product.value.comCol ? `COM / COL: ${product.value.comCol}` : '',
-    materials.value.length ? `Materials: ${materials.value.join(', ')}` : '',
+    materials.value.length ? `Materiality: ${materials.value.join(', ')}` : '',
     product.value.finishes?.length ? `Finishes: ${product.value.finishes.join(', ')}` : '',
     '',
     product.value.description || '',
@@ -947,7 +951,6 @@ const runFlipOpen = async () => {
   }
 
   const sourceFit = getComputedStyle(source).objectFit || 'cover'
-  const heroFit = getComputedStyle(hero).objectFit || 'contain'
   Object.assign(flyer.style, {
     position: 'fixed',
     top: `${from.top}px`,
@@ -955,6 +958,8 @@ const runFlipOpen = async () => {
     width: `${from.width}px`,
     height: `${from.height}px`,
     margin: '0',
+    // Keep cover through the flight so the square crop opens into the
+    // natural frame instead of stretching via Flip scaleX/scaleY.
     objectFit: sourceFit,
     zIndex: '500',
     pointerEvents: 'none',
@@ -968,7 +973,7 @@ const runFlipOpen = async () => {
 
   // Backdrop fades in → hold → flyer scales → PDP UI
   const BACKDROP_FADE_MS = 350
-  const FLYER_PAUSE_MS = 350
+  const FLYER_PAUSE_MS = 100
   const waitMs = (ms: number) =>
     new Promise<void>((resolve) => {
       window.setTimeout(resolve, ms)
@@ -991,13 +996,15 @@ const runFlipOpen = async () => {
     width: dest.width,
     height: dest.height,
     borderRadius: '0px',
-    objectFit: heroFit,
   })
 
-  // Slightly slower expand with a soft landing
+  // Animate width/height (not scale) so the bitmap isn’t stretched — the
+  // cover crop simply reveals more of the image as the box finds its ratio.
   Flip.from(state, {
     duration: 0.7,
     ease: 'power2.inOut',
+    absolute: true,
+    scale: false,
     onComplete: () => {
       // Reveal hero under the flyer first so removing it can’t flash empty
       gsap.set(hero, { visibility: 'visible' })
@@ -1028,7 +1035,10 @@ const runFlipClose = async () => {
   }
 
   const UI_FADE_MS = 420
-  const BACKDROP_FADE_MS = PRODUCT_OVERLAY_BACKDROP_CLOSE_MS
+  // Flyer is position:fixed, so it must not outlive the veil — the grid is
+  // interactive again as soon as finishClose() runs and would scroll under it.
+  const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
+  const FLYER_FADE_MS = PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
   const waitMs = (ms: number) =>
     new Promise<void>((resolve) => {
       window.setTimeout(resolve, ms)
@@ -1080,22 +1090,53 @@ const runFlipClose = async () => {
       background: bg,
       opacity: '1',
       pointerEvents: 'none',
-      transition: `opacity ${BACKDROP_FADE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+      // Transition applied when the shared hold ends — stay solid until then
+      transition: 'none',
     })
     document.body.appendChild(veil)
     return veil
   }
 
-  const fadeVeilAndCleanup = (veil: HTMLElement, flyer?: HTMLElement) => {
-    requestAnimationFrame(() => {
+  /**
+   * Hold cream solid with the landed flyer, then fade both together.
+   * (Previously the veil eased from t=0 while the flyer held — so the flyer
+   * could finish disappearing while cream was still on screen.)
+   */
+  const fadeVeilAndCleanup = (veil: HTMLElement) => {
+    window.setTimeout(() => {
+      veil.style.transition = `opacity ${FLYER_FADE_MS}ms ${PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE}`
       requestAnimationFrame(() => {
         veil.style.opacity = '0'
       })
-    })
-    window.setTimeout(() => {
-      flyer?.remove()
-      veil.remove()
-    }, BACKDROP_FADE_MS)
+      window.setTimeout(() => {
+        veil.remove()
+      }, FLYER_FADE_MS + 32)
+    }, FLYER_HOLD_MS)
+  }
+
+  /** Fade the landed flyer in lockstep with the veil; drop early only if the grid scrolls. */
+  const dismissFlyer = (flyer: HTMLElement) => {
+    const scrollInputs = ['wheel', 'touchmove', 'scroll'] as const
+    let timer = 0
+    let dropped = false
+
+    const drop = () => {
+      if (dropped) return
+      dropped = true
+      window.clearTimeout(timer)
+      scrollInputs.forEach((type) => window.removeEventListener(type, drop, true))
+      flyer.remove()
+    }
+
+    scrollInputs.forEach((type) =>
+      window.addEventListener(type, drop, { capture: true, passive: true }),
+    )
+
+    timer = window.setTimeout(() => {
+      flyer.style.transition = `opacity ${FLYER_FADE_MS}ms ${PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE}`
+      flyer.style.opacity = '0'
+      timer = window.setTimeout(drop, FLYER_FADE_MS)
+    }, FLYER_HOLD_MS)
   }
 
   if (from.width < 2 || to.width < 2) {
@@ -1156,7 +1197,8 @@ const runFlipClose = async () => {
       source.style.filter = 'grayscale(0)'
       const veil = spawnCloseVeil()
       finishClose()
-      fadeVeilAndCleanup(veil, flyer)
+      fadeVeilAndCleanup(veil)
+      dismissFlyer(flyer)
     },
   })
 }
@@ -1360,7 +1402,7 @@ watch(
   flex-direction: column;
   align-items: stretch;
   gap: 1rem;
-  padding: 1.25rem var(--gutter) 1.5rem;
+  padding: 0;
   box-sizing: border-box;
   overscroll-behavior: contain;
   cursor: auto;

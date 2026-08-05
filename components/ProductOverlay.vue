@@ -13,7 +13,10 @@
           'product-overlay--backdrop': backdropReady,
           'product-overlay--closing': closingFlip,
         }"
-        :style="{ '--backdrop-close-ms': `${PRODUCT_OVERLAY_BACKDROP_CLOSE_MS}ms` }"
+        :style="{
+          '--backdrop-close-ms': `${PRODUCT_OVERLAY_BACKDROP_CLOSE_MS}ms`,
+          '--backdrop-close-ease': PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
+        }"
         role="dialog"
         aria-modal="true"
         aria-label="Product detail"
@@ -34,7 +37,10 @@
 </template>
 
 <script setup lang="ts">
-import { PRODUCT_OVERLAY_BACKDROP_CLOSE_MS } from '~/composables/useProductOverlay'
+import {
+  PRODUCT_OVERLAY_BACKDROP_CLOSE_MS,
+  PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
+} from '~/composables/useProductOverlay'
 
 const {
   openSlug,
@@ -99,9 +105,9 @@ onUnmounted(() => {
   transition: opacity 0.35s ease;
 }
 
-/* Slower fade-out after the close flyer lands — duration from PRODUCT_OVERLAY_BACKDROP_CLOSE_MS */
+/* Fade-out after the close flyer lands — timing from PRODUCT_OVERLAY_BACKDROP_CLOSE_MS */
 .product-overlay--closing .product-overlay__backdrop {
-  transition: opacity var(--backdrop-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity var(--backdrop-close-ms) var(--backdrop-close-ease);
 }
 
 /* Fades in before the flyer moves; flyer is body-level z-index 500 above this */

@@ -102,9 +102,22 @@ const gridItems = computed(() => {
   return source.filter((item) => !isPrecraftedItem(item))
 })
 
+/** Spirit / Origin stay on their own chips — omit from All. */
+const ALL_EXCLUDED_TYPES = new Set(['spirit', 'origin'])
+
 const visibleItems = computed(() => {
   const key = filterKey(activeFilter.value)
-  if (key === 'all') return gridItems.value
+  if (key === 'all') {
+    return gridItems.value.filter((item) => {
+      const cats = [
+        item.category,
+        ...(item.categories || []),
+      ]
+        .filter(Boolean)
+        .map((c) => String(c).toLowerCase().replace(/[^a-z]/g, ''))
+      return !cats.some((c) => ALL_EXCLUDED_TYPES.has(c))
+    })
+  }
   return gridItems.value.filter((item) => (item.categories || []).includes(key))
 })
 

@@ -56,6 +56,44 @@ const LEGACY_STORAGE_KEY = 'sba-bucket'
 /** Survives refresh while the board composer is open. */
 const MOODBOARD_SESSION_KEY = 'sba-moodboard-session'
 const UNDO_REMOVE_MS = 5000
+/** Thumb fade back in after a fly lands — arrows ride the same curve. */
+export const FLY_RETURN_FADE_MS = 2000
+
+/** `<>` arrows sit outside the thumb, so they need hiding alongside it during a fly. */
+const cycleControlFor = (source: HTMLElement | null) => {
+  const card = source?.closest('.grid-item, .product-card')
+  return (
+    (card?.querySelector('.grid-item__cycle, .product-card__cycle') as HTMLElement | null) ||
+    null
+  )
+}
+
+export const hideCycleControl = (source: HTMLElement | null) => {
+  const el = cycleControlFor(source)
+  if (!el) return
+  el.style.setProperty('transition', 'none')
+  el.style.setProperty('opacity', '0')
+  el.style.setProperty('pointer-events', 'none')
+}
+
+/** Drop the inline opacity so hover decides the target — 1 when hovered, 0 when not. */
+export const fadeCycleControlBack = (source: HTMLElement | null) => {
+  const el = cycleControlFor(source)
+  if (!el) return
+  el.style.setProperty('transition', `opacity ${FLY_RETURN_FADE_MS}ms ease`)
+  void el.offsetWidth
+  el.style.removeProperty('opacity')
+  el.style.removeProperty('pointer-events')
+  window.setTimeout(() => el.style.removeProperty('transition'), FLY_RETURN_FADE_MS + 200)
+}
+
+export const clearCycleControl = (source: HTMLElement | null) => {
+  const el = cycleControlFor(source)
+  if (!el) return
+  el.style.removeProperty('transition')
+  el.style.removeProperty('opacity')
+  el.style.removeProperty('pointer-events')
+}
 
 export type MoodboardSessionDraft = {
   open: true
@@ -749,6 +787,7 @@ export const useBucket = () => {
         opts.source.setAttribute('data-bucket-fly', normalized.id)
         opts.source.style.setProperty('transition', 'none')
         opts.source.style.setProperty('opacity', '0')
+        hideCycleControl(opts.source)
         pendingFly.value = {
           itemId: normalized.id,
           imageUrl: normalized.imageUrl,

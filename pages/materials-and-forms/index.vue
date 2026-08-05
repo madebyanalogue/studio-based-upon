@@ -44,53 +44,67 @@
           />
         </label>
 
-        <div ref="materialDropdown" class="filter-dropdown">
-          <button
-            type="button"
-            class="filter-dropdown__toggle"
-            :class="{ 'filter-dropdown__toggle--active': activeMaterials.length }"
-            :aria-expanded="openDropdown === 'material'"
-            @click="toggleDropdown('material')"
-          >
-            Material<span v-if="activeMaterials.length" class="filter-dropdown__count">{{ activeMaterials.length }}</span>
-            <span class="filter-dropdown__caret" aria-hidden="true">{{ openDropdown === 'material' ? '−' : '+' }}</span>
-          </button>
-          <div v-if="openDropdown === 'material'" class="filter-dropdown__menu">
+        <div ref="facetsEl" class="products__facets">
+          <div v-for="facet in facets" :key="facet.id" class="filter-dropdown">
             <button
-              v-for="material in materialFilters"
-              :key="material.value"
               type="button"
-              class="filter-dropdown__option"
-              :class="{ 'filter-dropdown__option--active': activeMaterials.includes(material.value) }"
-              @click="toggle('material', material.value)"
+              class="filter-dropdown__toggle"
+              :class="{ 'filter-dropdown__toggle--active': facet.active.length }"
+              :aria-expanded="openDropdown === facet.id"
+              @click="toggleDropdown(facet.id)"
             >
-              {{ material.label }}
+              {{ facet.label }}<span
+                v-if="facet.mode === 'single' && facet.active.length"
+                class="filter-dropdown__value"
+              >{{ activeOptionLabel(facet) }}</span>
+              <span
+                v-else-if="facet.active.length"
+                class="filter-dropdown__count"
+              >{{ facet.active.length }}</span>
+              <span class="filter-dropdown__caret" aria-hidden="true">{{ openDropdown === facet.id ? '−' : '+' }}</span>
             </button>
-          </div>
-        </div>
-
-        <div ref="colourDropdown" class="filter-dropdown">
-          <button
-            type="button"
-            class="filter-dropdown__toggle"
-            :class="{ 'filter-dropdown__toggle--active': activeColours.length }"
-            :aria-expanded="openDropdown === 'colour'"
-            @click="toggleDropdown('colour')"
-          >
-            Colour<span v-if="activeColours.length" class="filter-dropdown__count">{{ activeColours.length }}</span>
-            <span class="filter-dropdown__caret" aria-hidden="true">{{ openDropdown === 'colour' ? '−' : '+' }}</span>
-          </button>
-          <div v-if="openDropdown === 'colour'" class="filter-dropdown__menu">
-            <button
-              v-for="colour in colourFilters"
-              :key="colour.value"
-              type="button"
-              class="filter-dropdown__option"
-              :class="{ 'filter-dropdown__option--active': activeColours.includes(colour.value) }"
-              @click="toggle('colour', colour.value)"
+            <div
+              v-if="openDropdown === facet.id"
+              class="filter-dropdown__menu"
+              :role="facet.mode === 'single' ? 'radiogroup' : undefined"
+              :aria-label="facet.label"
             >
-              {{ colour.label }}
-            </button>
+              <button
+                v-if="facet.mode === 'single' && facet.options.length"
+                type="button"
+                role="radio"
+                :aria-checked="!facet.active.length"
+                class="filter-dropdown__option filter-dropdown__option--radio"
+                :class="{ 'filter-dropdown__option--active': !facet.active.length }"
+                @click="clearFacet(facet.id)"
+              >
+                <span class="filter-dropdown__radio" aria-hidden="true" />
+                All
+              </button>
+              <button
+                v-for="option in facet.options"
+                :key="option.value"
+                type="button"
+                :role="facet.mode === 'single' ? 'radio' : 'menuitemcheckbox'"
+                :aria-checked="facet.active.includes(option.value)"
+                class="filter-dropdown__option"
+                :class="{
+                  'filter-dropdown__option--active': facet.active.includes(option.value),
+                  'filter-dropdown__option--radio': facet.mode === 'single',
+                }"
+                @click="toggle(facet.id, option.value)"
+              >
+                <span
+                  v-if="facet.mode === 'single'"
+                  class="filter-dropdown__radio"
+                  aria-hidden="true"
+                />
+                {{ option.label }}
+              </button>
+              <p v-if="!facet.options.length" class="filter-dropdown__empty">
+                Nothing tagged yet
+              </p>
+            </div>
           </div>
         </div>
 
@@ -143,7 +157,7 @@
         <ProductCard
           v-for="item in items"
           :key="item._id"
-          :class="{ 'is-filtered-out': visibleIds.size > 0 && !visibleIds.has(item._id) }"
+          :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(item._id) }"
           :item="item"
           :image-url="cardImage(item)"
           :order-label="orderLabel(item._id)"
@@ -161,16 +175,26 @@
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import {
-  PRODUCT_MATERIAL_FILTERS,
-  PRODUCT_COLOUR_FILTERS,
   libraryFilterKey,
   parseLibraryFilterKey,
   type FormalItem,
 } from '~/composables/demoData'
 
+type FacetId = 'series' | 'feature' | 'materiality' | 'colour'
+
+type FacetView = {
+  id: FacetId
+  label: string
+  mode: 'single' | 'multi'
+  options: { value: string; label: string }[]
+  active: string[]
+}
+
 type LibraryPrefs = {
   filter: string
-  materials: string[]
+  series: string[]
+  feature: string[]
+  materiality: string[]
   colours: string[]
   search: string
   columns: number
@@ -219,8 +243,6 @@ useHead(() => {
 const cardImage = (item: FormalItem) => imageUrl(item.image, 900)
 const filterKey = libraryFilterKey
 
-const materialFilters = PRODUCT_MATERIAL_FILTERS
-const colourFilters = PRODUCT_COLOUR_FILTERS
 /** Column counts — Wide ≈ Codrops demo 75% (10 cols). */
 const gridSizes = [
   { columns: 3, label: '3', ariaLabel: 'Show 3 columns' },
@@ -234,17 +256,22 @@ const allowedColumns = gridSizes.map((s) => s.columns)
 const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
   default: () => ({
     filter: '',
-    materials: [],
+    series: [],
+    feature: [],
+    materiality: [],
     colours: [],
     search: '',
-    columns: 6,
+    columns: 5,
   }),
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
 
 const activeFilter = ref(prefs.value.filter || '')
-const activeMaterials = ref<string[]>([...(prefs.value.materials || [])])
+// Series is single-select; clamp in case an older cookie stored several.
+const activeSeries = ref<string[]>((prefs.value.series || []).slice(0, 1))
+const activeFeatures = ref<string[]>([...(prefs.value.feature || [])])
+const activeMateriality = ref<string[]>([...(prefs.value.materiality || [])])
 const activeColours = ref<string[]>([...(prefs.value.colours || [])])
 const searchQuery = ref(prefs.value.search || '')
 /** Applied to the grid after typing pauses */
@@ -253,7 +280,7 @@ const SEARCH_DEBOUNCE_MS = 350
 const columns = ref(
   allowedColumns.includes(prefs.value.columns as (typeof allowedColumns)[number])
     ? prefs.value.columns
-    : 6,
+    : 5,
 )
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
@@ -265,6 +292,8 @@ const flipModes = [
 ]
 const flipMode = ref<FlipMode>('default')
 const visibleIds = ref<Set<string>>(new Set())
+/** Distinguishes "no matches" from "not yet computed" — an empty set means both. */
+const visibilitySeeded = ref(false)
 const visibleCount = computed(() => visibleIds.value.size)
 let filterTransitionsReady = false
 let searchFlipTimer: ReturnType<typeof setTimeout> | null = null
@@ -438,11 +467,21 @@ const transitionFilter = async (nextIds: Set<string>) => {
 }
 
 watch(
-  [activeFilter, activeMaterials, activeColours, searchQuery, columns],
+  [
+    activeFilter,
+    activeSeries,
+    activeFeatures,
+    activeMateriality,
+    activeColours,
+    searchQuery,
+    columns,
+  ],
   () => {
     prefs.value = {
       filter: activeFilter.value,
-      materials: [...activeMaterials.value],
+      series: [...activeSeries.value],
+      feature: [...activeFeatures.value],
+      materiality: [...activeMateriality.value],
       colours: [...activeColours.value],
       search: searchQuery.value,
       columns: columns.value,
@@ -454,28 +493,21 @@ watch(
 const gridRevealed = ref(false)
 let revealTimer: ReturnType<typeof setTimeout> | null = null
 
-const openDropdown = ref<'material' | 'colour' | null>(null)
-const materialDropdown = ref<HTMLElement | null>(null)
-const colourDropdown = ref<HTMLElement | null>(null)
+const openDropdown = ref<FacetId | null>(null)
+const facetsEl = ref<HTMLElement | null>(null)
 
-const toggleDropdown = (name: 'material' | 'colour') => {
-  openDropdown.value = openDropdown.value === name ? null : name
+const toggleDropdown = (id: FacetId) => {
+  openDropdown.value = openDropdown.value === id ? null : id
 }
 
 const onDocumentClick = (event: MouseEvent) => {
-  const target = event.target as Node
-  if (
-    materialDropdown.value?.contains(target) ||
-    colourDropdown.value?.contains(target)
-  ) {
-    return
-  }
+  if (facetsEl.value?.contains(event.target as Node)) return
   openDropdown.value = null
 }
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
-  visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
+  seedVisibility()
   // Allow one frame so initial filter state paints without a Flip.
   requestAnimationFrame(() => {
     filterTransitionsReady = true
@@ -494,16 +526,105 @@ onBeforeUnmount(() => {
   }
 })
 
-const activeFilters = {
-  material: activeMaterials,
+const activeFacets = {
+  series: activeSeries,
+  feature: activeFeatures,
+  materiality: activeMateriality,
   colour: activeColours,
 } as const
 
-const toggle = (kind: keyof typeof activeFilters, value: string) => {
-  const list = activeFilters[kind]
+/** Values on an item that a given facet filters against. */
+const facetValues = (item: FormalItem, id: FacetId): string[] => {
+  if (id === 'series') return item.series ? [item.series] : []
+  if (id === 'feature') return item.feature ? [item.feature] : []
+  if (id === 'materiality') return item.materials || []
+  return item.colours || []
+}
+
+/** Sanity taxonomy titles arrive display-ready; demo/legacy slugs need casing. */
+const optionLabel = (value: string) =>
+  value === value.toLowerCase()
+    ? value.replace(/\b[a-z]/g, (char) => char.toUpperCase())
+    : value
+
+const facetOptions = (id: FacetId) => {
+  const labels = new Map<string, string>()
+  for (const item of items.value) {
+    for (const value of facetValues(item, id)) {
+      const trimmed = String(value || '').trim()
+      if (trimmed && !labels.has(trimmed)) labels.set(trimmed, optionLabel(trimmed))
+    }
+  }
+  return [...labels.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+const seriesOptions = computed(() => facetOptions('series'))
+const featureOptions = computed(() => facetOptions('feature'))
+const materialityOptions = computed(() => facetOptions('materiality'))
+const colourOptions = computed(() => facetOptions('colour'))
+
+const facets = computed<FacetView[]>(() => [
+  {
+    id: 'series' as const,
+    label: 'Series',
+    mode: 'single' as const,
+    options: seriesOptions.value,
+    active: activeSeries.value,
+  },
+  {
+    id: 'feature' as const,
+    label: 'Feature',
+    mode: 'multi' as const,
+    options: featureOptions.value,
+    active: activeFeatures.value,
+  },
+  {
+    id: 'materiality' as const,
+    label: 'Materiality',
+    mode: 'multi' as const,
+    options: materialityOptions.value,
+    active: activeMateriality.value,
+  },
+  {
+    id: 'colour' as const,
+    label: 'Colour',
+    mode: 'multi' as const,
+    options: colourOptions.value,
+    active: activeColours.value,
+  },
+])
+
+/** Single-select facets hold at most one value; the array shape stays uniform. */
+const SINGLE_SELECT_FACETS = new Set<FacetId>(['series'])
+
+const activeOptionLabel = (facet: FacetView) =>
+  facet.options.find((option) => option.value === facet.active[0])?.label ||
+  facet.active[0] ||
+  ''
+
+const toggle = (id: FacetId, value: string) => {
+  const list = activeFacets[id]
+  if (SINGLE_SELECT_FACETS.has(id)) {
+    list.value = list.value[0] === value ? [] : [value]
+    openDropdown.value = null
+    return
+  }
   list.value = list.value.includes(value)
     ? list.value.filter((v) => v !== value)
     : [...list.value, value]
+}
+
+const clearFacet = (id: FacetId) => {
+  activeFacets[id].value = []
+  openDropdown.value = null
+}
+
+const matchesFacet = (item: FormalItem, id: FacetId) => {
+  const selected = activeFacets[id].value
+  if (!selected.length) return true
+  return facetValues(item, id).some((value) => selected.includes(value))
 }
 
 const matchesType = (item: FormalItem, type: string) => {
@@ -513,11 +634,33 @@ const matchesType = (item: FormalItem, type: string) => {
   )
 }
 
+/** Spirit / Origin stay on their own chips — omit from All. */
+const ALL_EXCLUDED_TYPES = ['spirit', 'origin'] as const
+
+const slugish = (value: string) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+const matchesMaterialityFilter = (item: FormalItem, value: string) => {
+  const target = slugish(value)
+  const targetLower = String(value || '').toLowerCase()
+  return (item.materials || []).some((material) => {
+    const title = String(material || '')
+    return slugish(title) === target || title.toLowerCase() === targetLower
+  })
+}
+
 const matchesPageFilter = (item: FormalItem, key: string) => {
-  if (!key) return true
+  if (!key) {
+    return !ALL_EXCLUDED_TYPES.some((type) => matchesType(item, type))
+  }
   const parsed = parseLibraryFilterKey(key)
   if (!parsed) return true
   if (parsed.kind === 'type') return matchesType(item, parsed.value)
+  if (parsed.kind === 'materiality') return matchesMaterialityFilter(item, parsed.value)
   return (item.tags || []).includes(parsed.value)
 }
 
@@ -526,21 +669,22 @@ const filteredItems = computed(() => {
 
   return items.value.filter((item) => {
     const pageMatch = matchesPageFilter(item, activeFilter.value)
-    const materialMatch =
-      !activeMaterials.value.length ||
-      (item.materials || []).some((m) => activeMaterials.value.includes(m))
-    const colourMatch =
-      !activeColours.value.length ||
-      (item.colours || []).some((c) => activeColours.value.includes(c))
+    const facetMatch =
+      matchesFacet(item, 'series') &&
+      matchesFacet(item, 'feature') &&
+      matchesFacet(item, 'materiality') &&
+      matchesFacet(item, 'colour')
     const searchMatch =
       !query ||
       item.title.toLowerCase().includes(query) ||
       (item.category || '').toLowerCase().includes(query) ||
       (item.type || '').toLowerCase().includes(query) ||
+      (item.series || '').toLowerCase().includes(query) ||
+      (item.feature || '').toLowerCase().includes(query) ||
       (item.tags || []).some((t) => t.toLowerCase().includes(query)) ||
       (item.materials || []).some((m) => m.toLowerCase().includes(query)) ||
       (item.colours || []).some((c) => c.toLowerCase().includes(query))
-    return pageMatch && materialMatch && colourMatch && searchMatch
+    return pageMatch && facetMatch && searchMatch
   })
 })
 
@@ -548,13 +692,23 @@ const filteredIdSet = computed(
   () => new Set(filteredItems.value.map((item) => item._id)),
 )
 
-// Seed visibility before first paint of client filters.
-if (!visibleIds.value.size && filteredItems.value.length) {
+const seedVisibility = () => {
   visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
+  visibilitySeeded.value = true
 }
 
+// Seed visibility before first paint so SSR markup already reflects saved filters.
+seedVisibility()
+
 watch(
-  [activeFilter, activeMaterials, activeColours, debouncedSearchQuery],
+  [
+    activeFilter,
+    activeSeries,
+    activeFeatures,
+    activeMateriality,
+    activeColours,
+    debouncedSearchQuery,
+  ],
   () => {
     void transitionFilter(filteredIdSet.value)
   },
@@ -571,9 +725,7 @@ watch(searchQuery, (value) => {
 watch(
   items,
   () => {
-    if (!filterTransitionsReady) {
-      visibleIds.value = new Set(filteredItems.value.map((item) => item._id))
-    }
+    if (!filterTransitionsReady) seedVisibility()
   },
   { deep: true },
 )
@@ -647,8 +799,16 @@ useHead(() => ({
 
 .products__tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1.5rem;
+}
+
+.products__facets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
 }
 
 .products__search {
@@ -728,12 +888,22 @@ useHead(() => ({
   color: var(--muted);
 }
 
+.filter-dropdown__value {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--charcoal);
+}
+
 .filter-dropdown__menu {
   position: absolute;
   top: calc(100% + 0.75rem);
   right: 0;
   z-index: 60;
   min-width: 11rem;
+  max-height: 18rem;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 0.5rem;
@@ -765,6 +935,46 @@ useHead(() => ({
 .filter-dropdown__option--active::after {
   content: '✓';
   float: right;
+}
+
+.filter-dropdown__option--radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-dropdown__option--radio::after {
+  content: none;
+}
+
+.filter-dropdown__radio {
+  position: relative;
+  flex-shrink: 0;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.6;
+}
+
+.filter-dropdown__option--radio.filter-dropdown__option--active .filter-dropdown__radio {
+  opacity: 1;
+}
+
+.filter-dropdown__option--radio.filter-dropdown__option--active
+  .filter-dropdown__radio::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.filter-dropdown__empty {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
 }
 
 .products__grid-size {

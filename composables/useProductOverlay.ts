@@ -18,8 +18,16 @@ export type ProductReturnImage = {
   bucketItemId?: string
 }
 
-/** Close backdrop fade — CSS + finishClose timeout must share this */
-export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS = 1500
+/** Close flyer sits over the veil after landing, then fades out. */
+export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 260
+export const PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS = 300
+
+/** Close backdrop fade — CSS + finishClose timeout must share this. Ends with the flyer. */
+export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS =
+  PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS + PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
+
+/** Ease — shared by flyer + cream veil after the hold */
+export const PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE = 'cubic-bezier(0.55, 0.055, 0.675, 0.19)'
 
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null

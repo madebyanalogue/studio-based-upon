@@ -12,8 +12,10 @@ export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
   category,
   categories,
   tags,
-  materials,
-  colours,
+  "series": series->title,
+  "feature": feature->title,
+  "materials": materiality[]->title,
+  "colours": colours[]->title,
   image { asset-> { _id, url } },
   gallery[] { asset-> { _id, url } },
   spiritGallery[] { asset-> { _id, url } },
@@ -43,7 +45,7 @@ const LEGACY_FORM_TAGS = new Set([
   'liquid metal',
 ])
 
-const PRIMARY_TYPES = new Set(['forms', 'surface', 'spirit', 'origin'])
+const PRIMARY_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'origin'])
 
 /** Normalize Sanity or demo library documents into a shared shape. */
 export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem => {
@@ -76,6 +78,8 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
 
   const image = item.image as FormalItem['image']
   const linkType = (item.linkType as string) || 'none'
+  const series = String((item.series as string) || '').trim()
+  const feature = String((item.feature as string) || '').trim()
 
   return {
     _id: String(item._id || ''),
@@ -86,6 +90,8 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     category,
     categories,
     tags,
+    series: series || undefined,
+    feature: feature || undefined,
     materials: (item.materials as string[]) || [],
     colours: (item.colours as string[]) || [],
     image: image || { asset: { url: '' } },
@@ -120,6 +126,8 @@ export const toDiscoveryItem = (item: LibraryItem) => ({
   spiritGallery: item.spiritGallery || [],
   linkType: item.linkType || 'none',
   externalUrl: item.externalUrl,
+  series: item.series,
+  feature: item.feature,
   materials: item.materials,
   colours: item.colours,
 })

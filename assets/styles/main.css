@@ -26,20 +26,21 @@
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 4px;
   --thumb-ctrl-blend: normal;
-  --thumb-radius: 2px;
+  --thumb-radius: 0px;
   --undo-remove-ms: 5s;
 
 
   --card-pad: 0;
-  --card-gap: 0px 20px;
-  --title-pad: 20px var(--card-pad) 30px;
+  --card-gap: 0px 10px;
+  --title-pad: 20px var(--card-pad) 20px;
+  --product-card-aspect-ratio: 1;
 
   color-scheme: light;
 }
 
 @media (min-width: 768px) {
   :root {
-    --card-gap: 0px 40px;
+    --card-gap: 0px 20px;
   }
 }
 

@@ -11,7 +11,12 @@ export const useSiteSettings = () => {
     copyright,
     libraryFilters[] {
       filter,
-      label
+      kind,
+      type,
+      tag,
+      label,
+      "materialitySlug": materiality->slug.current,
+      "materialityTitle": materiality->title
     },
     headerMenu-> {
       title,

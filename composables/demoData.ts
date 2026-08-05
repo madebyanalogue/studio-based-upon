@@ -1,4 +1,11 @@
-export const DEFAULT_FILTERS = ['All', 'Forms', 'Surface', 'Spirit', 'Origin']
+export const DEFAULT_FILTERS = [
+  'All',
+  'Forms',
+  'Surface',
+  'Decorative Artwork',
+  'Spirit',
+  'Origin',
+]
 
 export const filterKey = (label: string) => label.toLowerCase().replace(/[^a-z]/g, '')
 
@@ -14,6 +21,8 @@ export type FormalItem = {
   type: string
   categories?: string[]
   tags?: string[]
+  series?: string
+  feature?: string
   materials: string[]
   colours: string[]
   image: { asset: { url: string } }
@@ -41,6 +50,15 @@ const TYPE_POOL = ['forms', 'surface', 'spirit', 'origin'] as const
 const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquidmetal'] as const
 const MATERIAL_POOL = ['gold', 'bronze', 'silver', 'steel', 'glass', 'stone']
 const COLOUR_POOL = ['gold', 'bronze', 'silver', 'pink', 'charcoal', 'ivory']
+const SERIES_POOL = ['Twist', 'Earth Summer', 'Camona', 'Patina', 'Strata']
+const FEATURE_POOL = [
+  'Dining Table',
+  'Console',
+  'Wall Panel',
+  'Screen',
+  'Architectural Surface',
+  'Seating',
+]
 
 const seededImage = (seed: string) => ({
   asset: { url: `https://picsum.photos/seed/sba-${seed}/900/900` },
@@ -53,6 +71,8 @@ const pickFrom = (pool: string[], index: number, offset = 0) => {
 }
 
 const pickType = (index: number) => TYPE_POOL[index % TYPE_POOL.length]
+
+const pickOne = (pool: string[], index: number) => pool[index % pool.length]
 
 const pickFormTags = (index: number, type: string) => {
   if (type !== 'forms') return []
@@ -71,6 +91,8 @@ const buildProducts = (): FormalItem[] => {
       itemType: 'product',
       type,
       tags: pickFormTags(i, type),
+      series: pickOne(SERIES_POOL, i),
+      feature: pickOne(FEATURE_POOL, i),
       materials: pickFrom(MATERIAL_POOL, i),
       colours: pickFrom(COLOUR_POOL, i, 1),
       image: seededImage(`p${i + 1}`),
@@ -86,6 +108,8 @@ const buildProducts = (): FormalItem[] => {
       itemType: 'texture',
       type,
       tags: pickFormTags(i + 2, type),
+      series: pickOne(SERIES_POOL, i + 2),
+      feature: pickOne(FEATURE_POOL, i + 3),
       materials: pickFrom(MATERIAL_POOL, i + 1),
       colours: pickFrom(COLOUR_POOL, i + 2),
       image: seededImage(`t${i + 1}`),
@@ -101,6 +125,8 @@ const buildProducts = (): FormalItem[] => {
       itemType: 'shape',
       type,
       tags: pickFormTags(i + 1, type),
+      series: pickOne(SERIES_POOL, i + 1),
+      feature: pickOne(FEATURE_POOL, i + 2),
       materials: pickFrom(MATERIAL_POOL, i + 4),
       colours: pickFrom(COLOUR_POOL, i + 3),
       image: seededImage(`s${i + 1}`),
@@ -132,6 +158,7 @@ export const DEMO_PRODUCTS: FormalItem[] = buildProducts()
 export const PRODUCT_TYPE_FILTERS = [
   { label: 'Forms', value: 'forms' },
   { label: 'Surface', value: 'surface' },
+  { label: 'Decorative Artwork', value: 'decorative' },
   { label: 'Spirit', value: 'spirit' },
   { label: 'Origin', value: 'origin' },
 ]
@@ -154,38 +181,79 @@ export const DEFAULT_LIBRARY_PAGE_FILTERS = [
 ]
 
 export type LibraryPageFilter = {
-  kind: 'type' | 'tag'
+  kind: 'type' | 'tag' | 'materiality'
   value: string
   label: string
 }
 
-export const parseLibraryFilterKey = (key: string): { kind: 'type' | 'tag'; value: string } | null => {
-  const [kind, value] = String(key || '').split(':')
-  if ((kind !== 'type' && kind !== 'tag') || !value) return null
+export const parseLibraryFilterKey = (
+  key: string,
+): { kind: 'type' | 'tag' | 'materiality'; value: string } | null => {
+  const [kind, ...rest] = String(key || '').split(':')
+  const value = rest.join(':')
+  if ((kind !== 'type' && kind !== 'tag' && kind !== 'materiality') || !value) return null
   return { kind, value }
 }
 
 export const libraryFilterKey = (filter: Pick<LibraryPageFilter, 'kind' | 'value'>) =>
   `${filter.kind}:${filter.value}`
 
+type LibraryFilterEntry = {
+  filter?: string
+  kind?: string
+  type?: string
+  tag?: string
+  label?: string
+  materialitySlug?: string
+  materialityTitle?: string
+}
+
 export const resolveLibraryPageFilters = (
-  entries?: { filter?: string; label?: string }[] | null,
+  entries?: LibraryFilterEntry[] | null,
 ): LibraryPageFilter[] => {
   if (!Array.isArray(entries) || !entries.length) return DEFAULT_LIBRARY_PAGE_FILTERS
 
+  const defaults = [
+    ...PRODUCT_TYPE_FILTERS.map((f) => ({ ...f, kind: 'type' as const })),
+    ...PRODUCT_FORM_TAG_FILTERS.map((f) => ({ ...f, kind: 'tag' as const })),
+  ]
+
   const resolved = entries
     .map((entry) => {
+      // New shape: kind + type/tag/materiality reference fields
+      if (entry.kind === 'type' && entry.type) {
+        const match = defaults.find((f) => f.kind === 'type' && f.value === entry.type)
+        return {
+          kind: 'type' as const,
+          value: entry.type,
+          label: entry.label?.trim() || match?.label || entry.type,
+        }
+      }
+      if (entry.kind === 'tag' && entry.tag) {
+        const match = defaults.find((f) => f.kind === 'tag' && f.value === entry.tag)
+        return {
+          kind: 'tag' as const,
+          value: entry.tag,
+          label: entry.label?.trim() || match?.label || entry.tag,
+        }
+      }
+      if (entry.kind === 'materiality' && (entry.materialitySlug || entry.materialityTitle)) {
+        const value = entry.materialitySlug || entry.materialityTitle || ''
+        return {
+          kind: 'materiality' as const,
+          value,
+          label: entry.label?.trim() || entry.materialityTitle || value,
+        }
+      }
+
+      // Legacy shape: filter: "type:forms" | "tag:furniture" | "materiality:liquid-metal"
       const parsed = parseLibraryFilterKey(entry.filter || '')
       if (!parsed) return null
-      const defaults = [
-        ...PRODUCT_TYPE_FILTERS.map((f) => ({ ...f, kind: 'type' as const })),
-        ...PRODUCT_FORM_TAG_FILTERS.map((f) => ({ ...f, kind: 'tag' as const })),
-      ]
       const match = defaults.find((f) => f.kind === parsed.kind && f.value === parsed.value)
       return {
         kind: parsed.kind,
         value: parsed.value,
-        label: entry.label?.trim() || match?.label || parsed.value,
+        label: entry.label?.trim() || match?.label || entry.materialityTitle || parsed.value,
       }
     })
     .filter(Boolean) as LibraryPageFilter[]
@@ -205,15 +273,6 @@ export const isPrecraftedItem = (item: {
     return key === 'precrafted'
   })
 }
-
-export const PRODUCT_MATERIAL_FILTERS = [
-  { label: 'Gold', value: 'gold' },
-  { label: 'Bronze', value: 'bronze' },
-  { label: 'Silver', value: 'silver' },
-  { label: 'Steel', value: 'steel' },
-  { label: 'Glass', value: 'glass' },
-  { label: 'Stone', value: 'stone' },
-]
 
 export const PRODUCT_COLOUR_FILTERS = [
   { label: 'Gold', value: 'gold' },

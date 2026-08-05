@@ -291,6 +291,7 @@ const onToggle = (event?: MouseEvent) => {
   display: block;
   pointer-events: none;
   transition: opacity 0.7s ease, filter 0.7s ease;
+  aspect-ratio: var(--product-card-aspect-ratio);
 }
 
 .product-card--saved .product-card__image {

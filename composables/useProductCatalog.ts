@@ -14,14 +14,18 @@ export type ProductRecord = {
   slug: string
   itemType?: string
   style?: string
-  series?: string
   category?: string
+  /** Resolved Series taxonomy title */
+  series?: string
+  /** Resolved Feature taxonomy title */
+  feature?: string
   dimensions?: string
   comCol?: string
   finishes?: string[]
   edition?: string
   description?: string
   categories?: string[]
+  /** Resolved Materiality taxonomy titles (replaces old Materials strings) */
   materials?: string[]
   colours?: string[]
   tags?: string[]
@@ -39,6 +43,7 @@ function slugify(title: string) {
 const TYPE_LABELS: Record<string, string> = {
   forms: 'Forms',
   surface: 'Surface',
+  decorative: 'Decorative Artwork',
   spirit: 'Spirit',
   origin: 'Origin',
 }
@@ -71,7 +76,9 @@ const hashIndex = (str: string, mod: number) => {
 const cap = (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
 
 const finishesFrom = (colours: string[] = []) => {
-  const mapped = colours.map((c) => FINISH_LABELS[c]).filter(Boolean)
+  const mapped = colours
+    .map((c) => FINISH_LABELS[String(c).toLowerCase()] || FINISH_LABELS[String(c).toLowerCase().replace(/\s+/g, '')])
+    .filter(Boolean)
   return mapped.length ? [...new Set(mapped)] : ['Camona Gold', 'Camona Bronze', 'Camona Silver']
 }
 
@@ -160,7 +167,8 @@ export const useProductCatalog = () => {
     title,
     "slug": coalesce(slug.current, _id),
     category,
-    series,
+    "series": series->title,
+    "feature": feature->title,
     style,
     dimensions,
     comCol,
@@ -169,8 +177,8 @@ export const useProductCatalog = () => {
     description,
     categories,
     tags,
-    materials,
-    colours,
+    "materials": materiality[]->title,
+    "colours": colours[]->title,
     image { asset-> { url } },
     gallery[] { asset-> { url } },
     spiritGallery[] { asset-> { url } },
@@ -179,6 +187,9 @@ export const useProductCatalog = () => {
       title,
       "slug": coalesce(slug.current, _id),
       category,
+      "series": series->title,
+      "materials": materiality[]->title,
+      "colours": colours[]->title,
       image { asset-> { url } }
     }
   }`
