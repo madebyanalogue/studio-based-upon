@@ -18,16 +18,19 @@ export type ProductReturnImage = {
   bucketItemId?: string
 }
 
-/** Close flyer sits over the veil after landing, then fades out. */
-export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 260
-export const PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS = 300
+/** Beat on the landed flyer before the cream clears, then the fade itself. */
+export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 120
+export const PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS = 380
 
 /** Close backdrop fade — CSS + finishClose timeout must share this. Ends with the flyer. */
 export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS =
   PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS + PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
 
-/** Ease — shared by flyer + cream veil after the hold */
-export const PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE = 'cubic-bezier(0.55, 0.055, 0.675, 0.19)'
+/** House expo-out — cream clears straight away instead of snapping at the end */
+export const PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+/** Flyer clears the overlay (320) but stays under the selection rail (340). */
+export const PRODUCT_OVERLAY_FLYER_Z = 330
 
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null
@@ -111,9 +114,16 @@ export const useProductOverlay = () => {
     'product-overlay-return-image',
     () => null,
   )
+  /** Cream veil outlives the overlay — layers above it must hold their z-index. */
+  const closeVeilActive = useState<boolean>('product-overlay-close-veil', () => false)
   const isOpen = computed(() => !!openSlug.value)
 
+  const setCloseVeilActive = (active: boolean) => {
+    closeVeilActive.value = active
+  }
+
   const clearCloseArtifacts = () => {
+    closeVeilActive.value = false
     if (!import.meta.client) return
     document
       .querySelectorAll('[data-pdp-close-flyer], [data-pdp-close-veil]')
@@ -294,5 +304,7 @@ export const useProductOverlay = () => {
     openImageIndex,
     returnImage,
     setReturnImage,
+    closeVeilActive,
+    setCloseVeilActive,
   }
 }

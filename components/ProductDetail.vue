@@ -277,6 +277,7 @@ import {
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
   PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS,
+  PRODUCT_OVERLAY_FLYER_Z,
 } from '~/composables/useProductOverlay'
 
 const props = withDefaults(
@@ -309,6 +310,7 @@ const {
   closingFlip,
   openImageIndex,
   setReturnImage,
+  setCloseVeilActive,
 } = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
 const { items: libraryItems } = await useLibraryCatalog()
@@ -961,7 +963,7 @@ const runFlipOpen = async () => {
     // Keep cover through the flight so the square crop opens into the
     // natural frame instead of stretching via Flip scaleX/scaleY.
     objectFit: sourceFit,
-    zIndex: '500',
+    zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
     borderRadius: getComputedStyle(source).borderRadius,
     opacity: '1',
@@ -1094,13 +1096,14 @@ const runFlipClose = async () => {
       transition: 'none',
     })
     document.body.appendChild(veil)
+    // Rail drops out of its above-PDP layer on unmount — hold it above the cream
+    setCloseVeilActive(true)
     return veil
   }
 
   /**
-   * Hold cream solid with the landed flyer, then fade both together.
-   * (Previously the veil eased from t=0 while the flyer held — so the flyer
-   * could finish disappearing while cream was still on screen.)
+   * Hold cream solid while the flyer sits on the thumb, then fade it away.
+   * The flyer stays opaque throughout and is only removed once this is done.
    */
   const fadeVeilAndCleanup = (veil: HTMLElement) => {
     window.setTimeout(() => {
@@ -1110,11 +1113,16 @@ const runFlipClose = async () => {
       })
       window.setTimeout(() => {
         veil.remove()
+        setCloseVeilActive(false)
       }, FLYER_FADE_MS + 32)
     }, FLYER_HOLD_MS)
   }
 
-  /** Fade the landed flyer in lockstep with the veil; drop early only if the grid scrolls. */
+  /**
+   * Stay opaque over the cream, then swap to the restored thumb underneath.
+   * Fading the flyer instead let the veil show through it, washing the
+   * thumbnail with cream mid-fade. Drops early only if the grid scrolls.
+   */
   const dismissFlyer = (flyer: HTMLElement) => {
     const scrollInputs = ['wheel', 'touchmove', 'scroll'] as const
     let timer = 0
@@ -1132,11 +1140,8 @@ const runFlipClose = async () => {
       window.addEventListener(type, drop, { capture: true, passive: true }),
     )
 
-    timer = window.setTimeout(() => {
-      flyer.style.transition = `opacity ${FLYER_FADE_MS}ms ${PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE}`
-      flyer.style.opacity = '0'
-      timer = window.setTimeout(drop, FLYER_FADE_MS)
-    }, FLYER_HOLD_MS)
+    // Outlast the veil by a frame or two — swapping early would flash cream
+    timer = window.setTimeout(drop, FLYER_HOLD_MS + FLYER_FADE_MS + 80)
   }
 
   if (from.width < 2 || to.width < 2) {
@@ -1164,7 +1169,7 @@ const runFlipClose = async () => {
     height: `${from.height}px`,
     margin: '0',
     objectFit: heroFit,
-    zIndex: '500',
+    zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
     borderRadius: '0px',
   })

@@ -13,7 +13,8 @@
         'stack--boards-landed': boardsLanded,
         'stack--boards-handoff': boardsGridHandoff,
         'stack--boards-cart': stagePresent && panelTab === 'boards',
-        'stack--above-pdp': productOverlayOpen && !isOpen && !stagePresent,
+        'stack--above-pdp':
+          (productOverlayOpen || pdpCloseVeilActive) && !isOpen && !stagePresent,
       }"
       :style="stackCssVars"
       :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
@@ -726,6 +727,7 @@ const {
   isOpen: productOverlayOpen,
   beginFlipOpenGate,
   releaseFlipOpenGate,
+  closeVeilActive: pdpCloseVeilActive,
 } = useProductOverlay()
 const { fetchProduct } = useProductCatalog()
 
@@ -1137,7 +1139,7 @@ const parkInactiveRailBelow = () => {
   const create = createSlotRef.value
   if (create) {
     gsap.killTweensOf(create)
-    gsap.set(create, { xPercent: -100, opacity: 0, width: 0, paddingLeft: 0 })
+    gsap.set(create, { opacity: 0, width: 0, paddingLeft: 0 })
   }
   createPlusReady.value = false
 }
@@ -1199,9 +1201,8 @@ const expandRail = async () => {
     await new Promise<void>((resolve) => {
       gsap.fromTo(
         create,
-        { xPercent: -100, opacity: 0 },
+        { opacity: 0 },
         {
-          xPercent: 0,
           opacity: 1,
           duration: 0.22,
           ease: 'power3.out',
@@ -1262,7 +1263,6 @@ const collapseRail = async () => {
     if (create) {
       gsap.killTweensOf(create)
       gsap.to(create, {
-        xPercent: -100,
         opacity: 0,
         duration: 0.16,
         ease: 'power3.in',
@@ -1375,7 +1375,7 @@ const shelveInactiveRail = () => {
       onComplete: () => {
         // Collapse width after the drop so they don’t sit in the rail
         if (el === createSlotRef.value) {
-          gsap.set(el, { width: 0, paddingLeft: 0, opacity: 0, xPercent: -100 })
+          gsap.set(el, { width: 0, paddingLeft: 0, opacity: 0 })
         } else {
           gsap.set(el, { width: 0, minWidth: 0 })
         }
@@ -1462,7 +1462,6 @@ const keepCreatePlusOut = () => {
   gsap.set(create, {
     width: '2.5rem',
     paddingLeft: 20,
-    xPercent: 0,
     opacity: 1,
     overflow: 'visible',
   })
@@ -5013,18 +5012,14 @@ onBeforeUnmount(() => {
   color: var(--text-color);
 }
 
-/* Single-selection: CSS slide on rail hover */
+/* Single-selection: CSS fade on rail hover */
 .stack__rail:not(.stack__rail--multi) .stack__create-plus {
   opacity: 0;
-  transform: translateX(-100%);
-  transition:
-    opacity 0.28s ease,
-    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.28s ease;
 }
 
 .stack__rail:not(.stack__rail--multi) .stack__create--visible .stack__create-plus {
   opacity: 1;
-  transform: translateX(0);
 }
 
 .stack__create-plus-icon {
