@@ -31,16 +31,16 @@
 
 
   --card-pad: 0;
-  --card-gap: 0px 10px;
+  --card-gap: 0px 5px;
   --title-pad: 20px var(--card-pad) 20px;
-  --product-card-aspect-ratio: .75;
+  --product-card-aspect-ratio: .8;
 
   color-scheme: light;
 }
 
 @media (min-width: 768px) {
   :root {
-    --card-gap: 0px 20px;
+    --card-gap: 0px 5px;
   }
 }
 
