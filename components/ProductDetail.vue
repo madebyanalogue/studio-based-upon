@@ -1828,7 +1828,12 @@ watch(
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--gutter) 0 2rem;
+  scrollbar-width: none;
+  /* padding: var(--gutter) 0 2rem; */
+}
+
+.pdp__related::-webkit-scrollbar {
+  display: none;
 }
 
 .pdp__related-list {
@@ -1839,38 +1844,48 @@ watch(
   flex-direction: column;
 }
 
-.pdp__related-item + .pdp__related-item {
-  margin-top: calc(var(--gutter) * 1);
-}
-
+/* Square cells matching the cart grid — 17% inset, contained image, rule below */
 .pdp__related-card {
-  display: grid;
+  --related-cell-pad: 17%;
+  position: relative;
+  display: block;
   width: 100%;
   min-width: 0;
-  /* aspect-ratio: 1; */
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-bottom: 1px solid var(--grid-line);
+  box-sizing: border-box;
   text-align: left;
   color: var(--charcoal);
   cursor: pointer;
 }
 
-.pdp__related-pad {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  padding: 0 var(--gutter);
-  box-sizing: border-box;
+.pdp__related-item:last-child .pdp__related-card {
+  border-bottom: 0;
 }
 
-.pdp__related-media {
-  position: relative;
+/* Content box = cell minus the inset on every side */
+.pdp__related-pad {
+  position: absolute;
+  inset: var(--related-cell-pad);
   display: grid;
   place-items: center;
-  width: 100%;
-  height: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  container-type: size;
+}
+
+/* Shrink-wraps to the contained image so the radius hugs the artwork */
+.pdp__related-media {
+  position: relative;
+  display: block;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
   overflow: hidden;
   border-radius: var(--thumb-radius);
 }
@@ -1879,8 +1894,8 @@ watch(
   display: block;
   width: auto;
   height: auto;
-  max-width: 100%;
-  max-height: 100%;
+  max-width: 100cqi;
+  max-height: 100cqb;
   object-fit: contain;
   object-position: center;
   border-radius: var(--thumb-radius);

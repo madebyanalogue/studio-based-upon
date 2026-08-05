@@ -14,7 +14,7 @@
         'stack--boards-handoff': boardsGridHandoff,
         'stack--boards-cart': stagePresent && panelTab === 'boards',
         'stack--above-pdp':
-          (productOverlayOpen || pdpCloseVeilActive) && !isOpen && !stagePresent,
+          (productOverlayOpen || pdpCloseVeilActive) && !pdpOpenedFromCart,
       }"
       :style="stackCssVars"
       :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
@@ -802,6 +802,13 @@ const CONTROLS_FADE_OUT_DELAY_MS = 100
 /** Cart → PDP: fade other items / grid / info before flyer moves */
 const PDP_CART_FADE_MS = 300
 const pdpFocusItemId = ref<string | null>(null)
+/**
+ * PDP launched from a cart cell — the stage must stay *under* the overlay so the
+ * flyer reads as lifting out of the cart. Opening a selection while a PDP is
+ * already up is the opposite case and has to outrank it instead. Latched rather
+ * than derived from pdpFocusItemId because that clears before the close veil ends.
+ */
+const pdpOpenedFromCart = ref(false)
 const FLIP_DURATION = 0.95
 const FLIP_STAGGER = 0.075
 /** Must mirror --stack-cell-pad in this component’s CSS (pile and grid share it) */
@@ -3175,6 +3182,7 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   // Hold flyer until cart UI has faded; product fetch runs in parallel
   beginFlipOpenGate()
   pdpFocusItemId.value = item.id
+  pdpOpenedFromCart.value = true
   controlsVisible.value = false
   gridLinesVisible.value = false
 
@@ -3215,6 +3223,12 @@ watch(productOverlayOpen, (on) => {
     gridLinesVisible.value = true
     controlsVisible.value = true
   }
+})
+
+// Hold the under-PDP layering until the cream close veil has gone too
+watch([productOverlayOpen, pdpCloseVeilActive], ([on, veil]) => {
+  if (on || veil) return
+  pdpOpenedFromCart.value = false
 })
 
 const selectionTitleLabel = () => activeMoodboard.value?.name || 'My Selection'
@@ -4617,8 +4631,12 @@ onBeforeUnmount(() => {
   z-index: 280;
 }
 
-/* Selection rail above ProductOverlay (320); boards rail is a sibling under it */
-.stack--above-pdp {
+/*
+ * Rail and open cart both sit above ProductOverlay (320) while a PDP is up;
+ * boards rail is a sibling under it. Doubled class so this outranks the other
+ * .stack--* z-index modifiers regardless of source order.
+ */
+.stack.stack--above-pdp {
   z-index: 340;
 }
 
