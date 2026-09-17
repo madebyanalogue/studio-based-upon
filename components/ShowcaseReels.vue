@@ -17,6 +17,7 @@
             'showcase__column--settled': settledIndexes[slotIndex] != null,
             'showcase__column--instant': instantDim[slotIndex],
             'showcase__column--surrender-dim': surrenderDim[slotIndex],
+            'showcase__column--locked': column.locked,
           }"
           data-lenis-prevent
         >
@@ -717,9 +718,19 @@ const surrenderColumns = () => {
 const toggleColumnLock = (slotIndex: number) => {
   const column = columns.value[slotIndex]
   if (!column) return
+  const nextLocked = !column.locked
   const next = columns.value.slice()
-  next[slotIndex] = { ...column, locked: !column.locked }
+  next[slotIndex] = { ...column, locked: nextLocked }
   columns.value = next
+  applyColumnScrollLock(slotIndex, nextLocked)
+}
+
+/** Freeze Lenis + native wheel/touch while a column is locked. */
+const applyColumnScrollLock = (slotIndex: number, locked: boolean) => {
+  const lenis = lenisBySlot[slotIndex]
+  if (!lenis) return
+  if (locked) lenis.stop()
+  else lenis.start()
 }
 
 const imageIndexForKey = (slotIndex: number, key: string | null) => {
@@ -937,6 +948,7 @@ const scheduleLayoutRealign = () => {
 
 const onColumnScroll = (slotIndex: number) => {
   if (layoutSilenceDepth > 0 || snappingSlot[slotIndex]) return
+  if (columns.value[slotIndex]?.locked) return
   if (performance.now() < settleLockUntil[slotIndex]) return
 
   const settledIndex = settledIndexes.value[slotIndex]
@@ -989,6 +1001,7 @@ const onColumnScroll = (slotIndex: number) => {
 
 const onUserIntent = (slotIndex: number) => {
   if (layoutSilenceDepth > 0) return
+  if (columns.value[slotIndex]?.locked) return
   // Never interrupt an in-flight snap — that was undoing first/last settle.
   if (snappingSlot[slotIndex]) return
   // Trackpad inertia keeps firing wheel after snap; don't clear the settle lock.
@@ -1040,15 +1053,40 @@ const initLenisForSlot = (slotIndex: number) => {
 
   const lenis = createColumnLenis(wrapper, content)
   lenis.on('scroll', () => onColumnScroll(slotIndex))
-  wrapper.addEventListener('wheel', () => onUserIntent(slotIndex), {
-    passive: true,
-    signal: abort.signal,
-  })
+  wrapper.addEventListener(
+    'wheel',
+    (event) => {
+      if (columns.value[slotIndex]?.locked) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+      onUserIntent(slotIndex)
+    },
+    {
+      // Need preventDefault when locked — can't be passive.
+      passive: false,
+      signal: abort.signal,
+    },
+  )
+  wrapper.addEventListener(
+    'touchmove',
+    (event) => {
+      if (!columns.value[slotIndex]?.locked) return
+      event.preventDefault()
+      event.stopPropagation()
+    },
+    {
+      passive: false,
+      signal: abort.signal,
+    },
+  )
   wrapper.addEventListener('touchstart', () => onUserIntent(slotIndex), {
     passive: true,
     signal: abort.signal,
   })
   lenisBySlot[slotIndex] = lenis
+  if (columns.value[slotIndex]?.locked) lenis.stop()
 }
 
 const initLenis = () => {
@@ -1419,6 +1457,12 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.showcase__column--locked {
+  overflow-y: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .showcase__column::-webkit-scrollbar {
