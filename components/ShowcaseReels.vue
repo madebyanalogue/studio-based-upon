@@ -233,7 +233,7 @@ type ShowcaseColumn = {
 const MAX_COLUMNS = SHOWCASE_MAX_COLUMNS
 const DEFAULT_COLUMNS = SHOWCASE_DEFAULT_COLUMNS
 const SNAP_IDLE_MS = 55
-const SNAP_DURATION = 0.28
+const SNAP_DURATION = 0.42
 const SURRENDER_DURATION = 1.15
 const VELOCITY_SNAP_THRESHOLD = 0.12
 const ASPECT = 0.8
@@ -242,9 +242,10 @@ const SHOWCASE_BOTTOM_INSET_PX = 60
 const CTRL_SIZE_PX = 44
 
 const lenisEasing = (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t))
-/** Ease in-out with power 3 for Surrender. */
-const surrenderEasing = (t: number) =>
+/** power3.inOut — used for snap + Surrender. */
+const power3InOut = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+const surrenderEasing = power3InOut
 
 const createColumnLenis = (wrapper: HTMLElement, content: HTMLElement) =>
   new Lenis({
@@ -926,10 +927,10 @@ const scrollColumnToImageIndex = (slotIndex: number, imageIndex: number) => {
       easing: surrenderEasing,
       onComplete: () => {
         // Re-measure — first surrender after column changes often had a stale limit.
-        let fresh = target
+        let fresh = target!
         withScrollSuppressed(() => {
           lenis.resize()
-          fresh = scrollTargetForKey(slotIndex, key) ?? target
+          fresh = scrollTargetForKey(slotIndex, key) ?? target!
           lenis.scrollTo(fresh.scroll, { immediate: true })
         })
         markSettled(slotIndex, fresh.key)
@@ -1089,7 +1090,9 @@ const snapToCenter = (slotIndex: number) => {
   // Use a tight threshold — endSnapTolerance is for pinning only, not skipping motion.
   if (Math.abs(target - current) <= SNAP_DONE_PX) {
     if (lenis && Math.abs(target - current) > 0) {
-      lenis.scrollTo(target, { immediate: true })
+      withScrollSuppressed(() => {
+        lenis.scrollTo(target, { immediate: true })
+      })
     }
     markSettled(slotIndex, key)
     return
@@ -1099,10 +1102,12 @@ const snapToCenter = (slotIndex: number) => {
   if (lenis) {
     lenis.scrollTo(target, {
       duration: SNAP_DURATION,
-      easing: lenisEasing,
+      easing: power3InOut,
       onComplete: () => {
         // Settle before releasing the snap lock so residual scroll can't undim ends.
-        lenis.scrollTo(target, { immediate: true })
+        withScrollSuppressed(() => {
+          lenis.scrollTo(target, { immediate: true })
+        })
         markSettled(slotIndex, key)
         snappingSlot[slotIndex] = false
       },
@@ -1765,7 +1770,7 @@ onBeforeUnmount(() => {
   --showcase-aspect: 0.8;
   --showcase-dim-opacity: 0.075;
   --showcase-dim-delay: 0.2s;
-  --showcase-dim-duration: 0.25s;
+  --showcase-dim-duration: 0.45s;
   --showcase-surrender-dim-delay: 0.55s;
   --showcase-surrender-dim-duration: 0.7s;
   --showcase-reveal-duration: 0.55s;
