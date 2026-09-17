@@ -28,11 +28,39 @@
         <button
           type="button"
           class="header__version interface"
-          :aria-label="`Display face ${serifFace}. Switch to ${serifFace === 'serif' ? 'sans' : 'serif'}`"
-          @click="toggleSerifFace"
+          :class="{ 'header__version--active': !stackChromeVisible }"
+          :aria-label="
+            stackChromeVisible
+              ? 'Hide selections stack'
+              : 'Show selections stack'
+          "
+          :aria-pressed="!stackChromeVisible"
+          @click="onStackChromeToggle"
         >
-          {{ serifFace }}
+          Stack
         </button>
+
+        <button
+          type="button"
+          class="header__version interface"
+          :aria-label="
+            textCase === 'uppercase'
+              ? 'Titles are uppercase. Switch to sentence case'
+              : 'Titles are sentence case. Switch to uppercase'
+          "
+          @click="toggleTextCase"
+        >
+          {{ textCase === 'uppercase' ? 'AA' : 'Aa' }}
+        </button>
+
+        <NuxtLink
+          to="/gs"
+          class="header__version interface"
+          :class="{ 'header__version--active': isActive('/gs') }"
+          aria-label="Gaussian splats"
+        >
+          GS
+        </NuxtLink>
 
         <button
           type="button"
@@ -215,6 +243,7 @@ const {
   isOpen,
   panelTab,
   openDrawer,
+  closeDrawer,
   isMoodboard,
   openMoodboard,
   moodboards,
@@ -225,7 +254,8 @@ const {
   openSelectionStack,
   hoverSelectionStack,
 } = useBucket()
-const { face: serifFace, toggleFace: toggleSerifFace } = useSerifFace()
+const { textCase, toggleTextCase } = useTextCase()
+const { stackChromeVisible, toggleStackChrome } = useStackChrome()
 const {
   boards,
   activeBoardId,
@@ -277,6 +307,16 @@ const onThemeClick = () => {
   frozenThemeTooltip.value = isDark.value ? 'Light' : 'Dark'
   hideTooltip('theme')
   toggleTheme()
+}
+
+const onStackChromeToggle = () => {
+  const next = !stackChromeVisible.value
+  toggleStackChrome()
+  if (!next) {
+    closeDrawer()
+    closeDropdown()
+    closeSelectionsDropdown()
+  }
 }
 
 const onBoardsToggle = () => {
@@ -453,6 +493,11 @@ onBeforeUnmount(() => {
 }
 
 .header__version:hover {
+  color: var(--charcoal);
+  border-color: var(--charcoal);
+}
+
+.header__version--active {
   color: var(--charcoal);
   border-color: var(--charcoal);
 }

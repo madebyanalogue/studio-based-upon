@@ -169,3 +169,11 @@ img {
   padding-left: 0;
   padding-right: 0;
 }
+
+/* Nav "Stack" toggle — hide BucketStack chrome */
+html.stack-chrome-hidden .stack,
+html.stack-chrome-hidden .stack__boards-rail {
+  display: none !important;
+  pointer-events: none !important;
+}
+

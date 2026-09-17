@@ -33,7 +33,7 @@
 
 :root {
   --sans: 'Maison Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  /* Display face: Ashcroft when html.face-serif (default); Maison Medium otherwise */
+  /* Display face stays sans (Maison Medium); Ashcroft kept available if needed */
   --serif: 'Maison Medium', 'Maison Neue', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-sans: var(--sans);
   --font-serif: var(--serif);
@@ -49,9 +49,21 @@
   --text-3xl: clamp(2rem, 4vw, 3.5rem);
 }
 
-/* Nav serif/sans toggle — Ashcroft when face is serif */
+/* Optional Ashcroft display face — not toggled in the UI */
 html.face-serif {
   --serif: 'Ashcroft', 'Times New Roman', Times, serif;
+}
+
+/* Header case toggle — titles / display text */
+html.text-uppercase h1,
+html.text-uppercase h2,
+html.text-uppercase h3,
+html.text-uppercase .page-title,
+html.text-uppercase .serif,
+html.text-uppercase .serif-italic,
+html.text-uppercase .pdp__title,
+html.text-uppercase .product-card__title {
+  text-transform: uppercase;
 }
 
 body {

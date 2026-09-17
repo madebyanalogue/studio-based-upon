@@ -1009,6 +1009,7 @@ export const useBucket = () => {
     /** With stagedOpen: selection rail translates Y in with tools (Boards → Board). */
     enterSelection?: boolean
   }) => {
+    useStackChrome().setStackChromeVisible(true)
     // Remember cart state so closing the board can restore it.
     reopenCartAfterMoodboard.value = opts?.resume
       ? false
@@ -1123,12 +1124,14 @@ export const useBucket = () => {
   }
 
   const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
+    useStackChrome().setStackChromeVisible(true)
     panelTab.value = tab
     isOpen.value = true
   }
 
   /** Open selections cart — Flip from pile when v2 is registered. */
   const openSelectionStack = () => {
+    useStackChrome().setStackChromeVisible(true)
     if (animatedOpenHandler) {
       animatedOpenHandler()
       return

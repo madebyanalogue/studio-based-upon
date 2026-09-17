@@ -1,33 +1,19 @@
 <template>
-  <div class="home-discover">
+  <div class="showcase-page">
     <ClientOnly>
-      <InfiniteDiscoveryCanvas :items="discoveryItems" />
+      <ShowcaseReels :buckets="buckets" />
       <template #fallback>
-        <div class="home-discover__fallback" aria-hidden="true" />
+        <div class="showcase-page__fallback" aria-hidden="true" />
       </template>
     </ClientOnly>
   </div>
 </template>
 
 <script setup lang="ts">
-const homeQuery = `*[_type == "homePage"][0] {
-  seoTitle,
-  seoDescription,
-  introText
-}`
-
-const { discoveryItems } = await useLibraryCatalog()
-
-const { data: homeData } = await useAsyncData('homePage', () =>
-  $fetch('/api/sanity/query', { method: 'POST', body: { query: homeQuery } })
-    .then((r: { result?: unknown }) => r?.result ?? null)
-    .catch(() => null),
-)
-
-const page = computed(() => homeData.value)
+const { buckets, page } = await useShowcaseCatalog()
 
 useHead(() => ({
-  title: page.value?.seoTitle || 'Studio Based Upon',
+  title: page.value?.seoTitle || 'Showcase — Studio Based Upon',
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
@@ -35,7 +21,12 @@ useHead(() => ({
 </script>
 
 <style scoped>
-.home-discover__fallback {
+.showcase-page {
+  min-height: 100dvh;
+  background: var(--cream);
+}
+
+.showcase-page__fallback {
   height: 100dvh;
   background: var(--cream);
 }

@@ -64,10 +64,10 @@ export default defineNuxtConfig({
           href: 'https://fonts.googleapis.com/css2?family=Homemade+Apple&display=swap',
         },
       ],
-      // Apply stored theme / display face before CSS paints to avoid FOUC.
+      // Apply stored theme / text case before CSS paints to avoid FOUC.
       script: [
         {
-          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');var f=localStorage.getItem('sba-serif-face');if(f!=='sans')document.documentElement.classList.add('face-serif');}catch(e){}})();`,
+          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');var c=localStorage.getItem('sba-text-case');if(c==='uppercase')document.documentElement.classList.add('text-uppercase');document.documentElement.classList.remove('face-serif','serif-sans');}catch(e){}})();`,
           tagPosition: 'head',
         },
       ],
@@ -75,11 +75,11 @@ export default defineNuxtConfig({
     pageTransition: { name: 'page', mode: 'out-in' },
   },
   build: {
-    transpile: ['@nuxtjs/sanity'],
+    transpile: ['@nuxtjs/sanity', '@mkkellogg/gaussian-splats-3d'],
   },
   vite: {
     optimizeDeps: {
-      include: ['three'],
+      include: ['three', '@mkkellogg/gaussian-splats-3d'],
       exclude: [
         '@sanity/visual-editing',
         '@sanity/ui',
@@ -89,7 +89,7 @@ export default defineNuxtConfig({
       ],
     },
     ssr: {
-      external: ['@sanity/visual-editing'],
+      external: ['@sanity/visual-editing', '@mkkellogg/gaussian-splats-3d'],
     },
     resolve: {
       alias: {
