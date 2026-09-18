@@ -179,6 +179,8 @@ let timer: number | null = null
 let splitInstances: InstanceType<typeof SplitText>[] = []
 let loadGen = 0
 let didClientShuffle = false
+/** Only this title (+ optional outgoing) may be visible — prevents stacked overlays. */
+let visibleTitleId: string | null = null
 
 const shuffleSlides = (items: ShowcaseSlide[]) => {
   const next = items.slice()
@@ -315,6 +317,22 @@ const revertSplits = () => {
   })
   splitInstances = []
   titlesReady.value = false
+  visibleTitleId = null
+}
+
+const hideTitleImmediate = (slideId: string) => {
+  const wrap = titleWrapFor(slideId)
+  const words = wordsForSlide(slideId)
+  if (words.length) {
+    gsap.killTweensOf(words)
+    gsap.set(words, { filter: 'blur(75px)', opacity: 0 })
+  }
+  if (wrap) wrap.style.visibility = 'hidden'
+}
+
+const showTitleWrap = (slideId: string) => {
+  const wrap = titleWrapFor(slideId)
+  if (wrap) wrap.style.visibility = 'visible'
 }
 
 const splitTitles = () => {
@@ -328,6 +346,7 @@ const splitTitles = () => {
       wordsClass: 'showcase-carousel__word',
     })
     splitInstances.push(split)
+    hideTitleImmediate(slide.id)
   })
   titlesReady.value = true
 }
@@ -335,48 +354,79 @@ const splitTitles = () => {
 const initFirstTitle = () => {
   const first = slides.value[0]
   if (!first) return
+
+  slides.value.forEach((slide) => hideTitleImmediate(slide.id))
+  showTitleWrap(first.id)
+  visibleTitleId = first.id
+
   const words = wordsForSlide(first.id)
   if (!words.length) return
-  gsap.to(words, {
-    filter: 'blur(0px)',
-    opacity: 1,
-    duration: 2,
-    ease: 'power3.out',
-  })
+  gsap.fromTo(
+    words,
+    { filter: 'blur(75px)', opacity: 0 },
+    {
+      filter: 'blur(0px)',
+      opacity: 1,
+      duration: 2,
+      ease: 'power3.out',
+    },
+  )
 }
 
 const updateActiveTitle = (targetId: string) => {
   if (!titlesReady.value) return
-  gsap.killTweensOf('.showcase-carousel__word')
+  if (targetId === visibleTitleId) return
+
+  const fromId = visibleTitleId
 
   slides.value.forEach((slide) => {
     const words = wordsForSlide(slide.id)
     if (!words.length) return
-    if (slide.id === targetId) return
-    gsap.to(words, {
-      filter: 'blur(75px)',
-      opacity: 0,
-      duration: 2.5,
-      ease: 'power1.out',
-      overwrite: true,
-    })
+    gsap.killTweensOf(words)
+
+    if (slide.id === targetId) {
+      showTitleWrap(slide.id)
+      gsap.fromTo(
+        words,
+        { filter: 'blur(75px)', opacity: 0 },
+        {
+          filter: 'blur(0px)',
+          opacity: 1,
+          duration: 2,
+          ease: 'power3.out',
+          overwrite: true,
+          onComplete: () => {
+            gsap.set(words, { filter: 'blur(0px)', opacity: 1 })
+          },
+        },
+      )
+      return
+    }
+
+    if (slide.id === fromId) {
+      showTitleWrap(slide.id)
+      gsap.to(words, {
+        filter: 'blur(75px)',
+        opacity: 0,
+        duration: 2.5,
+        ease: 'power1.out',
+        overwrite: true,
+        onComplete: () => {
+          gsap.set(words, { filter: 'blur(75px)', opacity: 0 })
+          const wrap = titleWrapFor(slide.id)
+          if (wrap && visibleTitleId !== slide.id) {
+            wrap.style.visibility = 'hidden'
+          }
+        },
+      })
+      return
+    }
+
+    // Hard-hide every other title so the matrix filter can't stack ghosts.
+    hideTitleImmediate(slide.id)
   })
 
-  const currentWords = wordsForSlide(targetId)
-  if (!currentWords.length) return
-  gsap.to(currentWords, {
-    filter: 'blur(0px)',
-    opacity: 1,
-    duration: 2,
-    ease: 'power3.out',
-    overwrite: true,
-    onComplete: () => {
-      gsap.set(currentWords, {
-        filter: 'blur(0px)',
-        opacity: 1,
-      })
-    },
-  })
+  visibleTitleId = targetId
 }
 
 const animateSlide = async (direction: 'left' | 'right', slide: ShowcaseSlide) => {
@@ -647,6 +697,7 @@ onBeforeUnmount(() => {
   height: 100%;
   transform: translateX(-50%);
   pointer-events: none;
+  visibility: hidden;
 }
 
 .showcase-carousel__title {

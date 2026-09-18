@@ -2,15 +2,12 @@
   <header class="header">
     <div class="header__inner">
       <NuxtLink
-        v-if="false"
         to="/"
-        class="header__logo  interface"
+        class="header__logo"
         aria-label="Studio Based Upon home"
       >
-        <span v-if="logo" class="header__logo-svg" v-html="logo" />
-        <span v-else>Studio Based Upon</span>
+        <BasedUponLogo class="header__logo-mark" />
       </NuxtLink>
-      <div class="header__start" aria-hidden="true" />
 
       <nav class="header__nav" aria-label="Main navigation">
         <NuxtLink
@@ -238,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-const { logo, headerMenu } = useSiteSettings()
+const { headerMenu } = useSiteSettings()
 const {
   isOpen,
   panelTab,
@@ -441,18 +438,17 @@ onBeforeUnmount(() => {
 
 .header__logo {
   justify-self: start;
-  font-size: var(--text-md);
-  letter-spacing: 0.01em;
+  display: block;
+  width: min(9.5rem, 28vw);
+  color: var(--charcoal);
+  line-height: 0;
+  transform: translate(0, 19px) scale(1.25);
+  transform-origin: top left;
 }
 
-.header__logo-svg :deep(svg) {
-  height: 28px;
-  width: auto;
-}
-
-.header__start {
-  justify-self: start;
-  min-width: 0;
+.header__logo-mark {
+  width: 100%;
+  height: auto;
 }
 
 .header__nav {
@@ -709,7 +705,7 @@ onBeforeUnmount(() => {
   }
 
   .header__logo {
-    font-size: var(--text-sm);
+    width: min(7.5rem, 34vw);
   }
 
   .header__nav {
