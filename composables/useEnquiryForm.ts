@@ -77,16 +77,30 @@ export const useEnquiryForm = () => {
     error.value = null
   }
 
-  const openFromBucket = (items: BucketItem[]) => {
+  const openFromBucket = (
+    items: BucketItem[],
+    options?: { colour?: string | null },
+  ) => {
     reset()
     source.value = 'bucket'
     compositionImage.value = null
-    previewItems.value = items.map((item) => ({
+    const preview: EnquiryPreviewItem[] = items.map((item) => ({
       id: item.id,
       title: item.title,
-      kind: 'image',
+      kind: 'image' as const,
       imageUrl: item.imageUrl,
     }))
+    const colour = String(options?.colour || '').trim()
+    if (colour) {
+      const hex = colour.startsWith('#') ? colour.toUpperCase() : `#${colour.toUpperCase()}`
+      preview.push({
+        id: `wash-${hex}`,
+        title: hex,
+        kind: 'colour',
+        colour: hex,
+      })
+    }
+    previewItems.value = preview
     if (!isOpen.value) lockPageScroll()
     isOpen.value = true
   }

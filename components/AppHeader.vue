@@ -299,8 +299,10 @@ const clearTooltipHide = (id: TooltipId) => {
 }
 
 const isActive = (path: string) => {
-  if (path === '/') return route.path === '/'
-  return route.path === path || route.path.startsWith(`${path}/`)
+  const [pathname] = path.split('#')
+  const base = pathname || '/'
+  if (base === '/') return route.path === '/'
+  return route.path === base || route.path.startsWith(`${base}/`)
 }
 
 const onThemeClick = () => {
@@ -464,14 +466,18 @@ onBeforeUnmount(() => {
 
 .header__nav-link {
   font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
+  color: var(--charcoal);
+  opacity: 1;
+  transition: opacity 0.45s ease;
   white-space: nowrap;
 }
 
-.header__nav-link:hover,
-.header__nav-link--active {
-  color: var(--charcoal);
+.header__nav:hover .header__nav-link {
+  opacity: 0.35;
+}
+
+.header__nav:hover .header__nav-link:hover {
+  opacity: 1;
 }
 
 .header__actions {

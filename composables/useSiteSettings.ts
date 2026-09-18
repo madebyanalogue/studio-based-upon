@@ -56,10 +56,11 @@ export const useSiteSettings = () => {
   const defaultMenu = {
     items: [
       { _key: '0', text: 'Showcase', path: '/' },
-      { _key: '1', text: 'Discovery', path: '/discovery' },
-      { _key: '2', text: 'Materials & Forms', path: '/materials-and-forms' },
-      { _key: '3', text: '(Pre)Crafted', path: '/pre-crafted' },
-      { _key: '4', text: 'About', path: '/about' },
+      { _key: '1', text: 'Curate', path: '/curate' },
+      { _key: '2', text: 'Discovery', path: '/discovery' },
+      { _key: '3', text: 'Materials & Forms', path: '/materials-and-forms' },
+      { _key: '4', text: '(Pre)Crafted', path: '/pre-crafted' },
+      { _key: '5', text: 'About', path: '/about' },
     ],
   }
 
@@ -85,20 +86,42 @@ export const useSiteSettings = () => {
         if (item.path === '/discovery' || item.text === 'Flow State') {
           return { ...item, text: 'Discovery', path: '/discovery' }
         }
-        if (item.path === '/' || item.text === 'Showcase' || item.text === 'Home') {
+        if (
+          item.path === '/curate' ||
+          item.path === '/#curate' ||
+          item.text === 'Curate' ||
+          item.text === 'Showcase Reels'
+        ) {
+          return { ...item, text: 'Curate', path: '/curate' }
+        }
+        if (
+          item.path === '/' ||
+          item.path === '/#showcase' ||
+          item.text === 'Showcase' ||
+          item.text === 'Home'
+        ) {
           return { ...item, text: 'Showcase', path: '/' }
         }
         return item
       })
 
     const hasShowcase = normalized.some((item) => item.path === '/')
+    const hasCurate = normalized.some((item) => item.path === '/curate')
     const hasDiscovery = normalized.some((item) => item.path === '/discovery')
 
     if (!hasShowcase) {
       normalized.unshift({ _key: 'showcase', text: 'Showcase', path: '/' })
     }
-    if (!hasDiscovery) {
+    if (!hasCurate) {
       const insertAt = normalized.findIndex((item) => item.path === '/')
+      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
+        _key: 'curate',
+        text: 'Curate',
+        path: '/curate',
+      })
+    }
+    if (!hasDiscovery) {
+      const insertAt = normalized.findIndex((item) => item.path === '/curate')
       normalized.splice(insertAt + 1, 0, {
         _key: 'discovery',
         text: 'Discovery',

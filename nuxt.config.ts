@@ -79,7 +79,7 @@ export default defineNuxtConfig({
   },
   vite: {
     optimizeDeps: {
-      include: ['three', '@mkkellogg/gaussian-splats-3d'],
+      include: ['three', '@mkkellogg/gaussian-splats-3d', 'gsap/CustomEase', 'gsap/SplitText'],
       exclude: [
         '@sanity/visual-editing',
         '@sanity/ui',

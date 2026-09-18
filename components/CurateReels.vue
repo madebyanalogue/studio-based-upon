@@ -5,7 +5,7 @@
       '--showcase-slots': Math.max(columnCount, 1),
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
     }"
-    aria-label="Showcase"
+    aria-label="Curate"
   >
     <div class="showcase__columns">
       <div
@@ -140,15 +140,17 @@
         </button>
 
         <label
-          v-if="canAddColumn"
           class="showcase__upload"
-          aria-label="Upload image"
+          :class="{ 'showcase__upload--disabled': !canAddColumn }"
+          :aria-label="canAddColumn ? 'Upload image' : 'Upload image (column limit reached)'"
+          :aria-disabled="!canAddColumn ? 'true' : undefined"
         >
           <input
             ref="fileInputRef"
             type="file"
             class="showcase__upload-input"
             accept="image/*"
+            :disabled="!canAddColumn"
             @change="onUploadChange"
           />
           <span class="showcase__upload-icon" aria-hidden="true">
@@ -160,6 +162,102 @@
           </span>
           <span class="showcase__tooltip interface" aria-hidden="true">Upload</span>
         </label>
+
+        <div ref="colourToolRef" class="showcase__colour-tool">
+          <button
+            type="button"
+            class="showcase__ctrl"
+            :class="{ 'showcase__ctrl--colour-active': Boolean(washColour) }"
+            :aria-label="washColour ? 'Change colour wash' : 'Add colour wash'"
+            :aria-expanded="colourPickerOpen"
+            :aria-pressed="Boolean(washColour)"
+            @click="toggleColourPicker"
+          >
+            <span class="showcase__ctrl-icon" aria-hidden="true">
+              <svg
+                class="showcase__colour-icon"
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1"
+              >
+                <circle cx="9" cy="10" r="5.2" />
+                <circle cx="15" cy="10" r="5.2" />
+                <circle cx="12" cy="14.8" r="5.2" />
+              </svg>
+              <span
+                v-if="washColour"
+                class="showcase__colour-dot"
+                :style="{ background: washColour }"
+              />
+            </span>
+            <span class="showcase__tooltip interface" aria-hidden="true">Colour wash</span>
+          </button>
+
+          <div
+            v-if="colourPickerOpen"
+            class="showcase__colour-popover"
+            role="dialog"
+            aria-label="Colour wash"
+          >
+            <div
+              ref="spectrumEl"
+              class="showcase__spectrum"
+              :style="{ '--spectrum-hue': `${spectrumHue}` }"
+              @pointerdown="onSpectrumPointerDown"
+            >
+              <span
+                class="showcase__spectrum-thumb"
+                :style="{
+                  left: `${spectrumSat * 100}%`,
+                  top: `${(1 - spectrumVal) * 100}%`,
+                }"
+              />
+            </div>
+            <label class="showcase__hue">
+              <span class="visually-hidden">Hue</span>
+              <input
+                v-model.number="spectrumHue"
+                class="showcase__hue-input"
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                aria-label="Hue"
+              />
+            </label>
+            <div class="showcase__colour-row">
+              <span
+                class="showcase__colour-preview"
+                :style="{ background: spectrumHex }"
+                aria-hidden="true"
+              />
+              <input
+                v-model="hexDraft"
+                class="showcase__colour-hex interface"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                maxlength="7"
+                aria-label="Hex colour"
+                @focus="onHexFocus"
+                @input="onHexInput"
+                @blur="commitHexDraft"
+                @keydown.enter.prevent="commitHexDraft"
+              />
+              <button
+                type="button"
+                class="showcase__colour-clear interface"
+                :disabled="!washColour"
+                @click="clearWashColour"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
 
         <button
           type="button"
@@ -193,6 +291,13 @@
         </button>
       </div>
       </div>
+
+    <div
+      v-if="washColour"
+      class="showcase__wash"
+      :style="{ background: washColour }"
+      aria-hidden="true"
+    />
 
     <button
       type="button"
@@ -284,6 +389,13 @@ const surrenderDim = ref<boolean[]>(Array.from({ length: MAX_COLUMNS }, () => fa
 /** Top edge of the flex zone under the selected cell (px from shell top). */
 const removeZoneTops = ref<number[]>(Array.from({ length: MAX_COLUMNS }, () => 0))
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const colourToolRef = ref<HTMLElement | null>(null)
+const spectrumEl = ref<HTMLElement | null>(null)
+const colourPickerOpen = ref(false)
+const washColour = ref<string | null>(null)
+const spectrumHue = ref(28)
+const spectrumSat = ref(0.55)
+const spectrumVal = ref(0.72)
 /** Image keys that have finished loading and may fade in. */
 const revealedImages = ref<Record<string, true>>({})
 /** After the initial selected images load, unlock every other reel image. */
@@ -307,6 +419,8 @@ const intentAbort: (AbortController | null)[] = Array.from(
 )
 
 let instanceSeq = 0
+/** Advances on every bucket-sourced add; wrap around the pool. Never rewinds on remove. */
+let nextBucketCursor = 0
 let rafId = 0
 let resizeObserver: ResizeObserver | null = null
 let layoutSilenceDepth = 0
@@ -314,6 +428,13 @@ let layoutSilenceDepth = 0
 let scrollHandlerDepth = 0
 /** Blocks ResizeObserver realign while add/remove restores selections. */
 let structuralLayoutDepth = 0
+/** Bumps on each structural restore so stale async passes abort. */
+let layoutGeneration = 0
+/** Wrapper element each Lenis instance is bound to (detect slot remaps). */
+const lenisHostEls: (HTMLElement | null)[] = Array.from(
+  { length: MAX_COLUMNS },
+  () => null,
+)
 /** Base floor for “near scroll end” — ends often miss true centre by more than a few px. */
 const END_SNAP_PX = 48
 const SETTLE_LOCK_MS = 700
@@ -524,31 +645,31 @@ const createUploadColumn = (file: File, src: string): ShowcaseColumn => {
 }
 
 const pickNextBucket = (): ShowcaseBucket | null => {
-  const used = new Set(
-    columns.value.map((column) => column.bucketId || column.productId),
+  const pool = bucketPool.value.filter(
+    (bucket) => bucket.images?.length && bucket.id,
   )
-  const pool = bucketPool.value
-  const unused = pool.find(
-    (bucket) => bucket.images?.length && bucket.id && !used.has(bucket.id),
-  )
-  if (unused) return unused
-
-  // Fresh demo reel when the pool is exhausted.
-  instanceSeq += 1
-  const demo = demoShowcaseBuckets(MAX_COLUMNS)
-  const fallback = demo[(columns.value.length + instanceSeq) % demo.length]
-  if (!fallback) return null
-  return {
-    ...fallback,
-    id: `demo-extra-${instanceSeq}`,
-    productId: `demo-extra-${instanceSeq}`,
-    title: `Column ${columns.value.length + 1}`,
-    column: columns.value.length + 1,
-    images: fallback.images.map((image, i) => ({
-      ...image,
-      id: `${image.id}-x${instanceSeq}-${i}`,
-    })),
+  if (!pool.length) {
+    // No CMS pool — mint a unique demo reel.
+    instanceSeq += 1
+    const demo = demoShowcaseBuckets(MAX_COLUMNS)
+    const fallback = demo[(columns.value.length + instanceSeq) % demo.length]
+    if (!fallback) return null
+    return {
+      ...fallback,
+      id: `demo-extra-${instanceSeq}`,
+      productId: `demo-extra-${instanceSeq}`,
+      title: `Column ${columns.value.length + 1}`,
+      column: columns.value.length + 1,
+      images: fallback.images.map((image, i) => ({
+        ...image,
+        id: `${image.id}-x${instanceSeq}-${i}`,
+      })),
+    }
   }
+
+  const bucket = pool[nextBucketCursor % pool.length]!
+  nextBucketCursor += 1
+  return bucket
 }
 
 const spacerStyle = (slotIndex: number) => ({
@@ -881,13 +1002,181 @@ const selectedEnquiryItems = () => {
 const sendEnquiry = () => {
   const items = selectedEnquiryItems()
   if (!items.length) return
-  openFromBucket(items)
+  openFromBucket(items, { colour: washColour.value })
 }
 
 const saveSelection = () => {
   const items = selectedEnquiryItems()
   if (!items.length) return
   items.forEach((item) => addItem(item))
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+
+const hsvToHex = (h: number, s: number, v: number) => {
+  const hue = ((h % 360) + 360) % 360
+  const c = v * s
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1))
+  const m = v - c
+  let r = 0
+  let g = 0
+  let b = 0
+  if (hue < 60) {
+    r = c
+    g = x
+  } else if (hue < 120) {
+    r = x
+    g = c
+  } else if (hue < 180) {
+    g = c
+    b = x
+  } else if (hue < 240) {
+    g = x
+    b = c
+  } else if (hue < 300) {
+    r = x
+    b = c
+  } else {
+    r = c
+    b = x
+  }
+  const toByte = (channel: number) =>
+    Math.round((channel + m) * 255)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${toByte(r)}${toByte(g)}${toByte(b)}`
+}
+
+/** Accepts #rgb / #rrggbb with or without leading #. */
+const normalizeHex = (raw: string) => {
+  const trimmed = raw.trim().replace(/^#/, '')
+  if (/^[0-9a-f]{3}$/i.test(trimmed)) {
+    const [r, g, b] = trimmed.split('')
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase()
+  }
+  if (/^[0-9a-f]{6}$/i.test(trimmed)) return `#${trimmed.toLowerCase()}`
+  return null
+}
+
+const hexToHsv = (hex: string) => {
+  const normalized = normalizeHex(hex)
+  if (!normalized) return null
+  const value = normalized.slice(1)
+  const r = parseInt(value.slice(0, 2), 16) / 255
+  const g = parseInt(value.slice(2, 4), 16) / 255
+  const b = parseInt(value.slice(4, 6), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const delta = max - min
+  let h = 0
+  if (delta) {
+    if (max === r) h = ((g - b) / delta) % 6
+    else if (max === g) h = (b - r) / delta + 2
+    else h = (r - g) / delta + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const s = max === 0 ? 0 : delta / max
+  return { h, s, v: max }
+}
+
+const spectrumHex = computed(() =>
+  hsvToHex(spectrumHue.value, spectrumSat.value, spectrumVal.value),
+)
+
+const hexDraft = ref(spectrumHex.value)
+const hexFocused = ref(false)
+
+watch(spectrumHex, (hex) => {
+  if (!hexFocused.value) hexDraft.value = hex
+  if (!colourPickerOpen.value) return
+  washColour.value = hex
+})
+
+const applyHexToSpectrum = (hex: string) => {
+  const hsv = hexToHsv(hex)
+  if (!hsv) return false
+  spectrumHue.value = Math.round(hsv.h)
+  spectrumSat.value = hsv.s
+  spectrumVal.value = hsv.v
+  return true
+}
+
+const onHexFocus = (event: FocusEvent) => {
+  hexFocused.value = true
+  const input = event.target as HTMLInputElement | null
+  nextTick(() => input?.select())
+}
+
+const onHexInput = () => {
+  const parsed = normalizeHex(hexDraft.value)
+  if (!parsed) return
+  applyHexToSpectrum(parsed)
+}
+
+const commitHexDraft = () => {
+  hexFocused.value = false
+  const parsed = normalizeHex(hexDraft.value)
+  if (parsed && applyHexToSpectrum(parsed)) {
+    hexDraft.value = parsed
+    return
+  }
+  hexDraft.value = spectrumHex.value
+}
+
+const syncSpectrumFromWash = () => {
+  if (!washColour.value) return
+  if (!applyHexToSpectrum(washColour.value)) return
+  hexDraft.value = spectrumHex.value
+}
+
+const toggleColourPicker = () => {
+  const next = !colourPickerOpen.value
+  if (next) {
+    if (washColour.value) syncSpectrumFromWash()
+    else washColour.value = spectrumHex.value
+    hexDraft.value = spectrumHex.value
+    hexFocused.value = false
+  }
+  colourPickerOpen.value = next
+}
+
+const clearWashColour = () => {
+  washColour.value = null
+  colourPickerOpen.value = false
+}
+
+const readSpectrumFromEvent = (event: PointerEvent) => {
+  const el = spectrumEl.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+  spectrumSat.value = clamp01((event.clientX - rect.left) / rect.width)
+  spectrumVal.value = clamp01(1 - (event.clientY - rect.top) / rect.height)
+}
+
+const onSpectrumPointerMove = (event: PointerEvent) => {
+  readSpectrumFromEvent(event)
+}
+
+const onSpectrumPointerUp = () => {
+  window.removeEventListener('pointermove', onSpectrumPointerMove)
+  window.removeEventListener('pointerup', onSpectrumPointerUp)
+}
+
+const onSpectrumPointerDown = (event: PointerEvent) => {
+  event.preventDefault()
+  spectrumEl.value?.setPointerCapture?.(event.pointerId)
+  readSpectrumFromEvent(event)
+  window.addEventListener('pointermove', onSpectrumPointerMove)
+  window.addEventListener('pointerup', onSpectrumPointerUp)
+}
+
+const onColourDocPointerDown = (event: PointerEvent) => {
+  if (!colourPickerOpen.value) return
+  const target = event.target as Node | null
+  if (target && colourToolRef.value?.contains(target)) return
+  colourPickerOpen.value = false
 }
 
 const scrollColumnToImageIndex = (slotIndex: number, imageIndex: number) => {
@@ -1289,9 +1578,12 @@ const realignSlotToActive = (slotIndex: number) => {
 let layoutRealignTimer = 0
 
 const realignAllColumns = () => {
+  const generation = layoutGeneration
   void (async () => {
     await waitForStableColumnLayout()
+    if (generation !== layoutGeneration || structuralLayoutDepth > 0) return
     await refreshColumnMetrics()
+    if (generation !== layoutGeneration || structuralLayoutDepth > 0) return
     withLayoutSilence(() => {
       realignAllSlotsToActive()
     })
@@ -1340,8 +1632,9 @@ const onColumnScroll = (slotIndex: number) => {
         return
       }
 
-      // Layout drift without user input — keep fade; don't realign here.
+      // Layout drift without user input — keep fade; schedule a quiet re-centre.
       if (!hasRecentIntent) {
+        scheduleLayoutRealign()
         return
       }
     }
@@ -1373,12 +1666,17 @@ const onUserIntent = (slotIndex: number) => {
   // first/last can keep their sibling fade through residual wheel events.
 }
 
+const destroyLenisSlot = (slotIndex: number) => {
+  intentAbort[slotIndex]?.abort()
+  intentAbort[slotIndex] = null
+  lenisBySlot[slotIndex]?.destroy()
+  lenisBySlot[slotIndex] = null
+  lenisHostEls[slotIndex] = null
+}
+
 const destroyLenis = () => {
   for (let i = 0; i < MAX_COLUMNS; i += 1) {
-    intentAbort[i]?.abort()
-    intentAbort[i] = null
-    lenisBySlot[i]?.destroy()
-    lenisBySlot[i] = null
+    destroyLenisSlot(i)
   }
 }
 
@@ -1453,7 +1751,31 @@ const initLenisForSlot = (slotIndex: number) => {
     signal: abort.signal,
   })
   lenisBySlot[slotIndex] = lenis
+  lenisHostEls[slotIndex] = wrapper
   if (columns.value[slotIndex]?.locked) lenis.stop()
+}
+
+/**
+ * Keep Lenis on unchanged column wrappers so add/remove doesn't zero every reel.
+ * Re-inits only when the slot is new or the host element remapped.
+ */
+const syncLenisToColumns = () => {
+  if (!import.meta.client) return
+  const count = columns.value.length
+
+  for (let i = count; i < MAX_COLUMNS; i += 1) {
+    destroyLenisSlot(i)
+  }
+
+  for (let i = 0; i < count; i += 1) {
+    const wrapper = columnEls[i]
+    const content = trackEls[i]
+    if (!wrapper || !content) continue
+    if (lenisBySlot[i] && lenisHostEls[i] === wrapper) continue
+    initLenisForSlot(i)
+  }
+
+  startRaf()
 }
 
 const initLenis = () => {
@@ -1574,6 +1896,7 @@ const restoreColumnsAfterLayout = (
   activeImageIds: (string | null)[],
   opts: { settleNewInstant?: boolean } = {},
 ) => {
+  const generation = ++layoutGeneration
   structuralLayoutDepth += 1
   window.clearTimeout(layoutRealignTimer)
   layoutRealignTimer = 0
@@ -1581,10 +1904,43 @@ const restoreColumnsAfterLayout = (
   // Remap keys immediately so ResizeObserver can't realign with stale slot prefixes.
   applyActiveImageIds(activeImageIds)
 
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    structuralLayoutDepth = Math.max(0, structuralLayoutDepth - 1)
+  }
+
+  const restorePass = (settleNew = false) => {
+    withLayoutSilence(() => {
+      applyActiveImageIds(activeImageIds)
+      if (settleNew && opts.settleNewInstant) {
+        const i = columns.value.length - 1
+        if (i >= 0) {
+          settleColumnInstant(i)
+          activeImageIds[i] =
+            columns.value[i]?.images[0]?.id ?? activeImageIds[i] ?? null
+        }
+      }
+      realignAllSlotsToActive(activeImageIds)
+    })
+  }
+
   const run = (attempt = 0) => {
+    if (generation !== layoutGeneration) {
+      release()
+      return
+    }
+
     nextTick(() => {
       requestAnimationFrame(() => {
-        initLenis()
+        if (generation !== layoutGeneration) {
+          release()
+          return
+        }
+
+        // Preserve existing Lenis/scroll; only mount new or remapped slots.
+        syncLenisToColumns()
         observeColumns()
 
         const ready = columns.value.every((_, i) =>
@@ -1597,37 +1953,38 @@ const restoreColumnsAfterLayout = (
         }
 
         void (async () => {
-          // Flex widths must settle before spacer pads / snap targets are measured.
-          await waitForStableColumnLayout()
-          await refreshColumnMetrics()
+          try {
+            // Flex widths must settle before spacer pads / snap targets are measured.
+            await waitForStableColumnLayout()
+            if (generation !== layoutGeneration) return
 
-          withLayoutSilence(() => {
-            applyActiveImageIds(activeImageIds)
-            for (let i = 0; i < columns.value.length; i += 1) {
-              lenisBySlot[i]?.resize()
-              if (opts.settleNewInstant && i === columns.value.length - 1) {
-                settleColumnInstant(i)
-                // New column starts on first image — keep that in the restore list.
-                activeImageIds[i] =
-                  columns.value[i]?.images[0]?.id ?? activeImageIds[i] ?? null
-              }
-            }
-            realignAllSlotsToActive(activeImageIds)
-          })
+            await refreshColumnMetrics()
+            if (generation !== layoutGeneration) return
+            restorePass(true)
 
-          // Second pass after one more layout flush — catches late height changes.
-          await refreshColumnMetrics()
-          withLayoutSilence(() => {
-            realignAllSlotsToActive(activeImageIds)
-          })
+            // Second pass after one more layout flush — catches late height changes.
+            await refreshColumnMetrics()
+            if (generation !== layoutGeneration) return
+            restorePass()
 
-          await nextTick()
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => resolve())
-          })
-          updateAllRemoveZones()
+            // Third pass after flex has fully finished shrinking.
+            await new Promise<void>((resolve) => {
+              window.setTimeout(() => resolve(), 90)
+            })
+            if (generation !== layoutGeneration) return
+            await refreshColumnMetrics()
+            if (generation !== layoutGeneration) return
+            restorePass()
 
-          structuralLayoutDepth = Math.max(0, structuralLayoutDepth - 1)
+            await nextTick()
+            await new Promise<void>((resolve) => {
+              requestAnimationFrame(() => resolve())
+            })
+            if (generation !== layoutGeneration) return
+            updateAllRemoveZones()
+          } finally {
+            release()
+          }
         })()
       })
     })
@@ -1677,12 +2034,6 @@ const removeColumn = (slotIndex: number) => {
 
   for (let i = 0; i < MAX_COLUMNS; i += 1) {
     clearSnapTimer(i)
-    intentAbort[i]?.abort()
-    intentAbort[i] = null
-    lenisBySlot[i]?.destroy()
-    lenisBySlot[i] = null
-    if (columnEls[i]) columnEls[i]!.scrollTop = 0
-    columnPrimed[i] = false
     snappingSlot[i] = false
     settleLockUntil[i] = 0
     lastUserIntentAt[i] = 0
@@ -1700,6 +2051,7 @@ const removeColumn = (slotIndex: number) => {
     nextInstant[i] = false
     nextZones[i] = 0
     nextSurrender[i] = false
+    columnPrimed[i] = false
   }
   spacerPads.value = nextPads
   instantDim.value = nextInstant
@@ -1707,6 +2059,7 @@ const removeColumn = (slotIndex: number) => {
   surrenderDim.value = nextSurrender
 
   if (!columns.value.length) {
+    destroyLenis()
     applyActiveImageIds([])
     return
   }
@@ -1728,6 +2081,9 @@ const resetFromBuckets = () => {
     initial.push(fallback)
   }
 
+  // Next add continues after the initially loaded pool buckets (wraps later).
+  nextBucketCursor = Math.min(DEFAULT_COLUMNS, sourced.length)
+
   columns.value = initial
     .map((bucket) => createColumnFromBucket(bucket))
     .filter(Boolean) as ShowcaseColumn[]
@@ -1747,9 +2103,13 @@ watch(
 onMounted(() => {
   if (!columns.value.length) resetFromBuckets()
   else remountMotion({ settleImmediately: true })
+  document.addEventListener('pointerdown', onColourDocPointerDown)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onColourDocPointerDown)
+  window.removeEventListener('pointermove', onSpectrumPointerMove)
+  window.removeEventListener('pointerup', onSpectrumPointerUp)
   window.clearTimeout(layoutRealignTimer)
   layoutRealignTimer = 0
   resizeObserver?.disconnect()
@@ -2002,6 +2362,26 @@ onBeforeUnmount(() => {
 }
 
 .showcase__add {
+  order: 1;
+}
+
+.showcase__upload {
+  order: 2;
+}
+
+.showcase__colour-tool {
+  order: 3;
+}
+
+.showcase__ctrl:not(.showcase__ctrl--send) {
+  order: 4;
+}
+
+.showcase__ctrl--send {
+  order: 5;
+}
+
+.showcase__add {
   position: relative;
   box-sizing: border-box;
   display: grid;
@@ -2071,6 +2451,12 @@ onBeforeUnmount(() => {
   border-color: var(--charcoal);
 }
 
+.showcase__upload--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
+}
+
 .showcase__upload-input {
   position: absolute;
   width: 1px;
@@ -2114,6 +2500,201 @@ onBeforeUnmount(() => {
   transform: translateY(-50%) translateX(0);
 }
 
+.showcase__colour-tool {
+  position: relative;
+}
+
+.showcase__colour-icon {
+  display: block;
+}
+
+.showcase__colour-dot {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--cream) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--charcoal) 25%, transparent);
+}
+
+.showcase__ctrl--colour-active {
+  border-color: var(--charcoal);
+}
+
+.showcase__colour-popover {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 0.75rem);
+  z-index: 30;
+  width: 220px;
+  padding: 0.75rem;
+  border: var(--showcase-ctrl-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--cream) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px var(--shadow-color, rgba(0, 0, 0, 0.12));
+  transform: translateY(-50%);
+}
+
+.showcase__spectrum {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.15;
+  border-radius: 10px;
+  cursor: crosshair;
+  touch-action: none;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, transparent),
+    hsl(calc(var(--spectrum-hue) * 1deg), 100%, 50%);
+  overflow: hidden;
+}
+
+.showcase__spectrum-thumb {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.showcase__hue {
+  display: block;
+  margin-top: 0.65rem;
+}
+
+.showcase__hue-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    hsl(0, 100%, 50%),
+    hsl(60, 100%, 50%),
+    hsl(120, 100%, 50%),
+    hsl(180, 100%, 50%),
+    hsl(240, 100%, 50%),
+    hsl(300, 100%, 50%),
+    hsl(360, 100%, 50%)
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.showcase__hue-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  background: transparent;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.showcase__hue-input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  background: transparent;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.showcase__colour-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.showcase__colour-preview {
+  flex-shrink: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--charcoal) 20%, transparent);
+}
+
+.showcase__colour-hex {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  outline: none;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.showcase__colour-hex:hover {
+  color: var(--charcoal);
+  border-color: color-mix(in srgb, var(--charcoal) 14%, transparent);
+}
+
+.showcase__colour-hex:focus {
+  color: var(--charcoal);
+  border-color: color-mix(in srgb, var(--charcoal) 28%, transparent);
+  background: color-mix(in srgb, var(--charcoal) 4%, transparent);
+}
+
+.showcase__colour-clear {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.showcase__colour-clear:hover:not(:disabled),
+.showcase__colour-clear:focus-visible:not(:disabled) {
+  color: var(--charcoal);
+  background: color-mix(in srgb, var(--charcoal) 6%, transparent);
+}
+
+.showcase__colour-clear:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.showcase__wash {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  mix-blend-mode: color;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .showcase__ctrl {
   position: relative;
   box-sizing: border-box;
@@ -2143,6 +2724,7 @@ onBeforeUnmount(() => {
 }
 
 .showcase__ctrl-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
