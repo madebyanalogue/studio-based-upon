@@ -10,7 +10,8 @@
           'product-card__media--link': Boolean(href),
         }"
         :aria-label="item.title"
-        @pointerenter="prefetchActiveHero"
+        @pointerenter="onMediaEnter"
+        @pointermove="onMediaScrub"
         @focusin="prefetchActiveHero"
         @click="onOpen"
       >
@@ -184,6 +185,32 @@ const cycle = (direction: 1 | -1) => {
   imageIndex.value = (imageIndex.value + direction + count) % count
 }
 
+const scrubToPointer = (event: PointerEvent) => {
+  const count = projectImages.value.length
+  if (count < 2) return
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0) return
+  const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width)
+  const ratio = x / rect.width
+  // Map left→right across equal bands; clamp to last index at the right edge.
+  const next = Math.min(count - 1, Math.floor(ratio * count))
+  if (next !== imageIndex.value) {
+    imageIndex.value = next
+    prefetchActiveHero()
+  }
+}
+
+const onMediaEnter = (event: PointerEvent) => {
+  prefetchActiveHero()
+  scrubToPointer(event)
+}
+
+const onMediaScrub = (event: PointerEvent) => {
+  scrubToPointer(event)
+}
+
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
@@ -343,6 +370,7 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.6s ease;
   pointer-events: none;
   border-top: 1px dashed var(--ui-border-color);
+  display: none;
 }
 
 .product-card__meta * {

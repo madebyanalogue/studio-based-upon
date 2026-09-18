@@ -25,6 +25,16 @@
         <button
           type="button"
           class="header__version interface"
+          :aria-label="`Cart UI ${version}. Switch to next version`"
+          @click="toggleVersion"
+        >
+          {{ version }}
+        </button>
+
+        <button
+          v-if="isV2"
+          type="button"
+          class="header__version interface"
           :class="{ 'header__version--active': !stackChromeVisible }"
           :aria-label="
             stackChromeVisible
@@ -253,6 +263,7 @@ const {
 } = useBucket()
 const { textCase, toggleTextCase } = useTextCase()
 const { stackChromeVisible, toggleStackChrome } = useStackChrome()
+const { version, toggleVersion, isV2 } = useBucketUi()
 const {
   boards,
   activeBoardId,

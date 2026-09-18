@@ -24,6 +24,40 @@
   /* 0 when closed; set to cart footprint when open (pushes page content) */
   --bucket-push: 0px;
   --boards-rail-push: 0px;
+  /* Left selections panel inset — only non-zero on bucket UI v3 */
+  --selections-panel-width: 0px;
+}
+
+html.bucket-ui-v3 {
+  --selections-panel-width: calc(100vw / 2);
+}
+
+@media (min-width: 660px) {
+  html.bucket-ui-v3 {
+    --selections-panel-width: calc(100vw / 3);
+  }
+}
+
+@media (min-width: 1200px) {
+  html.bucket-ui-v3 {
+    --selections-panel-width: calc(100vw / 4);
+  }
+}
+
+@media (min-width: 1440px) {
+  html.bucket-ui-v3 {
+    --selections-panel-width: calc(100vw / 5);
+  }
+}
+
+@media (min-width: 1600px) {
+  html.bucket-ui-v3 {
+    --selections-panel-width: calc(100vw / 6);
+  }
+}
+
+html.selections-panel-hidden {
+  --selections-panel-width: 0px;
 }
 
 html.bucket-push {
