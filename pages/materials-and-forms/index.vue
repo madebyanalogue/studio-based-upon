@@ -245,6 +245,7 @@ const filterKey = libraryFilterKey
 
 /** Column counts — Wide ≈ Codrops demo 75% (10 cols). */
 const gridSizes = [
+  { columns: 2, label: '2', ariaLabel: 'Show 2 columns' },
   { columns: 3, label: '3', ariaLabel: 'Show 3 columns' },
   { columns: 4, label: '4', ariaLabel: 'Show 4 columns' },
   { columns: 5, label: '5', ariaLabel: 'Show 5 columns' },
@@ -261,7 +262,7 @@ const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
     materiality: [],
     colours: [],
     search: '',
-    columns: 5,
+    columns: 3,
   }),
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',

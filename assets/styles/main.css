@@ -32,9 +32,9 @@
 
 
   --card-pad: 0;
-  --card-gap: 5px;
+  --card-gap: 2px;
   --title-pad: 20px 0px calc(20px - var(--card-gap)) 0px;
-  --product-card-aspect-ratio: .75;
+  --product-card-aspect-ratio: 1.4;
 
   color-scheme: light;
 }

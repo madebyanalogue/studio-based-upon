@@ -6,6 +6,9 @@ const __dirname = dirname(__filename)
 
 export default defineNuxtConfig({
   devtools: { enabled: false },
+  devServer: {
+    port: 3002,
+  },
   modules: ['@nuxtjs/sanity', '@nuxt/image'],
   sanity: {
     projectId: 'k8gpyc57',
