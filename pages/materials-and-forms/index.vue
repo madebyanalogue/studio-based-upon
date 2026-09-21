@@ -159,6 +159,7 @@
             v-if="row.empty"
             class="products__spacer"
             :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) }"
+            :style="thumbStyle(row.key)"
             :data-flip-id="row.key"
             aria-hidden="true"
           />
@@ -171,6 +172,7 @@
             :forced-image-index="row.forcedImageIndex"
             :lock-image="row.lockImage"
             :expand-on-click="EXPAND_GALLERY_ON_CLICK && !row.lockImage"
+            :style="thumbStyle(row.key)"
             :data-flip-id="row.key"
             @expand="expandGallery(row.item._id)"
           />
@@ -307,11 +309,10 @@ const pageTitle = computed(
     (pageData.value as { heroTitle?: string } | null)?.heroTitle ||
     'Materials & Forms',
 )
-const pageDescription = computed(
-  () =>
-    (pageData.value as { heroSubtitle?: string } | null)?.heroSubtitle ||
-    'A library of forms, materials, colour, elements of origin, series and spirit imagery, filtered by category. Heart pieces into your selection.',
-)
+const pageDescription = computed(() => {
+  const subtitle = (pageData.value as { heroSubtitle?: string } | null)?.heroSubtitle
+  return typeof subtitle === 'string' ? subtitle.trim() : ''
+})
 
 useHead(() => {
   const page = pageData.value as
@@ -325,7 +326,7 @@ useHead(() => {
   }
 })
 
-const cardImage = (item: FormalItem) => imageUrl(item.image, 900)
+const cardImage = (item: FormalItem) => imageUrl(item.image, IMAGE_WIDTH.thumb)
 const filterKey = libraryFilterKey
 
 /** Column counts — Wide ≈ Codrops demo 75% (10 cols). */
@@ -370,6 +371,86 @@ const columns = ref(
 )
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
+
+type ThumbSize = { w: number; h: number }
+const gridWidth = ref(0)
+const thumbSizes = ref<Record<string, ThumbSize>>({})
+
+const readCardGap = () => {
+  if (!import.meta.client || !gridEl.value) return 5
+  const raw =
+    getComputedStyle(gridEl.value).columnGap ||
+    getComputedStyle(gridEl.value).gap ||
+    '5'
+  const n = parseFloat(raw)
+  return Number.isFinite(n) ? n : 5
+}
+
+/** Justified rows: shared row height, widths from image aspect (like discovery proportions). */
+const packThumbs = () => {
+  if (!import.meta.client) return
+  const width = gridWidth.value
+  if (width <= 0) return
+
+  const gap = readCardGap()
+  const cols = window.matchMedia('(max-width: 767px)').matches ? 2 : columns.value
+  const targetH = Math.max(72, (width - gap * Math.max(0, cols - 1)) / cols)
+
+  const visible = displayRows.value.filter(
+    (row) => !visibilitySeeded.value || visibleIds.value.has(row.item._id),
+  )
+  const aspects = visible.map((row) => {
+    if (row.empty) return 1
+    const ar = row.item.aspectRatio || 1
+    return Math.min(2.6, Math.max(0.4, ar))
+  })
+
+  const next: Record<string, ThumbSize> = {}
+  let rowStart = 0
+  let rowNat = 0
+
+  const flush = (end: number, stretch: boolean) => {
+    const count = end - rowStart
+    if (count <= 0) return
+    const gaps = (count - 1) * gap
+    let natural = 0
+    for (let i = rowStart; i < end; i++) natural += aspects[i]! * targetH
+    const h =
+      stretch && natural > 0
+        ? Math.max(56, ((width - gaps) / natural) * targetH)
+        : targetH
+    for (let i = rowStart; i < end; i++) {
+      next[visible[i]!.key] = { w: h * aspects[i]!, h }
+    }
+  }
+
+  for (let i = 0; i < visible.length; i++) {
+    const w = aspects[i]! * targetH
+    const nextW = rowNat === 0 ? w : rowNat + gap + w
+    if (rowNat > 0 && nextW > width + 0.5) {
+      flush(i, true)
+      rowStart = i
+      rowNat = w
+    } else {
+      rowNat = nextW
+    }
+  }
+  flush(visible.length, false)
+
+  for (const row of displayRows.value) {
+    if (!next[row.key]) next[row.key] = { w: targetH, h: targetH }
+  }
+  thumbSizes.value = next
+}
+
+const thumbStyle = (key: string) => {
+  const size = thumbSizes.value[key]
+  if (!size) return undefined
+  return {
+    '--thumb-w': `${size.w}px`,
+    '--thumb-h': `${size.h}px`,
+  }
+}
 
 type FlipMode = 'default' | 'stagger'
 const flipModes = [
@@ -578,6 +659,7 @@ watch(
 
 const gridRevealed = ref(false)
 let revealTimer: ReturnType<typeof setTimeout> | null = null
+let gridResizeObserver: ResizeObserver | null = null
 
 const openDropdown = ref<FacetId | null>(null)
 const facetsEl = ref<HTMLElement | null>(null)
@@ -601,16 +683,39 @@ onMounted(() => {
   revealTimer = setTimeout(() => {
     gridRevealed.value = true
   }, 1000)
+
+  if (gridEl.value) {
+    gridWidth.value = gridEl.value.clientWidth
+    packThumbs()
+    gridResizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      const w = entry?.contentRect.width ?? gridEl.value?.clientWidth ?? 0
+      if (Math.abs(w - gridWidth.value) < 0.5) return
+      gridWidth.value = w
+      packThumbs()
+    })
+    gridResizeObserver.observe(gridEl.value)
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  gridResizeObserver?.disconnect()
+  gridResizeObserver = null
   if (revealTimer) clearTimeout(revealTimer)
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
   if (import.meta.client && gridEl.value) {
     Flip.killFlipsOf(gridEl.value.querySelectorAll('.product-card'))
   }
 })
+
+watch(
+  [columns, visibleIds, displayRows, visibilitySeeded],
+  () => {
+    packThumbs()
+  },
+  { deep: true },
+)
 
 const activeFacets = {
   series: activeSeries,
@@ -842,7 +947,8 @@ useHead(() => ({
 }
 
 .products__header {
-  padding-bottom: 1rem;
+  padding-bottom: 0rem;
+  max-width: none;
 }
 
 .products__intro {
@@ -853,7 +959,7 @@ useHead(() => ({
 
 .products__controls {
   position: sticky;
-  top: var(--header-height);
+  top: calc(var(--header-height) + 2.5vw);
   z-index: 50;
   display: flex;
   flex-wrap: wrap;
@@ -866,8 +972,10 @@ useHead(() => ({
 .products__filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: start;
   gap: 0.5rem 1.5rem;
+  flex-direction: column;
+  text-align: left;
 }
 
 .type-chip {
@@ -1135,11 +1243,13 @@ useHead(() => ({
   margin: 0 0 1rem;
   font-size: var(--text-sm);
   color: var(--muted);
+  display: none;
 }
 
 .products__grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: var(--card-gap);
   margin: 0 var(--gutter);
   opacity: 0;
@@ -1159,21 +1269,15 @@ useHead(() => ({
 }
 
 .products__spacer {
+  width: var(--thumb-w, 100px);
+  height: var(--thumb-h, 100px);
+  flex: 0 0 auto;
   min-width: 0;
-  aspect-ratio: var(--product-card-aspect-ratio, 1);
   pointer-events: none;
 }
 
 .products__spacer.is-filtered-out {
   display: none !important;
-}
-
-.products__grid--wide :deep(.product-card__meta) {
-  opacity: 0;
-}
-
-.products__grid--wide :deep(.product-card:hover .product-card__meta) {
-  opacity: 0;
 }
 
 .products__grid--dense :deep(.product-card__type) {
@@ -1183,12 +1287,6 @@ useHead(() => ({
 .products__empty {
   padding: 2rem var(--gutter);
   color: var(--muted);
-}
-
-@media (min-width: 768px) {
-  .products__grid {
-    grid-template-columns: repeat(var(--columns), 1fr);
-  }
 }
 
 @media (max-width: 767px) {

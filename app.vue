@@ -7,13 +7,12 @@
   </ClientOnly>
 
   <div v-if="preloaderReady || disablePreloader" id="app">
-    <SelectionsPanel v-if="isV3" />
     <AppHeader />
     <main class="page-wrapper">
       <NuxtPage />
     </main>
     <BucketDrawer v-if="isV1" />
-    <BucketStack v-if="isV2 || isV3" />
+    <BucketStack v-if="isV2" />
     <MoodboardCanvas />
     <MoodboardPicker />
     <ProductOverlay />
@@ -25,7 +24,7 @@
 import { isHomepagePath } from '~/composables/useHomepagePreloader'
 
 const { seoTitle, seoDescription, disablePreloader } = useSiteSettings()
-const { initBucketUi, isV1, isV2, isV3 } = useBucketUi()
+const { initBucketUi, isV1, isV2 } = useBucketUi()
 const { initTextCase } = useTextCase()
 const { initStackChrome } = useStackChrome()
 const route = useRoute()

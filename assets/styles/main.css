@@ -33,18 +33,12 @@
 
 
   --card-pad: 0;
-  --card-gap: 2px;
+  --card-gap: 20px;
   --title-pad: 20px 0px calc(20px - var(--card-gap)) 0px;
   --product-card-aspect-ratio: 0.8;
 
 
   color-scheme: light;
-}
-
-@media (min-width: 768px) {
-  :root {
-    --card-gap: 0px;
-  }
 }
 
 *,
@@ -184,12 +178,6 @@ html.stack-chrome-hidden .stack__boards-rail {
   pointer-events: none !important;
 }
 
-/* v3: selections live in the left panel — hide the corner selection rail */
-html.bucket-ui-v3 .stack__rail {
-  display: none !important;
-  pointer-events: none !important;
-}
-
 /* Fixed chrome that lives in the content column (right of selections panel) */
 .header {
   left: var(--selections-panel-width) !important;
@@ -202,9 +190,10 @@ html.bucket-ui-v3 .stack__rail {
 }
 
 .stack__rail {
-  left: var(--selections-panel-width) !important;
+  left: auto !important;
+  right: 0 !important;
   transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    right 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.35s ease;
 }

@@ -16,19 +16,28 @@ export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
   "feature": feature->title,
   "materials": materiality[]->title,
   "colours": colours[]->title,
-  image { asset-> { _id, url } },
-  gallery[] { asset-> { _id, url } },
-  spiritGallery[] { asset-> { _id, url } },
+  image { asset-> { _id, url, metadata { dimensions { width, height } } } },
+  gallery[] { asset-> { _id, url, metadata { dimensions { width, height } } } },
+  spiritGallery[] { asset-> { _id, url, metadata { dimensions { width, height } } } },
   linkType,
   externalUrl
 }`
+
+export type LibraryImageAsset = {
+  url?: string
+  _id?: string
+  metadata?: { dimensions?: { width?: number; height?: number } }
+}
 
 export type LibraryItem = FormalItem & {
   category?: string
   tags?: string[]
   externalUrl?: string
-  gallery?: { asset?: { url?: string; _id?: string } }[]
-  spiritGallery?: { asset?: { url?: string; _id?: string } }[]
+  /** width / height of the primary thumbnail image */
+  aspectRatio: number
+  image: { asset?: LibraryImageAsset }
+  gallery?: { asset?: LibraryImageAsset }[]
+  spiritGallery?: { asset?: LibraryImageAsset }[]
 }
 
 const asSlug = (slug: FormalItem['slug'] | string | undefined) => {
@@ -46,6 +55,21 @@ const LEGACY_FORM_TAGS = new Set([
 ])
 
 const PRIMARY_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'origin'])
+
+const assetAspect = (asset?: LibraryImageAsset | null) => {
+  const w = asset?.metadata?.dimensions?.width
+  const h = asset?.metadata?.dimensions?.height
+  if (w && h && w > 0 && h > 0) return w / h
+  return null
+}
+
+/** Stable fallback ratios for demo / missing metadata — keeps the grid varied. */
+const fallbackAspect = (id: string) => {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  const pool = [0.68, 0.8, 0.92, 1, 1.15, 1.35, 1.6, 1.85]
+  return pool[hash % pool.length]!
+}
 
 /** Normalize Sanity or demo library documents into a shared shape. */
 export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem => {
@@ -76,13 +100,14 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     ),
   )
 
-  const image = item.image as FormalItem['image']
+  const image = item.image as LibraryItem['image']
   const linkType = (item.linkType as string) || 'none'
   const series = String((item.series as string) || '').trim()
   const feature = String((item.feature as string) || '').trim()
+  const id = String(item._id || '')
 
   return {
-    _id: String(item._id || ''),
+    _id: id,
     title: String(item.title || 'Untitled'),
     slug: asSlug(item.slug as FormalItem['slug']),
     itemType: 'product',
@@ -95,6 +120,7 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     materials: (item.materials as string[]) || [],
     colours: (item.colours as string[]) || [],
     image: image || { asset: { url: '' } },
+    aspectRatio: assetAspect(image?.asset) ?? fallbackAspect(id || 'item'),
     gallery: (item.gallery as LibraryItem['gallery']) || [],
     spiritGallery: (item.spiritGallery as LibraryItem['spiritGallery']) || [],
     linkType,
@@ -138,7 +164,7 @@ export const discoveryFilterLabels = [
 ]
 
 export const useLibraryCatalog = async () => {
-  const { data, pending, error, refresh } = await useAsyncData('libraryItems', () =>
+  const { data, pending, error, refresh } = await useAsyncData('libraryItems-v2', () =>
     $fetch('/api/sanity/query', { method: 'POST', body: { query: LIBRARY_QUERY } })
       .then((r: { result?: unknown }) => r?.result ?? null)
       .catch(() => null),

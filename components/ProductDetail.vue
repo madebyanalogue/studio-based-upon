@@ -32,27 +32,38 @@
         class="pdp__body pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
       >
-        <h1 class="pdp__title">{{ product.title }}</h1>
+        <div class="pdp__title-row">
+          <h1 class="pdp__title">{{ product.title }}</h1>
+          <AddButton
+            class="pdp__title-add"
+            :active="isProductSaved"
+            :label="
+              isProductSaved
+                ? `Remove ${product.title} from selection`
+                : `Add ${product.title} to selection`
+            "
+            @click="onAddToSelection"
+          />
+        </div>
 
         <dl class="pdp__specs">
           <div class="pdp__spec pdp__spec--toggle">
             <button
               type="button"
               class="pdp__disclosure"
-              :aria-expanded="showSpecs"
-              @click="showSpecs = !showSpecs"
+              :aria-expanded="showMateriality"
+              @click="showMateriality = !showMateriality"
             >
-              <span class="serif-italic">Specifications</span>
-              <span class="pdp__disclosure-mark">{{ showSpecs ? '−' : '+' }}</span>
+              <span class="interface">Materiality</span>
+              <span class="pdp__disclosure-mark" aria-hidden="true">
+                <span class="pdp__disclosure-mark-bar" />
+                <span class="pdp__disclosure-mark-bar" />
+              </span>
             </button>
-            <div v-if="showSpecs" class="pdp__spec-panel">
+            <div v-if="showMateriality" class="pdp__spec-panel">
               <div v-if="product.style" class="pdp__spec">
                 <dt class="serif-italic">Style</dt>
                 <dd>{{ product.style }}</dd>
-              </div>
-              <div v-if="product.dimensions" class="pdp__spec">
-                <dt class="serif-italic">Dimensions</dt>
-                <dd>{{ product.dimensions }}</dd>
               </div>
               <div v-if="product.comCol" class="pdp__spec">
                 <dt class="serif-italic">COM / COL</dt>
@@ -76,27 +87,49 @@
               </div>
             </div>
           </div>
+
+          <div v-if="product.dimensions" class="pdp__spec pdp__spec--toggle">
+            <button
+              type="button"
+              class="pdp__disclosure"
+              :aria-expanded="showDimensions"
+              @click="showDimensions = !showDimensions"
+            >
+              <span class="interface">Dimensions</span>
+              <span class="pdp__disclosure-mark" aria-hidden="true">
+                <span class="pdp__disclosure-mark-bar" />
+                <span class="pdp__disclosure-mark-bar" />
+              </span>
+            </button>
+            <div v-if="showDimensions" class="pdp__spec-panel">
+              <div class="pdp__spec">
+                <dt class="serif-italic">Dimensions</dt>
+                <dd>{{ product.dimensions }}</dd>
+              </div>
+            </div>
+          </div>
         </dl>
 
         <section v-if="product.description || product.edition" class="pdp__info">
           <button
             type="button"
             class="pdp__disclosure pdp__info-toggle"
-            :aria-expanded="showInfo"
-            @click="showInfo = !showInfo"
+            :aria-expanded="showDetails"
+            @click="showDetails = !showDetails"
           >
-            <span class="serif-italic">Info</span>
-            <span class="pdp__disclosure-mark">{{ showInfo ? '−' : '+' }}</span>
+            <span class="interface">Details</span>
+            <span class="pdp__disclosure-mark" aria-hidden="true">
+              <span class="pdp__disclosure-mark-bar" />
+              <span class="pdp__disclosure-mark-bar" />
+            </span>
           </button>
-          <div v-if="showInfo" class="pdp__info-panel">
+          <div v-if="showDetails" class="pdp__info-panel">
             <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
             <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
           </div>
         </section>
 
-        <div class="pdp__actions">
-          <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
-        </div>
+        
 
         <div v-if="product.finishes?.length" class="pdp__links">
           <button
@@ -120,6 +153,9 @@
             <img :src="nextImageUrl" :alt="nextProduct.title" />
           </button>
         </div>
+      </div>
+      <div class="pdp__actions">
+        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
       </div>
     </aside>
 
@@ -147,6 +183,11 @@
             <div
               class="pdp__hero-frame"
               :class="{ 'pdp__hero-frame--zoomed': i === selectedIndex && imageExpanded }"
+              :style="
+                galleryAspects[entry.id]
+                  ? { '--pdp-ar': String(galleryAspects[entry.id]) }
+                  : undefined
+              "
             >
               <img
                 :ref="(el) => setStripImageRef(i, el)"
@@ -157,7 +198,10 @@
                 "
                 :alt="`${product.title} — image ${i + 1}`"
                 class="pdp__hero-image"
-                :class="{ 'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded }"
+                :class="{
+                  'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded,
+                  'pdp__hero-image--ready': galleryReady[entry.id],
+                }"
                 :style="
                   i === selectedIndex && imageExpanded
                     ? {
@@ -170,12 +214,6 @@
                 @load="onStripImageLoad(i)"
                 @click.stop="onStripImageClick(i, $event)"
                 @mousemove="onFrameZoomMove($event, i)"
-              />
-              <AddButton
-                class="pdp__add"
-                :active="isImageSaved(i)"
-                :label="isImageSaved(i) ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
-                @click.stop="onToggleImage(entry, i, $event)"
               />
             </div>
           </figure>
@@ -289,14 +327,16 @@ const orderLabel = computed(() => {
   return String(index + 1).padStart(digits, '0')
 })
 
-const showSpecs = ref(false)
-const showInfo = ref(false)
+const showMateriality = ref(false)
+const showDimensions = ref(false)
+const showDetails = ref(false)
 const showFinishes = ref(false)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
 const contentReady = ref(false)
-const sidesVisible = ref(false)
+/** Shared with ProductIndexRail so open/close chrome stays in lockstep. */
+const sidesVisible = useState('pdp-chrome-visible', () => false)
 const galleryVisible = ref(false)
 /** Fades left/center copy + gallery; column rules stay put */
 const paneContentVisible = ref(true)
@@ -314,15 +354,16 @@ let stripScrollRaf = 0
 let frameZoomToken = 0
 
 const setStripImageRef = (index: number, el: Element | null) => {
+  if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+    markGalleryImageReady(index, el)
+  }
   if (index === selectedIndex.value && el instanceof HTMLImageElement) {
     heroRef.value = el
   }
 }
 
-const isImageSaved = (index: number) =>
-  isSaved(product.value?._id || '', galleryEntries.value.length > 1 ? index : undefined)
-
 const onStripImageLoad = (index: number) => {
+  markGalleryImageReady(index)
   if (index !== selectedIndex.value) return
   // Bind hero before Flip measures — ref callbacks can race the first paint
   const img = stripRef.value?.querySelector<HTMLImageElement>(
@@ -342,13 +383,13 @@ type GalleryEntry = {
   zoomSrc: string
 }
 
-const galleryEntries = computed((): GalleryEntry[] => {
-  if (!product.value) return []
-
+const buildGalleryEntries = (
+  record: NonNullable<typeof product.value>,
+): GalleryEntry[] => {
   const assets = [
-    product.value.image,
-    ...(product.value.gallery || []),
-    ...(product.value.spiritGallery || []),
+    record.image,
+    ...(record.gallery || []),
+    ...(record.spiritGallery || []),
   ].filter(Boolean)
 
   const seen = new Set<string>()
@@ -361,7 +402,7 @@ const galleryEntries = computed((): GalleryEntry[] => {
     if (seen.has(key)) continue
     seen.add(key)
     entries.push({
-      id: `${product.value!._id}-img-${entries.length}`,
+      id: `${record._id}-img-${entries.length}`,
       src,
       thumbSrc: imageUrl(asset, IMAGE_WIDTH.strip) || src,
       zoomSrc: imageUrl(asset, IMAGE_WIDTH.zoom) || src,
@@ -369,7 +410,58 @@ const galleryEntries = computed((): GalleryEntry[] => {
   }
 
   return entries
-})
+}
+
+const galleryEntries = computed((): GalleryEntry[] =>
+  product.value ? buildGalleryEntries(product.value) : [],
+)
+
+/** Intrinsic width/height ratio — reserves strip width before paint. */
+const galleryAspects = reactive<Record<string, number>>({})
+/** True once the bitmap is decoded — drives fade-in. */
+const galleryReady = reactive<Record<string, boolean>>({})
+
+const loadGalleryImageMeta = (src: string) =>
+  new Promise<{ w: number; h: number }>((resolve) => {
+    if (!import.meta.client) {
+      resolve({ w: 0, h: 0 })
+      return
+    }
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve({ w: 0, h: 0 })
+    img.src = src
+  })
+
+/** Prefetch + measure the first frames so soft-swaps don't reflow the strip. */
+const prepareGalleryEntries = async (entries: GalleryEntry[], limit = 3) => {
+  if (!import.meta.client || !entries.length) return
+  const slice = entries.slice(0, Math.min(limit, entries.length))
+  await Promise.all(
+    slice.map(async (entry) => {
+      const { w, h } = await loadGalleryImageMeta(entry.src)
+      if (w > 0 && h > 0) galleryAspects[entry.id] = w / h
+      galleryReady[entry.id] = true
+    }),
+  )
+  for (const entry of entries.slice(limit)) {
+    void prefetchImage(entry.src)
+  }
+}
+
+const markGalleryImageReady = (index: number, img?: HTMLImageElement | null) => {
+  const entry = galleryEntries.value[index]
+  if (!entry) return
+  const node =
+    img ||
+    stripRef.value?.querySelector<HTMLImageElement>(
+      `[data-strip-index="${index}"] .pdp__hero-image`,
+    )
+  if (node?.naturalWidth && node.naturalHeight) {
+    galleryAspects[entry.id] = node.naturalWidth / node.naturalHeight
+  }
+  galleryReady[entry.id] = true
+}
 
 const activeEntry = computed(
   () => galleryEntries.value[selectedIndex.value] || galleryEntries.value[0] || null,
@@ -401,6 +493,10 @@ watch(galleryEntries, (entries) => {
     return
   }
   if (selectedIndex.value >= entries.length) selectedIndex.value = 0
+  // Soft-swap prepares ahead of time; hard-load / late mounts still warm the first frames
+  if (import.meta.client && entries.slice(0, 3).some((e) => !galleryReady[e.id])) {
+    void prepareGalleryEntries(entries, 3)
+  }
 })
 
 const selectImage = (index: number) => {
@@ -540,7 +636,7 @@ const onStageClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
   // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
-  if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, .pdp__add, button, a')) return
+  if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, button, a')) return
   emit('close')
 }
 
@@ -616,53 +712,23 @@ const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const onToggleImage = (entry: GalleryEntry, index: number, event?: Event) => {
-  if (!product.value) return
-  const urls = galleryEntries.value.map((g) => g.src)
-  const fromEvent =
-    (event?.currentTarget as HTMLElement | null)?.closest?.('.pdp__hero-frame')?.querySelector(
-      '.pdp__hero-image',
-    ) || (event?.currentTarget as HTMLElement | null)
-  const source =
-    (fromEvent instanceof HTMLElement ? fromEvent : null) ||
-    heroRef.value ||
-    null
-  requestSave(
-    {
-      id: product.value._id,
-      title: product.value.title,
-      imageUrl: entry.src,
-      itemType: product.value.series || 'item',
-      link: `/materials-and-forms/${product.value.slug}`,
-      imageUrls: urls.length > 1 ? urls : undefined,
-      imageIndex: urls.length > 1 ? index : undefined,
-    },
-    { source },
-  )
-}
+const isProductSaved = computed(() =>
+  product.value ? isSaved(product.value._id) : false,
+)
 
-const isCurrentImageSaved = computed(() => {
-  if (!product.value) return false
-  const index = galleryEntries.value.length > 1 ? selectedIndex.value : undefined
-  return isSaved(product.value._id, index)
-})
-
-/** Same fly-to-pile as the hero heart — always the current gallery image. */
+/** Add / remove the product (not a specific gallery frame). */
 const onAddToSelection = () => {
-  if (!product.value || !activeEntry.value) return
-  const entry = activeEntry.value
-  const index = selectedIndex.value
-  const urls = galleryEntries.value.map((g) => g.src)
+  if (!product.value) return
+  const imageUrlSrc =
+    activeEntry.value?.src || imageUrl(product.value.image, IMAGE_WIDTH.hero) || ''
   const source = heroRef.value
   requestSave(
     {
       id: product.value._id,
       title: product.value.title,
-      imageUrl: entry.src,
+      imageUrl: imageUrlSrc,
       itemType: product.value.series || 'item',
       link: `/materials-and-forms/${product.value.slug}`,
-      imageUrls: urls.length > 1 ? urls : undefined,
-      imageIndex: urls.length > 1 ? index : undefined,
     },
     { source },
   )
@@ -1071,8 +1137,9 @@ watch(
   async (slug, prevSlug) => {
     if (!slug || slug === prevSlug) return
 
-    showSpecs.value = false
-    showInfo.value = false
+    showMateriality.value = false
+    showDimensions.value = false
+    showDetails.value = false
     showFinishes.value = false
     collapseImage()
 
@@ -1089,6 +1156,10 @@ watch(
       const next = await fetchProduct(slug)
       if (token !== slugSwapToken) return
       if (!next) return
+
+      const nextEntries = buildGalleryEntries(next)
+      await prepareGalleryEntries(nextEntries, 3)
+      if (token !== slugSwapToken) return
 
       applyProduct(next)
 
@@ -1127,6 +1198,8 @@ watch(
     const token = ++slugSwapToken
     const next = await fetchProduct(slug)
     if (token !== slugSwapToken || !next) return
+    await prepareGalleryEntries(buildGalleryEntries(next), 3)
+    if (token !== slugSwapToken) return
     applyProduct(next)
     selectedIndex.value = 0
     galleryVisible.value = true
@@ -1145,7 +1218,7 @@ watch(
   background: transparent;
   transition: background var(--theme-ms) var(--theme-ease);
   --index-tabs-height: 2.25rem;
-  --index-rail-width: min(18vw, 250px);
+  --index-rail-width: min(18vw, 280px);
   /* Shared by rail slot width + gallery clearance — keep in lockstep */
   --index-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -1195,16 +1268,18 @@ watch(
 }
 
 .pdp__col--left {
+  --grid-line: rgba(255, 255, 255, 0.25);
   position: absolute;
-  top: unset;
+  top: 50%;
+  left: auto;
   right: 20px;
-  bottom: 20px;
+  bottom: unset;
   z-index: 4;
   width: var(--side-column-width);
   height: auto;
   max-height: calc(100% - 40px);
   min-height: 0;
-  border: 1px solid var(--grid-line);
+  border: 0 solid var(--grid-line);
   /* border-radius: 30px; */
   corner-shape: squircle;
   background: color-mix(in srgb, var(--cream) 70%, transparent);
@@ -1215,6 +1290,7 @@ watch(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
+  transform: translateY(-50%);
 }
 
 .pdp__col--right {
@@ -1275,13 +1351,13 @@ watch(
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 1px;
+  gap: 20px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* Clear the index rail; collapses in lockstep when the rail hides */
+  /* Clear the index rail on the left; collapses in lockstep when the rail hides */
   padding-left: var(--index-rail-width);
   padding-right: 0;
   padding-top: 0;
@@ -1323,16 +1399,20 @@ watch(
   position: relative;
   height: 100%;
   max-height: 100%;
+  /* Reserve width from intrinsic ratio so the strip doesn't reflow on decode */
+  aspect-ratio: var(--pdp-ar, 1);
   width: auto;
+  flex: 0 0 auto;
   display: flex;
   align-items: stretch;
   line-height: 0;
   overflow: hidden;
+  background: color-mix(in srgb, var(--charcoal) 4%, transparent);
 }
 
 .pdp__strip-item .pdp__hero-image {
   display: block;
-  width: auto;
+  width: 100%;
   height: 100%;
   max-width: none;
   max-height: 100%;
@@ -1340,6 +1420,12 @@ watch(
   cursor: zoom-in;
   transform-origin: center center;
   will-change: transform;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.pdp__strip-item .pdp__hero-image--ready {
+  opacity: 1;
 }
 
 .pdp__strip-item .pdp__hero-image--zoomed {
@@ -1494,39 +1580,38 @@ watch(
   color: var(--muted);
 }
 
-.pdp__add {
-  position: absolute;
-  top: var(--thumb-ctrl-inset);
-  right: var(--thumb-ctrl-inset);
-  z-index: 2;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
-}
-
-.pdp--ready .pdp__add {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.pdp__add:hover {
-  /* transform: scale(1.06); */
-}
-
 .pdp__body {
   width: 100%;
-  padding: 1.5rem var(--gutter) 1.65rem;
+  padding: 0;
   flex: 0 1 auto;
   min-height: 0;
 }
 
+.pdp__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0;
+  padding: var(--gutter);
+}
+
 .pdp__title {
-  margin: 0 0 1.5rem;
+  margin: 0;
+  min-width: 0;
+  flex: 1;
   font-family: var(--font-serif);
   font-size: var(--text-2xl);
   line-height: 1.15;
+}
+
+.pdp__title-add {
+  flex-shrink: 0;
+  margin-top: 0em;
+}
+
+.pdp__title-add :deep(.add-btn__icon) {
+  background: transparent;
 }
 
 .pdp__specs {
@@ -1548,7 +1633,7 @@ watch(
 
 .pdp__spec--toggle {
   display: block;
-  padding: 0;
+  padding: 0 var(--gutter);
   border-top: 1px solid var(--grid-line);
   border-bottom: 1px solid var(--grid-line);
 }
@@ -1592,7 +1677,31 @@ watch(
 }
 
 .pdp__disclosure-mark {
+  position: relative;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
   color: var(--muted);
+}
+
+.pdp__disclosure-mark-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  margin-top: -0.5px;
+  background: currentColor;
+  transform-origin: center center;
+}
+
+.pdp__disclosure-mark-bar:last-child {
+  transform: rotate(90deg);
+}
+
+.pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark-bar:last-child {
+  opacity: 0;
 }
 
 .pdp__options {
@@ -1639,17 +1748,17 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-top: 1.5rem;
+  margin-top: 50px;
   margin-bottom: 0;
 }
 
 .pdp__inquire {
   display: block;
   width: 100%;
-  padding: 12px;
+  padding: 13px;
   background: var(--red);
   color: white;
-  font-size: 14px;
+  font-size: 13px;
   font-family: var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1714,6 +1823,7 @@ watch(
 
 .pdp__info {
   margin: 0;
+  padding: 0 var(--gutter);
   border-bottom: 1px solid var(--grid-line);
 }
 
@@ -1818,6 +1928,7 @@ watch(
   .pdp__col--left {
     position: relative;
     top: auto;
+    left: auto;
     right: auto;
     bottom: auto;
     width: 100%;
@@ -1826,6 +1937,7 @@ watch(
     corner-shape: initial;
     border-bottom: 1px solid var(--grid-line);
     z-index: auto;
+    transform: none;
   }
 
   .pdp__col--right {

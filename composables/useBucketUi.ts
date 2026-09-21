@@ -1,16 +1,15 @@
-export type BucketUiVersion = 'v1' | 'v2' | 'v3'
+export type BucketUiVersion = 'v1' | 'v2'
 
 const STORAGE_KEY = 'sba-bucket-ui'
-const VERSIONS: BucketUiVersion[] = ['v1', 'v2', 'v3']
+const VERSIONS: BucketUiVersion[] = ['v1', 'v2']
 
 const isVersion = (value: unknown): value is BucketUiVersion =>
-  value === 'v1' || value === 'v2' || value === 'v3'
+  value === 'v1' || value === 'v2'
 
 /**
  * Presentational bucket shell:
  * - v1 strip drawer (BucketDrawer)
  * - v2 stacked pile + fullscreen grid (BucketStack)
- * - v3 left selections side panel (SelectionsPanel)
  */
 export const useBucketUi = () => {
   const version = useState<BucketUiVersion>('bucket-ui-version', () => 'v2')
@@ -20,9 +19,8 @@ export const useBucketUi = () => {
     const root = document.documentElement
     root.classList.toggle('bucket-ui-v1', next === 'v1')
     root.classList.toggle('bucket-ui-v2', next === 'v2')
-    root.classList.toggle('bucket-ui-v3', next === 'v3')
-    // Layout inset only for the left panel (v3).
-    root.classList.toggle('selections-panel-hidden', next !== 'v3')
+    root.classList.remove('bucket-ui-v3')
+    root.classList.add('selections-panel-hidden')
   }
 
   const setVersion = (next: BucketUiVersion) => {
@@ -47,7 +45,9 @@ export const useBucketUi = () => {
     let stored: BucketUiVersion = 'v2'
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY)
-      if (isVersion(raw)) stored = raw
+      // Former v3 users land on v2.
+      if (raw === 'v3') stored = 'v2'
+      else if (isVersion(raw)) stored = raw
     } catch {
       /* private mode */
     }
@@ -61,6 +61,5 @@ export const useBucketUi = () => {
     initBucketUi,
     isV1: computed(() => version.value === 'v1'),
     isV2: computed(() => version.value === 'v2'),
-    isV3: computed(() => version.value === 'v3'),
   }
 }

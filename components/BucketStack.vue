@@ -19,7 +19,7 @@
       :style="stackCssVars"
       :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
     >
-      <!-- Selection piles + create slot (bottom-left) -->
+      <!-- Selection piles + create slot (bottom-right) -->
       <div
         v-if="showRail"
         ref="railRef"
@@ -1739,8 +1739,12 @@ const boardCellClass = (entry: SelectionBoardEntry) => {
   }
 }
 
+/** TEMP: hide My Boards pile until the feature is ready again. */
+const BOARDS_RAIL_ENABLED = false
+
 const showBoardsRail = computed(
   () =>
+    BOARDS_RAIL_ENABLED &&
     boardsRailList.value.length > 0 &&
     !isMoodboard.value &&
     // Stay mounted under selection + boards carts so close never remounts/pops
@@ -4693,11 +4697,12 @@ onBeforeUnmount(() => {
 
 .stack__rail {
   position: fixed;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: 0;
   z-index: 210;
   display: flex;
-  flex-direction: row;
+  flex-direction: row-reverse;
   align-items: flex-end;
   gap: 0;
   pointer-events: none;

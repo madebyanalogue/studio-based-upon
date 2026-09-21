@@ -10,8 +10,7 @@
           'product-card__media--link': Boolean(href),
         }"
         :aria-label="item.title"
-        @pointerenter="onMediaEnter"
-        @pointermove="onMediaScrub"
+        @pointerenter="prefetchActiveHero"
         @focusin="prefetchActiveHero"
         @click="onOpen"
       >
@@ -30,17 +29,6 @@
           :active="saved"
           :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
           @click.stop.prevent="onToggle"
-        />
-
-        <ImageCycleArrows
-          v-if="projectImages.length > 1 && !isImageLocked && !expandOnClick"
-          class="product-card__cycle"
-          :index="imageIndex"
-          :count="projectImages.length"
-          hide-count
-          boxed
-          @prev="cycle(-1)"
-          @next="cycle(1)"
         />
       </component>
     </div>
@@ -221,40 +209,6 @@ watch(projectImages, (urls) => {
   }
 })
 
-const cycle = (direction: 1 | -1) => {
-  if (isImageLocked.value || props.expandOnClick) return
-  const count = projectImages.value.length
-  if (count < 2) return
-  imageIndex.value = (imageIndex.value + direction + count) % count
-}
-
-const scrubToPointer = (event: PointerEvent) => {
-  if (isImageLocked.value || props.expandOnClick) return
-  const count = projectImages.value.length
-  if (count < 2) return
-  const el = event.currentTarget as HTMLElement | null
-  if (!el) return
-  const rect = el.getBoundingClientRect()
-  if (rect.width <= 0) return
-  const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width)
-  const ratio = x / rect.width
-  // Map left→right across equal bands; clamp to last index at the right edge.
-  const next = Math.min(count - 1, Math.floor(ratio * count))
-  if (next !== imageIndex.value) {
-    imageIndex.value = next
-    prefetchActiveHero()
-  }
-}
-
-const onMediaEnter = (event: PointerEvent) => {
-  prefetchActiveHero()
-  scrubToPointer(event)
-}
-
-const onMediaScrub = (event: PointerEvent) => {
-  scrubToPointer(event)
-}
-
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
@@ -308,7 +262,12 @@ const onToggle = (event?: MouseEvent) => {
 <style scoped>
 .product-card {
   --ui-border-color: transparent;
+  --thumb-w: auto;
+  --thumb-h: auto;
   position: relative;
+  width: var(--thumb-w);
+  max-width: 100%;
+  flex: 0 0 auto;
   min-width: 0;
   /* border-right: 1px solid var(--ui-border-color);
   border-bottom: 1px solid var(--ui-border-color); */
@@ -324,10 +283,12 @@ const onToggle = (event?: MouseEvent) => {
 
 .product-card__media {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: var(--thumb-h);
   container-type: inline-size;
-  /* aspect-ratio: 1; */
   overflow: hidden;
   text-align: center;
   border-radius: var(--thumb-radius);
@@ -349,11 +310,11 @@ const onToggle = (event?: MouseEvent) => {
 .product-card__image {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: bottom center;
   display: block;
   pointer-events: none;
   transition: opacity 0.7s ease, filter 0.7s ease;
-  aspect-ratio: var(--product-card-aspect-ratio);
 }
 
 .product-card__type-label {
@@ -373,38 +334,21 @@ const onToggle = (event?: MouseEvent) => {
 
 .product-card__add {
   position: absolute;
+  top: var(--thumb-ctrl-inset);
   right: var(--thumb-ctrl-inset);
-  bottom: var(--thumb-ctrl-inset);
   z-index: 3;
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.product-card__cycle {
-  position: absolute;
-  left: var(--thumb-ctrl-inset);
-  bottom: var(--thumb-ctrl-inset);
-  z-index: 2;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-/* Narrow: heart stays put and there's no room for the gallery arrows */
-@media (max-width: 999px) {
-  .product-card__cycle {
-    display: none;
-  }
-}
-
-/* Wide: both controls ride the hover, but a saved heart stays readable */
+/* Wide: heart rides the hover; a saved heart stays readable */
 @media (min-width: 1000px) {
-  .product-card__add,
-  .product-card__cycle {
+  .product-card__add {
     opacity: 0;
     transform: translateY(4px);
     pointer-events: none;
   }
 
   .product-card:hover .product-card__add,
-  .product-card:hover .product-card__cycle,
   .product-card--saved .product-card__add {
     opacity: 1;
     transform: translateY(0);
@@ -418,11 +362,10 @@ const onToggle = (event?: MouseEvent) => {
   z-index: 1;
   padding: var(--title-pad);
   min-width: 0;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.6s ease;
   pointer-events: none;
   border-top: 1px dashed var(--ui-border-color);
-  display: none;
 }
 
 .product-card__meta * {
@@ -436,39 +379,15 @@ const onToggle = (event?: MouseEvent) => {
   cursor: inherit;
 }
 
-/* Title only when the image/media is hovered — not pad or meta area */
-.product-card:has(.product-card__media:hover) .product-card__meta {
-  opacity: 1;
-}
-
-/*
- * Touch: iOS treats a hover-triggered reveal as the first of two taps, so the
- * card would need tapping twice to open. Keep the meta static instead.
- */
 @media (hover: none) {
-  .product-card__meta {
-    opacity: 1;
-  }
-
   .product-card:hover .product-card__type-label {
     color: var(--charcoal);
-  }
-
-  /* Wide touch screens (tablets) follow the narrow rules, not the hover ones */
-  .product-card__cycle {
-    display: none;
   }
 
   .product-card__add {
     opacity: 1;
     transform: none;
     pointer-events: auto;
-  }
-}
-
-@media (max-width: 999px) {
-  .product-card__meta {
-    display: none;
   }
 }
 
@@ -497,11 +416,8 @@ const onToggle = (event?: MouseEvent) => {
   align-items: baseline;
   gap: 0.35rem;
   color: var(--muted);
-  opacity: 1;
+  opacity: 0;
   transition: opacity 0.7s ease 0s;
-}
-.product-card:hover .product-card__type {
-  opacity: 1;
 }
 
 .product-card__sep {

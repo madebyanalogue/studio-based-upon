@@ -1,13 +1,42 @@
 <template>
   <div
     class="pdp-index"
-    :class="{ 'pdp-index--hidden': !indexRailVisible }"
+    :class="{
+      'pdp-index--hidden': !indexRailVisible,
+      'pdp-index--chrome': pdpChromeVisible,
+    }"
   >
     <div
       class="pdp-index__rail"
       aria-label="Product index"
       :aria-hidden="!indexRailVisible ? 'true' : undefined"
     >
+      <div class="pdp-index__toolbar pdp__related-toolbar interface">
+        <div class="pdp-index__tabs" role="tablist" aria-label="Index filter">
+          <button
+            type="button"
+            role="tab"
+            class="pdp-index__tab"
+            :class="{ 'pdp-index__tab--active': indexRailVisible && !relatedFilterOn }"
+            :aria-selected="!relatedFilterOn"
+            @click="showAllProducts"
+          >
+            All
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="pdp-index__tab"
+            :class="{ 'pdp-index__tab--active': indexRailVisible && relatedFilterOn }"
+            :aria-selected="relatedFilterOn"
+            :disabled="!canFilter && !relatedFilterOn"
+            @click="showRelatedProducts"
+          >
+            Related
+          </button>
+        </div>
+      </div>
+
       <div
         ref="stripRef"
         class="pdp-index__strip"
@@ -33,66 +62,51 @@
             :tabindex="indexRailVisible ? undefined : -1"
             @click="onIndexClick(item)"
           >
-            <img
-              v-if="item.imageUrl"
-              class="pdp-index__tile-image"
-              :src="item.imageUrl"
-              :alt="item.title"
-              loading="lazy"
-              draggable="false"
-            />
+            <span
+              class="pdp-index__frame"
+              :class="`pdp-index__frame--${item.orientation}`"
+            >
+              <img
+                v-if="item.imageUrl"
+                class="pdp-index__tile-image"
+                :src="item.imageUrl"
+                :alt="item.title"
+                loading="lazy"
+                draggable="false"
+              />
+              <AddButton
+                class="pdp-index__add"
+                :active="isItemSaved(item)"
+                :label="
+                  isItemSaved(item)
+                    ? `Remove ${item.title} from selection`
+                    : `Add ${item.title} to selection`
+                "
+                @click.stop="onToggleSave(item, $event)"
+              />
+            </span>
           </button>
-          <AddButton
-            class="pdp-index__add"
-            :active="isItemSaved(item)"
-            :label="
-              isItemSaved(item)
-                ? `Remove ${item.title} from selection`
-                : `Add ${item.title} to selection`
-            "
-            @click.stop="onToggleSave(item, $event)"
-          />
         </div>
       </div>
     </div>
 
-    <div class="pdp-index__controls">
+    <div class="pdp-index__reveals">
       <button
         type="button"
-        class="pdp-index__chevron"
-        :aria-label="indexRailVisible ? 'Hide index' : 'Show index'"
-        :aria-pressed="indexRailVisible"
-        @click="toggleIndexRail"
+        class="pdp-index__reveal interface"
+        :aria-label="indexModeActive ? 'Hide index' : 'Show product index'"
+        @click="toggleIndexMode"
       >
-        <span class="pdp-index__chevron-arrow" aria-hidden="true" />
-        <span class="pdp-index__tooltip interface" aria-hidden="true">
-          {{ indexRailVisible ? 'Hide index' : 'Show index' }}
-        </span>
+        {{ indexModeActive ? 'Hide' : 'Index' }}
       </button>
-
       <button
         type="button"
-        class="pdp-index__filter"
-        :class="{ 'pdp-index__filter--active': relatedFilterOn }"
-        aria-label="Filter"
-        :aria-pressed="relatedFilterOn"
-        :disabled="!canFilter"
-        @click="toggleRelatedFilter"
+        class="pdp-index__reveal interface"
+        :aria-label="relatedModeActive ? 'Hide related' : 'Show more like this'"
+        :disabled="!canFilter && !relatedModeActive"
+        @click="toggleRelatedMode"
       >
-        <svg
-          class="pdp-index__filter-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M4 6h16M7 12h10M10 18h4"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-          />
-        </svg>
-        <span class="pdp-index__tooltip interface" aria-hidden="true">Filter</span>
+        {{ relatedModeActive ? 'Hide' : 'More like this' }}
       </button>
     </div>
   </div>
@@ -122,6 +136,8 @@ type IndexCard = {
   slug: string
   imageUrl: string
   typeLabel: string
+  /** landscape (≥1) or portrait (<1) — drives fixed tile aspect */
+  orientation: 'landscape' | 'portrait'
 }
 
 const INDEX_EXCLUDED_TYPES = new Set(['spirit', 'origin'])
@@ -151,6 +167,7 @@ const indexItems = computed((): IndexCard[] =>
         slug,
         imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
         typeLabel: typeLabelFor(item.category || item.type),
+        orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
       }
     })
     .filter((item): item is IndexCard => !!item),
@@ -264,13 +281,23 @@ const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
   sameSite: 'lax',
 })
 
-const toggleRelatedFilter = () => {
-  if (relatedFilterOn.value) {
-    relatedFilterOn.value = false
-    frozenRelatedIdList.value = null
-    return
-  }
+/** Shared with ProductDetail — rail chrome fades with the PDP sides. */
+const pdpChromeVisible = useState('pdp-chrome-visible', () => false)
 
+const indexModeActive = computed(
+  () => indexRailVisible.value && !relatedFilterOn.value,
+)
+const relatedModeActive = computed(
+  () => indexRailVisible.value && relatedFilterOn.value,
+)
+
+const showAllProducts = () => {
+  relatedFilterOn.value = false
+  frozenRelatedIdList.value = null
+  indexRailVisible.value = true
+}
+
+const showRelatedProducts = () => {
   const ids = computeRelatedIdsForActive()
   if (ids.size <= 1) return
   frozenRelatedIdList.value = [...ids]
@@ -278,8 +305,18 @@ const toggleRelatedFilter = () => {
   indexRailVisible.value = true
 }
 
-const toggleIndexRail = () => {
-  indexRailVisible.value = !indexRailVisible.value
+const hideIndexRail = () => {
+  indexRailVisible.value = false
+}
+
+const toggleIndexMode = () => {
+  if (indexModeActive.value) hideIndexRail()
+  else showAllProducts()
+}
+
+const toggleRelatedMode = () => {
+  if (relatedModeActive.value) hideIndexRail()
+  else showRelatedProducts()
 }
 
 const onIndexClick = (item: IndexCard) => {
@@ -316,8 +353,10 @@ onMounted(() => {
 <style scoped>
 .pdp-index {
   --index-tabs-height: 2.25rem;
-  --index-rail-width: min(18vw, 250px);
+  --index-rail-width: min(18vw, 280px);
   --index-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  --index-chrome-motion: 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  --rail-padding: 35px;
 
   position: absolute;
   left: 0;
@@ -326,132 +365,122 @@ onMounted(() => {
   z-index: 110;
   width: var(--index-rail-width);
   pointer-events: none;
+  opacity: 0;
+  transform: translateX(0);
+  transition:
+    opacity var(--index-chrome-motion),
+    transform var(--index-motion);
+}
+
+.pdp-index--chrome {
+  opacity: 1;
+}
+
+.pdp-index--hidden {
+  transform: translateX(-100%);
+}
+
+.pdp-index:not(.pdp-index--chrome) .pdp-index__rail,
+.pdp-index:not(.pdp-index--chrome) .pdp-index__reveals {
+  pointer-events: none;
 }
 
 .pdp-index__rail {
   position: relative;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: color-mix(in srgb, var(--cream) 80%, transparent);
   backdrop-filter: blur(15px);
-  transform: translateX(0);
-  transition: transform var(--index-motion);
   pointer-events: auto;
-}
-
-.pdp-index__rail::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(to right, #111, transparent);
-  opacity: 1;
 }
 
 .pdp-index--hidden .pdp-index__rail {
-  transform: translateX(-100%);
   pointer-events: none;
 }
 
-.pdp-index--hidden .pdp-index__rail::after {
-  opacity: 0;
-}
-
-.pdp-index__controls {
-  position: absolute;
-  top: 50%;
-  left: calc(100% + 20px);
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  pointer-events: auto;
-  transform: translateY(-50%);
-  transition: left var(--index-motion);
-}
-
-.pdp-index--hidden .pdp-index__controls {
-  left: 20px;
-}
-
-.pdp-index__chevron,
-.pdp-index__filter {
+.pdp-index__toolbar {
   position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
+  z-index: 2;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding: 0;
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.pdp-index__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0rem;
+  min-width: 0;
+}
+
+.pdp-index__tab {
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: #000;
-  color: #fff;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--muted);
   cursor: pointer;
+  transition: color 0.2s ease;
+  height: var(--index-tabs-height);
+  border-right: 1px solid var(--grid-line);
+  padding: 0px calc(var(--rail-padding) / 2);
 }
 
-.pdp-index__chevron-arrow {
-  display: block;
-  width: 7px;
-  height: 7px;
-  border-left: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  box-sizing: border-box;
-  transform: translateX(1px) rotate(45deg);
-  transition: transform 0.2s ease;
+.pdp-index__tab:hover {
+  color: var(--charcoal);
 }
 
-.pdp-index--hidden .pdp-index__chevron-arrow {
-  transform: translateX(-1px) rotate(-135deg);
+.pdp-index__tab--active {
+  color: var(--charcoal);
 }
 
-.pdp-index__filter-icon {
-  display: block;
-  width: 16px;
-  height: 16px;
-}
-
-.pdp-index__filter--active {
-  background: var(--charcoal);
-  outline: 1.5px solid var(--cream);
-  outline-offset: -3px;
-}
-
-.pdp-index__filter:disabled {
+.pdp-index__tab:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
-.pdp-index__tooltip {
+.pdp-index__reveals {
   position: absolute;
-  top: 50%;
-  left: calc(100% + 0.55rem);
-  z-index: 2;
-  padding: 0.35rem 0.55rem;
-  font-size: var(--text-xs);
-  color: var(--charcoal);
-  white-space: nowrap;
-  background: var(--elevated-bg, var(--cream));
-  border: 1px solid var(--grid-line);
-  border-radius: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(-4px);
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  top: 0;
+  bottom: 0;
+  left: calc(100% + 20px);
+  z-index: 111;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: auto;
 }
 
-.pdp-index__chevron:hover .pdp-index__tooltip,
-.pdp-index__chevron:focus-visible .pdp-index__tooltip,
-.pdp-index__filter:hover:not(:disabled) .pdp-index__tooltip,
-.pdp-index__filter:focus-visible:not(:disabled) .pdp-index__tooltip {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
+.pdp-index__reveal {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.pdp-index__reveal:hover:not(:disabled) {
+  text-decoration-thickness: 2px;
+}
+
+.pdp-index__reveal:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .pdp-index__strip {
@@ -461,7 +490,8 @@ onMounted(() => {
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   overflow-x: hidden;
   overflow-y: auto;
@@ -479,9 +509,10 @@ onMounted(() => {
   flex: 0 0 auto;
   width: 100%;
   height: auto;
-  padding: 15px 30px;
+  padding: var(--rail-padding);
   margin: 0;
   line-height: 0;
+  border-bottom: 1px solid var(--grid-line);
 }
 
 .pdp-index__tile--hidden {
@@ -489,30 +520,60 @@ onMounted(() => {
 }
 
 .pdp-index__tile-media {
+  position: relative;
   display: block;
+  aspect-ratio: 1;
   width: 100%;
+  height: auto;
+  max-height: none;
   margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   line-height: 0;
+  overflow: hidden;
+}
+
+.pdp-index__frame {
+  position: absolute;
+  display: block;
+  line-height: 0;
+}
+
+.pdp-index__frame--portrait {
+  top: 50%;
+  left: 50%;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 4 / 5;
+  transform: translate(-50%, -50%);
+}
+
+.pdp-index__frame--landscape {
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 3 / 2;
+  transform: translate(-50%, -50%);
 }
 
 .pdp-index__tile-image {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: none;
-  aspect-ratio: 5 / 4;
+  height: 100%;
   object-fit: cover;
+  object-position: center center;
   pointer-events: none;
 }
 
 .pdp-index__add {
   position: absolute;
-  right: calc(30px + var(--thumb-ctrl-inset, 4px));
-  bottom: calc(15px + var(--thumb-ctrl-inset, 4px));
+  top: var(--thumb-ctrl-inset, 4px);
+  right: var(--thumb-ctrl-inset, 4px);
   z-index: 3;
   opacity: 0;
   transform: translateY(4px);

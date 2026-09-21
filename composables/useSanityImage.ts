@@ -3,12 +3,12 @@ const DATASET = 'production'
 
 /** Display tiers for the grid → Flip → PDP → zoom path. */
 export const IMAGE_WIDTH = {
-  /** Materials grid / discovery cards (~2× typical cell) */
-  thumb: 900,
-  /** PDP hero + Flip flyer destination */
-  hero: 1800,
+  /** Materials grid / discovery cards (retina + wide justified thumbs) */
+  thumb: 1600,
+  /** PDP gallery + Flip flyer destination */
+  hero: 3000,
   /** Expanded / zoom inspect */
-  zoom: 2800,
+  zoom: 3000,
   /** PDP gallery strip */
   strip: 160,
 } as const

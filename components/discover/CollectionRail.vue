@@ -227,7 +227,7 @@ watch(
 }
 
 .collection-rail__card {
-  width: min(var(--rail-card-basis), 72vw);
+  width: min(var(--rail-card-basis), 72vw, 900px);
   min-width: min(220px, 72vw);
 }
 

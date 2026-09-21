@@ -90,10 +90,13 @@ h1, h2, h3 {
 }
 
 .page-title {
-  font-size: var(--text-xl);
+  font-size: 9vw;
   font-family: var(--font-serif);
   font-weight: 400;
-  margin: 0 0 1rem;
+  margin: 0 0 0rem;
+  line-height: .8;
+  padding-top: .12em;
+  transform: translateX(calc(-.6% + -4px));
 }
 
 .prose {

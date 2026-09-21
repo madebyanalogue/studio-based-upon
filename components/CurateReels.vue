@@ -2128,7 +2128,7 @@ onBeforeUnmount(() => {
   --showcase-item-gap: 0px;
   --showcase-slots: 4;
   --showcase-aspect: 0.8;
-  --showcase-dim-opacity: 0.075;
+  --showcase-dim-opacity: 0.15;
   --showcase-dim-delay: 0.2s;
   --showcase-dim-duration: 0.45s;
   --showcase-surrender-dim-delay: 0.55s;

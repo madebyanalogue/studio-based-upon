@@ -84,6 +84,7 @@ const onOpen = (event: MouseEvent) => {
 .discover-card__image {
   display: block;
   width: 100%;
+  max-width: 900px;
   height: auto;
   max-height: min(68vh, 720px);
   object-fit: contain;

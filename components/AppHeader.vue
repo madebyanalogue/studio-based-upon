@@ -483,7 +483,6 @@ onBeforeUnmount(() => {
 .header__logo-mark {
   position: absolute;
   top: 20px;
-  left: 13px;
   width: 180px;
   height: auto;
 }
