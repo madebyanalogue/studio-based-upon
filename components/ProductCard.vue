@@ -33,7 +33,7 @@
         />
 
         <ImageCycleArrows
-          v-if="projectImages.length > 1"
+          v-if="projectImages.length > 1 && !isImageLocked && !expandOnClick"
           class="product-card__cycle"
           :index="imageIndex"
           :count="projectImages.length"
@@ -71,10 +71,30 @@ import type { LibraryItem } from '~/composables/useLibraryCatalog'
 import { uniqueImageUrls } from '~/composables/productImages'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
-const props = defineProps<{
-  item: FormalItem | LibraryItem
-  imageUrl: string
-  orderLabel?: string
+const props = withDefaults(
+  defineProps<{
+    item: FormalItem | LibraryItem
+    imageUrl: string
+    orderLabel?: string
+    /** Lock the card to a single gallery frame (expanded grid tiles). */
+    forcedImageIndex?: number | null
+    /** Hide scrub / cycle controls. */
+    lockImage?: boolean
+    /**
+     * TEMP Materials & Forms mode: click expands the gallery into the grid
+     * instead of opening the PDP. Parent handles `@expand`.
+     */
+    expandOnClick?: boolean
+  }>(),
+  {
+    forcedImageIndex: null,
+    lockImage: false,
+    expandOnClick: false,
+  },
+)
+
+const emit = defineEmits<{
+  expand: []
 }>()
 
 const { requestSave, isSaved } = useBucket()
@@ -87,9 +107,22 @@ const saved = computed(() => {
 
 const imageIndex = ref(0)
 
+const isImageLocked = computed(
+  () => props.lockImage || props.forcedImageIndex != null,
+)
+
+watch(
+  () => props.forcedImageIndex,
+  (value) => {
+    if (typeof value === 'number' && value >= 0) imageIndex.value = value
+  },
+  { immediate: true },
+)
+
 watch(
   returnImage,
   (value) => {
+    if (isImageLocked.value) return
     if (value?.productId === props.item._id) {
       imageIndex.value = value.index
     }
@@ -171,21 +204,32 @@ const prefetchActiveHero = () => {
 watch(
   () => props.item._id,
   () => {
+    if (typeof props.forcedImageIndex === 'number' && props.forcedImageIndex >= 0) {
+      imageIndex.value = props.forcedImageIndex
+      return
+    }
     imageIndex.value = 0
   },
 )
 
 watch(projectImages, (urls) => {
-  if (imageIndex.value >= urls.length) imageIndex.value = 0
+  if (imageIndex.value >= urls.length) {
+    imageIndex.value =
+      typeof props.forcedImageIndex === 'number' && props.forcedImageIndex >= 0
+        ? Math.min(props.forcedImageIndex, Math.max(0, urls.length - 1))
+        : 0
+  }
 })
 
 const cycle = (direction: 1 | -1) => {
+  if (isImageLocked.value || props.expandOnClick) return
   const count = projectImages.value.length
   if (count < 2) return
   imageIndex.value = (imageIndex.value + direction + count) % count
 }
 
 const scrubToPointer = (event: PointerEvent) => {
+  if (isImageLocked.value || props.expandOnClick) return
   const count = projectImages.value.length
   if (count < 2) return
   const el = event.currentTarget as HTMLElement | null
@@ -215,8 +259,16 @@ const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
 const onOpen = (event: MouseEvent) => {
-  if (!productSlug.value) return
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+
+  // TEMP expand mode: first click fans the gallery into the grid.
+  if (props.expandOnClick && projectImages.value.length > 1) {
+    event.preventDefault()
+    emit('expand')
+    return
+  }
+
+  if (!productSlug.value) return
   event.preventDefault()
   const card = (event.currentTarget as HTMLElement | null)?.closest('.product-card')
   const source =

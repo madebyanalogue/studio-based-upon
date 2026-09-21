@@ -81,7 +81,7 @@ html.dark {
   --black: #faf7f2;
   --slate: #c8c0b6;
   --accent: #c4a574;
-  --grid-line: rgba(255, 255, 255, 0.07);
+  --grid-line: rgba(255, 255, 255, 0.1);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(255, 255, 255, 0.14);
   --panel-bg: rgba(31, 28, 24, 0.88);

@@ -57,10 +57,11 @@ export const useSiteSettings = () => {
     items: [
       { _key: '0', text: 'Showcase', path: '/' },
       { _key: '1', text: 'Curate', path: '/curate' },
-      { _key: '2', text: 'Discovery', path: '/discovery' },
-      { _key: '3', text: 'Materials & Forms', path: '/materials-and-forms' },
-      { _key: '4', text: '(Pre)Crafted', path: '/pre-crafted' },
-      { _key: '5', text: 'About', path: '/about' },
+      { _key: '2', text: 'Curated Discovery', path: '/curated-discovery' },
+      { _key: '3', text: 'Discovery', path: '/discovery' },
+      { _key: '4', text: 'Materials & Forms', path: '/materials-and-forms' },
+      { _key: '5', text: '(Pre)Crafted', path: '/pre-crafted' },
+      { _key: '6', text: 'About', path: '/about' },
     ],
   }
 
@@ -87,6 +88,13 @@ export const useSiteSettings = () => {
           return { ...item, text: 'Discovery', path: '/discovery' }
         }
         if (
+          item.path === '/curated-discovery' ||
+          item.text === 'Curated Discovery' ||
+          item.text === 'Discover'
+        ) {
+          return { ...item, text: 'Curated Discovery', path: '/curated-discovery' }
+        }
+        if (
           item.path === '/curate' ||
           item.path === '/#curate' ||
           item.text === 'Curate' ||
@@ -107,6 +115,9 @@ export const useSiteSettings = () => {
 
     const hasShowcase = normalized.some((item) => item.path === '/')
     const hasCurate = normalized.some((item) => item.path === '/curate')
+    const hasCuratedDiscovery = normalized.some(
+      (item) => item.path === '/curated-discovery',
+    )
     const hasDiscovery = normalized.some((item) => item.path === '/discovery')
 
     if (!hasShowcase) {
@@ -120,8 +131,18 @@ export const useSiteSettings = () => {
         path: '/curate',
       })
     }
-    if (!hasDiscovery) {
+    if (!hasCuratedDiscovery) {
       const insertAt = normalized.findIndex((item) => item.path === '/curate')
+      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
+        _key: 'curated-discovery',
+        text: 'Curated Discovery',
+        path: '/curated-discovery',
+      })
+    }
+    if (!hasDiscovery) {
+      const insertAt = normalized.findIndex(
+        (item) => item.path === '/curated-discovery',
+      )
       normalized.splice(insertAt + 1, 0, {
         _key: 'discovery',
         text: 'Discovery',

@@ -7,6 +7,10 @@
       'pdp--ready': contentReady,
       'pdp--sides': sidesVisible,
       'pdp--zoomed': imageExpanded,
+      'pdp--no-related': true,
+      'pdp--index': true,
+      'pdp--index-hidden': !indexRailVisible,
+      'pdp--gallery': galleryVisible,
     }"
   >
     <aside class="pdp__col pdp__col--left">
@@ -31,61 +35,73 @@
         <h1 class="pdp__title">{{ product.title }}</h1>
 
         <dl class="pdp__specs">
-          <div v-if="product.style" class="pdp__spec">
-            <dt class="serif-italic">Style</dt>
-            <dd>{{ product.style }}</dd>
-          </div>
-          <div v-if="product.dimensions" class="pdp__spec">
-            <dt class="serif-italic">Dimensions</dt>
-            <dd>{{ product.dimensions }}</dd>
-          </div>
-          <div v-if="product.comCol" class="pdp__spec">
-            <dt class="serif-italic">COM / COL</dt>
-            <dd>{{ product.comCol }}</dd>
-          </div>
-          <div v-if="materials.length" class="pdp__spec pdp__spec--toggle">
-            <dt class="serif-italic">Materiality</dt>
-            <dd>
-              <button type="button" class="pdp__disclosure" @click="showMaterials = !showMaterials">
-                Options <span class="pdp__disclosure-mark">{{ showMaterials ? '−' : '+' }}</span>
-              </button>
-            </dd>
-            <ul v-if="showMaterials" class="pdp__options">
-              <li v-for="material in materials" :key="material">{{ material }}</li>
-            </ul>
+          <div class="pdp__spec pdp__spec--toggle">
+            <button
+              type="button"
+              class="pdp__disclosure"
+              :aria-expanded="showSpecs"
+              @click="showSpecs = !showSpecs"
+            >
+              <span class="serif-italic">Specifications</span>
+              <span class="pdp__disclosure-mark">{{ showSpecs ? '−' : '+' }}</span>
+            </button>
+            <div v-if="showSpecs" class="pdp__spec-panel">
+              <div v-if="product.style" class="pdp__spec">
+                <dt class="serif-italic">Style</dt>
+                <dd>{{ product.style }}</dd>
+              </div>
+              <div v-if="product.dimensions" class="pdp__spec">
+                <dt class="serif-italic">Dimensions</dt>
+                <dd>{{ product.dimensions }}</dd>
+              </div>
+              <div v-if="product.comCol" class="pdp__spec">
+                <dt class="serif-italic">COM / COL</dt>
+                <dd>{{ product.comCol }}</dd>
+              </div>
+              <div v-if="materials.length" class="pdp__spec">
+                <dt class="serif-italic">Materiality</dt>
+                <dd>
+                  <ul class="pdp__options">
+                    <li v-for="material in materials" :key="material">{{ material }}</li>
+                  </ul>
+                </dd>
+              </div>
+              <div class="pdp__spec pdp__spec--download">
+                <dt class="serif-italic">Spec Sheet</dt>
+                <dd>
+                  <button type="button" class="pdp__spec-download" @click="downloadSpec">
+                    Download <span class="pdp__spec-download-arrow" aria-hidden="true">↓</span>
+                  </button>
+                </dd>
+              </div>
+            </div>
           </div>
         </dl>
 
+        <section v-if="product.description || product.edition" class="pdp__info">
+          <button
+            type="button"
+            class="pdp__disclosure pdp__info-toggle"
+            :aria-expanded="showInfo"
+            @click="showInfo = !showInfo"
+          >
+            <span class="serif-italic">Info</span>
+            <span class="pdp__disclosure-mark">{{ showInfo ? '−' : '+' }}</span>
+          </button>
+          <div v-if="showInfo" class="pdp__info-panel">
+            <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
+            <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
+          </div>
+        </section>
+
         <div class="pdp__actions">
           <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
-          <button
-            v-if="hasRelatedItems"
-            type="button"
-            class="pdp__save"
-            :class="{ 'pdp__save--active': relatedUi === 'panel' }"
-            :disabled="relatedBusy"
-            @click="toggleRelatedPanel"
-          >
-            {{ relatedUi === 'panel' ? 'Hide related' : 'More like this' }}
-          </button>
-          <button
-            type="button"
-            class="pdp__save"
-            :class="{ 'pdp__save--active': isCurrentImageSaved }"
-            @click="onAddToSelection"
-          >
-            {{ isCurrentImageSaved ? 'Remove from My Selection' : 'Add to My Selection' }}
-          </button>
         </div>
 
-        <div class="pdp__links">
-          <button type="button" class="pdp__link  interface" @click="downloadSpec">
-            Download Spec Sheet
-          </button>
+        <div v-if="product.finishes?.length" class="pdp__links">
           <button
-            v-if="product.finishes?.length"
             type="button"
-            class="pdp__link  interface"
+            class="pdp__link interface"
             @click="showFinishes = !showFinishes"
           >
             Finishes
@@ -95,12 +111,6 @@
         <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
           <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
         </ul>
-
-        <section v-if="product.description || product.edition" class="pdp__info">
-          <h2 class="pdp__info-heading  interface">info</h2>
-          <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
-          <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
-        </section>
 
         <div v-if="nextProduct" class="pdp__next">
           <button type="button" class="pdp__next-label  interface" @click="goToNext">
@@ -120,144 +130,61 @@
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
         @click="onStageClick"
       >
-        <figure v-if="activeEntry" class="pdp__hero">
-          <div class="pdp__hero-frame">
-            <img
-              ref="heroRef"
-              :key="activeEntry.id"
-              :src="activeEntry.src"
-              :alt="`${product.title} — image ${selectedIndex + 1}`"
-              class="pdp__hero-image"
-              @load="onHeroLoad"
-              @click.stop="onHeroClick"
-            />
-            <AddButton
-              class="pdp__add"
-              :active="isCurrentImageSaved"
-              :label="isCurrentImageSaved ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
-              @click.stop="onToggleImage(activeEntry, selectedIndex, $event)"
-            />
-          </div>
-
-          <div
-            v-if="galleryEntries.length > 1"
-            class="pdp__thumbs"
-            :class="{ 'pdp__thumbs--visible': galleryVisible }"
+        <div
+          v-if="galleryEntries.length"
+          ref="stripRef"
+          class="pdp__strip"
+          data-lenis-prevent
+          @scroll.passive="onStripScroll"
+        >
+          <figure
+            v-for="(entry, i) in galleryEntries"
+            :key="entry.id"
+            class="pdp__strip-item"
+            :class="{ 'pdp__strip-item--active': i === selectedIndex }"
+            :data-strip-index="i"
           >
-            <button
-              v-for="(entry, i) in galleryEntries"
-              :key="entry.id"
-              type="button"
-              class="pdp__thumb"
-              :class="{ 'pdp__thumb--active': i === selectedIndex }"
-              :aria-label="`Show image ${i + 1}`"
-              :aria-current="i === selectedIndex ? 'true' : undefined"
-              @click.stop="selectImage(i)"
+            <div
+              class="pdp__hero-frame"
+              :class="{ 'pdp__hero-frame--zoomed': i === selectedIndex && imageExpanded }"
             >
-              <img :src="entry.thumbSrc" alt="" loading="lazy" draggable="false" />
-            </button>
-          </div>
-        </figure>
+              <img
+                :ref="(el) => setStripImageRef(i, el)"
+                :src="
+                  i === selectedIndex && imageExpanded && frameZoomHiRes
+                    ? entry.zoomSrc || entry.src
+                    : entry.src
+                "
+                :alt="`${product.title} — image ${i + 1}`"
+                class="pdp__hero-image"
+                :class="{ 'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded }"
+                :style="
+                  i === selectedIndex && imageExpanded
+                    ? {
+                        transformOrigin: `${zoomOriginX}% ${zoomOriginY}%`,
+                        transform: `scale(${FRAME_ZOOM_SCALE})`,
+                      }
+                    : undefined
+                "
+                draggable="false"
+                @load="onStripImageLoad(i)"
+                @click.stop="onStripImageClick(i, $event)"
+                @mousemove="onFrameZoomMove($event, i)"
+              />
+              <AddButton
+                class="pdp__add"
+                :active="isImageSaved(i)"
+                :label="isImageSaved(i) ? `Remove ${product.title} from selection` : `Add ${product.title} to selection`"
+                @click.stop="onToggleImage(entry, i, $event)"
+              />
+            </div>
+          </figure>
+        </div>
 
         <p v-else class="pdp__gallery-empty interface">
           No images available.
         </p>
       </div>
-    </div>
-
-    <aside
-      class="pdp__col pdp__col--right"
-      :class="{ 'pdp__col--right-collapsed': relatedUi === 'reveal' && !relatedLeaving }"
-      :aria-hidden="!hasRelatedItems ? true : undefined"
-    >
-      <div
-        v-if="hasRelatedItems && relatedPanelMounted"
-        class="pdp__related-shell"
-        :class="{
-          'pdp__related-shell--leaving': relatedLeaving,
-          'pdp__related-shell--entering': relatedEntering,
-        }"
-      >
-        <div class="pdp__toolbar pdp__related-toolbar">
-          <h2 class="pdp__related-heading interface">Related</h2>
-          <button
-            type="button"
-            class="pdp__related-hide interface"
-            :disabled="relatedBusy"
-            @click="hideRelatedPanel"
-          >
-            Hide
-          </button>
-        </div>
-        <div class="pdp__related" data-lenis-prevent>
-          <ul class="pdp__related-list">
-            <li
-              v-for="(item, index) in visibleRelatedItems"
-              :key="item._id"
-              class="pdp__related-item"
-              :style="{ '--related-stagger': `${relatedStaggerDelays[index] ?? 0}s` }"
-            >
-              <button
-                type="button"
-                class="pdp__related-card mono"
-                :aria-label="`View ${item.title}`"
-                :disabled="relatedBusy"
-                @click="onRelatedClick(item)"
-              >
-                <span class="pdp__related-pad">
-                  <span class="pdp__related-media">
-                    <img
-                      v-if="item.imageUrl"
-                      :src="item.imageUrl"
-                      :alt="item.title"
-                      loading="lazy"
-                      draggable="false"
-                    />
-                  </span>
-                </span>
-                <span class="pdp__related-meta">
-                  <span class="pdp__related-title">{{ item.title }}</span>
-                  <span v-if="item.typeLabel" class="pdp__related-type">{{ item.typeLabel }}</span>
-                </span>
-              </button>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <button
-        v-if="hasRelatedItems && relatedRevealMounted"
-        type="button"
-        class="pdp__related-reveal interface"
-        :class="{ 'pdp__related-reveal--visible': relatedRevealVisible }"
-        :disabled="relatedBusy"
-        @click="showRelatedPanel"
-      >
-        More like this
-      </button>
-    </aside>
-
-    <!-- Zoom covers center + right without resizing the grid -->
-    <div
-      v-show="zoomMounted"
-      ref="zoomRef"
-      class="pdp__zoom"
-      :class="{
-        'pdp__zoom--visible': imageExpanded,
-        'pdp__zoom--fit-height': imageExpanded && zoomFit === 'height',
-        'pdp__zoom--fit-width': imageExpanded && zoomFit === 'width',
-      }"
-      :data-lenis-prevent="imageExpanded && zoomFit === 'width' ? '' : undefined"
-      @click="collapseImage"
-    >
-      <img
-        v-if="zoomSrc"
-        ref="zoomImgRef"
-        class="pdp__zoom-image"
-        :src="zoomSrc"
-        :alt="`${product.title} — zoomed`"
-        draggable="false"
-        @click.stop="collapseImage"
-      />
     </div>
   </article>
 
@@ -272,12 +199,16 @@ import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
-import { productSlug } from '~/composables/useProductCatalog'
 import {
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
+  PRODUCT_OVERLAY_BACKDROP_OPEN_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS,
+  PRODUCT_OVERLAY_FLIP_CLOSE_S,
+  PRODUCT_OVERLAY_FLIP_OPEN_S,
+  PRODUCT_OVERLAY_FLYER_PAUSE_MS,
   PRODUCT_OVERLAY_FLYER_Z,
+  PRODUCT_OVERLAY_UI_FADE_MS,
 } from '~/composables/useProductOverlay'
 
 const props = withDefaults(
@@ -315,9 +246,23 @@ const {
 const { openFromProduct } = useEnquiryForm()
 const { items: libraryItems } = await useLibraryCatalog()
 
+// Stable key so in-PDP nav never clears `product` (which would unmount the
+// index rail and reset its scroll). Soft-swap assigns the next product in place.
+const pdpDataKey = props.standalone ? 'product-detail-standalone' : 'product-detail-overlay'
 const { data: product, refresh } = await useAsyncData(
-  () => `product-detail-${props.slug}`,
+  pdpDataKey,
   () => fetchProduct(props.slug),
+  {
+    getCachedData(key, nuxtApp) {
+      const cached =
+        nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
+      // Only reuse cache when it matches the slug we're opening
+      if (cached && (cached as { slug?: string }).slug === props.slug) {
+        return cached
+      }
+      return undefined
+    },
+  },
 )
 
 const libraryItem = computed(() =>
@@ -344,29 +289,48 @@ const orderLabel = computed(() => {
   return String(index + 1).padStart(digits, '0')
 })
 
-const showMaterials = ref(false)
+const showSpecs = ref(false)
+const showInfo = ref(false)
 const showFinishes = ref(false)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
-const zoomRef = ref<HTMLElement | null>(null)
-const zoomImgRef = ref<HTMLImageElement | null>(null)
+const stripRef = ref<HTMLElement | null>(null)
 const contentReady = ref(false)
 const sidesVisible = ref(false)
 const galleryVisible = ref(false)
 /** Fades left/center copy + gallery; column rules stay put */
 const paneContentVisible = ref(true)
-const CONTENT_FADE_MS = 220
 let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
-/** Zoom overlay is visible over center + right */
+/** In-frame gallery zoom (stays inside the image footprint) */
 const imageExpanded = ref(false)
-/** Keep zoom DOM mounted while loading / open */
-const zoomMounted = ref(false)
-const zoomSrc = ref('')
-/** Expanded layout: fill container height (landscape) or full width with vertical scroll (tall). */
-const zoomFit = ref<'width' | 'height'>('width')
+const frameZoomHiRes = ref(false)
+const zoomOriginX = ref(50)
+const zoomOriginY = ref(50)
+const FRAME_ZOOM_SCALE = 2.5
+let stripScrollRaf = 0
+let frameZoomToken = 0
+
+const setStripImageRef = (index: number, el: Element | null) => {
+  if (index === selectedIndex.value && el instanceof HTMLImageElement) {
+    heroRef.value = el
+  }
+}
+
+const isImageSaved = (index: number) =>
+  isSaved(product.value?._id || '', galleryEntries.value.length > 1 ? index : undefined)
+
+const onStripImageLoad = (index: number) => {
+  if (index !== selectedIndex.value) return
+  // Bind hero before Flip measures — ref callbacks can race the first paint
+  const img = stripRef.value?.querySelector<HTMLImageElement>(
+    `[data-strip-index="${index}"] .pdp__hero-image`,
+  )
+  if (img) heroRef.value = img
+  if (!flipStarted.value) void runFlipOpen()
+}
 
 type GalleryEntry = {
   id: string
@@ -442,116 +406,162 @@ watch(galleryEntries, (entries) => {
 const selectImage = (index: number) => {
   if (index < 0 || index >= galleryEntries.value.length) return
   selectedIndex.value = index
-  imageExpanded.value = false
-  zoomMounted.value = false
-  zoomSrc.value = ''
-  clearExpandCloseListener()
+  collapseImage()
+  nextTick(() => {
+    const strip = stripRef.value
+    const img = strip?.querySelector<HTMLImageElement>(
+      `[data-strip-index="${index}"] .pdp__hero-image`,
+    )
+    if (img) heroRef.value = img
+    scrollSelectedIntoView(true)
+  })
 }
 
 const cycleImage = (direction: 1 | -1) => {
   const count = galleryEntries.value.length
   if (count < 2) return
-  selectedIndex.value = (selectedIndex.value + direction + count) % count
+  selectImage((selectedIndex.value + direction + count) % count)
 }
 
-let wheelLocked = false
-let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
-let expandCloseBound: ((event: MouseEvent) => void) | null = null
-
-const clearExpandCloseListener = () => {
-  if (!expandCloseBound || !import.meta.client) return
-  window.removeEventListener('click', expandCloseBound, true)
-  window.removeEventListener('click', expandCloseBound)
-  expandCloseBound = null
-}
-
-const collapseImage = () => {
-  imageExpanded.value = false
-  zoomMounted.value = false
-  zoomSrc.value = ''
-  clearExpandCloseListener()
-}
-
-const updateZoomFit = () => {
-  const layer = zoomRef.value
-  const img = zoomImgRef.value
-  if (!layer || !img?.naturalWidth || !img.naturalHeight) {
-    zoomFit.value = 'width'
-    return
-  }
-  const stageW = layer.clientWidth
-  const stageH = layer.clientHeight
-  if (!stageW || !stageH) {
-    zoomFit.value = 'width'
-    return
-  }
-  // If the image at full layer width would be shorter than the layer, fill height instead
-  const heightAtFullWidth = stageW * (img.naturalHeight / img.naturalWidth)
-  zoomFit.value = heightAtFullWidth < stageH ? 'height' : 'width'
-}
-
-const expandImage = async () => {
-  const src = activeEntry.value?.zoomSrc
-  if (!src || !import.meta.client) return
-
-  clearExpandCloseListener()
-
-  // Prefetch first — only reveal the overlay once the zoom bitmap is ready
-  await prefetchImage(src)
-  zoomSrc.value = src
-  zoomMounted.value = true
-  imageExpanded.value = false
-  await nextTick()
-
-  const img = zoomImgRef.value
-  if (img && !img.complete) await waitForImage(img)
-  updateZoomFit()
-  imageExpanded.value = true
-
-  // Attach after this click finishes so it doesn't immediately collapse
-  requestAnimationFrame(() => {
-    expandCloseBound = () => {
-      collapseImage()
-    }
-    window.addEventListener('click', expandCloseBound)
+/** Center the active frame in the visible strip. */
+const scrollSelectedIntoView = (smooth = false) => {
+  const strip = stripRef.value
+  if (!strip) return
+  const item = strip.querySelector<HTMLElement>(
+    `[data-strip-index="${selectedIndex.value}"]`,
+  )
+  if (!item) return
+  const target = item.offsetLeft + item.offsetWidth / 2 - strip.clientWidth / 2
+  strip.scrollTo({
+    left: Math.max(0, target),
+    behavior: smooth ? 'smooth' : 'auto',
   })
 }
 
-const onHeroClick = () => {
+/** Hard-load + open rail: park at scrollLeft 0 so frames clear the rail padding. */
+const scrollGalleryInitial = () => {
+  if (props.standalone && indexRailVisible.value) {
+    stripRef.value?.scrollTo({ left: 0, behavior: 'auto' })
+    return
+  }
+  scrollSelectedIntoView(false)
+}
+
+const syncSelectedFromScroll = () => {
+  const strip = stripRef.value
+  if (!strip || !galleryEntries.value.length) return
+  const focusX = strip.scrollLeft + strip.clientWidth / 2
+  let best = 0
+  let bestDist = Infinity
+  strip.querySelectorAll<HTMLElement>('[data-strip-index]').forEach((el) => {
+    const index = Number(el.dataset.stripIndex)
+    if (!Number.isFinite(index)) return
+    const center = el.offsetLeft + el.offsetWidth / 2
+    const dist = Math.abs(center - focusX)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = index
+    }
+  })
+  if (best !== selectedIndex.value) {
+    selectedIndex.value = best
+    collapseImage()
+    const img = strip.querySelector<HTMLImageElement>(
+      `[data-strip-index="${best}"] .pdp__hero-image`,
+    )
+    if (img) heroRef.value = img
+  }
+}
+
+const onStripScroll = () => {
+  if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
+  stripScrollRaf = requestAnimationFrame(() => {
+    stripScrollRaf = 0
+    syncSelectedFromScroll()
+  })
+}
+
+let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
+
+const setZoomOriginFromEvent = (event: MouseEvent, el: HTMLElement) => {
+  const rect = el.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+  zoomOriginX.value = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))
+  zoomOriginY.value = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100))
+}
+
+const collapseImage = () => {
+  frameZoomToken += 1
+  imageExpanded.value = false
+  frameZoomHiRes.value = false
+}
+
+const enterFrameZoom = async (event: MouseEvent) => {
+  const img = event.currentTarget as HTMLImageElement | null
+  if (!img) return
+  setZoomOriginFromEvent(event, img)
+  imageExpanded.value = true
+
+  const src = activeEntry.value?.zoomSrc
+  if (!src || src === activeEntry.value?.src) return
+
+  const token = ++frameZoomToken
+  await prefetchImage(src)
+  if (token !== frameZoomToken || !imageExpanded.value) return
+  frameZoomHiRes.value = true
+}
+
+const onHeroClick = (event: MouseEvent) => {
   if (imageExpanded.value) collapseImage()
-  else void expandImage()
+  else void enterFrameZoom(event)
+}
+
+const onStripImageClick = (index: number, event: MouseEvent) => {
+  if (index !== selectedIndex.value) {
+    selectImage(index)
+    return
+  }
+  onHeroClick(event)
+}
+
+const onFrameZoomMove = (event: MouseEvent, index: number) => {
+  if (!imageExpanded.value || index !== selectedIndex.value) return
+  const img = event.currentTarget as HTMLImageElement | null
+  if (!img) return
+  setZoomOriginFromEvent(event, img)
 }
 
 /** Close PDP when clicking empty stage chrome (not the image / thumbs / controls). */
 const onStageClick = (event: MouseEvent) => {
-  if (imageExpanded.value) return
+  if (imageExpanded.value) {
+    collapseImage()
+    return
+  }
   const target = event.target as HTMLElement | null
   if (!target) return
-  // Dismiss on letterbox / stage chrome only — not the contained image or its controls
-  if (target.closest('.pdp__hero-image, .pdp__thumbs, .pdp__add, button, a')) return
+  // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
+  if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, .pdp__add, button, a')) return
   emit('close')
 }
 
+/** Vertical wheel → horizontal scroll; horizontal wheel stays horizontal. */
 const onStageWheel = (event: WheelEvent) => {
   if (imageExpanded.value) return
-  if (galleryEntries.value.length < 2) return
+  const strip = stripRef.value
+  if (!strip || galleryEntries.value.length < 2) return
   event.preventDefault()
-  if (wheelLocked) return
-  if (Math.abs(event.deltaY) < 2 && Math.abs(event.deltaX) < 2) return
-
-  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX
+  const delta =
+    Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY
   if (!delta) return
-
-  wheelLocked = true
-  cycleImage(delta > 0 ? 1 : -1)
-  if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
-  wheelUnlockTimer = setTimeout(() => {
-    wheelLocked = false
-    wheelUnlockTimer = null
-  }, 420)
+  strip.scrollLeft += delta
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && imageExpanded.value) {
+    event.preventDefault()
+    collapseImage()
+    return
+  }
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -570,19 +580,18 @@ onMounted(() => {
   // Cached image may already be complete before @load fires
   nextTick(() => {
     stageRef.value?.addEventListener('wheel', onStageWheel, { passive: false })
+    scrollGalleryInitial()
     if (heroRef.value?.complete) void runFlipOpen()
     else if (!activeEntry.value) revealWithoutFlip()
   })
-  window.addEventListener('resize', updateZoomFit)
   window.addEventListener('keydown', onGalleryKeydown)
 })
 
 onUnmounted(() => {
   stageRef.value?.removeEventListener('wheel', onStageWheel)
-  window.removeEventListener('resize', updateZoomFit)
   window.removeEventListener('keydown', onGalleryKeydown)
-  clearExpandCloseListener()
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
+  if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
 })
 
 const materials = computed(() =>
@@ -591,187 +600,12 @@ const materials = computed(() =>
     .map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
 )
 
-const overlapCount = (a: string[] = [], b: string[] = []) => {
-  if (!a.length || !b.length) return 0
-  const set = new Set(a.map((v) => v.toLowerCase()))
-  return b.reduce((n, v) => n + (set.has(v.toLowerCase()) ? 1 : 0), 0)
-}
-
-const typeLabelFor = (type?: string) => {
-  if (!type) return ''
-  return PRODUCT_TYPE_FILTERS.find((t) => t.value === type)?.label || type
-}
-
-type RelatedCard = {
-  _id: string
-  title: string
-  slug: string
-  imageUrl: string
-  typeLabel: string
-}
-
-/** Manual Sanity picks first; otherwise score by shared colour / material / tag / type. */
-const relatedFromProduct = computed((): RelatedCard[] => {
-  if (!product.value) return []
-
-  const manual = (product.value.related || []).filter((item) => item?._id && item.slug)
-  if (manual.length) {
-    return manual.slice(0, 8).map((item) => ({
-      _id: item._id,
-      title: item.title,
-      slug: item.slug,
-      imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
-      typeLabel: typeLabelFor(item.category),
-    }))
-  }
-
-  const current = libraryItem.value
-  const type =
-    current?.category ||
-    current?.type ||
-    product.value.category ||
-    product.value.series?.toLowerCase() ||
-    ''
-  const colours = current?.colours || product.value.colours || []
-  const mats = current?.materials || product.value.materials || []
-  const tags = current?.tags || product.value.tags || []
-
-  const scored = libraryItems.value
-    .filter((item) => item._id !== product.value?._id && productSlug(item))
-    .map((item) => {
-      const itemType = item.category || item.type || ''
-      let score = 0
-      if (type && itemType && type === itemType) score += 2
-      score += overlapCount(colours, item.colours) * 3
-      score += overlapCount(mats, item.materials) * 3
-      score += overlapCount(tags, item.tags) * 2
-      return { item, score }
-    })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title))
-    .slice(0, 6)
-
-  return scored.map(({ item }) => ({
-    _id: item._id,
-    title: item.title,
-    slug: productSlug(item) || item._id,
-    imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
-    typeLabel: typeLabelFor(item.category || item.type),
-  }))
-})
-
-/** Open until the user hides — remembered across visits */
-const relatedPanelOpen = useCookie<boolean>('sba-pdp-related-open', {
-  default: () => false,
+/** Shared with ProductIndexRail — drives gallery left padding. */
+const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
+  default: () => true,
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
-
-/** Current product's related set — replenishes when navigating between items */
-const visibleRelatedItems = computed(() =>
-  relatedFromProduct.value.filter(
-    (item) => item._id !== product.value?._id && item.slug !== props.slug,
-  ),
-)
-
-const hasRelatedItems = computed(() => visibleRelatedItems.value.length > 0)
-
-const RELATED_ITEM_MS = 380
-const RELATED_TOOLBAR_MS = 560
-const RELATED_STAGGER_STEP = 0.028
-const RELATED_REVEAL_MS = 240
-
-/** Which surface owns the column — panel stays mounted through leave anim */
-const relatedUi = ref<'panel' | 'reveal'>(relatedPanelOpen.value ? 'panel' : 'reveal')
-const relatedLeaving = ref(false)
-const relatedEntering = ref(false)
-const relatedBusy = ref(false)
-const relatedRevealVisible = ref(!relatedPanelOpen.value)
-const relatedStaggerDelays = ref<number[]>([])
-
-const relatedPanelMounted = computed(
-  () => relatedUi.value === 'panel' || relatedLeaving.value || relatedEntering.value,
-)
-const relatedRevealMounted = computed(
-  () => relatedUi.value === 'reveal' || relatedRevealVisible.value,
-)
-
-const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
-const waitFrames = (n = 2) =>
-  new Promise<void>((resolve) => {
-    const step = (left: number) => {
-      if (left <= 0) {
-        resolve()
-        return
-      }
-      requestAnimationFrame(() => step(left - 1))
-    }
-    step(n)
-  })
-
-/** Shuffle 0…n-1 delays so items enter in a randomised order */
-const buildRelatedStagger = (count: number) => {
-  const delays = Array.from({ length: count }, (_, i) => i * RELATED_STAGGER_STEP)
-  for (let i = delays.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const tmp = delays[i]!
-    delays[i] = delays[j]!
-    delays[j] = tmp
-  }
-  return delays
-}
-
-const relatedMotionMs = (withStagger: boolean) => {
-  const staggerMs = withStagger
-    ? Math.max(0, visibleRelatedItems.value.length - 1) * RELATED_STAGGER_STEP * 1000
-    : 0
-  return Math.max(RELATED_TOOLBAR_MS, RELATED_ITEM_MS + staggerMs) + 40
-}
-
-const hideRelatedPanel = async () => {
-  if (relatedBusy.value || relatedUi.value !== 'panel') return
-  relatedBusy.value = true
-  relatedPanelOpen.value = false
-  relatedStaggerDelays.value = buildRelatedStagger(visibleRelatedItems.value.length)
-  relatedLeaving.value = true
-  await waitMs(relatedMotionMs(true))
-  relatedUi.value = 'reveal'
-  relatedLeaving.value = false
-  await nextTick()
-  await waitFrames(1)
-  relatedRevealVisible.value = true
-  relatedBusy.value = false
-}
-
-const showRelatedPanel = async () => {
-  if (relatedBusy.value || relatedUi.value !== 'reveal') return
-  relatedBusy.value = true
-  relatedRevealVisible.value = false
-  await waitMs(RELATED_REVEAL_MS)
-  relatedStaggerDelays.value = buildRelatedStagger(visibleRelatedItems.value.length)
-  relatedPanelOpen.value = true
-  relatedUi.value = 'panel'
-  relatedEntering.value = true
-  await nextTick()
-  await waitFrames(2)
-  relatedEntering.value = false
-  await waitMs(relatedMotionMs(true))
-  relatedBusy.value = false
-}
-
-watch(hasRelatedItems, (has) => {
-  if (has) return
-  relatedLeaving.value = false
-  relatedEntering.value = false
-  relatedBusy.value = false
-  relatedRevealVisible.value = false
-  relatedUi.value = relatedPanelOpen.value ? 'panel' : 'reveal'
-})
-
-const onRelatedClick = (item: RelatedCard) => {
-  emit('navigate', item.slug)
-}
 
 const nextProduct = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
 const nextImageUrl = computed(() =>
@@ -812,14 +646,6 @@ const isCurrentImageSaved = computed(() => {
   const index = galleryEntries.value.length > 1 ? selectedIndex.value : undefined
   return isSaved(product.value._id, index)
 })
-
-const toggleRelatedPanel = () => {
-  if (relatedUi.value === 'panel') {
-    void hideRelatedPanel()
-    return
-  }
-  void showRelatedPanel()
-}
 
 /** Same fly-to-pile as the hero heart — always the current gallery image. */
 const onAddToSelection = () => {
@@ -886,6 +712,13 @@ const revealWithoutFlip = () => {
   contentReady.value = true
   sidesVisible.value = true
   galleryVisible.value = true
+  // Clear any Flip-prep visibility hides if we bailed early
+  stripRef.value
+    ?.querySelectorAll<HTMLElement>('.pdp__hero-image')
+    .forEach((img) => {
+      gsap.set(img, { clearProps: 'visibility' })
+    })
+  nextTick(() => scrollGalleryInitial())
 }
 
 const waitForImage = (img: HTMLImageElement) => {
@@ -918,16 +751,29 @@ const runFlipOpen = async () => {
 
   await waitForImage(hero)
   await nextTick()
+  // Let flex layout resolve real image boxes before Flip measures
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+  scrollGalleryInitial()
+  await nextTick()
+  // Re-bind in case the strip shifted the active image node
+  const stripHero = stripRef.value?.querySelector<HTMLImageElement>(
+    `[data-strip-index="${selectedIndex.value}"] .pdp__hero-image`,
+  )
+  if (stripHero) heroRef.value = stripHero
+  const flipHero = heroRef.value || hero
 
   // Hide hero first so we don't flash the final size before Flip
-  gsap.set(hero, { visibility: 'hidden' })
+  gsap.set(flipHero, { visibility: 'hidden' })
   await nextTick()
-  void hero.offsetWidth
+  void flipHero.offsetWidth
 
   // Prefer prefetched hero-tier URL so Flip scales a sharp bitmap, not the grid thumb
   const flipSrc =
     getFlipImageUrl() ||
-    hero.src ||
+    flipHero.currentSrc ||
+    flipHero.src ||
     (source as HTMLImageElement).currentSrc ||
     (source as HTMLImageElement).src
 
@@ -943,10 +789,10 @@ const runFlipOpen = async () => {
   ])
 
   const from = source.getBoundingClientRect()
-  const to = hero.getBoundingClientRect()
+  const to = flipHero.getBoundingClientRect()
 
   if (from.width < 2 || to.width < 2) {
-    gsap.set(hero, { visibility: 'visible' })
+    gsap.set(flipHero, { visibility: 'visible' })
     flyer.remove()
     revealWithoutFlip()
     return
@@ -974,8 +820,6 @@ const runFlipOpen = async () => {
   hideFlipSource(source)
 
   // Backdrop fades in → hold → flyer scales → PDP UI
-  const BACKDROP_FADE_MS = 350
-  const FLYER_PAUSE_MS = 100
   const waitMs = (ms: number) =>
     new Promise<void>((resolve) => {
       window.setTimeout(resolve, ms)
@@ -983,11 +827,11 @@ const runFlipOpen = async () => {
 
   setBackdropReady(true)
   await nextTick()
-  await waitMs(BACKDROP_FADE_MS)
-  await waitMs(FLYER_PAUSE_MS)
+  await waitMs(PRODUCT_OVERLAY_BACKDROP_OPEN_MS)
+  await waitMs(PRODUCT_OVERLAY_FLYER_PAUSE_MS)
 
   // Re-measure hero in case layout settled during the fade
-  const toAfter = hero.getBoundingClientRect()
+  const toAfter = flipHero.getBoundingClientRect()
   const dest = toAfter.width >= 2 ? toAfter : to
 
   const state = Flip.getState(flyer)
@@ -1003,13 +847,13 @@ const runFlipOpen = async () => {
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
   Flip.from(state, {
-    duration: 0.7,
+    duration: PRODUCT_OVERLAY_FLIP_OPEN_S,
     ease: 'power2.inOut',
     absolute: true,
     scale: false,
     onComplete: () => {
       // Reveal hero under the flyer first so removing it can’t flash empty
-      gsap.set(hero, { visibility: 'visible' })
+      gsap.set(flipHero, { visibility: 'visible' })
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           flyer.remove()
@@ -1036,7 +880,7 @@ const runFlipClose = async () => {
     return
   }
 
-  const UI_FADE_MS = 420
+  const UI_FADE_MS = PRODUCT_OVERLAY_UI_FADE_MS
   // Flyer is position:fixed, so it must not outlive the veil — the grid is
   // interactive again as soon as finishClose() runs and would scroll under it.
   const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
@@ -1189,7 +1033,7 @@ const runFlipClose = async () => {
   })
 
   Flip.from(state, {
-    duration: 0.65,
+    duration: PRODUCT_OVERLAY_FLIP_CLOSE_S,
     ease: 'power2.inOut',
     onComplete: () => {
       // Restore thumb under the flyer, then unmount the overlay immediately.
@@ -1216,44 +1060,51 @@ watch(closingFlip, (closing) => {
   if (closing) void runFlipClose()
 })
 
+const applyProduct = (next: NonNullable<typeof product.value>) => {
+  product.value = next
+  useNuxtApp().payload.data[pdpDataKey] = next
+}
+
+/** Keep `product` in lockstep with the route/overlay slug (soft-swap in place). */
 watch(
   () => props.slug,
-  async () => {
-    showMaterials.value = false
+  async (slug, prevSlug) => {
+    if (!slug || slug === prevSlug) return
+
+    showSpecs.value = false
+    showInfo.value = false
     showFinishes.value = false
-    imageExpanded.value = false
-    zoomMounted.value = false
-    zoomSrc.value = ''
-    clearExpandCloseListener()
-    galleryVisible.value = false
+    collapseImage()
 
-    const softSwap = sidesVisible.value && contentReady.value
     const token = ++slugSwapToken
+    const alreadyOpen = contentReady.value || sidesVisible.value || flipStarted.value
 
-    if (softSwap) {
-      // Fade pane content only — column rules / related rail stay put
-      paneContentVisible.value = false
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, CONTENT_FADE_MS)
-      })
-      if (token !== slugSwapToken) return
-
+    if (alreadyOpen) {
       flipStarted.value = true
       flipCloseStarted.value = false
       selectedIndex.value = 0
-      await refresh()
+      paneContentVisible.value = true
+      galleryVisible.value = true
+
+      const next = await fetchProduct(slug)
       if (token !== slugSwapToken) return
+      if (!next) return
+
+      applyProduct(next)
+
       await nextTick()
+      if (token !== slugSwapToken) return
 
       const hero = heroRef.value
       if (hero && !hero.complete) await waitForImage(hero)
       if (token !== slugSwapToken) return
 
       galleryVisible.value = true
-      paneContentVisible.value = true
+      scrollSelectedIntoView(false)
       return
     }
 
+    galleryVisible.value = false
     flipStarted.value = false
     flipCloseStarted.value = false
     contentReady.value = false
@@ -1265,18 +1116,42 @@ watch(
     if (heroRef.value?.complete) void runFlipOpen()
   },
 )
+
+/** If remount/cache leaves the wrong product for this slug, force a resync. */
+watch(
+  () => [props.slug, product.value?.slug] as const,
+  async ([slug, productSlug]) => {
+    if (!import.meta.client || !slug) return
+    if (productSlug === slug) return
+
+    const token = ++slugSwapToken
+    const next = await fetchProduct(slug)
+    if (token !== slugSwapToken || !next) return
+    applyProduct(next)
+    selectedIndex.value = 0
+    galleryVisible.value = true
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
 .pdp {
   position: relative;
   display: grid;
-  grid-template-columns: var(--side-column-width) 1fr var(--side-column-width);
+  grid-template-columns: 1fr;
   /* Full viewport — overlay sits above the cart, so don't shrink for --bucket-push */
   height: 100dvh;
   background: transparent;
-  border-top: 1px solid var(--grid-line);
   transition: background var(--theme-ms) var(--theme-ease);
+  --index-tabs-height: 2.25rem;
+  --index-rail-width: min(18vw, 250px);
+  /* Shared by rail slot width + gallery clearance — keep in lockstep */
+  --index-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp--no-related {
+  grid-template-columns: 1fr;
 }
 
 .pdp--ready {
@@ -1284,7 +1159,7 @@ watch(
 }
 
 .pdp--standalone {
-  height: calc(100dvh - var(--header-height));
+  height: 100dvh;
 }
 
 .pdp--missing {
@@ -1309,7 +1184,7 @@ watch(
 .pdp__col--left,
 .pdp__col--right {
   opacity: 0;
-  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   /* Side columns are not dismiss targets — never inherit the stage close cursor */
   cursor: auto;
 }
@@ -1320,7 +1195,26 @@ watch(
 }
 
 .pdp__col--left {
-  border-right: 1px solid var(--grid-line);
+  position: absolute;
+  top: unset;
+  right: 20px;
+  bottom: 20px;
+  z-index: 4;
+  width: var(--side-column-width);
+  height: auto;
+  max-height: calc(100% - 40px);
+  min-height: 0;
+  border: 1px solid var(--grid-line);
+  /* border-radius: 30px; */
+  corner-shape: squircle;
+  background: color-mix(in srgb, var(--cream) 70%, transparent);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .pdp__col--right {
@@ -1329,10 +1223,23 @@ watch(
 }
 
 .pdp__col--center {
+  /* Full-bleed gallery — floating aside sits over it */
+  grid-column: 1 / -1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   align-items: stretch;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  z-index: 1;
+}
+
+.pdp:not(.pdp--no-related) .pdp__col--right {
+  grid-column: 3;
+  grid-row: 1;
+  z-index: 4;
 }
 
 /* Soft product swaps: fade content, not the column shells / rules */
@@ -1346,58 +1253,6 @@ watch(
   pointer-events: none;
 }
 
-/* Zoom layer sits above center + right; grid columns stay put */
-.pdp__zoom {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: var(--side-column-width);
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--cream);
-  opacity: 0;
-  pointer-events: none;
-  transition: background var(--theme-ms) var(--theme-ease);
-}
-
-.pdp__zoom--visible {
-  opacity: 1;
-  pointer-events: auto;
-  cursor: zoom-out;
-}
-
-.pdp__zoom--fit-width {
-  overflow-x: hidden;
-  overflow-y: auto;
-  align-items: flex-start;
-}
-
-.pdp__zoom--fit-height {
-  overflow: hidden;
-}
-
-.pdp__zoom-image {
-  display: block;
-  cursor: zoom-out;
-}
-
-.pdp__zoom--fit-width .pdp__zoom-image {
-  width: 100%;
-  height: auto;
-  max-width: none;
-  max-height: none;
-}
-
-.pdp__zoom--fit-height .pdp__zoom-image {
-  width: auto;
-  height: 100%;
-  max-width: none;
-  max-height: 100%;
-}
-
 .pdp__stage {
   flex: 1;
   min-height: 0;
@@ -1406,11 +1261,89 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1rem;
   padding: 0;
   box-sizing: border-box;
   overscroll-behavior: contain;
   cursor: auto;
+}
+
+.pdp__strip {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  /* Clear the index rail; collapses in lockstep when the rail hides */
+  padding-left: var(--index-rail-width);
+  padding-right: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
+  transition: padding-left var(--index-motion);
+  /* Don't inherit the stage close cursor into image gaps / strip chrome */
+  cursor: auto;
+}
+
+.pdp--index-hidden .pdp__strip {
+  padding-left: 0;
+}
+
+.pdp__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.pdp__strip-item {
+  position: relative;
+  margin: 0;
+  flex: 0 0 auto;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  /* Sibling frames stay hidden until Flip lands, then fade in */
+  opacity: 1;
+  transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp:not(.pdp--gallery) .pdp__strip-item:not(.pdp__strip-item--active) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pdp__strip-item .pdp__hero-frame {
+  position: relative;
+  height: 100%;
+  max-height: 100%;
+  width: auto;
+  display: flex;
+  align-items: stretch;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.pdp__strip-item .pdp__hero-image {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: none;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: zoom-in;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.pdp__strip-item .pdp__hero-image--zoomed {
+  cursor: zoom-out;
 }
 
 /* Close cross only after the open flyer has finished */
@@ -1454,8 +1387,8 @@ watch(
   display: block;
   width: auto;
   height: auto;
-  max-width: 100cqi;
-  max-height: 100cqb;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   cursor: zoom-in;
   will-change: transform;
@@ -1476,8 +1409,8 @@ watch(
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pdp__thumbs--visible {
@@ -1529,7 +1462,7 @@ watch(
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem var(--gutter);
-  background: var(--cream);
+  background: transparent;
   border-bottom: 1px solid var(--grid-line);
   transition:
     background var(--theme-ms) var(--theme-ease),
@@ -1569,7 +1502,7 @@ watch(
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 0.25s ease,
+    opacity 0.2s ease,
     transform 0.2s ease;
 }
 
@@ -1584,8 +1517,9 @@ watch(
 
 .pdp__body {
   width: 100%;
-  padding: 1.5rem var(--gutter) 4rem;
-  flex: 1;
+  padding: 1.5rem var(--gutter) 1.65rem;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 .pdp__title {
@@ -1596,7 +1530,7 @@ watch(
 }
 
 .pdp__specs {
-  margin: 0 0 1.5rem;
+  margin: 0;
 }
 
 .pdp__spec {
@@ -1610,6 +1544,31 @@ watch(
 
 .pdp__spec:last-child {
   border-bottom: 1px solid var(--grid-line);
+}
+
+.pdp__spec--toggle {
+  display: block;
+  padding: 0;
+  border-top: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+}
+
+.pdp__spec--toggle > .pdp__disclosure {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  text-align: left;
+}
+
+.pdp__spec-panel {
+  padding-bottom: 0;
+}
+
+.pdp__spec-panel > .pdp__spec {
+  border-bottom: 0;
 }
 
 .pdp__spec dt {
@@ -1637,31 +1596,63 @@ watch(
 }
 
 .pdp__options {
-  grid-column: 1 / -1;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  margin: 0.5rem 0 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  margin: 0;
   padding: 0;
   list-style: none;
-  color: var(--muted);
+  color: var(--charcoal);
   font-size: var(--text-sm);
+  text-align: right;
+}
+
+.pdp__spec--download {
+  align-items: baseline;
+}
+
+.pdp__spec-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--charcoal);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.pdp__spec-download:hover {
+  color: var(--accent);
+}
+
+.pdp__spec-download-arrow {
+  font-size: 0.85em;
+  line-height: 1;
 }
 
 .pdp__actions {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0;
 }
 
 .pdp__inquire {
   display: block;
   width: 100%;
-  padding: 1rem 0.85rem;
-  background: var(--charcoal);
-  color: var(--cream);
-  font-size: var(--text-sm);
+  padding: 12px;
+  background: var(--red);
+  color: white;
+  font-size: 14px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   transition: opacity 0.2s ease;
 }
 
@@ -1722,15 +1713,22 @@ watch(
 }
 
 .pdp__info {
-  margin-top: 2.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--grid-line);
+  margin: 0;
+  border-bottom: 1px solid var(--grid-line);
 }
 
-.pdp__info-heading {
-  margin: 0 0 1rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
+.pdp__info-toggle {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  text-align: left;
+}
+
+.pdp__info-panel {
+  padding-bottom: 0.85rem;
 }
 
 .pdp__info-text {
@@ -1740,185 +1738,13 @@ watch(
   color: var(--charcoal);
 }
 
+.pdp__info-text:last-child {
+  margin-bottom: 0;
+}
+
 .pdp__col--right-collapsed {
   align-items: center;
   justify-content: center;
-}
-
-.pdp__related-shell {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-.pdp__related-toolbar {
-  flex-shrink: 0;
-  justify-content: space-between;
-  position: relative;
-  transform: translateY(0);
-  transition: transform 0.56s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.pdp__related-shell--leaving .pdp__related-toolbar {
-  transform: translateY(-110%);
-}
-
-.pdp__related-shell--entering .pdp__related-toolbar {
-  transform: translateY(-110%);
-  transition: none;
-}
-
-.pdp__related-heading {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: inherit;
-  color: var(--charcoal);
-}
-
-.pdp__related-hide {
-  margin-left: auto;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
-}
-
-.pdp__related-hide:hover {
-  color: var(--charcoal);
-}
-
-.pdp__related-reveal {
-  font-size: var(--text-sm);
-  color: var(--muted);
-  text-decoration: none;
-  opacity: 0;
-  transition:
-    color 0.2s ease,
-    opacity 0.24s ease;
-}
-
-.pdp__related-reveal--visible {
-  opacity: 1;
-}
-
-.pdp__related-reveal:hover {
-  color: var(--charcoal);
-}
-
-.pdp__related-item {
-  --related-stagger: 0s;
-  transform: translateX(0);
-  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
-  transition-delay: var(--related-stagger);
-}
-
-.pdp__related-shell--leaving .pdp__related-item {
-  transform: translateX(110%);
-}
-
-.pdp__related-shell--entering .pdp__related-item {
-  transform: translateX(110%);
-  transition: none;
-}
-
-.pdp__related {
-  --gutter: 2.5rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-  /* padding: var(--gutter) 0 2rem; */
-}
-
-.pdp__related::-webkit-scrollbar {
-  display: none;
-}
-
-.pdp__related-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Square cells matching the cart grid — 17% inset, contained image, rule below */
-.pdp__related-card {
-  --related-cell-pad: 17%;
-  position: relative;
-  display: block;
-  width: 100%;
-  min-width: 0;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border-bottom: 1px solid var(--grid-line);
-  box-sizing: border-box;
-  text-align: left;
-  color: var(--charcoal);
-  cursor: pointer;
-}
-
-.pdp__related-item:last-child .pdp__related-card {
-  border-bottom: 0;
-}
-
-/* Content box = cell minus the inset on every side */
-.pdp__related-pad {
-  position: absolute;
-  inset: var(--related-cell-pad);
-  display: grid;
-  place-items: center;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  box-sizing: border-box;
-  container-type: size;
-}
-
-/* Shrink-wraps to the contained image so the radius hugs the artwork */
-.pdp__related-media {
-  position: relative;
-  display: block;
-  width: fit-content;
-  height: fit-content;
-  max-width: 100%;
-  max-height: 100%;
-  line-height: 0;
-  overflow: hidden;
-  border-radius: var(--thumb-radius);
-}
-
-.pdp__related-media img {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100cqi;
-  max-height: 100cqb;
-  object-fit: contain;
-  object-position: center;
-  border-radius: var(--thumb-radius);
-  pointer-events: none;
-}
-
-.pdp__related-meta {
-  display: none;
-}
-
-.pdp__related-title {
-  margin: 0;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pdp__related-type {
-  margin: 0;
-  flex-shrink: 0;
-  color: var(--muted);
 }
 
 .pdp__next {
@@ -1956,7 +1782,7 @@ watch(
   }
 
   .pdp--standalone {
-    min-height: calc(100dvh - var(--header-height));
+    min-height: 100dvh;
   }
 
   .pdp__col {
@@ -1971,22 +1797,39 @@ watch(
 
   .pdp__col--center {
     order: -1;
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .pdp__stage {
     min-height: 55dvh;
   }
 
+  .pdp__strip {
+    padding: 0 1rem;
+    align-items: stretch;
+    transition: none;
+  }
+
+  .pdp--index-hidden .pdp__strip {
+    padding: 0 1rem;
+  }
+
   .pdp__col--left {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    max-height: none;
+    border-radius: 0;
+    corner-shape: initial;
     border-bottom: 1px solid var(--grid-line);
+    z-index: auto;
   }
 
   .pdp__col--right {
     display: none;
-  }
-
-  .pdp__zoom {
-    left: 0;
   }
 }
 </style>

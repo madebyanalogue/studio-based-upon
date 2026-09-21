@@ -154,15 +154,27 @@
         }"
         :style="{ '--columns': columns }"
       >
-        <ProductCard
-          v-for="item in items"
-          :key="item._id"
-          :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(item._id) }"
-          :item="item"
-          :image-url="cardImage(item)"
-          :order-label="orderLabel(item._id)"
-          :data-flip-id="item._id"
-        />
+        <template v-for="row in displayRows" :key="row.key">
+          <div
+            v-if="row.empty"
+            class="products__spacer"
+            :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) }"
+            :data-flip-id="row.key"
+            aria-hidden="true"
+          />
+          <ProductCard
+            v-else
+            :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) }"
+            :item="row.item"
+            :image-url="cardImage(row.item)"
+            :order-label="orderLabel(row.item._id)"
+            :forced-image-index="row.forcedImageIndex"
+            :lock-image="row.lockImage"
+            :expand-on-click="EXPAND_GALLERY_ON_CLICK && !row.lockImage"
+            :data-flip-id="row.key"
+            @expand="expandGallery(row.item._id)"
+          />
+        </template>
       </div>
       <p v-if="!visibleCount" class="products__empty">
         No items match those filters.
@@ -179,6 +191,25 @@ import {
   parseLibraryFilterKey,
   type FormalItem,
 } from '~/composables/demoData'
+import { uniqueImageUrls } from '~/composables/productImages'
+import type { LibraryItem } from '~/composables/useLibraryCatalog'
+import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+
+/**
+ * TEMP: first click fans gallery images into the grid; those tiles open the PDP.
+ * Set to `false` to restore open-PDP-on-click + thumbnail arrows.
+ */
+const EXPAND_GALLERY_ON_CLICK = false
+
+type GridRow = {
+  key: string
+  item: LibraryItem
+  /** Locked gallery frame when expanded; null = normal card behaviour. */
+  forcedImageIndex: number | null
+  lockImage: boolean
+  /** Blank spacer after an expanded gallery. */
+  empty?: boolean
+}
 
 type FacetId = 'series' | 'feature' | 'materiality' | 'colour'
 
@@ -203,6 +234,60 @@ type LibraryPrefs = {
 const { items } = await useLibraryCatalog()
 const { imageUrl } = useSanityImage()
 const { libraryFilters: pageFilters } = useSiteSettings()
+
+/** Product ids whose galleries have been fanned into the grid. */
+const expandedIds = ref<Set<string>>(new Set())
+
+const galleryImageCount = (item: LibraryItem) => {
+  const urls = uniqueImageUrls(
+    imageUrl(item.image, IMAGE_WIDTH.thumb),
+    ...(item.gallery || []).map((asset) =>
+      asset ? imageUrl(asset, IMAGE_WIDTH.thumb) : '',
+    ),
+    ...(item.spiritGallery || []).map((asset) =>
+      asset ? imageUrl(asset, IMAGE_WIDTH.thumb) : '',
+    ),
+  )
+  return urls.length
+}
+
+const displayRows = computed<GridRow[]>(() => {
+  const rows: GridRow[] = []
+  for (const item of items.value as LibraryItem[]) {
+    const count = galleryImageCount(item)
+    if (EXPAND_GALLERY_ON_CLICK && expandedIds.value.has(item._id) && count > 1) {
+      for (let index = 0; index < count; index++) {
+        rows.push({
+          key: `${item._id}::${index}`,
+          item,
+          forcedImageIndex: index,
+          lockImage: true,
+        })
+      }
+      rows.push({
+        key: `${item._id}::spacer`,
+        item,
+        forcedImageIndex: null,
+        lockImage: true,
+        empty: true,
+      })
+      continue
+    }
+    rows.push({
+      key: item._id,
+      item,
+      forcedImageIndex: null,
+      lockImage: false,
+    })
+  }
+  return rows
+})
+
+const expandGallery = (productId: string) => {
+  if (!EXPAND_GALLERY_ON_CLICK) return
+  if (expandedIds.value.has(productId)) return
+  expandedIds.value = new Set([...expandedIds.value, productId])
+}
 
 const pageQuery = `*[_type == "materialsAndFormsPage"][0] {
   seoTitle,
@@ -711,6 +796,8 @@ watch(
     debouncedSearchQuery,
   ],
   () => {
+    // Collapse expansions so Flip filter transitions still key off product ids.
+    if (expandedIds.value.size) expandedIds.value = new Set()
     void transitionFilter(filteredIdSet.value)
   },
   { deep: true },
@@ -1068,6 +1155,16 @@ useHead(() => ({
 }
 
 .products__grid :deep(.product-card.is-filtered-out) {
+  display: none !important;
+}
+
+.products__spacer {
+  min-width: 0;
+  aspect-ratio: var(--product-card-aspect-ratio, 1);
+  pointer-events: none;
+}
+
+.products__spacer.is-filtered-out {
   display: none !important;
 }
 

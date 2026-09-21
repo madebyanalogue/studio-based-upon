@@ -1,5 +1,8 @@
 <template>
-  <header class="header">
+  <header
+    class="header"
+    :class="{ 'header--product-page': isProductPage }"
+  >
     <div class="header__inner">
       <NuxtLink
         to="/"
@@ -9,7 +12,11 @@
         <BasedUponLogo class="header__logo-mark" />
       </NuxtLink>
 
-      <nav class="header__nav" aria-label="Main navigation">
+      <nav
+        class="header__nav"
+        aria-label="Main navigation"
+        :aria-hidden="isProductPage ? 'true' : undefined"
+      >
         <NuxtLink
           v-for="item in headerMenu.items"
           :key="item._key"
@@ -21,7 +28,10 @@
         </NuxtLink>
       </nav>
 
-      <div class="header__actions">
+      <div
+        class="header__actions"
+        :aria-hidden="isProductPage ? 'true' : undefined"
+      >
         <button
           type="button"
           class="header__version interface"
@@ -284,6 +294,11 @@ const {
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
+/** Hard-loaded PDP: keep the logo in place; hide the rest of the chrome. */
+const isProductPage = computed(() =>
+  /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
+)
+
 const boardsMenuRef = ref<HTMLElement | null>(null)
 const selectionsMenuRef = ref<HTMLElement | null>(null)
 const selectionsOpen = ref(false)
@@ -438,6 +453,12 @@ onBeforeUnmount(() => {
   transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.header--product-page .header__nav,
+.header--product-page .header__actions {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .header__inner {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -450,15 +471,20 @@ onBeforeUnmount(() => {
 .header__logo {
   justify-self: start;
   display: block;
-  width: min(9.5rem, 28vw);
+  width: 100px;
   color: var(--charcoal);
   line-height: 0;
-  transform: translate(0, 19px) scale(1.25);
+  /* transform: translate(0, 19px) scale(1.25); */
   transform-origin: top left;
+  position: relative;
+  height: var(--header-height);
 }
 
 .header__logo-mark {
-  width: 100%;
+  position: absolute;
+  top: 20px;
+  left: 13px;
+  width: 180px;
   height: auto;
 }
 

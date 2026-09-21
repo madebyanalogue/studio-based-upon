@@ -14,6 +14,7 @@
           'product-overlay--closing': closingFlip,
         }"
         :style="{
+          '--backdrop-open-ms': `${PRODUCT_OVERLAY_BACKDROP_OPEN_MS}ms`,
           '--backdrop-close-ms': `${PRODUCT_OVERLAY_BACKDROP_CLOSE_MS}ms`,
           '--backdrop-close-ease': PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
         }"
@@ -31,6 +32,12 @@
             @navigate="onNavigate"
           />
         </div>
+        <!-- Outside the PDP instance so soft product swaps never remount it -->
+        <ProductIndexRail
+          v-if="isOpen && openSlug"
+          :slug="openSlug"
+          @navigate="onNavigate"
+        />
       </div>
     </Transition>
   </Teleport>
@@ -40,6 +47,7 @@
 import {
   PRODUCT_OVERLAY_BACKDROP_CLOSE_MS,
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
+  PRODUCT_OVERLAY_BACKDROP_OPEN_MS,
 } from '~/composables/useProductOverlay'
 
 const {
@@ -102,7 +110,7 @@ onUnmounted(() => {
   background: var(--background-color);
   opacity: 0;
   /* Fixed duration — don’t rely on --theme-ms (0 until theme-ready) */
-  transition: opacity 0.35s ease;
+  transition: opacity var(--backdrop-open-ms, 0.18s) ease;
 }
 
 /* Fade-out after the close flyer lands — timing from PRODUCT_OVERLAY_BACKDROP_CLOSE_MS */
@@ -123,7 +131,7 @@ onUnmounted(() => {
   overflow: hidden;
   background: transparent;
   /* Match backdrop fade — don’t use --theme-ms (can be 0) */
-  transition: background 0.35s ease;
+  transition: background var(--backdrop-open-ms, 0.18s) ease;
 }
 
 .product-overlay:not(.product-overlay--flipping) .product-overlay__panel {

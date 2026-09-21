@@ -10,6 +10,7 @@
   /* Derived from current text colour so light/dark stay in sync */
   --muted: color-mix(in srgb, var(--charcoal) 45%, transparent);
   --accent: #8b7355;
+  --red: #ff0000;
   --grid-line: rgba(0, 0, 0, 0.06);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
@@ -35,6 +36,7 @@
   --card-gap: 2px;
   --title-pad: 20px 0px calc(20px - var(--card-gap)) 0px;
   --product-card-aspect-ratio: 0.8;
+
 
   color-scheme: light;
 }

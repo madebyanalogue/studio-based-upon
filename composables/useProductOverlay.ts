@@ -18,9 +18,18 @@ export type ProductReturnImage = {
   bucketItemId?: string
 }
 
+/** Cream fade before the open flyer moves. Keep in sync with ProductOverlay CSS. */
+export const PRODUCT_OVERLAY_BACKDROP_OPEN_MS = 180
+/** Brief hold after the cream is in, before the thumbnail flies. */
+export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 40
+export const PRODUCT_OVERLAY_FLIP_OPEN_S = 0.42
+export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 0.4
+/** PDP chrome fade before the return flyer — keep in sync with ProductDetail CSS. */
+export const PRODUCT_OVERLAY_UI_FADE_MS = 200
+
 /** Beat on the landed flyer before the cream clears, then the fade itself. */
-export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 120
-export const PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS = 380
+export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 60
+export const PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS = 220
 
 /** Close backdrop fade — CSS + finishClose timeout must share this. Ends with the flyer. */
 export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS =
@@ -174,12 +183,11 @@ export const useProductOverlay = () => {
       // so one Back / close returns to the original page.
       if (alreadyOpen) {
         window.history.replaceState(state, '', url)
-        // In-overlay nav — restore grid thumb (no return flip for this open)
+        // In-overlay nav — keep cream up; only ProductDetail soft-swaps content
         restoreFlipSource()
         clearFlipSource()
         pendingFlip.value = false
         closingFlip.value = false
-        backdropReady.value = false
         openImageIndex.value = 0
       } else {
         window.history.pushState(state, '', url)

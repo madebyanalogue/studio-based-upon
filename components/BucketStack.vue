@@ -3186,8 +3186,8 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   controlsVisible.value = false
   gridLinesVisible.value = false
 
-  // Warm ProductDetail's useAsyncData cache so mount isn't cold
-  const cacheKey = `product-detail-${slug}`
+  // Warm ProductDetail's overlay useAsyncData cache so mount isn't cold
+  const cacheKey = 'product-detail-overlay'
   const nuxtApp = useNuxtApp()
   if (nuxtApp.payload.data[cacheKey] == null) {
     void fetchProduct(slug).then((data) => {
