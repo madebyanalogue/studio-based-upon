@@ -1555,7 +1555,7 @@ const onLibrarySelect = (item: {
   gallery?: { asset?: { url?: string } }[]
   spiritGallery?: { asset?: { url?: string } }[]
 }) => {
-  const assets = [item.image, ...(item.gallery || []), ...(item.spiritGallery || [])]
+  const assets = [item.image, ...(item.gallery || [])]
   const urls = uniqueImageUrls(
     ...assets.map((asset) => (asset ? buildLibraryUrl(asset, 1200) : '')),
   )

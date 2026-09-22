@@ -31,7 +31,14 @@ export type ProductRecord = {
   tags?: string[]
   image?: { asset?: { url?: string } }
   gallery?: { asset?: { url?: string } }[]
-  spiritGallery?: { asset?: { url?: string } }[]
+  spiritGallery?: Array<
+    | { _type?: 'image'; asset?: { url?: string; _id?: string } }
+    | {
+        _type: 'spiritVideo'
+        file?: { asset?: { url?: string; _id?: string; mimeType?: string } }
+        poster?: { asset?: { url?: string; _id?: string } }
+      }
+  >
   /** Manual related picks from Sanity; empty → auto-match in the PDP */
   related?: RelatedProduct[]
 }
@@ -181,7 +188,13 @@ export const useProductCatalog = () => {
     "colours": colours[]->title,
     image { asset-> { url } },
     gallery[] { asset-> { url } },
-    spiritGallery[] { asset-> { url } },
+    spiritGallery[] {
+      _type,
+      _key,
+      asset->{ url, _id },
+      file { asset->{ url, _id, mimeType, originalFilename } },
+      poster { asset->{ url, _id } }
+    },
     related[]->{
       _id,
       title,

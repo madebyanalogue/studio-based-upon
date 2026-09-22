@@ -9,6 +9,8 @@ export const IMAGE_WIDTH = {
   hero: 3000,
   /** Expanded / zoom inspect */
   zoom: 3000,
+  /** Infinite split slider panels (half-viewport, cover) */
+  splitSlider: 3000,
   /** PDP gallery strip */
   strip: 160,
 } as const
@@ -88,7 +90,11 @@ export const useSanityImage = () => {
     return ''
   }
 
-  const imageUrl = (source: SanityImageSource, width = IMAGE_WIDTH.hero) => {
+  const imageUrl = (
+    source: SanityImageSource,
+    width = IMAGE_WIDTH.hero,
+    quality = 80,
+  ) => {
     if (!source?.asset) return ''
 
     const base =
@@ -97,7 +103,7 @@ export const useSanityImage = () => {
       getImageSrc(source.asset)
 
     if (!base) return ''
-    return withImageWidth(base, width)
+    return withImageWidth(base, width, quality)
   }
 
   const imageTier = (source: SanityImageSource, tier: ImageTier) =>

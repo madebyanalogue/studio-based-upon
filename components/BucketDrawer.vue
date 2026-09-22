@@ -384,7 +384,6 @@ const hydrateGalleries = async () => {
       item.imageUrl,
       buildUrl(product.image, 1200),
       ...(product.gallery || []).map((img) => buildUrl(img, 1200)),
-      ...(product.spiritGallery || []).map((img) => buildUrl(img, 1200)),
     )
     if (urls.length > 1) setItemGallery(item.id, urls)
   }

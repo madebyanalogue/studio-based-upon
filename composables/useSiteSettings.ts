@@ -59,6 +59,7 @@ export const useSiteSettings = () => {
       { _key: '1', text: 'Curate', path: '/curate' },
       { _key: '2', text: 'Curated Discovery', path: '/curated-discovery' },
       { _key: '3', text: 'Discovery', path: '/discovery' },
+      { _key: '3b', text: 'Infinite Slider', path: '/infinite-slider' },
       { _key: '4', text: 'Materials & Forms', path: '/materials-and-forms' },
       { _key: '5', text: '(Pre)Crafted', path: '/pre-crafted' },
       { _key: '6', text: 'About', path: '/about' },
@@ -119,6 +120,9 @@ export const useSiteSettings = () => {
       (item) => item.path === '/curated-discovery',
     )
     const hasDiscovery = normalized.some((item) => item.path === '/discovery')
+    const hasInfiniteSlider = normalized.some(
+      (item) => item.path === '/infinite-slider',
+    )
 
     if (!hasShowcase) {
       normalized.unshift({ _key: 'showcase', text: 'Showcase', path: '/' })
@@ -147,6 +151,14 @@ export const useSiteSettings = () => {
         _key: 'discovery',
         text: 'Discovery',
         path: '/discovery',
+      })
+    }
+    if (!hasInfiniteSlider) {
+      const insertAt = normalized.findIndex((item) => item.path === '/discovery')
+      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
+        _key: 'infinite-slider',
+        text: 'Infinite Slider',
+        path: '/infinite-slider',
       })
     }
 

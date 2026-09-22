@@ -166,6 +166,18 @@
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
         @click="onStageClick"
       >
+        <button
+          v-if="hasSpiritGallery"
+          type="button"
+          class="pdp__spirit-toggle interface"
+          :class="{ 'pdp__spirit-toggle--on': spiritMode }"
+          :aria-pressed="spiritMode ? 'true' : 'false'"
+          :aria-label="spiritMode ? 'Show product gallery' : 'Show spirit imagery'"
+          @click.stop="toggleSpiritMode"
+        >
+          Spirit
+        </button>
+
         <div
           v-if="galleryEntries.length"
           ref="stripRef"
@@ -182,14 +194,35 @@
           >
             <div
               class="pdp__hero-frame"
-              :class="{ 'pdp__hero-frame--zoomed': i === selectedIndex && imageExpanded }"
+              :class="{
+                'pdp__hero-frame--zoomed':
+                  entry.kind === 'image' && i === selectedIndex && imageExpanded,
+              }"
               :style="
                 galleryAspects[entry.id]
                   ? { '--pdp-ar': String(galleryAspects[entry.id]) }
                   : undefined
               "
             >
+              <video
+                v-if="entry.kind === 'video'"
+                :ref="(el) => setStripVideoRef(i, el)"
+                class="pdp__hero-image pdp__hero-video"
+                :class="{
+                  'pdp__hero-image--ready': galleryReady[entry.id],
+                }"
+                :src="entry.src"
+                :poster="entry.posterSrc || undefined"
+                muted
+                loop
+                playsinline
+                preload="metadata"
+                draggable="false"
+                @loadedmetadata="onStripVideoMeta(i, $event)"
+                @click.stop="selectImage(i)"
+              />
               <img
+                v-else
                 :ref="(el) => setStripImageRef(i, el)"
                 :src="
                   i === selectedIndex && imageExpanded && frameZoomHiRes
@@ -263,7 +296,7 @@ const emit = defineEmits<{
 }>()
 
 const { fetchProduct, getNextProduct } = useProductCatalog()
-const { imageUrl } = useSanityImage()
+const { imageUrl, fileUrl } = useSanityImage()
 const { requestSave, isSaved } = useBucket()
 const {
   close,
@@ -344,6 +377,8 @@ let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
+/** When true, gallery shows Spirit Imagery instead of product gallery. */
+const spiritMode = ref(false)
 /** In-frame gallery zoom (stays inside the image footprint) */
 const imageExpanded = ref(false)
 const frameZoomHiRes = ref(false)
@@ -352,6 +387,7 @@ const zoomOriginY = ref(50)
 const FRAME_ZOOM_SCALE = 2.5
 let stripScrollRaf = 0
 let frameZoomToken = 0
+const stripVideoEls: (HTMLVideoElement | null)[] = []
 
 const setStripImageRef = (index: number, el: Element | null) => {
   if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
@@ -360,6 +396,14 @@ const setStripImageRef = (index: number, el: Element | null) => {
   if (index === selectedIndex.value && el instanceof HTMLImageElement) {
     heroRef.value = el
   }
+}
+
+const setStripVideoRef = (index: number, el: Element | null) => {
+  stripVideoEls[index] = el instanceof HTMLVideoElement ? el : null
+  if (el instanceof HTMLVideoElement && el.readyState >= 1) {
+    markGalleryVideoReady(index, el)
+  }
+  syncStripVideos()
 }
 
 const onStripImageLoad = (index: number) => {
@@ -373,48 +417,126 @@ const onStripImageLoad = (index: number) => {
   if (!flipStarted.value) void runFlipOpen()
 }
 
-type GalleryEntry = {
-  id: string
-  /** PDP resting hero */
-  src: string
-  /** Small gallery strip */
-  thumbSrc: string
-  /** Expanded zoom */
-  zoomSrc: string
+const onStripVideoMeta = (index: number, event: Event) => {
+  const video = event.currentTarget as HTMLVideoElement | null
+  markGalleryVideoReady(index, video)
+  if (index === selectedIndex.value) syncStripVideos()
 }
 
-const buildGalleryEntries = (
+type GalleryEntry = {
+  id: string
+  kind: 'image' | 'video'
+  /** PDP resting hero / video src */
+  src: string
+  /** Small gallery strip (images) */
+  thumbSrc: string
+  /** Expanded zoom (images) */
+  zoomSrc: string
+  /** Optional video poster */
+  posterSrc?: string
+}
+
+const pushImageEntry = (
+  entries: GalleryEntry[],
+  seen: Set<string>,
+  recordId: string,
+  asset: { asset?: { url?: string; _id?: string } } | null | undefined,
+) => {
+  if (!asset) return
+  const src = imageUrl(asset, IMAGE_WIDTH.hero)
+  if (!src) return
+  const key = src.replace(/\?.*$/, '')
+  if (seen.has(key)) return
+  seen.add(key)
+  entries.push({
+    id: `${recordId}-img-${entries.length}`,
+    kind: 'image',
+    src,
+    thumbSrc: imageUrl(asset, IMAGE_WIDTH.strip) || src,
+    zoomSrc: imageUrl(asset, IMAGE_WIDTH.zoom) || src,
+  })
+}
+
+const buildProductGalleryEntries = (
   record: NonNullable<typeof product.value>,
 ): GalleryEntry[] => {
-  const assets = [
-    record.image,
-    ...(record.gallery || []),
-    ...(record.spiritGallery || []),
-  ].filter(Boolean)
+  const assets = [record.image, ...(record.gallery || [])].filter(Boolean)
+  const seen = new Set<string>()
+  const entries: GalleryEntry[] = []
+  for (const asset of assets) {
+    pushImageEntry(entries, seen, record._id, asset)
+  }
+  return entries
+}
 
+const buildSpiritGalleryEntries = (
+  record: NonNullable<typeof product.value>,
+): GalleryEntry[] => {
+  const items = record.spiritGallery || []
   const seen = new Set<string>()
   const entries: GalleryEntry[] = []
 
-  for (const asset of assets) {
-    const src = imageUrl(asset, IMAGE_WIDTH.hero)
-    if (!src) continue
-    const key = src.replace(/\?.*$/, '')
-    if (seen.has(key)) continue
-    seen.add(key)
-    entries.push({
-      id: `${record._id}-img-${entries.length}`,
-      src,
-      thumbSrc: imageUrl(asset, IMAGE_WIDTH.strip) || src,
-      zoomSrc: imageUrl(asset, IMAGE_WIDTH.zoom) || src,
-    })
+  for (const item of items) {
+    if (!item) continue
+    if (item._type === 'spiritVideo' || ('file' in item && item.file)) {
+      const video = item as {
+        file?: { asset?: { url?: string; _id?: string } }
+        poster?: { asset?: { url?: string; _id?: string } }
+      }
+      const src = fileUrl(video.file || null)
+      if (!src) continue
+      const key = src.replace(/\?.*$/, '')
+      if (seen.has(key)) continue
+      seen.add(key)
+      const posterSrc = video.poster ? imageUrl(video.poster, IMAGE_WIDTH.hero) : ''
+      entries.push({
+        id: `${record._id}-vid-${entries.length}`,
+        kind: 'video',
+        src,
+        thumbSrc: posterSrc || src,
+        zoomSrc: src,
+        posterSrc: posterSrc || undefined,
+      })
+      continue
+    }
+
+    pushImageEntry(entries, seen, record._id, item as { asset?: { url?: string } })
   }
 
   return entries
 }
 
-const galleryEntries = computed((): GalleryEntry[] =>
-  product.value ? buildGalleryEntries(product.value) : [],
+const productGalleryEntries = computed((): GalleryEntry[] =>
+  product.value ? buildProductGalleryEntries(product.value) : [],
 )
+
+const spiritGalleryEntries = computed((): GalleryEntry[] =>
+  product.value ? buildSpiritGalleryEntries(product.value) : [],
+)
+
+const hasSpiritGallery = computed(() => spiritGalleryEntries.value.length > 0)
+
+const galleryEntries = computed((): GalleryEntry[] =>
+  spiritMode.value && hasSpiritGallery.value
+    ? spiritGalleryEntries.value
+    : productGalleryEntries.value,
+)
+
+const toggleSpiritMode = () => {
+  if (!hasSpiritGallery.value) return
+  spiritMode.value = !spiritMode.value
+  selectedIndex.value = 0
+  collapseImage()
+  nextTick(() => {
+    scrollGalleryInitial()
+    syncStripVideos()
+    const strip = stripRef.value
+    const media = strip?.querySelector<HTMLElement>(
+      `[data-strip-index="0"] .pdp__hero-image`,
+    )
+    if (media instanceof HTMLImageElement) heroRef.value = media
+  })
+}
 
 /** Intrinsic width/height ratio — reserves strip width before paint. */
 const galleryAspects = reactive<Record<string, number>>({})
@@ -439,19 +561,23 @@ const prepareGalleryEntries = async (entries: GalleryEntry[], limit = 3) => {
   const slice = entries.slice(0, Math.min(limit, entries.length))
   await Promise.all(
     slice.map(async (entry) => {
+      if (entry.kind === 'video') {
+        galleryReady[entry.id] = true
+        return
+      }
       const { w, h } = await loadGalleryImageMeta(entry.src)
       if (w > 0 && h > 0) galleryAspects[entry.id] = w / h
       galleryReady[entry.id] = true
     }),
   )
   for (const entry of entries.slice(limit)) {
-    void prefetchImage(entry.src)
+    if (entry.kind === 'image') void prefetchImage(entry.src)
   }
 }
 
 const markGalleryImageReady = (index: number, img?: HTMLImageElement | null) => {
   const entry = galleryEntries.value[index]
-  if (!entry) return
+  if (!entry || entry.kind !== 'image') return
   const node =
     img ||
     stripRef.value?.querySelector<HTMLImageElement>(
@@ -461,6 +587,27 @@ const markGalleryImageReady = (index: number, img?: HTMLImageElement | null) => 
     galleryAspects[entry.id] = node.naturalWidth / node.naturalHeight
   }
   galleryReady[entry.id] = true
+}
+
+const markGalleryVideoReady = (index: number, video?: HTMLVideoElement | null) => {
+  const entry = galleryEntries.value[index]
+  if (!entry || entry.kind !== 'video') return
+  if (video?.videoWidth && video.videoHeight) {
+    galleryAspects[entry.id] = video.videoWidth / video.videoHeight
+  }
+  galleryReady[entry.id] = true
+}
+
+const syncStripVideos = () => {
+  if (!import.meta.client) return
+  stripVideoEls.forEach((video, index) => {
+    if (!video) return
+    if (index === selectedIndex.value && galleryEntries.value[index]?.kind === 'video') {
+      void video.play().catch(() => {})
+    } else {
+      video.pause()
+    }
+  })
 }
 
 const activeEntry = computed(
@@ -473,15 +620,15 @@ watch(
   ([entries, ready]) => {
     if (!ready || !entries.length) return
     for (const entry of entries) {
-      void prefetchImage(entry.src)
+      if (entry.kind === 'image') void prefetchImage(entry.src)
     }
     // Active zoom first; remaining zoom tiers after heroes have a head start
     const active = entries[selectedIndex.value] || entries[0]
-    if (active?.zoomSrc) void prefetchImage(active.zoomSrc)
+    if (active?.kind === 'image' && active.zoomSrc) void prefetchImage(active.zoomSrc)
     if (!import.meta.client) return
     window.setTimeout(() => {
       for (const entry of entries) {
-        if (entry.zoomSrc) void prefetchImage(entry.zoomSrc)
+        if (entry.kind === 'image' && entry.zoomSrc) void prefetchImage(entry.zoomSrc)
       }
     }, 500)
   },
@@ -497,6 +644,11 @@ watch(galleryEntries, (entries) => {
   if (import.meta.client && entries.slice(0, 3).some((e) => !galleryReady[e.id])) {
     void prepareGalleryEntries(entries, 3)
   }
+  nextTick(syncStripVideos)
+})
+
+watch(selectedIndex, () => {
+  nextTick(syncStripVideos)
 })
 
 const selectImage = (index: number) => {
@@ -505,11 +657,12 @@ const selectImage = (index: number) => {
   collapseImage()
   nextTick(() => {
     const strip = stripRef.value
-    const img = strip?.querySelector<HTMLImageElement>(
+    const media = strip?.querySelector<HTMLElement>(
       `[data-strip-index="${index}"] .pdp__hero-image`,
     )
-    if (img) heroRef.value = img
+    if (media instanceof HTMLImageElement) heroRef.value = media
     scrollSelectedIntoView(true)
+    syncStripVideos()
   })
 }
 
@@ -562,10 +715,10 @@ const syncSelectedFromScroll = () => {
   if (best !== selectedIndex.value) {
     selectedIndex.value = best
     collapseImage()
-    const img = strip.querySelector<HTMLImageElement>(
+    const media = strip.querySelector<HTMLElement>(
       `[data-strip-index="${best}"] .pdp__hero-image`,
     )
-    if (img) heroRef.value = img
+    if (media instanceof HTMLImageElement) heroRef.value = media
   }
 }
 
@@ -593,6 +746,7 @@ const collapseImage = () => {
 }
 
 const enterFrameZoom = async (event: MouseEvent) => {
+  if (activeEntry.value?.kind === 'video') return
   const img = event.currentTarget as HTMLImageElement | null
   if (!img) return
   setZoomOriginFromEvent(event, img)
@@ -608,6 +762,7 @@ const enterFrameZoom = async (event: MouseEvent) => {
 }
 
 const onHeroClick = (event: MouseEvent) => {
+  if (activeEntry.value?.kind === 'video') return
   if (imageExpanded.value) collapseImage()
   else void enterFrameZoom(event)
 }
@@ -1149,7 +1304,6 @@ watch(
     if (alreadyOpen) {
       flipStarted.value = true
       flipCloseStarted.value = false
-      selectedIndex.value = 0
       paneContentVisible.value = true
       galleryVisible.value = true
 
@@ -1157,24 +1311,30 @@ watch(
       if (token !== slugSwapToken) return
       if (!next) return
 
-      const nextEntries = buildGalleryEntries(next)
+      const nextEntries = buildProductGalleryEntries(next)
       await prepareGalleryEntries(nextEntries, 3)
       if (token !== slugSwapToken) return
 
+      // Hold the outgoing gallery scroll until the new product is committed.
+      // Resetting selectedIndex / scrollLeft earlier scrolls the *current* strip.
+      spiritMode.value = false
       applyProduct(next)
+      selectedIndex.value = 0
 
       await nextTick()
       if (token !== slugSwapToken) return
+      if (stripRef.value) stripRef.value.scrollLeft = 0
 
       const hero = heroRef.value
       if (hero && !hero.complete) await waitForImage(hero)
       if (token !== slugSwapToken) return
 
       galleryVisible.value = true
-      scrollSelectedIntoView(false)
+      if (stripRef.value) stripRef.value.scrollLeft = 0
       return
     }
 
+    spiritMode.value = false
     galleryVisible.value = false
     flipStarted.value = false
     flipCloseStarted.value = false
@@ -1194,14 +1354,19 @@ watch(
   async ([slug, productSlug]) => {
     if (!import.meta.client || !slug) return
     if (productSlug === slug) return
+    // In-place nav is owned by the slug soft-swap watcher above
+    if (contentReady.value || sidesVisible.value || flipStarted.value) return
 
     const token = ++slugSwapToken
     const next = await fetchProduct(slug)
     if (token !== slugSwapToken || !next) return
-    await prepareGalleryEntries(buildGalleryEntries(next), 3)
+    await prepareGalleryEntries(buildProductGalleryEntries(next), 3)
     if (token !== slugSwapToken) return
+    spiritMode.value = false
     applyProduct(next)
     selectedIndex.value = 0
+    await nextTick()
+    if (stripRef.value) stripRef.value.scrollLeft = 0
     galleryVisible.value = true
   },
   { immediate: true },
@@ -1341,6 +1506,36 @@ watch(
   box-sizing: border-box;
   overscroll-behavior: contain;
   cursor: auto;
+  position: relative;
+}
+
+.pdp__spirit-toggle {
+  position: absolute;
+  top: 0.85rem;
+  right: 1rem;
+  z-index: 3;
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  border: 0;
+  background: transparent;
+  color: var(--charcoal);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.2s ease;
+}
+
+.pdp__spirit-toggle:hover {
+  opacity: 0.85;
+}
+
+.pdp__spirit-toggle--on {
+  opacity: 1;
+}
+
+.pdp__strip-item .pdp__hero-video {
+  background: var(--charcoal);
+  object-fit: contain;
+  pointer-events: auto;
 }
 
 .pdp__strip {
@@ -1351,7 +1546,7 @@ watch(
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 20px;
+  gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: auto;

@@ -99,15 +99,6 @@
       >
         {{ indexModeActive ? 'Hide' : 'Index' }}
       </button>
-      <button
-        type="button"
-        class="pdp-index__reveal interface"
-        :aria-label="relatedModeActive ? 'Hide related' : 'Show more like this'"
-        :disabled="!canFilter && !relatedModeActive"
-        @click="toggleRelatedMode"
-      >
-        {{ relatedModeActive ? 'Hide' : 'More like this' }}
-      </button>
     </div>
   </div>
 </template>

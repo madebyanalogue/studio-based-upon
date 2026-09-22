@@ -246,9 +246,6 @@ const galleryImageCount = (item: LibraryItem) => {
     ...(item.gallery || []).map((asset) =>
       asset ? imageUrl(asset, IMAGE_WIDTH.thumb) : '',
     ),
-    ...(item.spiritGallery || []).map((asset) =>
-      asset ? imageUrl(asset, IMAGE_WIDTH.thumb) : '',
-    ),
   )
   return urls.length
 }

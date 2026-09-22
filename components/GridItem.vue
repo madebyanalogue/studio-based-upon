@@ -123,7 +123,6 @@ const productSlug = computed(() =>
 const imageAssets = computed(() => [
   props.item.image,
   ...(props.item.gallery || []),
-  ...(props.item.spiritGallery || []),
 ])
 
 const projectImages = computed(() => {

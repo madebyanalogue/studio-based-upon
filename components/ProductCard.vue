@@ -151,11 +151,7 @@ const productSlug = computed(() =>
 
 const imageAssets = computed(() => {
   const item = props.item as LibraryItem
-  return [
-    item.image,
-    ...(item.gallery || []),
-    ...(item.spiritGallery || []),
-  ]
+  return [item.image, ...(item.gallery || [])]
 })
 
 /** Grid display — thumb tier */

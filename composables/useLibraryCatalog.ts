@@ -18,7 +18,13 @@ export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
   "colours": colours[]->title,
   image { asset-> { _id, url, metadata { dimensions { width, height } } } },
   gallery[] { asset-> { _id, url, metadata { dimensions { width, height } } } },
-  spiritGallery[] { asset-> { _id, url, metadata { dimensions { width, height } } } },
+  spiritGallery[] {
+    _type,
+    _key,
+    asset->{ _id, url, metadata { dimensions { width, height } } },
+    file { asset->{ _id, url, mimeType, originalFilename } },
+    poster { asset->{ _id, url, metadata { dimensions { width, height } } } }
+  },
   linkType,
   externalUrl
 }`
@@ -29,6 +35,14 @@ export type LibraryImageAsset = {
   metadata?: { dimensions?: { width?: number; height?: number } }
 }
 
+export type LibrarySpiritMedia =
+  | { _type?: 'image'; asset?: LibraryImageAsset }
+  | {
+      _type: 'spiritVideo'
+      file?: { asset?: { _id?: string; url?: string; mimeType?: string } }
+      poster?: { asset?: LibraryImageAsset }
+    }
+
 export type LibraryItem = FormalItem & {
   category?: string
   tags?: string[]
@@ -37,7 +51,7 @@ export type LibraryItem = FormalItem & {
   aspectRatio: number
   image: { asset?: LibraryImageAsset }
   gallery?: { asset?: LibraryImageAsset }[]
-  spiritGallery?: { asset?: LibraryImageAsset }[]
+  spiritGallery?: LibrarySpiritMedia[]
 }
 
 const asSlug = (slug: FormalItem['slug'] | string | undefined) => {
