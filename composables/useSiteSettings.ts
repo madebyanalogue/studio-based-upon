@@ -55,11 +55,10 @@ export const useSiteSettings = () => {
 
   const defaultMenu = {
     items: [
-      { _key: '0', text: 'Showcase', path: '/' },
+      { _key: '0', text: 'Home', path: '/' },
       { _key: '1', text: 'Curate', path: '/curate' },
       { _key: '2', text: 'Curated Discovery', path: '/curated-discovery' },
       { _key: '3', text: 'Discovery', path: '/discovery' },
-      { _key: '3b', text: 'Infinite Slider', path: '/infinite-slider' },
       { _key: '4', text: 'Materials & Forms', path: '/materials-and-forms' },
       { _key: '5', text: '(Pre)Crafted', path: '/pre-crafted' },
       { _key: '6', text: 'About', path: '/about' },
@@ -72,7 +71,8 @@ export const useSiteSettings = () => {
         (item) =>
           item.path !== '/contact' &&
           item.path !== '/enquire' &&
-          item.path !== '/gs',
+          item.path !== '/gs' &&
+          item.path !== '/infinite-slider',
       )
       .map((item) => {
         if (item.path === '/products' || item.path === '/materials-and-forms') {
@@ -107,25 +107,23 @@ export const useSiteSettings = () => {
           item.path === '/' ||
           item.path === '/#showcase' ||
           item.text === 'Showcase' ||
-          item.text === 'Home'
+          item.text === 'Home' ||
+          item.text === 'Infinite Slider'
         ) {
-          return { ...item, text: 'Showcase', path: '/' }
+          return { ...item, text: 'Home', path: '/' }
         }
         return item
       })
 
-    const hasShowcase = normalized.some((item) => item.path === '/')
+    const hasHome = normalized.some((item) => item.path === '/')
     const hasCurate = normalized.some((item) => item.path === '/curate')
     const hasCuratedDiscovery = normalized.some(
       (item) => item.path === '/curated-discovery',
     )
     const hasDiscovery = normalized.some((item) => item.path === '/discovery')
-    const hasInfiniteSlider = normalized.some(
-      (item) => item.path === '/infinite-slider',
-    )
 
-    if (!hasShowcase) {
-      normalized.unshift({ _key: 'showcase', text: 'Showcase', path: '/' })
+    if (!hasHome) {
+      normalized.unshift({ _key: 'home', text: 'Home', path: '/' })
     }
     if (!hasCurate) {
       const insertAt = normalized.findIndex((item) => item.path === '/')
@@ -151,14 +149,6 @@ export const useSiteSettings = () => {
         _key: 'discovery',
         text: 'Discovery',
         path: '/discovery',
-      })
-    }
-    if (!hasInfiniteSlider) {
-      const insertAt = normalized.findIndex((item) => item.path === '/discovery')
-      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
-        _key: 'infinite-slider',
-        text: 'Infinite Slider',
-        path: '/infinite-slider',
       })
     }
 

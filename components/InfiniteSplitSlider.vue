@@ -262,7 +262,7 @@ const applyTypeEffect = (titleFx: number, linkFx: number) => {
   applyWordEffect(linkWords(), linkFx)
 }
 
-/** Same entrance as ShowcaseCarousel `initFirstTitle`. */
+/** Same entrance as the former Showcase carousel title. */
 const playIntroType = () => {
   const title = titleWords()
   const link = linkWords()
