@@ -4835,7 +4835,7 @@ onBeforeUnmount(() => {
 
 .stack__rail {
   position: fixed;
-  right: 0;
+  right: var(--boards-panel-width);
   left: auto;
   bottom: 0;
   z-index: 210;
@@ -4845,13 +4845,16 @@ onBeforeUnmount(() => {
   gap: 0;
   pointer-events: none;
   overflow: visible;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+  transition:
+    right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.35s ease;
 }
 
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
 .stack__boards-rail {
   position: fixed;
-  right: 0;
+  right: var(--boards-panel-width);
   bottom: 0;
   z-index: 210;
   display: flex;
@@ -4860,6 +4863,7 @@ onBeforeUnmount(() => {
   gap: 0;
   pointer-events: none;
   overflow: visible;
+  transition: right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /*

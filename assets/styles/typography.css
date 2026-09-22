@@ -42,7 +42,7 @@
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 21px;
-  --text-base: 14px;
+  --text-base: 15px;
   --text-lg: 1.125rem;
   --text-xl: 1.8rem;
   --text-2xl: 2rem;
@@ -100,13 +100,13 @@ h1, h2, h3 {
 }
 
 .prose {
-  max-width: 42rem;
+  max-width: 50rem;
   font-family: var(--mono);
 }
 
 .prose p {
-  margin: 0 0 1.25rem;
-  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 1rem;
 }
 
 .mono {

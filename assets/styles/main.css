@@ -236,7 +236,8 @@ html.stack-chrome-hidden .stack__boards-rail {
     right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.stack__rail {
+.stack__rail,
+.stack__boards-rail {
   left: auto !important;
   right: var(--boards-panel-width) !important;
   transition:

@@ -58,34 +58,50 @@
                 </figcaption>
               </figure>
 
-              <section
+              <figure
                 v-else-if="section.kind === 'image-cluster'"
-                class="precrafted-h__item precrafted-h__item--cluster"
+                class="precrafted-h__item precrafted-h__item--media precrafted-h__item--image precrafted-h__item--cluster"
+                :class="`precrafted-h__item--align-${section.align}`"
+                :style="mediaStyle(section)"
               >
-                <div class="precrafted-h__cluster">
-                  <figure
-                    v-for="entry in section.images"
+                <div class="precrafted-h__cluster-stack">
+                  <img
+                    v-for="(entry, index) in section.images"
                     :key="entry.id"
-                    class="precrafted-h__cluster-item"
-                  >
-                    <img
-                      class="precrafted-h__cluster-image"
-                      :src="entry.src"
-                      :alt="entry.alt"
-                      loading="eager"
-                      decoding="async"
-                      draggable="false"
-                      @load="onMediaImageLoad"
+                    class="precrafted-h__cluster-image"
+                    :class="{
+                      'precrafted-h__cluster-image--active':
+                        clusterIndex(section.id) === index,
+                    }"
+                    :src="entry.src"
+                    :alt="entry.alt"
+                    loading="eager"
+                    decoding="async"
+                    draggable="false"
+                    @load="onMediaImageLoad"
+                  />
+                  <div class="precrafted-h__cluster-hits" aria-hidden="true">
+                    <div
+                      v-for="(entry, index) in section.images"
+                      :key="`hit-${entry.id}`"
+                      class="precrafted-h__cluster-hit"
+                      @pointerenter="setClusterIndex(section.id, index)"
                     />
-                    <figcaption
-                      v-if="entry.caption"
-                      class="precrafted__caption interface"
-                    >
-                      {{ entry.caption }}
-                    </figcaption>
-                  </figure>
+                  </div>
                 </div>
-              </section>
+                <figcaption
+                  v-if="section.hasCaption"
+                  class="precrafted__caption precrafted__caption--cluster interface"
+                  :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+                >
+                  <span class="precrafted-h__cluster-caption-sizer" aria-hidden="true">
+                    {{ section.longestCaption }}
+                  </span>
+                  <span class="precrafted-h__cluster-caption-active">
+                    {{ clusterCaption(section) }}
+                  </span>
+                </figcaption>
+              </figure>
 
               <section
                 v-else-if="section.kind === 'text'"
@@ -235,31 +251,48 @@
           </p>
         </div>
 
-        <section
+        <div
           v-else-if="section.kind === 'image-cluster'"
-          class="precrafted-m__cluster"
+          class="precrafted-m__media precrafted-m__media--image precrafted-m__media--cluster"
+          :style="mobileMediaStyle(section)"
         >
-          <figure
-            v-for="entry in section.images"
-            :key="`m-${entry.id}`"
-            class="precrafted-m__cluster-item"
-          >
+          <div class="precrafted-m__cluster-stack">
             <img
+              v-for="(entry, index) in section.images"
+              :key="`m-${entry.id}`"
               class="precrafted-m__cluster-image"
+              :class="{
+                'precrafted-m__cluster-image--active':
+                  clusterIndex(section.id) === index,
+              }"
               :src="entry.src"
               :alt="entry.alt"
               loading="lazy"
               decoding="async"
               draggable="false"
             />
-            <figcaption
-              v-if="entry.caption"
-              class="precrafted__caption interface"
-            >
-              {{ entry.caption }}
-            </figcaption>
-          </figure>
-        </section>
+            <div class="precrafted-m__cluster-hits" aria-hidden="true">
+              <div
+                v-for="(entry, index) in section.images"
+                :key="`m-hit-${entry.id}`"
+                class="precrafted-m__cluster-hit"
+                @pointerenter="setClusterIndex(section.id, index)"
+              />
+            </div>
+          </div>
+          <p
+            v-if="section.hasCaption"
+            class="precrafted__caption precrafted__caption--cluster interface"
+            :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+          >
+            <span class="precrafted-h__cluster-caption-sizer" aria-hidden="true">
+              {{ section.longestCaption }}
+            </span>
+            <span class="precrafted-h__cluster-caption-active">
+              {{ clusterCaption(section) }}
+            </span>
+          </p>
+        </div>
 
         <section
           v-else-if="section.kind === 'text'"
@@ -397,8 +430,14 @@ type ClusterImage = {
 type ImageClusterTrackSection = {
   id: string
   kind: 'image-cluster'
+  heightPercent: VideoHeight
+  align: 'top' | 'middle' | 'bottom'
   title?: string
   images: ClusterImage[]
+  /** Max width/height of the first image — later frames fit inside this box */
+  aspect: number
+  hasCaption: boolean
+  longestCaption: string
 }
 
 type TextTrackSection = {
@@ -608,7 +647,7 @@ const query = `*[_type == "preCraftedPage"][0] {
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v9',
+  'preCraftedPage-v10',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -657,7 +696,9 @@ function mediaHeightCss(height: VideoHeight) {
   return `${height}%`
 }
 
-function mobileMediaStyle(section: VideoTrackSection | ImageTrackSection) {
+function mobileMediaStyle(
+  section: VideoTrackSection | ImageTrackSection | ImageClusterTrackSection,
+) {
   const style: Record<string, string> = {}
   if (section.heightPercent === 'below-header') {
     style.height = 'calc(100dvh - var(--header-height))'
@@ -665,7 +706,7 @@ function mobileMediaStyle(section: VideoTrackSection | ImageTrackSection) {
     const h = section.heightPercent
     style.height = `min(${h * 0.7}dvh, ${h * 5.6}px)`
   }
-  if (section.kind === 'image') {
+  if (section.kind === 'image' || section.kind === 'image-cluster') {
     style.aspectRatio = String(section.aspect && section.aspect > 0 ? section.aspect : 4 / 3)
   }
   return style
@@ -727,11 +768,22 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
           })
           .filter((entry: ClusterImage | null): entry is ClusterImage => Boolean(entry))
         if (!images.length) return null
+        const captions = images.map((entry) => entry.caption || '')
+        const longestCaption = captions.reduce(
+          (longest, caption) => (caption.length > longest.length ? caption : longest),
+          '',
+        )
         return {
           id,
           kind: 'image-cluster',
+          heightPercent: clampHeight(item.heightPercent, 100),
+          align: item.align === 'top' || item.align === 'middle' ? item.align : 'bottom',
           title: item.title || undefined,
           images,
+          /** Frame lock — later images object-fit into the first image’s proportions */
+          aspect: images[0]?.aspect && images[0].aspect > 0 ? images[0].aspect : 4 / 3,
+          hasCaption: captions.some(Boolean),
+          longestCaption,
         }
       }
       if (item?._type === 'precraftedTextSection') {
@@ -902,15 +954,34 @@ async function loadVideosSequentially() {
   if (token === loadQueueToken) loadingVideoId.value = null
 }
 
-function mediaStyle(section: VideoTrackSection | ImageTrackSection) {
+function mediaStyle(
+  section: VideoTrackSection | ImageTrackSection | ImageClusterTrackSection,
+) {
   const style: Record<string, string> = {
     height: mediaHeightCss(section.heightPercent),
   }
-  if (section.kind === 'image') {
+  if (section.kind === 'image' || section.kind === 'image-cluster') {
     // Always lock width from aspect so the figure never collapses to 0 before load
     style.aspectRatio = String(section.aspect && section.aspect > 0 ? section.aspect : 4 / 3)
   }
   return style
+}
+
+/** Active image index per cluster section (hover hit-zones). */
+const clusterIndexById = ref<Record<string, number>>({})
+
+function clusterIndex(id: string) {
+  return clusterIndexById.value[id] ?? 0
+}
+
+function setClusterIndex(id: string, index: number) {
+  if (clusterIndexById.value[id] === index) return
+  clusterIndexById.value = { ...clusterIndexById.value, [id]: index }
+}
+
+function clusterCaption(section: ImageClusterTrackSection) {
+  const entry = section.images[clusterIndex(section.id)]
+  return entry?.caption || ''
 }
 
 const sectionRef = ref<HTMLElement | null>(null)
@@ -1130,6 +1201,7 @@ useHead(() => ({
 .precrafted {
   --precrafted-gap: calc(var(--gutter) * 2.5);
   --precrafted-track-height: 100dvh;
+  --text-base:15px;
 }
 
 /* —— Desktop horizontal —— */
@@ -1160,6 +1232,10 @@ useHead(() => ({
   font-size: var(--text-xl);
   line-height: 1.4;
   font-family: var(--serif);
+  color: var(--muted);
+}
+.precrafted-h__lede :deep(p) {
+  line-height: 1.4;
 }
 
 .precrafted-h__items {
@@ -1230,38 +1306,63 @@ useHead(() => ({
   object-fit: contain;
 }
 
-/* Placeholder cluster layout — refine next */
 .precrafted-h__item--cluster {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  max-height: 100%;
-  min-height: 0;
-}
-
-.precrafted-h__cluster {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--precrafted-gap);
-  height: 100%;
-  max-height: 100%;
-  min-height: 0;
-}
-
-.precrafted-h__cluster-item {
-  position: relative;
-  flex: 0 0 auto;
-  height: 70%;
-  margin: 0;
   line-height: 0;
 }
 
-.precrafted-h__cluster-image {
-  display: block;
+.precrafted-h__cluster-stack {
+  position: relative;
+  width: 100%;
   height: 100%;
-  width: auto;
-  max-height: 100%;
-  object-fit: contain;
+  min-height: 0;
+}
+
+.precrafted-h__cluster-image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
+}
+
+.precrafted-h__cluster-image--active {
+  opacity: 1;
+}
+
+.precrafted-h__cluster-hits {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: row;
+}
+
+.precrafted-h__cluster-hit {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  cursor: default;
+}
+
+.precrafted__caption--cluster {
+  display: block;
+}
+
+.precrafted-h__cluster-caption-sizer {
+  display: block;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.precrafted-h__cluster-caption-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
 }
 
 .precrafted__caption {
@@ -1298,7 +1399,7 @@ useHead(() => ({
 
 .precrafted-h__text-inner {
   width: 100%;
-  max-width: 22rem;
+  max-width: 29rem;
 }
 
 .precrafted-h__item--intro {
@@ -1306,7 +1407,7 @@ useHead(() => ({
 }
 
 .precrafted-h__item--intro .precrafted-h__text-inner {
-  max-width: 50rem;
+  max-width: 40rem;
   text-align: left;
 }
 
@@ -1382,32 +1483,41 @@ useHead(() => ({
   object-fit: contain;
 }
 
-.precrafted-m__cluster {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  width: min(100%, 28rem);
-  margin: 1.5rem auto;
-}
-
-.precrafted-m__cluster-item {
+.precrafted-m__cluster-stack {
   position: relative;
-  margin: 0;
-  line-height: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .precrafted-m__cluster-image {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: auto;
-  object-fit: contain;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease;
 }
 
-.precrafted-m__cluster-item .precrafted__caption {
-  position: static;
-  transform: none;
-  margin-top: 0.5rem;
-  writing-mode: horizontal-tb;
+.precrafted-m__cluster-image--active {
+  opacity: 1;
+}
+
+.precrafted-m__cluster-hits {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: row;
+}
+
+.precrafted-m__cluster-hit {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
 }
 
 .precrafted-m__text {
@@ -1441,6 +1551,8 @@ useHead(() => ({
 .precrafted__heading {
   font-size: var(--text-2xl);
   margin: 0 0 1.25rem;
+  text-transform: none;
+  font-family: var(--mono);
 }
 
 .precrafted__subheading {
