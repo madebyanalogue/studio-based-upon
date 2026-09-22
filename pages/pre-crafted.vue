@@ -25,7 +25,67 @@
                   :load-progress="loadProgressById[section.id] ?? 0"
                   :is-loading="isDesktop && loadingVideoId === section.id"
                 />
+                <figcaption
+                  v-if="section.caption"
+                  class="precrafted__caption interface"
+                  :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+                >
+                  {{ section.caption }}
+                </figcaption>
               </figure>
+
+              <figure
+                v-else-if="section.kind === 'image'"
+                class="precrafted-h__item precrafted-h__item--media precrafted-h__item--image"
+                :class="`precrafted-h__item--align-${section.align}`"
+                :style="mediaStyle(section)"
+              >
+                <img
+                  class="precrafted-h__image"
+                  :src="section.src"
+                  :alt="section.alt"
+                  loading="eager"
+                  decoding="async"
+                  draggable="false"
+                  @load="onMediaImageLoad"
+                />
+                <figcaption
+                  v-if="section.caption"
+                  class="precrafted__caption interface"
+                  :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+                >
+                  {{ section.caption }}
+                </figcaption>
+              </figure>
+
+              <section
+                v-else-if="section.kind === 'image-cluster'"
+                class="precrafted-h__item precrafted-h__item--cluster"
+              >
+                <div class="precrafted-h__cluster">
+                  <figure
+                    v-for="entry in section.images"
+                    :key="entry.id"
+                    class="precrafted-h__cluster-item"
+                  >
+                    <img
+                      class="precrafted-h__cluster-image"
+                      :src="entry.src"
+                      :alt="entry.alt"
+                      loading="eager"
+                      decoding="async"
+                      draggable="false"
+                      @load="onMediaImageLoad"
+                    />
+                    <figcaption
+                      v-if="entry.caption"
+                      class="precrafted__caption interface"
+                    >
+                      {{ entry.caption }}
+                    </figcaption>
+                  </figure>
+                </div>
+              </section>
 
               <section
                 v-else-if="section.kind === 'text'"
@@ -56,7 +116,22 @@
                 <div class="precrafted-h__text-inner">
                   <h2 class="precrafted__heading">{{ section.title }}</h2>
                   <ul class="precrafted__finishes">
-                    <li v-for="finish in section.items" :key="finish">{{ finish }}</li>
+                    <li
+                      v-for="finish in section.items"
+                      :key="finish.id"
+                      class="precrafted__finish"
+                    >
+                      <img
+                        v-if="finish.imageSrc"
+                        class="precrafted__finish-image"
+                        :src="finish.imageSrc"
+                        :alt="finish.name"
+                        loading="lazy"
+                        decoding="async"
+                        draggable="false"
+                      />
+                      <span class="precrafted__finish-name">{{ finish.name }}</span>
+                    </li>
                   </ul>
                 </div>
               </section>
@@ -129,7 +204,62 @@
             :load-progress="loadProgressById[section.id] ?? 0"
             :is-loading="!isDesktop && loadingVideoId === section.id"
           />
+          <p
+            v-if="section.caption"
+            class="precrafted__caption interface"
+            :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+          >
+            {{ section.caption }}
+          </p>
         </div>
+
+        <div
+          v-else-if="section.kind === 'image'"
+          class="precrafted-m__media precrafted-m__media--image"
+          :style="mobileMediaStyle(section)"
+        >
+          <img
+            class="precrafted-m__image"
+            :src="section.src"
+            :alt="section.alt"
+            loading="lazy"
+            decoding="async"
+            draggable="false"
+          />
+          <p
+            v-if="section.caption"
+            class="precrafted__caption interface"
+            :class="{ 'precrafted__caption--below-header': section.heightPercent === 100 }"
+          >
+            {{ section.caption }}
+          </p>
+        </div>
+
+        <section
+          v-else-if="section.kind === 'image-cluster'"
+          class="precrafted-m__cluster"
+        >
+          <figure
+            v-for="entry in section.images"
+            :key="`m-${entry.id}`"
+            class="precrafted-m__cluster-item"
+          >
+            <img
+              class="precrafted-m__cluster-image"
+              :src="entry.src"
+              :alt="entry.alt"
+              loading="lazy"
+              decoding="async"
+              draggable="false"
+            />
+            <figcaption
+              v-if="entry.caption"
+              class="precrafted__caption interface"
+            >
+              {{ entry.caption }}
+            </figcaption>
+          </figure>
+        </section>
 
         <section
           v-else-if="section.kind === 'text'"
@@ -160,7 +290,22 @@
           <div class="precrafted-m__text-inner">
             <h2 class="precrafted__heading">{{ section.title }}</h2>
             <ul class="precrafted__finishes">
-              <li v-for="finish in section.items" :key="finish">{{ finish }}</li>
+              <li
+                v-for="finish in section.items"
+                :key="finish.id"
+                class="precrafted__finish"
+              >
+                <img
+                  v-if="finish.imageSrc"
+                  class="precrafted__finish-image"
+                  :src="finish.imageSrc"
+                  :alt="finish.name"
+                  loading="lazy"
+                  decoding="async"
+                  draggable="false"
+                />
+                <span class="precrafted__finish-name">{{ finish.name }}</span>
+              </li>
             </ul>
           </div>
         </section>
@@ -225,7 +370,35 @@ type VideoTrackSection = {
   kind: 'video'
   heightPercent: VideoHeight
   align: 'top' | 'middle' | 'bottom'
+  caption?: string
   entry: ScrubGalleryEntry
+}
+
+type ImageTrackSection = {
+  id: string
+  kind: 'image'
+  heightPercent: VideoHeight
+  align: 'top' | 'middle' | 'bottom'
+  src: string
+  alt: string
+  caption?: string
+  /** width / height — locks figure width before the file loads */
+  aspect?: number
+}
+
+type ClusterImage = {
+  id: string
+  src: string
+  alt: string
+  caption?: string
+  aspect?: number
+}
+
+type ImageClusterTrackSection = {
+  id: string
+  kind: 'image-cluster'
+  title?: string
+  images: ClusterImage[]
 }
 
 type TextTrackSection = {
@@ -237,11 +410,17 @@ type TextTrackSection = {
   variant?: 'default' | 'intro'
 }
 
+type FinishItem = {
+  id: string
+  name: string
+  imageSrc?: string
+}
+
 type FinishesTrackSection = {
   id: string
   kind: 'finishes'
   title: string
-  items: string[]
+  items: FinishItem[]
 }
 
 type InfoTrackSection = {
@@ -259,6 +438,8 @@ type InfoTrackSection = {
 
 type TrackSection =
   | VideoTrackSection
+  | ImageTrackSection
+  | ImageClusterTrackSection
   | TextTrackSection
   | FinishesTrackSection
   | InfoTrackSection
@@ -326,7 +507,12 @@ const DEFAULT_SECTIONS: TrackSection[] = [
     id: 'finishes',
     kind: 'finishes',
     title: 'Finishes',
-    items: ['Camona Gold', 'Camona Bronze', 'Camona Pink Nickel', 'Camona Silver'],
+    items: [
+      { id: 'camona-gold', name: 'Camona Gold' },
+      { id: 'camona-bronze', name: 'Camona Bronze' },
+      { id: 'camona-pink-nickel', name: 'Camona Pink Nickel' },
+      { id: 'camona-silver', name: 'Camona Silver' },
+    ],
   },
   {
     id: 'info',
@@ -368,7 +554,17 @@ const query = `*[_type == "preCraftedPage"][0] {
     title,
     body,
     variant,
-    items,
+    items[] {
+      _key,
+      "name": select(defined(name) => name, string(@) => @),
+      image {
+        asset->{
+          _id,
+          url,
+          metadata { dimensions { width, height } }
+        }
+      }
+    },
     pricingHeading,
     pricingIntro,
     pricingNotes,
@@ -378,19 +574,41 @@ const query = `*[_type == "preCraftedPage"][0] {
     installNotes,
     heightPercent,
     align,
+    caption,
     cloudflareVideoUrl,
     scrubVideo { asset->{ url, originalFilename } },
     poster {
       asset->{
+        _id,
         url,
         metadata { dimensions { width, height } }
+      }
+    },
+    alt,
+    image {
+      asset->{
+        _id,
+        url,
+        metadata { dimensions { width, height } }
+      }
+    },
+    images[] {
+      _key,
+      caption,
+      alt,
+      image {
+        asset->{
+          _id,
+          url,
+          metadata { dimensions { width, height } }
+        }
       }
     }
   }
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v4',
+  'preCraftedPage-v9',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -401,6 +619,22 @@ const { data: page } = await useAsyncData(
 )
 
 const { imageUrl } = useSanityImage()
+
+function resolveImageSrc(source: unknown, width: number) {
+  if (!source || typeof source !== 'object') return ''
+  const fromBuilder = imageUrl(source as { asset?: { _ref?: string; _id?: string; url?: string } }, width)
+  if (fromBuilder) return fromBuilder
+  const asset = (source as { asset?: { url?: string; _id?: string } }).asset
+  if (asset?.url) return asset.url
+  return ''
+}
+
+function imageAspect(source: unknown): number | undefined {
+  const dims = (source as { asset?: { metadata?: { dimensions?: { width?: number; height?: number } } } })
+    ?.asset?.metadata?.dimensions
+  if (!dims?.width || !dims?.height) return undefined
+  return dims.width / dims.height
+}
 
 const DEFAULT_PANEL_SIZES = [
   { dimensions: '3200mm x 1200mm x 20mm', price: '£3,830/panel (approx. £995m²)' },
@@ -423,12 +657,18 @@ function mediaHeightCss(height: VideoHeight) {
   return `${height}%`
 }
 
-function mobileMediaStyle(section: VideoTrackSection) {
+function mobileMediaStyle(section: VideoTrackSection | ImageTrackSection) {
+  const style: Record<string, string> = {}
   if (section.heightPercent === 'below-header') {
-    return { height: 'calc(100dvh - var(--header-height))' }
+    style.height = 'calc(100dvh - var(--header-height))'
+  } else {
+    const h = section.heightPercent
+    style.height = `min(${h * 0.7}dvh, ${h * 5.6}px)`
   }
-  const h = section.heightPercent
-  return { height: `min(${h * 0.7}dvh, ${h * 5.6}px)` }
+  if (section.kind === 'image') {
+    style.aspectRatio = String(section.aspect && section.aspect > 0 ? section.aspect : 4 / 3)
+  }
+  return style
 }
 
 function mapSanitySections(raw: unknown[]): TrackSection[] {
@@ -446,12 +686,52 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
           kind: 'video',
           heightPercent: clampHeight(item.heightPercent, 100),
           align: item.align === 'top' || item.align === 'middle' ? item.align : 'bottom',
+          caption: typeof item.caption === 'string' ? item.caption.trim() || undefined : undefined,
           entry: {
             id,
             title,
             video,
-            poster: imageUrl(item.poster, 1200) || '',
+            poster: resolveImageSrc(item.poster, 1200) || '',
           },
+        }
+      }
+      if (item?._type === 'precraftedImageSection') {
+        const src = resolveImageSrc(item.image, 1800)
+        if (!src) return null
+        return {
+          id,
+          kind: 'image',
+          heightPercent: clampHeight(item.heightPercent, 100),
+          align: item.align === 'top' || item.align === 'middle' ? item.align : 'bottom',
+          src,
+          alt: item.alt || item.title || '',
+          caption: typeof item.caption === 'string' ? item.caption.trim() || undefined : undefined,
+          aspect: imageAspect(item.image) ?? 4 / 3,
+        }
+      }
+      if (item?._type === 'precraftedImageClusterSection') {
+        const images = (item.images || [])
+          .map((entry: any, imageIndex: number): ClusterImage | null => {
+            const src = resolveImageSrc(entry?.image, 1400)
+            if (!src) return null
+            return {
+              id: entry?._key || `${id}-img-${imageIndex}`,
+              src,
+              alt: entry?.alt || entry?.caption || item.title || '',
+              caption:
+                typeof entry?.caption === 'string'
+                  ? entry.caption.trim() || undefined
+                  : undefined,
+              aspect: imageAspect(entry?.image) ?? 4 / 3,
+            }
+          })
+          .filter((entry: ClusterImage | null): entry is ClusterImage => Boolean(entry))
+        if (!images.length) return null
+        return {
+          id,
+          kind: 'image-cluster',
+          title: item.title || undefined,
+          images,
         }
       }
       if (item?._type === 'precraftedTextSection') {
@@ -466,7 +746,30 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
         }
       }
       if (item?._type === 'precraftedFinishesSection') {
-        const items = (item.items || []).filter(Boolean)
+        const items = (item.items || [])
+          .map((finish: unknown, finishIndex: number): FinishItem | null => {
+            // Legacy string items
+            if (typeof finish === 'string') {
+              const name = finish.trim()
+              if (!name) return null
+              return { id: `${id}-finish-${finishIndex}`, name }
+            }
+            if (!finish || typeof finish !== 'object') return null
+            const row = finish as {
+              _key?: string
+              name?: string
+              image?: unknown
+            }
+            const name = typeof row.name === 'string' ? row.name.trim() : ''
+            if (!name) return null
+            const imageSrc = resolveImageSrc(row.image, 600) || undefined
+            return {
+              id: row._key || `${id}-finish-${finishIndex}`,
+              name,
+              imageSrc,
+            }
+          })
+          .filter((finish: FinishItem | null): finish is FinishItem => Boolean(finish))
         if (!items.length) return null
         return {
           id,
@@ -599,10 +902,15 @@ async function loadVideosSequentially() {
   if (token === loadQueueToken) loadingVideoId.value = null
 }
 
-function mediaStyle(section: VideoTrackSection) {
-  return {
+function mediaStyle(section: VideoTrackSection | ImageTrackSection) {
+  const style: Record<string, string> = {
     height: mediaHeightCss(section.heightPercent),
   }
+  if (section.kind === 'image') {
+    // Always lock width from aspect so the figure never collapses to 0 before load
+    style.aspectRatio = String(section.aspect && section.aspect > 0 ? section.aspect : 4 / 3)
+  }
+  return style
 }
 
 const sectionRef = ref<HTMLElement | null>(null)
@@ -721,7 +1029,7 @@ function syncDesktop() {
 
 const scrollEnabled = computed(() => isDesktop.value)
 
-useHorizontalGalleryScroll({
+const { refresh: refreshHorizontalScroll } = useHorizontalGalleryScroll({
   sectionRef,
   pinRef,
   trackRef,
@@ -732,6 +1040,10 @@ useHorizontalGalleryScroll({
     syncScrubProgresses()
   },
 })
+
+function onMediaImageLoad() {
+  refreshHorizontalScroll()
+}
 
 async function setupMobileScrub() {
   if (!import.meta.client || isDesktop.value) {
@@ -796,6 +1108,7 @@ watch(trackSections, () => {
     setupMobileScrub()
     syncScrubProgresses()
     loadVideosSequentially()
+    refreshHorizontalScroll()
   })
 })
 
@@ -836,6 +1149,7 @@ useHead(() => ({
   gap: var(--precrafted-gap);
   width: max-content;
   height: 100%;
+  min-height: 0;
   box-sizing: border-box;
   will-change: transform;
   padding-left: var(--gutter);
@@ -855,6 +1169,7 @@ useHead(() => ({
   align-items: stretch;
   gap: var(--precrafted-gap);
   height: 100%;
+  min-height: 0;
   padding-right: var(--gutter);
 }
 
@@ -862,12 +1177,15 @@ useHead(() => ({
   flex: 0 0 auto;
   margin: 0;
   min-height: 0;
+  max-height: 100%;
 }
 
 .precrafted-h__item--media {
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  display: block;
   width: auto;
+  max-height: 100%;
+  min-height: 0;
   padding: 0;
   background: transparent;
 }
@@ -900,6 +1218,73 @@ useHead(() => ({
   background: transparent;
 }
 
+.precrafted-h__item--image {
+  /* width comes from height × aspect-ratio (inline) */
+  line-height: 0;
+}
+
+.precrafted-h__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Placeholder cluster layout — refine next */
+.precrafted-h__item--cluster {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.precrafted-h__cluster {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--precrafted-gap);
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.precrafted-h__cluster-item {
+  position: relative;
+  flex: 0 0 auto;
+  height: 70%;
+  margin: 0;
+  line-height: 0;
+}
+
+.precrafted-h__cluster-image {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.precrafted__caption {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 23px);
+  z-index: 2;
+  margin: 0;
+  max-width: none;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--charcoal);
+  text-align: left;
+  pointer-events: none;
+  transform: rotate(90deg);
+  transform-origin: top left;
+}
+
+.precrafted__caption--below-header {
+  top: var(--header-height);
+}
+
 .precrafted-h__item--text {
   height: 100%;
   aspect-ratio: 1;
@@ -914,12 +1299,23 @@ useHead(() => ({
 .precrafted-h__text-inner {
   width: 100%;
   max-width: 22rem;
-  text-align: center;
+}
+
+.precrafted-h__item--intro {
+  position: relative;
 }
 
 .precrafted-h__item--intro .precrafted-h__text-inner {
   max-width: 50rem;
   text-align: left;
+}
+
+.precrafted-h__item--intro .page-title {
+  position: absolute;
+  bottom: 60px;
+  left: 20px;
+  margin: 0;
+  z-index: 4;
 }
 
 
@@ -945,7 +1341,7 @@ useHead(() => ({
 .precrafted-h__item--text .precrafted__pricing li {
   justify-content: center;
   flex-direction: column;
-  text-align: center;
+  text-align: left;
 }
 
 /* —— Mobile vertical —— */
@@ -955,6 +1351,7 @@ useHead(() => ({
 }
 
 .precrafted-m__media {
+  position: relative;
   margin: 1.5rem auto;
   width: fit-content;
   max-width: 100%;
@@ -970,6 +1367,47 @@ useHead(() => ({
   width: auto;
   height: 100%;
   object-fit: contain;
+}
+
+.precrafted-m__media--image {
+  display: block;
+  width: auto;
+  line-height: 0;
+}
+
+.precrafted-m__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.precrafted-m__cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: min(100%, 28rem);
+  margin: 1.5rem auto;
+}
+
+.precrafted-m__cluster-item {
+  position: relative;
+  margin: 0;
+  line-height: 0;
+}
+
+.precrafted-m__cluster-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.precrafted-m__cluster-item .precrafted__caption {
+  position: static;
+  transform: none;
+  margin-top: 0.5rem;
+  writing-mode: horizontal-tb;
 }
 
 .precrafted-m__text {
@@ -1020,10 +1458,27 @@ useHead(() => ({
   max-width: 42rem;
 }
 
-.precrafted__finishes li {
-  padding: 1rem 1.25rem;
+.precrafted__finish {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
   border: 1px solid var(--grid-line);
-  font-family: var(--font-serif);
+  overflow: hidden;
+  font-family: var(--mono);
+}
+
+.precrafted__finish-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: var(--sand);
+}
+
+.precrafted__finish-name {
+  display: block;
+  padding: 1rem 1rem;
 }
 
 .precrafted__info-block {

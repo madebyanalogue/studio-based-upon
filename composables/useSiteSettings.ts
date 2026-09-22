@@ -8,6 +8,12 @@ export const useSiteSettings = () => {
     seoDescription,
     disablePreloader,
     enquiryEmail,
+    phone,
+    phoneTel,
+    streetAddress,
+    addressLocality,
+    postalCode,
+    addressCountry,
     copyright,
     libraryFilters[] {
       filter,
@@ -44,6 +50,26 @@ export const useSiteSettings = () => {
   const logo = computed(() => settings.value?.logo || '')
   const disablePreloader = computed(() => settings.value?.disablePreloader === true)
   const enquiryEmail = computed(() => settings.value?.enquiryEmail || 'enquiries@studiobasedupon.com')
+  const phone = computed(() => settings.value?.phone || '020 8320 2122')
+  const phoneTel = computed(
+    () => settings.value?.phoneTel || '+442083202122',
+  )
+  const streetAddress = computed(
+    () => settings.value?.streetAddress || '4 Swan Rd',
+  )
+  const addressLocality = computed(
+    () => settings.value?.addressLocality || 'London',
+  )
+  const postalCode = computed(() => settings.value?.postalCode || 'SE18 5TT')
+  const addressCountry = computed(
+    () => settings.value?.addressCountry || 'GB',
+  )
+  const addressDisplay = computed(
+    () =>
+      [streetAddress.value, addressLocality.value, postalCode.value]
+        .filter(Boolean)
+        .join(', '),
+  )
   const copyright = computed(() => {
     const text = settings.value?.copyright || '© [year] Studio Based Upon'
     return text.replace(/\[year\]/g, String(new Date().getFullYear()))
@@ -178,6 +204,13 @@ export const useSiteSettings = () => {
     logo,
     disablePreloader,
     enquiryEmail,
+    phone,
+    phoneTel,
+    streetAddress,
+    addressLocality,
+    postalCode,
+    addressCountry,
+    addressDisplay,
     copyright,
     libraryFilters,
     headerMenu,

@@ -2,21 +2,25 @@
   <Teleport to="body">
     <div
       v-if="surfacePresent"
-      class="moodboard"
-      :class="{
-        'moodboard--ready': surfaceReady,
-        'moodboard--panel-ready': panelReady,
-        'moodboard--chrome-out': chromeOut,
-        'moodboard--items-out': itemsOut,
-        'moodboard--grid-out': gridOut,
-        'moodboard--instant-hide': instantHide,
-        'moodboard--capturing': isCapturingPreview,
-      }"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Moodboard composer"
-      @wheel.capture="onOverlayWheel"
+      class="moodboard-shell"
+      :class="{ 'moodboard-shell--instant-hide': instantHide }"
     >
+      <div
+        class="moodboard"
+        :class="{
+          'moodboard--ready': surfaceReady,
+          'moodboard--panel-ready': panelReady,
+          'moodboard--chrome-out': chromeOut,
+          'moodboard--items-out': itemsOut,
+          'moodboard--grid-out': gridOut,
+          'moodboard--instant-hide': instantHide,
+          'moodboard--capturing': isCapturingPreview,
+        }"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Moodboard composer"
+        @wheel.capture="onOverlayWheel"
+      >
       <div class="moodboard__workspace">
         <!-- Body teleport: must sit above BucketStack (.stack--moodboard = 310) -->
         <Teleport to="body">
@@ -323,7 +327,63 @@
       </div>
       </div>
 
-      <!-- Vertical tool rail — top right -->
+      <!-- Save and close — top left -->
+      <button
+        type="button"
+        class="moodboard__save-close interface"
+        aria-label="Save and close board"
+        @click="onSaveAndClose"
+      >
+        Save and close
+      </button>
+
+      <!-- Board title — top centre -->
+      <div ref="switcherRef" class="moodboard__titlebar">
+        <div class="moodboard__switcher">
+          <div class="moodboard__switcher-toggle">
+            <span
+              ref="titleEl"
+              class="moodboard__panel-title"
+              :contenteditable="titleEditing"
+              :role="titleEditing ? 'textbox' : undefined"
+              :aria-label="titleEditing ? 'Board name' : undefined"
+              :aria-expanded="!titleEditing ? switchOpen : undefined"
+              @click="onTitleClick"
+              @dblclick.prevent="startTitleEdit"
+              @blur="saveTitleEdit"
+              @keydown.enter.prevent="saveTitleEdit"
+              @keydown.escape.prevent="cancelTitleEdit"
+            >{{ activeBoard?.name || activeMoodboard?.name || 'My Board 1' }}</span>
+            <button
+              v-if="selectionBoards.length > 1 && !titleEditing"
+              type="button"
+              class="moodboard__switcher-caret-btn"
+              :aria-expanded="switchOpen"
+              aria-label="Switch board"
+              @click="switchOpen = !switchOpen"
+            >
+              <span class="moodboard__switcher-caret" aria-hidden="true" />
+            </button>
+          </div>
+          <div
+            v-if="switchOpen && selectionBoards.length > 1"
+            class="moodboard__switcher-menu"
+          >
+            <button
+              v-for="board in selectionBoards"
+              :key="board.id"
+              type="button"
+              class="moodboard__switcher-option"
+              :class="{ 'moodboard__switcher-option--active': board.id === activeBoardId }"
+              @click="switchSavedBoard(board.id)"
+            >
+              {{ board.name }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vertical tool rail — left -->
       <div class="moodboard__actions" aria-label="Board tools">
         <button
           type="button"
@@ -525,37 +585,43 @@
         Undo tear
       </button>
 
-      <div
-        class="moodboard__history"
-        role="group"
-        aria-label="Undo and redo"
-      >
-        <button
-          type="button"
-          class="moodboard__history-btn"
-          aria-label="Undo"
-          title="Undo"
-          :disabled="!canUndo"
-          @click="undoBoard"
+      <div class="moodboard__footer">
+        <div
+          class="moodboard__history"
+          role="group"
+          aria-label="Undo and redo"
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-            <path d="M9 14 4 9l5-5" />
-            <path d="M4 9h11a5 5 0 0 1 0 10h-2" />
-          </svg>
-        </button>
-        <span class="moodboard__history-divider" aria-hidden="true" />
-        <button
-          type="button"
-          class="moodboard__history-btn"
-          aria-label="Redo"
-          title="Redo"
-          :disabled="!canRedo"
-          @click="redoBoard"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-            <path d="m15 14 5-5-5-5" />
-            <path d="M20 9H9a5 5 0 0 0 0 10h2" />
-          </svg>
+          <button
+            type="button"
+            class="moodboard__history-btn"
+            aria-label="Undo"
+            :disabled="!canUndo"
+            @click="undoBoard"
+          >
+            <span class="moodboard__history-tooltip interface" aria-hidden="true">Undo</span>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+              <path d="M9 14 4 9l5-5" />
+              <path d="M4 9h11a5 5 0 0 1 0 10h-2" />
+            </svg>
+          </button>
+          <span class="moodboard__history-divider" aria-hidden="true" />
+          <button
+            type="button"
+            class="moodboard__history-btn"
+            aria-label="Redo"
+            :disabled="!canRedo"
+            @click="redoBoard"
+          >
+            <span class="moodboard__history-tooltip interface" aria-hidden="true">Redo</span>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
+              <path d="m15 14 5-5-5-5" />
+              <path d="M20 9H9a5 5 0 0 0 0 10h2" />
+            </svg>
+          </button>
+        </div>
+
+        <button type="button" class="btn btn--filled moodboard__enquiry" @click="sendEnquiry">
+          Send as enquiry
         </button>
       </div>
 
@@ -575,127 +641,6 @@
         <button type="button" class="btn moodboard__pen-clear" @click="clearStrokes">Clear drawing</button>
       </div>
 
-      <!-- Cart-style panel — bottom right -->
-      <aside class="moodboard__panel" aria-label="Board actions">
-        <div class="moodboard__panel-head">
-          <div ref="switcherRef" class="moodboard__switcher">
-            <div class="moodboard__switcher-toggle">
-              <span
-                ref="titleEl"
-                class="moodboard__panel-title"
-                :contenteditable="titleEditing"
-                :role="titleEditing ? 'textbox' : undefined"
-                :aria-label="titleEditing ? 'Board name' : undefined"
-                :aria-expanded="!titleEditing ? switchOpen : undefined"
-                @click="onTitleClick"
-                @blur="saveTitleEdit"
-                @keydown.enter.prevent="saveTitleEdit"
-                @keydown.escape.prevent="cancelTitleEdit"
-              >{{ activeBoard?.name || activeMoodboard?.name || 'My Board 1' }}</span>
-              <button
-                v-if="selectionBoards.length > 1 && !titleEditing"
-                type="button"
-                class="moodboard__switcher-caret-btn"
-                :aria-expanded="switchOpen"
-                aria-label="Switch board"
-                @click="switchOpen = !switchOpen"
-              >
-                <span class="moodboard__switcher-caret" aria-hidden="true" />
-              </button>
-            </div>
-            <div
-              v-if="switchOpen && selectionBoards.length > 1"
-              class="moodboard__switcher-menu"
-            >
-              <button
-                v-for="board in selectionBoards"
-                :key="board.id"
-                type="button"
-                class="moodboard__switcher-option"
-                :class="{ 'moodboard__switcher-option--active': board.id === activeBoardId }"
-                @click="switchSavedBoard(board.id)"
-              >
-                {{ board.name }}
-              </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="moodboard__panel-close"
-            aria-label="Save and close board"
-            @click="onSaveAndClose"
-          >
-            <span class="moodboard__panel-close-icon" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div class="moodboard__panel-meta">
-          <p class="moodboard__panel-count interface">
-            {{ placements.length }} {{ placements.length === 1 ? 'item' : 'items' }}
-          </p>
-          <div class="moodboard__panel-tools" aria-label="Board tools">
-            <button
-              type="button"
-              class="moodboard__panel-tool"
-              aria-label="Share as enquiry"
-              @click="sendEnquiry"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-                <path d="M21 3 10 14" />
-                <path d="M21 3 14 21l-4-7-7-4Z" />
-              </svg>
-              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Share</span>
-            </button>
-            <button
-              type="button"
-              class="moodboard__panel-tool"
-              aria-label="Download screenshot"
-              @click="downloadScreenshot"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-                <path d="M12 3v12" />
-                <path d="m8 11 4 4 4-4" />
-                <path d="M5 20h14" />
-              </svg>
-              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Download</span>
-            </button>
-            <button
-              type="button"
-              class="moodboard__panel-tool"
-              aria-label="Rename board"
-              @click="startTitleEdit"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-                <path d="M14 6 18 10" />
-                <path d="M4 20h4L18 10l-4-4L4 16v4Z" />
-              </svg>
-              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Rename</span>
-            </button>
-            <button
-              type="button"
-              class="moodboard__panel-tool"
-              aria-label="Delete board"
-              @click="confirmingDelete = true"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">
-                <path d="M4 7h16" />
-                <path d="M9 4h6" />
-                <path d="M7 7v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7" />
-              </svg>
-              <span class="moodboard__panel-tooltip interface" aria-hidden="true">Delete</span>
-            </button>
-          </div>
-        </div>
-
-        <button type="button" class="moodboard__panel-link interface" @click="onCancelEdits">
-          Cancel edits
-        </button>
-
-        <button type="button" class="btn btn--filled" @click="sendEnquiry">
-          Send as enquiry
-        </button>
-      </aside>
-
       <div
         v-if="confirmingDelete"
         class="moodboard__confirm"
@@ -706,13 +651,27 @@
         <div class="moodboard__confirm-box">
           <p class="moodboard__confirm-title interface">Delete this board?</p>
           <p class="moodboard__confirm-text">
-            “{{ activeBoard?.name || activeMoodboard?.name || 'My Board' }}” and its
-            {{ placements.length }}
-            {{ placements.length === 1 ? 'item' : 'items' }}
+            “{{ pendingDeleteBoard?.name || activeMoodboard?.name || 'My Board' }}” and its
+            {{
+              pendingDeleteId && pendingDeleteId !== activeBoardId
+                ? pendingDeleteBoard?.placements.length || 0
+                : placements.length
+            }}
+            {{
+              (pendingDeleteId && pendingDeleteId !== activeBoardId
+                ? pendingDeleteBoard?.placements.length || 0
+                : placements.length) === 1
+                ? 'item'
+                : 'items'
+            }}
             will be permanently removed.
           </p>
           <div class="moodboard__confirm-actions">
-            <button type="button" class="btn" @click="confirmingDelete = false">
+            <button
+              type="button"
+              class="btn"
+              @click="confirmingDelete = false; pendingDeleteId = null"
+            >
               Cancel
             </button>
             <button type="button" class="btn btn--filled" @click="onDeleteBoard">
@@ -728,6 +687,14 @@
         accept="image/*"
         class="moodboard__sr-input"
         @change="onImageSelected"
+      />
+      </div>
+
+      <MoodboardBoardsPanel
+        :open="boardsPanelOpen && !instantHide"
+        @select="switchSavedBoard"
+        @delete="onBoardsPanelDelete"
+        @send="onBoardsPanelSend"
       />
     </div>
   </Teleport>
@@ -748,7 +715,6 @@ const {
   consumeMoodboardStagedOpen,
   requestMoodboardRestack,
   requestMoodboardStackExit,
-  closeMoodboardToBoards,
   requestMoodboardReturnToColumn,
   persistMoodboardSession,
   clearMoodboardSession,
@@ -775,8 +741,6 @@ const gridOut = ref(false)
 /** Instantly kill the whole composer (no translucent cream flash). */
 const instantHide = ref(false)
 const isExiting = ref(false)
-/** Preview captured on save — used for Flip into boards cart. */
-const exitPreview = ref<string | null>(null)
 const {
   boards,
   activeBoard,
@@ -787,6 +751,9 @@ const {
   renameBoard,
   deleteBoard,
   boardsForSelection,
+  boardsPanelOpen,
+  openBoardsPanel,
+  closeBoardsPanel,
 } = useBoards()
 
 /** Boards for the current selection — fall back to active board's selection. */
@@ -858,6 +825,14 @@ const placingTextStyle = ref<'mono' | 'handwritten' | null>(null)
 const titleEditing = ref(false)
 const titleEl = ref<HTMLElement | null>(null)
 const confirmingDelete = ref(false)
+const pendingDeleteId = ref<string | null>(null)
+
+const pendingDeleteBoard = computed(
+  () =>
+    boards.value.find((board) => board.id === pendingDeleteId.value) ||
+    activeBoard.value ||
+    null,
+)
 
 /** Board edit history — snapshots of placements / strokes / tear undo. */
 type BoardHistorySnap = {
@@ -996,7 +971,9 @@ const onTitleClick = () => {
   if (titleEditing.value) return
   if (selectionBoards.value.length > 1) {
     switchOpen.value = !switchOpen.value
+    return
   }
+  startTitleEdit()
 }
 
 type DrawTool = 'pen' | 'arrow' | 'tear'
@@ -1104,6 +1081,7 @@ watch(
   isMoodboard,
   async (open) => {
     if (open) {
+      openBoardsPanel()
       if (cancelRevertTimer) {
         clearTimeout(cancelRevertTimer)
         cancelRevertTimer = null
@@ -1231,7 +1209,7 @@ const onRemovePlacement = async (id: string) => {
 }
 
 /**
- * Pause → restack → chrome/stack exit → Flip board into cart → peers fade → toolbox.
+ * Fade chrome out and dismiss to the page — no boards-cart Flip return.
  */
 const exitMoodboard = async () => {
   if (isExiting.value) return
@@ -1242,64 +1220,32 @@ const exitMoodboard = async () => {
   placingTextStyle.value = null
   colourPickerOpen.value = false
   confirmingDelete.value = false
+  pendingDeleteId.value = null
+  closeBoardsPanel()
 
-  // 1) Pause
   await waitMs(MOODBOARD_PAUSE_MS)
 
-  // 2) Stack closes down
   await requestMoodboardRestack()
   await waitMs(40)
 
-  // 3) Tools → X, toolbox → Y, selection stack → Y (together)
   chromeOut.value = true
   await Promise.all([
     requestMoodboardStackExit(),
     waitMs(MOODBOARD_CHROME_EXIT_MS),
   ])
 
-  const canvasRect = canvasEl.value?.getBoundingClientRect()
-  const from =
-    canvasRect && canvasRect.width > 2
-      ? {
-          left: canvasRect.left,
-          top: canvasRect.top,
-          width: canvasRect.width,
-          height: canvasRect.height,
-        }
-      : null
+  itemsOut.value = true
+  gridOut.value = true
+  surfaceReady.value = false
+  panelReady.value = false
+  await waitMs(MOODBOARD_FADE_MS)
 
-  if (!exitPreview.value) {
-    const shot = await captureBoardPreview()
-    exitPreview.value = shot?.preview || activeBoard.value?.preview || null
-  }
-  const preview = exitPreview.value
-
-  // 4–6) Boards ready → park flyer → hide composer instantly → Flip → peers → toolbox
-  await closeMoodboardToBoards({
-    boardId: activeBoardId.value,
-    preview,
-    from,
-    beforeFlip: async () => {
-      // Flyer already covers the shot — kill edit UI instantly (no cream fade flash)
-      itemsOut.value = true
-      gridOut.value = true
-      instantHide.value = true
-      surfaceReady.value = false
-      await nextTick()
-    },
-    afterLand: async () => {
-      // Drop composer as soon as the thumb owns the cell — don’t leave an
-      // invisible overlay that can flash when it finally unmounts.
-      surfacePresent.value = false
-      itemsOut.value = false
-      gridOut.value = false
-      chromeOut.value = false
-      panelReady.value = false
-      instantHide.value = false
-      exitPreview.value = null
-      await closeMoodboard({ skipCartReturn: true })
-    },
-  })
+  surfacePresent.value = false
+  itemsOut.value = false
+  gridOut.value = false
+  chromeOut.value = false
+  instantHide.value = false
+  await closeMoodboard({ skipCartReturn: true })
 
   isExiting.value = false
 }
@@ -1311,7 +1257,6 @@ const onSaveAndClose = async () => {
   }
   if (isExiting.value) return
   const shot = await captureBoardPreview()
-  exitPreview.value = shot?.preview || null
   saveActiveBoard(
     placements.value,
     strokes.value,
@@ -1346,7 +1291,8 @@ const onCancelEdits = async () => {
 
 const onDeleteBoard = async () => {
   if (isExiting.value) return
-  const id = activeBoardId.value
+  const id = pendingDeleteId.value || activeBoardId.value
+  pendingDeleteId.value = null
   if (!id) return
 
   confirmingDelete.value = false
@@ -1356,13 +1302,19 @@ const onDeleteBoard = async () => {
     cancelRevertTimer = null
   }
 
-  const remaining = selectionBoards.value.filter((board) => board.id !== id)
+  const wasActive = id === activeBoardId.value
+  const remaining = boards.value.filter((board) => board.id !== id)
   deleteBoard(id)
   switchOpen.value = false
   titleEditing.value = false
 
+  if (!wasActive) {
+    // Deleted a parked board — stay on the current canvas
+    return
+  }
+
   if (!remaining.length) {
-    // Last board for this selection — leave the composer
+    // Last board — leave the composer
     reset()
     openSnapshot.value = null
     await exitMoodboard()
@@ -1404,6 +1356,22 @@ const switchSavedBoard = async (id: string) => {
   switchOpen.value = false
   clearActive()
   nextTick(() => resetHistory())
+}
+
+const onBoardsPanelDelete = (id: string) => {
+  pendingDeleteId.value = id
+  confirmingDelete.value = true
+}
+
+const onBoardsPanelSend = async (id: string) => {
+  if (id === activeBoardId.value) {
+    await sendEnquiry()
+    return
+  }
+  const board = boards.value.find((entry) => entry.id === id)
+  if (!board) return
+  if (!board.placements.length && !board.preview) return
+  openFromMoodboard(board.placements, board.preview || null)
 }
 
 const onDocumentClick = (event: MouseEvent) => {
@@ -1525,10 +1493,32 @@ const onImageSelected = (event: Event) => {
   if (!file) return
   const reader = new FileReader()
   reader.onload = () => {
-    if (typeof reader.result === 'string') {
-      const { x, y } = centerPlacementPosition()
-      addImage(reader.result, file.name.replace(/\.[^.]+$/, ''), { x, y })
+    if (typeof reader.result !== 'string') return
+    const dataUrl = reader.result
+    const title = file.name.replace(/\.[^.]+$/, '')
+    const img = new Image()
+    img.onload = () => {
+      const natW = Math.max(1, img.naturalWidth || 1)
+      const natH = Math.max(1, img.naturalHeight || 1)
+      // Fit longest side to the default board drop size — keep native ratio
+      const maxSide = 210
+      const fit = Math.min(maxSide / natW, maxSide / natH)
+      const width = natW * fit
+      const height = natH * fit
+      const { x, y } = centerPlacementPosition(width, height)
+      addImage(dataUrl, title, {
+        x,
+        y,
+        width,
+        height,
+        objectFit: 'contain',
+      })
     }
+    img.onerror = () => {
+      const { x, y } = centerPlacementPosition()
+      addImage(dataUrl, title, { x, y, objectFit: 'contain' })
+    }
+    img.src = dataUrl
   }
   reader.readAsDataURL(file)
   input.value = ''
@@ -1834,6 +1824,7 @@ const onKeyDown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && confirmingDelete.value) {
     event.preventDefault()
     confirmingDelete.value = false
+    pendingDeleteId.value = null
     return
   }
   if (event.key === 'Escape' && colourPickerOpen.value) {
@@ -2272,6 +2263,7 @@ const captureBoardPreview = async (): Promise<{
   switchOpen.value = false
   colourPickerOpen.value = false
   confirmingDelete.value = false
+  pendingDeleteId.value = null
   isCapturingPreview.value = true
   await nextTick()
   await new Promise<void>((resolve) =>
@@ -2311,7 +2303,9 @@ const captureBoardPreview = async (): Promise<{
           node.classList.contains('moodboard__cycle') ||
           node.classList.contains('moodboard__tear-line') ||
           node.classList.contains('moodboard__actions') ||
-          node.classList.contains('moodboard__panel') ||
+          node.classList.contains('moodboard__save-close') ||
+          node.classList.contains('moodboard__titlebar') ||
+          node.classList.contains('moodboard__footer') ||
           node.classList.contains('moodboard__pen-bar') ||
           node.classList.contains('moodboard__tear-hint') ||
           node.classList.contains('moodboard__tear-undo') ||
@@ -2443,10 +2437,28 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.moodboard {
+.moodboard-shell {
   position: fixed;
   inset: 0;
   z-index: 300;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overscroll-behavior: none;
+}
+
+.moodboard-shell--instant-hide {
+  opacity: 0 !important;
+  transition: none !important;
+  pointer-events: none !important;
+}
+
+.moodboard {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  z-index: 0;
   background: transparent;
   display: flex;
   flex-direction: column;
@@ -2535,7 +2547,11 @@ onUnmounted(() => {
 .moodboard--capturing .moodboard__tear-line,
 .moodboard--capturing .moodboard__arrow-handle,
 .moodboard--capturing .moodboard__arrow--active .moodboard__arrow-hit,
-.moodboard--capturing .moodboard__history {
+.moodboard--capturing .moodboard__history,
+.moodboard--capturing .moodboard__footer,
+.moodboard--capturing .moodboard__save-close,
+.moodboard--capturing .moodboard__titlebar,
+.moodboard--capturing .moodboard__actions {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -2543,7 +2559,9 @@ onUnmounted(() => {
 
 .moodboard__actions,
 .moodboard__pen-bar,
-.moodboard__history {
+.moodboard__footer,
+.moodboard__save-close,
+.moodboard__titlebar {
   opacity: 0;
   pointer-events: none;
   transition:
@@ -2551,27 +2569,40 @@ onUnmounted(() => {
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.moodboard__panel {
-  opacity: 1;
-  pointer-events: none;
-  transform: translateY(calc(100% + var(--gutter) + 1rem));
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+.moodboard__actions,
+.moodboard__pen-bar {
+  transform: translateX(calc(-100% - var(--gutter) - 1rem));
 }
 
-.moodboard--panel-ready .moodboard__panel {
-  pointer-events: auto;
-  transform: translateY(0);
+.moodboard__save-close {
+  transform: translateY(calc(-100% - var(--gutter)));
+}
+
+.moodboard__titlebar {
+  transform: translate(-50%, calc(-100% - var(--gutter)));
+}
+
+.moodboard__footer {
+  transform: translate(-50%, 2.5rem);
 }
 
 .moodboard--panel-ready .moodboard__actions,
 .moodboard--panel-ready .moodboard__pen-bar,
-.moodboard--panel-ready .moodboard__history {
+.moodboard--panel-ready .moodboard__save-close {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(0);
+  transform: none;
 }
 
-.moodboard--panel-ready .moodboard__history {
+.moodboard--panel-ready .moodboard__titlebar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.moodboard--panel-ready .moodboard__footer {
+  opacity: 1;
+  pointer-events: auto;
   transform: translateX(-50%);
 }
 
@@ -2583,59 +2614,75 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-/* Close: tools slide off to the right, toolbox down */
-.moodboard--chrome-out .moodboard__panel {
-  pointer-events: none;
-  transform: translateY(calc(100% + var(--gutter) + 1rem));
-}
-
+/* Close: tools slide off to the left, chrome lifts away */
 .moodboard--chrome-out .moodboard__actions,
 .moodboard--chrome-out .moodboard__pen-bar {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(calc(100% + var(--gutter) + 1rem));
+  transform: translateX(calc(-100% - var(--gutter) - 1rem));
 }
 
-.moodboard--chrome-out .moodboard__history {
+.moodboard--chrome-out .moodboard__save-close {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-100% - var(--gutter)));
+}
+
+.moodboard--chrome-out .moodboard__titlebar {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - var(--gutter)));
+}
+
+.moodboard--chrome-out .moodboard__footer {
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 2.5rem);
 }
 
-.moodboard--items-out .moodboard__panel {
-  pointer-events: none;
-  transform: translateY(calc(100% + var(--gutter) + 1rem));
-}
-
 .moodboard--items-out .moodboard__actions,
 .moodboard--items-out .moodboard__pen-bar,
-.moodboard--items-out .moodboard__history {
+.moodboard--items-out .moodboard__footer,
+.moodboard--items-out .moodboard__save-close,
+.moodboard--items-out .moodboard__titlebar {
   opacity: 0;
   pointer-events: none;
 }
 
 .moodboard__history {
   --history-cell: 36px;
-  position: absolute;
-  left: 50%;
-  bottom: var(--history-cell);
-  z-index: 400;
+  position: relative;
   display: flex;
   align-items: center;
   width: calc(calc(var(--history-cell) * 2) + 10px);
   height: var(--history-cell);
-  transform: translateX(-50%);
   background: var(--warm-white);
   /* Match grid lines as painted on cream (raw --grid-line looks darker on frosted/white) */
   border: 1px solid color-mix(in srgb, var(--black) 6%, var(--cream));
   border-radius: 0px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   gap: 7px;
   padding: 0 5px;
 }
 
+.moodboard__footer {
+  position: absolute;
+  left: 50%;
+  bottom: var(--gutter);
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.moodboard__enquiry {
+  min-width: 11rem;
+}
+
 .moodboard__history-btn {
+  position: relative;
   flex: 1;
   height: 100%;
   display: grid;
@@ -2661,6 +2708,28 @@ onUnmounted(() => {
   display: block;
 }
 
+.moodboard__history-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  z-index: 2;
+  padding: 0.3rem 0.5rem;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
+  background: var(--elevated-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.moodboard__history-btn:hover:not(:disabled) .moodboard__history-tooltip,
+.moodboard__history-btn:focus-visible:not(:disabled) .moodboard__history-tooltip {
+  opacity: 1;
+}
+
 .moodboard__history-divider {
   flex-shrink: 0;
   width: 1px;
@@ -2668,17 +2737,48 @@ onUnmounted(() => {
   background: var(--grid-line);
 }
 
+.moodboard__save-close {
+  position: absolute;
+  top: var(--gutter);
+  left: var(--gutter);
+  z-index: 400;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--grid-line);
+  background: var(--elevated-bg, var(--warm-white));
+  color: var(--charcoal);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.moodboard__save-close:hover {
+  border-color: var(--charcoal);
+  color: var(--charcoal);
+}
+
+.moodboard__titlebar {
+  position: absolute;
+  top: var(--gutter);
+  left: 50%;
+  z-index: 400;
+  display: flex;
+  justify-content: center;
+  max-width: min(28rem, calc(100% - 12rem));
+}
+
 .moodboard__switcher {
   position: relative;
   min-width: 0;
-  flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .moodboard__switcher-toggle {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   min-width: 0;
   max-width: 100%;
@@ -2694,7 +2794,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--serif);
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   font-weight: 400;
   font-style: normal;
   letter-spacing: 0.01em;
@@ -2704,6 +2804,7 @@ onUnmounted(() => {
   caret-color: var(--charcoal);
   outline: none;
   cursor: pointer;
+  text-align: center;
 }
 
 .moodboard__panel-title[contenteditable='true'] {
@@ -2751,13 +2852,15 @@ onUnmounted(() => {
 
 .moodboard__switcher-menu {
   position: absolute;
-  left: 0;
-  bottom: calc(100% + 0.4rem);
+  left: 50%;
+  top: calc(100% + 0.4rem);
+  bottom: auto;
   z-index: 10;
   min-width: 100%;
   display: flex;
   flex-direction: column;
   padding: 0.25rem;
+  transform: translateX(-50%);
   background: var(--elevated-bg, var(--warm-white));
   border: 1px solid var(--grid-line);
   border-radius: 4px;
@@ -2877,7 +2980,7 @@ html.dark .moodboard__place-layer {
 
 .moodboard__tear-hint {
   position: absolute;
-  top: var(--gutter);
+  top: calc(var(--gutter) + 2.75rem);
   left: 50%;
   z-index: 400;
   margin: 0;
@@ -2893,7 +2996,7 @@ html.dark .moodboard__place-layer {
 
 .moodboard__tear-undo {
   position: absolute;
-  top: var(--gutter);
+  top: calc(var(--gutter) + 2.75rem);
   left: 50%;
   z-index: 400;
   transform: translateX(-50%);
@@ -3237,11 +3340,12 @@ html.dark .moodboard__place-layer {
   pointer-events: auto;
 }
 
-/* Vertical tool rail — top right */
+/* Vertical tool rail — left */
 .moodboard__actions {
   position: absolute;
-  top: var(--gutter);
-  right: var(--gutter);
+  top: calc(var(--gutter) + 3.25rem);
+  left: var(--gutter);
+  right: auto;
   z-index: 400;
   display: flex;
   flex-direction: column;
@@ -3291,196 +3395,6 @@ html.dark .moodboard__place-layer {
 
 :global(html.dark .moodboard__theme-icon--moon) {
   display: block;
-}
-
-/* Cart-style panel — bottom right */
-.moodboard__panel {
-  position: absolute;
-  right: var(--gutter);
-  bottom: calc(var(--gutter) + var(--boards-rail-push, 0px));
-  z-index: 420;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  width: var(--side-column-width, 16rem);
-  max-width: calc(100vw - (var(--gutter) * 2));
-  padding: var(--gutter);
-  box-sizing: border-box;
-  background: var(--panel-bg, var(--warm-white));
-  border: 1px solid color-mix(in srgb, var(--black) 6%, var(--cream));
-  backdrop-filter: blur(50px);
-  -webkit-backdrop-filter: blur(50px);
-}
-
-.moodboard__panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.moodboard__panel-close {
-  flex-shrink: 0;
-  width: 25px;
-  height: 25px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--charcoal);
-  background: var(--elevated-bg, #fff);
-  color: var(--charcoal);
-  box-sizing: border-box;
-  cursor: pointer;
-}
-
-.moodboard__panel-close:hover {
-  color: var(--accent, var(--charcoal));
-  border-color: currentColor;
-}
-
-.moodboard__panel-close-icon {
-  position: relative;
-  display: block;
-  width: 11px;
-  height: 11px;
-}
-
-.moodboard__panel-close-icon::before,
-.moodboard__panel-close-icon::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 1px;
-  background: currentColor;
-}
-
-.moodboard__panel-close-icon::before {
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.moodboard__panel-close-icon::after {
-  transform: translate(-50%, -50%) rotate(-45deg);
-}
-
-.moodboard__panel-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.moodboard__panel-count {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--muted);
-  min-width: 0;
-}
-
-.moodboard__panel-tools {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.moodboard__panel-tool {
-  position: relative;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  /* Padding replaces gap so hover/tooltip stays continuous between icons */
-  padding: 0.25rem;
-  box-sizing: content-box;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.moodboard__panel-tool:hover {
-  color: var(--charcoal);
-}
-
-.moodboard__panel-tool svg {
-  display: block;
-  shape-rendering: geometricPrecision;
-}
-
-.moodboard__panel-tooltip {
-  position: absolute;
-  bottom: calc(100% + 0.15rem);
-  left: 50%;
-  z-index: 5;
-  padding: 0.35rem 0.55rem;
-  font-size: var(--text-xs);
-  color: var(--charcoal);
-  white-space: nowrap;
-  background: var(--elevated-bg);
-  border: 1px solid var(--grid-line);
-  border-radius: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(-50%) translateY(2px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.moodboard__panel-tool:hover .moodboard__panel-tooltip,
-.moodboard__panel-tool:focus-visible .moodboard__panel-tooltip {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* Keep trailing tooltips inside the panel */
-.moodboard__panel-tool:last-child .moodboard__panel-tooltip {
-  left: auto;
-  right: 0;
-  transform: translateX(0) translateY(2px);
-}
-
-.moodboard__panel-tool:last-child:hover .moodboard__panel-tooltip,
-.moodboard__panel-tool:last-child:focus-visible .moodboard__panel-tooltip {
-  transform: translateX(0) translateY(0);
-}
-
-.moodboard__panel-link {
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: var(--text-xs);
-  color: var(--muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.moodboard__panel-link:hover {
-  color: var(--charcoal);
-}
-
-.moodboard__panel .btn {
-  width: 100%;
-  border-radius: 0;
-  border: 1px solid var(--grid-line);
-}
-
-.moodboard__panel .btn--filled {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--warm-white);
-}
-
-.moodboard__panel .btn--filled:hover {
-  background: var(--charcoal);
-  border-color: var(--charcoal);
-  color: var(--warm-white);
 }
 
 .moodboard__confirm {
@@ -3597,7 +3511,8 @@ html.dark .moodboard__place-layer {
 .moodboard__colour-popover {
   position: absolute;
   top: 50%;
-  right: calc(100% + 0.65rem);
+  left: calc(100% + 0.65rem);
+  right: auto;
   z-index: 5;
   display: flex;
   align-items: center;
@@ -3665,10 +3580,6 @@ html.dark .moodboard__place-layer {
 }
 
 @media (max-width: 767px) {
-  .moodboard__panel {
-    width: calc(100vw - (var(--gutter) * 2));
-  }
-
   .moodboard__actions {
     gap: 0.5rem;
   }
@@ -3678,5 +3589,8 @@ html.dark .moodboard__place-layer {
     height: 2.5rem;
   }
 
+  .moodboard__titlebar {
+    max-width: min(18rem, calc(100% - 8rem));
+  }
 }
 </style>

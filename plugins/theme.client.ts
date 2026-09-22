@@ -1,8 +1,8 @@
 export default defineNuxtPlugin((nuxtApp) => {
-  const { theme, initTheme } = useTheme()
+  const { isDark, initTheme } = useTheme()
 
   useHead(() => ({
-    meta: [{ name: 'color-scheme', content: theme.value }],
+    meta: [{ name: 'color-scheme', content: isDark.value ? 'dark' : 'light' }],
   }))
 
   // After hydration — reading localStorage in setup caused icon/tooltip mismatches.

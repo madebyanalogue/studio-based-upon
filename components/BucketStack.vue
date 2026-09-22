@@ -459,97 +459,129 @@
         (.stack stacking context can’t outrank Flip flyers at z-index 290).
       -->
       <Teleport to="body">
+      <!-- Boards cart — side panel (unchanged) -->
       <aside
+        v-if="panelTab === 'boards'"
         class="stack__controls"
         :class="{ 'stack__controls--visible': controlsVisible }"
-        :aria-label="panelTab === 'boards' ? 'Board actions' : 'Selection actions'"
+        aria-label="Board actions"
       >
-        <template v-if="panelTab === 'boards'">
-          <div class="stack__controls-head">
-            <p class="stack__title">Boards</p>
-            <button
-              type="button"
-              class="stack__close"
-              aria-label="Close boards"
-              @click="requestClose"
-            >
-              <span class="stack__close-icon" aria-hidden="true" />
-            </button>
-          </div>
-          <p class="stack__count interface">{{ boardsCountLabel }}</p>
-          <button type="button" class="btn btn--filled" @click="onCreateBoardInCart">
-            Create Board
-          </button>
-        </template>
-        <template v-else>
-          <div class="stack__controls-head">
-            <p
-              ref="titleInput"
-              class="stack__title"
-              :contenteditable="isEditing"
-              :role="isEditing ? 'textbox' : undefined"
-              :aria-label="isEditing ? 'Selection name' : undefined"
-              @keydown.enter.prevent="saveName"
-              @keydown.esc.prevent="cancelEdit"
-              @blur="saveName"
-            >
-              {{ activeMoodboard?.name || 'My Selection' }}
-            </p>
-            <button
-              type="button"
-              class="stack__close"
-              aria-label="Close selection"
-              @click="requestClose"
-            >
-              <span class="stack__close-icon" aria-hidden="true" />
-            </button>
-          </div>
-
-          <p class="stack__count interface">
-            {{ countLabel }}
-          </p>
-
-          <div class="stack__control-links">
-            <button type="button" class="stack__link interface" @click="startEdit">
-              Rename
-            </button>
-            <button
-              v-if="activePendingRemovals.length && !items.length"
-              type="button"
-              class="stack__link interface"
-              :disabled="bulkBusy"
-              @click="onUndoAll"
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              class="stack__link interface"
-              :disabled="bulkBusy"
-              @click="confirmingDelete = true"
-            >
-              Delete selection
-            </button>
-          </div>
-
+        <div class="stack__controls-head">
+          <p class="stack__title">Boards</p>
           <button
             type="button"
-            class="btn"
-            :disabled="!items.length"
-            @click="sendEnquiry"
+            class="stack__close"
+            aria-label="Close boards"
+            @click="requestClose"
           >
-            Send as enquiry
+            <span class="stack__close-icon" aria-hidden="true" />
           </button>
+        </div>
+        <p class="stack__count interface">{{ boardsCountLabel }}</p>
+        <button type="button" class="btn btn--filled" @click="onCreateBoardInCart">
+          Create Board
+        </button>
+      </aside>
+
+      <!-- Selection cart — top toolbar + bottom enquiry -->
+      <template v-else>
+        <header
+          class="stack__toolbar"
+          :class="{ 'stack__toolbar--visible': controlsVisible }"
+          aria-label="Selection actions"
+        >
           <button
             type="button"
-            class="btn btn--filled"
+            class="stack__close"
+            aria-label="Close selection"
+            @click="requestClose"
+          >
+            <span class="stack__close-icon" aria-hidden="true" />
+          </button>
+
+          <div ref="selectionMenuRef" class="stack__toolbar-center">
+            <div class="stack__title-wrap">
+              <p
+                ref="titleInput"
+                class="stack__title"
+                :contenteditable="isEditing"
+                :role="isEditing ? 'textbox' : undefined"
+                :aria-label="isEditing ? 'Selection name' : undefined"
+                @click="!isEditing && startEdit()"
+                @keydown.enter.prevent="saveName"
+                @keydown.esc.prevent="cancelEdit"
+                @blur="saveName"
+              >
+                {{ activeMoodboard?.name || 'My Selection' }}
+              </p>
+              <button
+                type="button"
+                class="stack__title-caret"
+                aria-label="Switch selection"
+                :aria-expanded="selectionMenuOpen"
+                @click.stop="toggleSelectionMenu"
+              >
+                <span class="stack__title-caret-icon" aria-hidden="true" />
+              </button>
+            </div>
+            <div
+              v-if="selectionMenuOpen"
+              class="stack__selection-menu"
+              role="listbox"
+              aria-label="Selections"
+            >
+              <button
+                v-for="board in moodboards"
+                :key="board.id"
+                type="button"
+                class="stack__selection-option interface"
+                role="option"
+                :aria-selected="board.id === activeMoodboardId"
+                :class="{
+                  'stack__selection-option--active': board.id === activeMoodboardId,
+                }"
+                @click="onPickSelection(board.id)"
+              >
+                {{ board.name }}
+              </button>
+              <button
+                type="button"
+                class="stack__selection-option stack__selection-option--new interface"
+                @click="onNewSelection"
+              >
+                New Selection
+              </button>
+              <button
+                type="button"
+                class="stack__selection-option stack__selection-option--danger interface"
+                :disabled="bulkBusy"
+                @click="selectionMenuOpen = false; confirmingDelete = true"
+              >
+                Delete selection
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="stack__toolbar-create interface"
             :disabled="!items.length"
             @click="onBuildMoodboard"
           >
             Create Board
           </button>
-        </template>
-      </aside>
+        </header>
+
+        <button
+          type="button"
+          class="stack__enquiry interface"
+          :class="{ 'stack__enquiry--visible': enquiryVisible }"
+          :disabled="!items.length"
+          @click="sendEnquiry"
+        >
+          Send as Enquiry
+        </button>
+      </template>
 
       <div
         v-if="confirmingDelete"
@@ -751,6 +783,8 @@ const expandedBoardIds = ref<string[]>([])
 /** Column thumb id reserved (hidden) while a board item Flips back in. */
 const columnReturningId = ref<string | null>(null)
 const titleInput = ref<HTMLElement | null>(null)
+const selectionMenuRef = ref<HTMLElement | null>(null)
+const selectionMenuOpen = ref(false)
 const isEditing = ref(false)
 const pileAnchor = ref<DOMRect | null>(null)
 /** Item ids mid fly-in — hidden from the pile until the flyer lands. */
@@ -776,6 +810,8 @@ const skipMoodboardAutoDisperse = ref(false)
 const gridLinesVisible = ref(false)
 /** Controls fade independently — out earlier than the backdrop on close. */
 const controlsVisible = ref(false)
+/** Selection enquiry bar — rises after items finish dispersing into the grid. */
+const enquiryVisible = ref(false)
 /** Which surface currently owns data-flip-id (never both). */
 const flipSurface = ref<'pile' | 'cells'>('pile')
 /** Keep pile mounted during open Flip so cards can fly free (not clipped by cells). */
@@ -818,9 +854,10 @@ const CELL_SCALE_MS = 280
 const UNDO_FADE_MS = 220
 /** Pause after scale-out before Undo appears */
 const UNDO_ENTER_DELAY_MS = 350
-/** Fixed column count — cell = pile = 1/6 viewport width, square */
+/** Fixed column count — cell = pile = viewport / cols, square */
 /** Cart grid columns by viewport (selections). */
 const stackColsForWidth = (width: number) => {
+  if (width >= 1920) return 7
   if (width >= 1600) return 6
   if (width >= 1440) return 5
   if (width >= 1200) return 4
@@ -936,6 +973,8 @@ const onDeleteSelection = async () => {
     // Drop undo slots immediately — no undo after deleting the selection
     clearPendingRemovals(id)
     controlsVisible.value = false
+    enquiryVisible.value = false
+    selectionMenuOpen.value = false
     await nextTick()
 
     // Zoom every item out (same scale-out as remove, without undo)
@@ -3188,6 +3227,8 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   pdpFocusItemId.value = item.id
   pdpOpenedFromCart.value = true
   controlsVisible.value = false
+  enquiryVisible.value = false
+  selectionMenuOpen.value = false
   gridLinesVisible.value = false
 
   // Warm ProductDetail's overlay useAsyncData cache so mount isn't cold
@@ -3226,7 +3267,28 @@ watch(productOverlayOpen, (on) => {
   if (stagePresent.value && stageVisible.value) {
     gridLinesVisible.value = true
     controlsVisible.value = true
+    if (cellsReady.value && panelTab.value === 'selections') {
+      enquiryVisible.value = true
+    }
   }
+})
+
+watch(cellsReady, (ready) => {
+  if (
+    ready &&
+    stagePresent.value &&
+    stageVisible.value &&
+    panelTab.value === 'selections' &&
+    !productOverlayOpen.value
+  ) {
+    enquiryVisible.value = true
+    return
+  }
+  enquiryVisible.value = false
+})
+
+watch(controlsVisible, (visible) => {
+  if (!visible) selectionMenuOpen.value = false
 })
 
 // Hold the under-PDP layering until the cream close veil has gone too
@@ -3238,6 +3300,7 @@ watch([productOverlayOpen, pdpCloseVeilActive], ([on, veil]) => {
 const selectionTitleLabel = () => activeMoodboard.value?.name || 'My Selection'
 
 const startEdit = () => {
+  selectionMenuOpen.value = false
   isEditing.value = true
   nextTick(() => {
     const el = titleInput.value
@@ -3268,6 +3331,30 @@ const cancelEdit = () => {
   isEditing.value = false
 }
 
+const toggleSelectionMenu = () => {
+  if (isEditing.value) saveName()
+  selectionMenuOpen.value = !selectionMenuOpen.value
+}
+
+const onPickSelection = (id: string) => {
+  selectionMenuOpen.value = false
+  if (id === activeMoodboardId.value) return
+  setActiveMoodboard(id)
+}
+
+const onNewSelection = () => {
+  selectionMenuOpen.value = false
+  createMoodboard({ activate: true })
+}
+
+const onSelectionMenuPointerDown = (event: PointerEvent) => {
+  if (!selectionMenuOpen.value) return
+  const root = selectionMenuRef.value
+  if (root && !root.contains(event.target as Node)) {
+    selectionMenuOpen.value = false
+  }
+}
+
 const sendEnquiry = () => {
   if (!items.value.length) return
   openFromBucket(items.value)
@@ -3276,6 +3363,7 @@ const sendEnquiry = () => {
 /** Drop cart stage instantly (moodboard cream already covering). */
 const dropStageInstant = async () => {
   controlsVisible.value = false
+  enquiryVisible.value = false
   gridLinesVisible.value = false
   pileCountVisible.value = true
   stageVisible.value = false
@@ -4105,6 +4193,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   // Toolbox slides out and grid lines fade on the same beat as the restack —
   // neither blocks the Flip, so items leave on the click frame
   controlsVisible.value = false
+  enquiryVisible.value = false
   gridLinesVisible.value = false
 
   // Only undo placeholders left — they fade with the backdrop
@@ -4162,6 +4251,31 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
 
 const requestClose = () => {
   void closeToPile()
+}
+
+const onCartKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape') return
+  if (confirmingDelete.value) {
+    confirmingDelete.value = false
+    event.preventDefault()
+    return
+  }
+  if (selectionMenuOpen.value) {
+    selectionMenuOpen.value = false
+    event.preventDefault()
+    return
+  }
+  if (isEditing.value) {
+    cancelEdit()
+    event.preventDefault()
+    return
+  }
+  // PDP / board composer own Escape while covering the cart
+  if (productOverlayOpen.value || pdpCloseVeilActive.value) return
+  if (isMoodboard.value && !boardsCartRevealing.value) return
+  if (!stagePresent.value || !stageVisible.value || isFlipping.value) return
+  event.preventDefault()
+  requestClose()
 }
 
 type FlyPayload = NonNullable<ReturnType<typeof consumePendingFly>>
@@ -4513,22 +4627,42 @@ watch(
   { flush: 'post' },
 )
 
-/** Nav heart — same open path as clicking the active selection stack. */
+/** Nav selection control — open the active selection cart (Flip when it has items). */
 const openSelectionStackFromNav = () => {
   if (isMoodboard.value || isFlipping.value) return
-  if (isOpen.value && panelTab.value === 'selections') {
+  if ((isOpen.value || stagePresent.value) && panelTab.value === 'selections') {
     void closeToPile()
     return
   }
-  if (isOpen.value || stagePresent.value) return
+  if (isOpen.value || stagePresent.value) {
+    // Another cart surface is up (e.g. boards) — close, then open selections
+    void closeToPile().then(() => {
+      if (isMoodboard.value || isFlipping.value) return
+      const id = activeMoodboardId.value
+      if (id) {
+        setActiveMoodboard(id)
+        pileRef.value = pileEls.value[id] || pileRef.value
+        const board = moodboards.value.find((entry) => entry.id === id)
+        if (board?.items.length) {
+          void openFromPile()
+          return
+        }
+      }
+      openDrawer('selections')
+    })
+    return
+  }
   const id = activeMoodboardId.value
-  if (!id) return
-  const board = moodboards.value.find((entry) => entry.id === id)
-  // Match pile click: only Flip-open when the active selection has items
-  if (!board?.items.length) return
-  setActiveMoodboard(id)
-  pileRef.value = pileEls.value[id] || pileRef.value
-  void openFromPile()
+  if (id) {
+    setActiveMoodboard(id)
+    pileRef.value = pileEls.value[id] || pileRef.value
+    const board = moodboards.value.find((entry) => entry.id === id)
+    if (board?.items.length) {
+      void openFromPile()
+      return
+    }
+  }
+  openDrawer('selections')
 }
 
 /** Nav heart hover — fan the active pile (same pose Flip open starts from). */
@@ -4583,6 +4717,8 @@ onMounted(() => {
   if (import.meta.client) {
     syncCellSize()
     window.addEventListener('resize', onWinResize)
+    document.addEventListener('pointerdown', onSelectionMenuPointerDown)
+    document.addEventListener('keydown', onCartKeydown)
     nextTick(() => {
       parkInactiveRailBelow()
     })
@@ -4604,6 +4740,8 @@ onBeforeUnmount(() => {
   destroyColumnGhost()
   if (import.meta.client) {
     window.removeEventListener('resize', onWinResize)
+    document.removeEventListener('pointerdown', onSelectionMenuPointerDown)
+    document.removeEventListener('keydown', onCartKeydown)
     document.documentElement.classList.remove('bucket-stack-open')
     document.documentElement.classList.remove('stack-column-dragging')
     if (stagePresent.value) unlockPageScroll()
@@ -5438,13 +5576,19 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 0;
+  padding: var(--header-height) 0 0;
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   border-top: 1px solid transparent;
   border-left: 1px solid transparent;
   transition: border-color 0.32s ease;
+}
+
+.stack__grid::-webkit-scrollbar {
+  display: none;
 }
 
 .stack__grid--lines {
@@ -5943,6 +6087,205 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* Selection cart — fixed top toolbar */
+.stack__toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 420;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--header-height);
+  padding: 0 var(--gutter);
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--grid-line);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.stack__toolbar--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.stack__toolbar .stack__close {
+  justify-self: start;
+}
+
+.stack__toolbar-center {
+  position: relative;
+  justify-self: center;
+  max-width: min(28rem, 70vw);
+  min-width: 0;
+}
+
+.stack__title-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.stack__toolbar .stack__title {
+  flex: 0 1 auto;
+  max-width: 100%;
+  text-align: center;
+  cursor: text;
+}
+
+.stack__title-caret {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--charcoal);
+  cursor: pointer;
+}
+
+.stack__title-caret:hover {
+  color: var(--accent, var(--charcoal));
+}
+
+.stack__title-caret-icon {
+  display: block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-15%) rotate(45deg);
+}
+
+.stack__selection-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: max(12rem, 100%);
+  max-width: min(22rem, 80vw);
+  padding: 0.4rem;
+  box-sizing: border-box;
+  background: var(--panel-bg, var(--warm-white));
+  border: 1px solid var(--grid-line);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--charcoal) 12%, transparent);
+  transform: translateX(-50%);
+}
+
+.stack__selection-option {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
+  cursor: pointer;
+}
+
+.stack__selection-option:hover {
+  background: color-mix(in srgb, var(--charcoal) 6%, transparent);
+}
+
+.stack__selection-option--active {
+  background: color-mix(in srgb, var(--charcoal) 8%, transparent);
+}
+
+.stack__selection-option--new {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--grid-line);
+}
+
+.stack__selection-option--danger {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--grid-line);
+  color: var(--muted);
+}
+
+.stack__selection-option--danger:hover:not(:disabled) {
+  color: var(--red, #ff0000);
+  background: transparent;
+}
+
+.stack__selection-option:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stack__toolbar-create {
+  justify-self: end;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--charcoal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stack__toolbar-create:hover:not(:disabled) {
+  color: var(--accent, var(--charcoal));
+}
+
+.stack__toolbar-create:disabled {
+  opacity: 0.4;
+  cursor: default;
+  text-decoration: none;
+}
+
+/* Full-width enquiry — rises after disperse */
+.stack__enquiry {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 420;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.9rem var(--gutter) calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  border: 0;
+  background: var(--red);
+  color: #fff;
+  cursor: pointer;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stack__enquiry--visible {
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.stack__enquiry:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.stack__enquiry:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
 .stack__close {
   flex-shrink: 0;
   width: 25px;
@@ -6105,6 +6448,15 @@ onBeforeUnmount(() => {
     width: auto;
     left: var(--gutter);
     right: var(--gutter);
+  }
+
+  .stack__toolbar {
+    gap: 0.5rem;
+    padding: 0 calc(var(--gutter) * 0.75);
+  }
+
+  .stack__toolbar-center {
+    max-width: min(16rem, 52vw);
   }
 }
 </style>

@@ -70,7 +70,7 @@ export default defineNuxtConfig({
       // Apply stored theme / text case before CSS paints to avoid FOUC.
       script: [
         {
-          children: `(function(){try{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');var c=localStorage.getItem('sba-text-case');if(c==='uppercase')document.documentElement.classList.add('text-uppercase');document.documentElement.classList.remove('face-serif','serif-sans');}catch(e){}})();`,
+          children: `(function(){try{var p=location.pathname;if(p==='/'||p==='/home'){document.documentElement.classList.add('dark');}else if(p==='/pre-crafted'||p.indexOf('/pre-crafted/')===0){document.documentElement.classList.remove('dark');}else{var t=localStorage.getItem('basedupon:theme');if(t==='dark')document.documentElement.classList.add('dark');}var c=localStorage.getItem('sba-text-case');if(c==='uppercase')document.documentElement.classList.add('text-uppercase');document.documentElement.classList.remove('face-serif','serif-sans');}catch(e){}})();`,
           tagPosition: 'head',
         },
       ],

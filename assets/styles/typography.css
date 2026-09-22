@@ -101,6 +101,7 @@ h1, h2, h3 {
 
 .prose {
   max-width: 42rem;
+  font-family: var(--mono);
 }
 
 .prose p {

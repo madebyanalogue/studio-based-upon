@@ -1,6 +1,11 @@
+import { isHomepagePath } from '~/composables/useHomepagePreloader'
+
 export type ThemeMode = 'light' | 'dark'
 
 const STORAGE_KEY = 'basedupon:theme'
+
+const isPrecraftedPath = (path: string) =>
+  path === '/pre-crafted' || path.startsWith('/pre-crafted/')
 
 const readStored = (): ThemeMode | null => {
   if (!import.meta.client) return null
@@ -26,18 +31,29 @@ const applyDom = (mode: ThemeMode) => {
   document.documentElement.classList.toggle('dark', mode === 'dark')
 }
 
-/** Light / dark theme with localStorage persistence. */
+/** Light / dark theme with localStorage persistence. Homepage always dark; (Pre)Crafted always light. */
 export const useTheme = () => {
   // Always the same on server + first client paint so hydration matches.
   // Client storage is applied after mount via initTheme().
   const theme = useState<ThemeMode>('theme-mode', () => 'light')
+  const route = useRoute()
 
-  const isDark = computed(() => theme.value === 'dark')
+  const forcedDark = computed(() => isHomepagePath(route.path))
+  const forcedLight = computed(() => isPrecraftedPath(route.path))
+  const isDark = computed(() => {
+    if (forcedDark.value) return true
+    if (forcedLight.value) return false
+    return theme.value === 'dark'
+  })
+
+  const applyEffective = () => {
+    applyDom(isDark.value ? 'dark' : 'light')
+  }
 
   const setTheme = (mode: ThemeMode) => {
     theme.value = mode
-    applyDom(mode)
     writeStored(mode)
+    applyEffective()
   }
 
   const toggleTheme = () => {
@@ -49,10 +65,11 @@ export const useTheme = () => {
     if (!import.meta.client) return
     const stored = readStored()
     if (stored) {
-      setTheme(stored)
+      theme.value = stored
     } else {
-      setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light')
+      theme.value = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
     }
+    applyEffective()
 
     // Paint the settled theme with --theme-ms: 0, then enable toggle transitions.
     requestAnimationFrame(() => {
@@ -62,9 +79,18 @@ export const useTheme = () => {
     })
   }
 
+  if (import.meta.client) {
+    watch(
+      () => route.path,
+      () => applyEffective(),
+    )
+  }
+
   return {
     theme,
     isDark,
+    forcedDark,
+    forcedLight,
     setTheme,
     toggleTheme,
     initTheme,

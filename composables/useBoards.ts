@@ -52,10 +52,14 @@ const migrateBoardName = (name: string) => {
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
+let boardsPanelClassBound = false
+
 export const useBoards = () => {
   const boards = useState<SavedBoard[]>('saved-boards', () => [])
   const activeBoardId = useState<string | null>('active-board-id', () => null)
   const boardsOpen = useState('boards-dropdown-open', () => false)
+  /** Right boards push rail (MoodboardBoardsPanel). */
+  const boardsPanelOpen = useState('boards-panel-open', () => false)
   const pendingBoardRemovals = useState<PendingBoardRemoval[]>(
     'pending-board-removals',
     () => [],
@@ -404,6 +408,29 @@ export const useBoards = () => {
     boardsOpen.value = !boardsOpen.value
   }
 
+  const openBoardsPanel = () => {
+    boardsPanelOpen.value = true
+  }
+
+  const closeBoardsPanel = () => {
+    boardsPanelOpen.value = false
+  }
+
+  const toggleBoardsPanel = () => {
+    boardsPanelOpen.value = !boardsPanelOpen.value
+  }
+
+  if (import.meta.client && !boardsPanelClassBound) {
+    boardsPanelClassBound = true
+    watch(
+      boardsPanelOpen,
+      (open) => {
+        document.documentElement.classList.toggle('boards-panel-open', open)
+      },
+      { immediate: true },
+    )
+  }
+
   onMounted(hydrate)
 
   return {
@@ -412,6 +439,7 @@ export const useBoards = () => {
     activeBoardId,
     boardCount,
     boardsOpen,
+    boardsPanelOpen,
     createBoard,
     updateBoard,
     saveActiveBoard,
@@ -430,5 +458,8 @@ export const useBoards = () => {
     openDropdown,
     closeDropdown,
     toggleDropdown,
+    openBoardsPanel,
+    closeBoardsPanel,
+    toggleBoardsPanel,
   }
 }

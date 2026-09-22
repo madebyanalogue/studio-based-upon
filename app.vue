@@ -13,6 +13,7 @@
     </main>
     <BucketDrawer v-if="isV1" />
     <BucketStack v-if="isV2" />
+    <BoardsPushPanel />
     <MoodboardCanvas />
     <MoodboardPicker />
     <ProductOverlay />
@@ -23,7 +24,19 @@
 <script setup lang="ts">
 import { isHomepagePath } from '~/composables/useHomepagePreloader'
 
-const { seoTitle, seoDescription, disablePreloader } = useSiteSettings()
+const {
+  seoTitle,
+  seoDescription,
+  disablePreloader,
+  title,
+  phone,
+  phoneTel,
+  streetAddress,
+  addressLocality,
+  postalCode,
+  addressCountry,
+  enquiryEmail,
+} = useSiteSettings()
 const { initBucketUi, isV1, isV2 } = useBucketUi()
 const { initTextCase } = useTextCase()
 const { initStackChrome } = useStackChrome()
@@ -66,11 +79,48 @@ watch(
   { immediate: true },
 )
 
+const localBusinessJsonLd = computed(() => ({
+  '@context': 'https://schema.org',
+  '@type': 'LocalBusiness',
+  name: title.value || 'Studio Based Upon',
+  telephone: phoneTel.value || phone.value,
+  email: enquiryEmail.value || undefined,
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: streetAddress.value,
+    addressLocality: addressLocality.value,
+    postalCode: postalCode.value,
+    addressCountry: addressCountry.value,
+  },
+}))
+
 useHead(() => ({
   title: seoTitle.value,
-  meta: seoDescription.value
-    ? [{ name: 'description', content: seoDescription.value }]
-    : [],
+  meta: [
+    ...(seoDescription.value
+      ? [{ name: 'description', content: seoDescription.value }]
+      : []),
+    ...(phone.value
+      ? [{ name: 'telephone', content: phone.value }]
+      : []),
+    ...(streetAddress.value
+      ? [
+          {
+            name: 'geo.placename',
+            content: [streetAddress.value, addressLocality.value, postalCode.value]
+              .filter(Boolean)
+              .join(', '),
+          },
+        ]
+      : []),
+  ],
+  script: [
+    {
+      type: 'application/ld+json',
+      children: JSON.stringify(localBusinessJsonLd.value),
+      key: 'local-business-jsonld',
+    },
+  ],
   style: [
     {
       children: `

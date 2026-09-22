@@ -32,30 +32,12 @@
         class="header__actions"
         :aria-hidden="isProductPage ? 'true' : undefined"
       >
-        <button
-          type="button"
-          class="header__version interface"
-          :aria-label="`Cart UI ${version}. Switch to next version`"
-          @click="toggleVersion"
+        <a
+          class="header__phone interface"
+          :href="`tel:${phoneTel}`"
         >
-          {{ version }}
-        </button>
-
-        <button
-          v-if="isV2"
-          type="button"
-          class="header__version interface"
-          :class="{ 'header__version--active': !stackChromeVisible }"
-          :aria-label="
-            stackChromeVisible
-              ? 'Hide selections stack'
-              : 'Show selections stack'
-          "
-          :aria-pressed="!stackChromeVisible"
-          @click="onStackChromeToggle"
-        >
-          Stack
-        </button>
+          {{ phone }}
+        </a>
 
         <button
           type="button"
@@ -69,15 +51,6 @@
         >
           {{ textCase === 'uppercase' ? 'AA' : 'Aa' }}
         </button>
-
-        <NuxtLink
-          to="/gs"
-          class="header__version interface"
-          :class="{ 'header__version--active': isActive('/gs') }"
-          aria-label="Gaussian splats"
-        >
-          GS
-        </NuxtLink>
 
         <button
           type="button"
@@ -131,119 +104,27 @@
           </template>
         </button>
 
-        <div ref="selectionsMenuRef" class="header__boards">
-          <button
-            type="button"
-            class="header__version header__boards-toggle interface"
-            :class="{ 'header__boards-toggle--open': selectionsOpen }"
-            :aria-expanded="selectionsOpen"
-            aria-haspopup="listbox"
-            aria-label="Selections"
-            @click="onSelectionsToggle"
-          >
-            <span>Selections</span>
-            <span class="header__boards-caret" aria-hidden="true" />
-          </button>
-          <div
-            v-if="selectionsOpen"
-            class="header__boards-menu"
-            role="listbox"
-            aria-label="Selections"
-          >
-            <button
-              v-for="selection in moodboards"
-              :key="selection.id"
-              type="button"
-              class="header__boards-option interface"
-              role="option"
-              :aria-selected="selection.id === activeMoodboardId"
-              :class="{
-                'header__boards-option--active': selection.id === activeMoodboardId,
-              }"
-              @click="onSelectSelection(selection.id)"
-            >
-              {{ selection.name }}
-            </button>
-            <button
-              type="button"
-              class="header__boards-option header__boards-option--new interface"
-              @click="onNewSelection"
-            >
-              New selection +
-            </button>
-          </div>
-        </div>
-
-        <div ref="boardsMenuRef" class="header__boards">
-          <button
-            type="button"
-            class="header__version header__boards-toggle interface"
-            :class="{ 'header__boards-toggle--open': boardsOpen }"
-            :aria-expanded="boardsOpen"
-            aria-haspopup="listbox"
-            aria-label="Boards"
-            @click="onBoardsToggle"
-          >
-            <span>Boards</span>
-            <span class="header__boards-caret" aria-hidden="true" />
-          </button>
-          <div
-            v-if="boardsOpen"
-            class="header__boards-menu"
-            role="listbox"
-            aria-label="Saved boards"
-          >
-            <button
-              v-for="board in boards"
-              :key="board.id"
-              type="button"
-              class="header__boards-option interface"
-              role="option"
-              :aria-selected="board.id === activeBoardId"
-              :class="{ 'header__boards-option--active': board.id === activeBoardId && isMoodboard }"
-              @click="onSelectBoard(board.id)"
-            >
-              {{ board.name }}
-            </button>
-            <button
-              type="button"
-              class="header__boards-option header__boards-option--new interface"
-              @click="onNewBoard"
-            >
-              New board +
-            </button>
-          </div>
-        </div>
-
         <button
           type="button"
-          class="header__icon-btn"
-          :class="{
-            'header__icon-btn--active': isOpen && panelTab === 'selections',
-            'header__icon-btn--tooltip-hidden': hiddenTooltip === 'selections',
-          }"
-          :aria-label="`Open ${activeMoodboard?.name || 'selection'}`"
+          class="header__version interface"
+          :class="{ 'header__version--active': isOpen && panelTab === 'selections' }"
+          :aria-label="selectionNavLabel"
           @click="onSelectionsClick"
           @mouseenter="onSelectionsHover(true)"
           @mouseleave="onSelectionsHover(false)"
         >
-          <svg
-            class="header__icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path
-              d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
-            />
-          </svg>
-          <span class="header__tooltip interface" aria-hidden="true">{{
-            activeMoodboard?.name || 'Selection'
-          }}</span>
+          {{ selectionNavLabel }}
+        </button>
+
+        <button
+          type="button"
+          class="header__version interface"
+          :class="{ 'header__version--active': boardsPanelOpen }"
+          :aria-pressed="boardsPanelOpen"
+          aria-label="My Boards"
+          @click="onMyBoardsClick"
+        >
+          My Boards
         </button>
 
         <NuxtLink to="/enquire" class="header__enquire interface">
@@ -255,42 +136,17 @@
 </template>
 
 <script setup lang="ts">
-const { headerMenu } = useSiteSettings()
+const { headerMenu, phone, phoneTel } = useSiteSettings()
 const {
   isOpen,
   panelTab,
-  openDrawer,
-  closeDrawer,
-  isMoodboard,
-  openMoodboard,
-  moodboards,
   activeMoodboard,
-  activeMoodboardId,
-  setActiveMoodboard,
-  createMoodboard,
   openSelectionStack,
   hoverSelectionStack,
+  closeDrawer,
 } = useBucket()
 const { textCase, toggleTextCase } = useTextCase()
-const { stackChromeVisible, toggleStackChrome } = useStackChrome()
-const { version, toggleVersion, isV2 } = useBucketUi()
-const {
-  boards,
-  activeBoardId,
-  boardsOpen,
-  setActiveBoard,
-  saveActiveBoard,
-  createBoard,
-  toggleDropdown,
-  closeDropdown,
-} = useBoards()
-const {
-  loadBoard,
-  placements,
-  strokes,
-  clearActive,
-  reset: resetMoodboard,
-} = useMoodboard()
+const { boardsPanelOpen, openBoardsPanel, closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 
@@ -299,15 +155,11 @@ const isProductPage = computed(() =>
   /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
 )
 
-const boardsMenuRef = ref<HTMLElement | null>(null)
-const selectionsMenuRef = ref<HTMLElement | null>(null)
-const selectionsOpen = ref(false)
+const selectionNavLabel = computed(
+  () => activeMoodboard.value?.name?.trim() || 'My Selection',
+)
 
-const closeSelectionsDropdown = () => {
-  selectionsOpen.value = false
-}
-
-type TooltipId = 'theme' | 'selections'
+type TooltipId = 'theme'
 const hiddenTooltip = ref<TooltipId | null>(null)
 /** Keep pre-click label so theme toggle doesn't flash the opposite word while fading out. */
 const frozenThemeTooltip = ref<'Light' | 'Dark' | null>(null)
@@ -334,112 +186,23 @@ const onThemeClick = () => {
   toggleTheme()
 }
 
-const onStackChromeToggle = () => {
-  const next = !stackChromeVisible.value
-  toggleStackChrome()
-  if (!next) {
-    closeDrawer()
-    closeDropdown()
-    closeSelectionsDropdown()
-  }
-}
-
-const onBoardsToggle = () => {
-  closeSelectionsDropdown()
-  toggleDropdown()
-}
-
-const onSelectionsToggle = () => {
-  closeDropdown()
-  selectionsOpen.value = !selectionsOpen.value
-}
-
-const onSelectBoard = async (id: string) => {
-  closeDropdown()
-  closeSelectionsDropdown()
-  if (isMoodboard.value) {
-    if (id === activeBoardId.value) return
-    if (activeBoardId.value) {
-      saveActiveBoard(placements.value, strokes.value)
-    }
-    setActiveBoard(id)
-    const board = boards.value.find((entry) => entry.id === id)
-    if (board) loadBoard(board.placements, board.strokes)
-    clearActive()
-    return
-  }
-  const board = boards.value.find((entry) => entry.id === id)
-  if (!board) return
-  setActiveBoard(id)
-  loadBoard(board.placements, board.strokes)
-  openMoodboard({ reopenCart: true })
-}
-
-const onSelectSelection = (id: string) => {
-  closeSelectionsDropdown()
-  closeDropdown()
-  setActiveMoodboard(id)
-  openDrawer('selections')
-}
-
-const onNewSelection = () => {
-  closeSelectionsDropdown()
-  closeDropdown()
-  createMoodboard({ open: true, activate: true })
-  openDrawer('selections')
-}
-
-const onNewBoard = () => {
-  closeDropdown()
-  closeSelectionsDropdown()
-  if (isMoodboard.value && activeBoardId.value) {
-    saveActiveBoard(placements.value, strokes.value)
-  }
-  resetMoodboard()
-  createBoard([], [], undefined, undefined, activeMoodboardId.value || undefined)
-  loadBoard([], [])
-  clearActive()
-  openMoodboard({ reopenCart: true })
-}
-
 const onSelectionsHover = (hot: boolean) => {
-  if (!hot) clearTooltipHide('selections')
   hoverSelectionStack(hot)
 }
 
 const onSelectionsClick = () => {
-  hideTooltip('selections')
-  closeSelectionsDropdown()
-  closeDropdown()
+  closeBoardsPanel()
   openSelectionStack()
 }
 
-const onDocumentPointerDown = (event: PointerEvent) => {
-  const target = event.target as Node | null
-  if (!target) return
-  if (
-    boardsOpen.value &&
-    boardsMenuRef.value &&
-    !boardsMenuRef.value.contains(target)
-  ) {
-    closeDropdown()
+const onMyBoardsClick = () => {
+  if (boardsPanelOpen.value) {
+    closeBoardsPanel()
+    return
   }
-  if (
-    selectionsOpen.value &&
-    selectionsMenuRef.value &&
-    !selectionsMenuRef.value.contains(target)
-  ) {
-    closeSelectionsDropdown()
-  }
+  if (isOpen.value) closeDrawer()
+  openBoardsPanel()
 }
-
-onMounted(() => {
-  document.addEventListener('pointerdown', onDocumentPointerDown)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onDocumentPointerDown)
-})
 </script>
 
 <style scoped>
@@ -450,7 +213,12 @@ onBeforeUnmount(() => {
   right: 0;
   z-index: 100;
   background: transparent;
-  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background var(--theme-ms) var(--theme-ease),
+    color var(--theme-ms) var(--theme-ease);
 }
 
 .header--product-page .header__nav,
@@ -517,6 +285,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.header__phone {
+  margin-right: 0.35rem;
+  padding: 0.2rem 0;
+  font-size: var(--text-xs);
+  color: var(--red);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.header__phone:hover {
+  opacity: 0.7;
 }
 
 .header__version {

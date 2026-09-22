@@ -14,7 +14,7 @@
         class="showcase__column-shell"
       >
         <div
-          :ref="(el) => setColumnRef(slotIndex, el)"
+          :ref="(el) => setColumnRef(column.instanceId, el)"
           class="showcase__column"
           :class="{
             'showcase__column--settled': settledIndexes[slotIndex] != null,
@@ -26,7 +26,7 @@
         >
           <div
             class="showcase__track"
-            :ref="(el) => setTrackRef(slotIndex, el)"
+            :ref="(el) => setTrackRef(column.instanceId, el)"
           >
             <div
               class="showcase__spacer"
@@ -262,16 +262,16 @@
         <button
           type="button"
           class="showcase__ctrl"
-          aria-label="Save selection"
+          aria-label="Add all to collection"
           :disabled="!columnCount"
           @click="saveSelection"
         >
           <span class="showcase__ctrl-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M7 3h10v18l-5-3.5L7 21V3z" />
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
             </svg>
           </span>
-          <span class="showcase__tooltip interface" aria-hidden="true">Save</span>
+          <span class="showcase__tooltip interface" aria-hidden="true">Add all to collection</span>
         </button>
 
         <button
@@ -406,6 +406,9 @@ const canAddColumn = computed(() => columnCount.value < MAX_COLUMNS)
 
 const columnEls: (HTMLElement | null)[] = Array.from({ length: MAX_COLUMNS }, () => null)
 const trackEls: (HTMLElement | null)[] = Array.from({ length: MAX_COLUMNS }, () => null)
+/** Identity maps — index-based refs race during keyed add/remove and wipe live nodes. */
+const columnElById = new Map<string, HTMLElement>()
+const trackElById = new Map<string, HTMLElement>()
 const columnPrimed: boolean[] = Array.from({ length: MAX_COLUMNS }, () => false)
 const snapTimers: number[] = Array.from({ length: MAX_COLUMNS }, () => 0)
 const lenisBySlot: (Lenis | null)[] = Array.from({ length: MAX_COLUMNS }, () => null)
@@ -806,12 +809,25 @@ const realignAllSlotsToActive = (imageIds?: (string | null)[]) => {
   }
 }
 
-const setColumnRef = (slotIndex: number, el: unknown) => {
-  columnEls[slotIndex] = el instanceof HTMLElement ? el : null
+const setColumnRef = (instanceId: string, el: unknown) => {
+  if (el instanceof HTMLElement) columnElById.set(instanceId, el)
+  else columnElById.delete(instanceId)
+  syncSlotElsFromIds()
 }
 
-const setTrackRef = (slotIndex: number, el: unknown) => {
-  trackEls[slotIndex] = el instanceof HTMLElement ? el : null
+const setTrackRef = (instanceId: string, el: unknown) => {
+  if (el instanceof HTMLElement) trackElById.set(instanceId, el)
+  else trackElById.delete(instanceId)
+  syncSlotElsFromIds()
+}
+
+/** Rebuild positional el arrays from identity maps after every keyed list change. */
+const syncSlotElsFromIds = () => {
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    const id = columns.value[i]?.instanceId
+    columnEls[i] = id ? columnElById.get(id) ?? null : null
+    trackEls[i] = id ? trackElById.get(id) ?? null : null
+  }
 }
 
 const clearSnapTimer = (slotIndex: number) => {
@@ -893,11 +909,9 @@ const findCenteredKey = (slotIndex: number) =>
 
 const scrollLimits = (slotIndex: number) => {
   const el = columnEls[slotIndex]
-  const lenis = lenisBySlot[slotIndex]
   if (!el) return { min: 0, max: 0 }
-  const nativeMax = Math.max(0, el.scrollHeight - el.clientHeight)
-  const max = Math.max(nativeMax, lenis?.limit ?? 0)
-  return { min: 0, max }
+  // Live DOM only — stale lenis.limit after add/remove breaks snap targets.
+  return { min: 0, max: Math.max(0, el.scrollHeight - el.clientHeight) }
 }
 
 const currentScroll = (slotIndex: number) => {
@@ -1700,9 +1714,17 @@ const startRaf = () => {
 
 const initLenisForSlot = (slotIndex: number) => {
   if (!import.meta.client || !columns.value[slotIndex]) return
+  syncSlotElsFromIds()
   const wrapper = columnEls[slotIndex]
   const content = trackEls[slotIndex]
   if (!wrapper || !content) return
+
+  // If this wrapper already has Lenis under another slot, drop that first.
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    if (i !== slotIndex && lenisHostEls[i] === wrapper) {
+      destroyLenisSlot(i)
+    }
+  }
 
   intentAbort[slotIndex]?.abort()
   const abort = new AbortController()
@@ -1756,37 +1778,27 @@ const initLenisForSlot = (slotIndex: number) => {
 }
 
 /**
- * Keep Lenis on unchanged column wrappers so add/remove doesn't zero every reel.
- * Re-inits only when the slot is new or the host element remapped.
+ * Remount Lenis for every live column. Partial reuse races when keyed columns
+ * shift slots — a destroy on the old index can tear down the new binding.
  */
-const syncLenisToColumns = () => {
+const remountLenisForColumns = () => {
   if (!import.meta.client) return
-  const count = columns.value.length
+  syncSlotElsFromIds()
+  destroyLenis()
 
-  for (let i = count; i < MAX_COLUMNS; i += 1) {
-    destroyLenisSlot(i)
-  }
-
-  for (let i = 0; i < count; i += 1) {
-    const wrapper = columnEls[i]
-    const content = trackEls[i]
-    if (!wrapper || !content) continue
-    if (lenisBySlot[i] && lenisHostEls[i] === wrapper) continue
+  for (let i = 0; i < columns.value.length; i += 1) {
     initLenisForSlot(i)
   }
 
   startRaf()
 }
 
+const syncLenisToColumns = () => {
+  remountLenisForColumns()
+}
+
 const initLenis = () => {
-  if (!import.meta.client) return
-  destroyLenis()
-
-  for (let i = 0; i < MAX_COLUMNS; i += 1) {
-    if (columns.value[i]) initLenisForSlot(i)
-  }
-
-  startRaf()
+  remountLenisForColumns()
 }
 
 const clearInstantDim = (slotIndex: number) => {
@@ -1855,6 +1867,7 @@ const observeColumns = () => {
   resizeObserver?.disconnect()
   if (!import.meta.client || typeof ResizeObserver === 'undefined') return
 
+  syncSlotElsFromIds()
   resizeObserver = new ResizeObserver(() => {
     scheduleLayoutRealign()
   })
@@ -1939,17 +1952,24 @@ const restoreColumnsAfterLayout = (
           return
         }
 
-        // Preserve existing Lenis/scroll; only mount new or remapped slots.
-        syncLenisToColumns()
+        // Always remount Lenis after structural changes — partial reuse races
+        // when keyed wrappers shift slots and destroy tears down the new bind.
+        remountLenisForColumns()
         observeColumns()
 
         const ready = columns.value.every((_, i) =>
           Boolean(columnEls[i] && trackEls[i] && lenisBySlot[i]),
         )
 
-        if (!ready && attempt < 6) {
+        if (!ready && attempt < 12) {
           run(attempt + 1)
           return
+        }
+
+        if (!ready) {
+          // Last chance — refs may land one frame later.
+          remountLenisForColumns()
+          observeColumns()
         }
 
         void (async () => {
@@ -2000,10 +2020,18 @@ const addColumn = () => {
   if (!column) return
 
   const preserved = captureActiveImageIds()
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    clearSnapTimer(i)
+    snappingSlot[i] = false
+  }
+  destroyLenis()
+  stopRaf()
+
   columns.value = [...columns.value, column]
   preserved.push(column.images[0]?.id ?? null)
   const slotIndex = columns.value.length - 1
   columnPrimed[slotIndex] = false
+  syncSlotElsFromIds()
   restoreColumnsAfterLayout(preserved, { settleNewInstant: true })
 }
 
@@ -2017,10 +2045,18 @@ const onUploadChange = (event: Event) => {
   const src = URL.createObjectURL(file)
   const column = createUploadColumn(file, src)
   const preserved = captureActiveImageIds()
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    clearSnapTimer(i)
+    snappingSlot[i] = false
+  }
+  destroyLenis()
+  stopRaf()
+
   columns.value = [...columns.value, column]
   preserved.push(column.images[0]?.id ?? null)
   const slotIndex = columns.value.length - 1
   columnPrimed[slotIndex] = false
+  syncSlotElsFromIds()
   restoreColumnsAfterLayout(preserved, { settleNewInstant: true })
 }
 
@@ -2039,7 +2075,12 @@ const removeColumn = (slotIndex: number) => {
     lastUserIntentAt[i] = 0
   }
 
+  // Tear Lenis down before the keyed list shifts so destroy can't hit a remapped host.
+  destroyLenis()
+  stopRaf()
+
   columns.value = columns.value.filter((_, index) => index !== slotIndex)
+  syncSlotElsFromIds()
 
   // Clear trailing UI state; applyActiveImageIds remaps the live slots.
   const nextPads = spacerPads.value.slice()
@@ -2059,7 +2100,6 @@ const removeColumn = (slotIndex: number) => {
   surrenderDim.value = nextSurrender
 
   if (!columns.value.length) {
-    destroyLenis()
     applyActiveImageIds([])
     return
   }
@@ -2128,7 +2168,7 @@ onBeforeUnmount(() => {
   --showcase-item-gap: 0px;
   --showcase-slots: 4;
   --showcase-aspect: 0.8;
-  --showcase-dim-opacity: 0.15;
+  --showcase-dim-opacity: 0;
   --showcase-dim-delay: 0.2s;
   --showcase-dim-duration: 0.45s;
   --showcase-surrender-dim-delay: 0.55s;
@@ -2677,10 +2717,16 @@ onBeforeUnmount(() => {
 
 .showcase__wash {
   position: fixed;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: var(--selections-panel-width);
+  right: var(--boards-panel-width);
   z-index: 4;
   pointer-events: none;
   mix-blend-mode: color;
+  transition:
+    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .visually-hidden {
@@ -2746,7 +2792,10 @@ onBeforeUnmount(() => {
 
 .showcase__surrender {
   position: fixed;
-  left: 50%;
+  left: calc(
+    var(--selections-panel-width) +
+      (100vw - var(--selections-panel-width) - var(--boards-panel-width)) / 2
+  );
   bottom: var(--showcase-bottom-inset, 60px);
   z-index: 20;
   box-sizing: border-box;
@@ -2763,7 +2812,11 @@ onBeforeUnmount(() => {
   letter-spacing: 0.04em;
   cursor: pointer;
   transform: translateX(-50%);
-  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+  transition:
+    left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .showcase__surrender:hover:not(:disabled),

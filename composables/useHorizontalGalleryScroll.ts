@@ -227,11 +227,23 @@ export function useHorizontalGalleryScroll({
       scrollTrigger = timeline.scrollTrigger ?? null
     }, section)
 
+    // Re-observe after init — refs may have been null on mount.
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      if (track) resizeObserver.observe(track)
+      if (pin) resizeObserver.observe(pin)
+      if (title) resizeObserver.observe(title)
+      if (itemsRef?.value) resizeObserver.observe(itemsRef.value)
+    }
+
     ScrollTrigger.refresh()
     resetPinSpacerWidth(scrollTrigger)
     applyProgress(gsap, scrollTrigger?.progress ?? 0)
     section.classList.add('is--horizontal-gallery-ready')
+    bindImageLoadRefresh(section)
+  }
 
+  function bindImageLoadRefresh(section: HTMLElement) {
     section.querySelectorAll('img').forEach((image) => {
       if (image.complete) return
       image.addEventListener('load', refresh, { once: true })
@@ -239,12 +251,18 @@ export function useHorizontalGalleryScroll({
   }
 
   function refresh() {
-    if (!scrollTrigger) return
+    if (!enabled.value) return
+    // Images / sections can land after a zero-width first pass — remount if needed.
+    if (!scrollTrigger) {
+      void init()
+      return
+    }
     scrollTrigger.refresh()
     resetPinSpacerWidth(scrollTrigger)
     if (gsapInstance) {
       applyProgress(gsapInstance, scrollTrigger.progress ?? 0)
     }
+    if (sectionRef.value) bindImageLoadRefresh(sectionRef.value)
   }
 
   function cleanup({ resetVisualState = true } = {}) {

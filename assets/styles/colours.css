@@ -25,10 +25,23 @@
   --bucket-push: 0px;
   --boards-rail-push: 0px;
   --selections-panel-width: 0px;
+  /* Board builder right rail — matches ProductIndexRail */
+  --boards-panel-open-width: min(18vw, 280px);
+  --boards-panel-width: 0px;
 }
 
 html.selections-panel-hidden {
   --selections-panel-width: 0px;
+}
+
+html.boards-panel-open {
+  --boards-panel-width: var(--boards-panel-open-width);
+}
+
+@media (max-width: 999px) {
+  html.boards-panel-open {
+    --boards-panel-width: 0px;
+  }
 }
 
 html.bucket-push {
@@ -48,7 +61,7 @@ html.dark {
   --warm-white: #1f1c18;
   --sand: #2a2621;
   --stone: #6b635a;
-  --charcoal: #f2ecdf;
+  --charcoal: #f1ede4;
   --black: #faf7f2;
   --slate: #c8c0b6;
   --accent: #c4a574;

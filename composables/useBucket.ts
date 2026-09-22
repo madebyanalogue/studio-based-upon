@@ -1064,11 +1064,11 @@ export const useBucket = () => {
     // Always release the composer lock; cart stage keeps its own if still up
     if (wasOpen) unlockPageScroll()
     if (opts?.skipCartReturn) {
-      panelTab.value = 'boards'
-      isOpen.value = true
+      // Dismiss to the page — same idea as closing the cart (no boards cart return)
+      isOpen.value = false
       return
     }
-    // Always restore the boards cart (not the underlying page)
+    // Legacy: restore the boards cart
     panelTab.value = 'boards'
     if (moodboardCloseReturnHandler) {
       await moodboardCloseReturnHandler()
