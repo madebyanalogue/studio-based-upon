@@ -13,7 +13,7 @@
 const { buckets, page } = await useShowcaseCatalog()
 
 useHead(() => ({
-  title: 'Curate — Studio Based Upon',
+  title: page.value?.seoTitle || 'Curate — Studio Based Upon',
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
