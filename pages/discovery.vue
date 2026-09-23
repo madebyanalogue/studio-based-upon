@@ -12,10 +12,9 @@
 <script setup lang="ts">
 const EXCLUDED_TYPES = new Set(['spirit'])
 
-const homeQuery = `*[_type == "homePage"][0] {
+const homeQuery = `*[_type == "infiniteSliderPage"][0] {
   seoTitle,
-  seoDescription,
-  introText
+  seoDescription
 }`
 
 const { discoveryItems: catalogItems } = await useLibraryCatalog()
@@ -23,13 +22,13 @@ const { discoveryItems: catalogItems } = await useLibraryCatalog()
 const discoveryItems = computed(() =>
   catalogItems.value.filter((item) => {
     const keys = [item.category, ...(item.categories || [])]
-      .map((value) => String(value || '').toLowerCase().replace(/[^a-z]/g, ''))
+      .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z]/g, ''))
       .filter(Boolean)
     return !keys.some((key) => EXCLUDED_TYPES.has(key))
   }),
 )
 
-const { data: homeData } = await useAsyncData('homePage', () =>
+const { data: homeData } = await useAsyncData('discoveryPageSeo', () =>
   $fetch('/api/sanity/query', { method: 'POST', body: { query: homeQuery } })
     .then((r: { result?: unknown }) => r?.result ?? null)
     .catch(() => null),

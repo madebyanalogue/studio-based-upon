@@ -2,77 +2,52 @@
   <div
     class="pdp-index"
     :class="{
-      'pdp-index--hidden': !indexRailVisible,
       'pdp-index--chrome': pdpChromeVisible,
+      'pdp-index--index-hidden': !indexRailVisible,
+      'pdp-index--related-hidden': !relatedRailVisible,
+      'pdp-index--exiting': closingFlip,
     }"
   >
     <div
-      class="pdp-index__rail"
+      class="pdp-index__rail pdp-index__rail--left"
       aria-label="Product index"
       :aria-hidden="!indexRailVisible ? 'true' : undefined"
     >
-      <div class="pdp-index__toolbar pdp__related-toolbar interface">
-        <div class="pdp-index__tabs" role="tablist" aria-label="Index filter">
-          <button
-            type="button"
-            role="tab"
-            class="pdp-index__tab"
-            :class="{ 'pdp-index__tab--active': indexRailVisible && !relatedFilterOn }"
-            :aria-selected="!relatedFilterOn"
-            @click="showAllProducts"
-          >
-            All
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="pdp-index__tab"
-            :class="{ 'pdp-index__tab--active': indexRailVisible && relatedFilterOn }"
-            :aria-selected="relatedFilterOn"
-            :disabled="!canFilter && !relatedFilterOn"
-            @click="showRelatedProducts"
-          >
-            Related
-          </button>
-        </div>
-      </div>
-
       <div
-        ref="stripRef"
+        ref="indexStripRef"
         class="pdp-index__strip"
         data-lenis-prevent
-        @scroll.passive="onStripScroll"
       >
-        <div
-          v-for="item in indexItems"
-          :key="item._id"
-          class="pdp-index__tile"
-          :class="{
-            'pdp-index__tile--active': item.slug === slug,
-            'pdp-index__tile--saved': isItemSaved(item),
-            'pdp-index__tile--hidden':
-              relatedFilterOn && frozenRelatedIds && !frozenRelatedIds.has(item._id),
-          }"
-        >
-          <button
-            type="button"
-            class="pdp-index__tile-media"
-            :aria-label="`View ${item.title}`"
-            :aria-current="item.slug === slug ? 'page' : undefined"
-            :tabindex="indexRailVisible ? undefined : -1"
-            @click="onIndexClick(item)"
+        <div ref="indexTrackRef" class="pdp-index__strip-track">
+          <div
+            v-for="item in indexItems"
+            :key="`index-${item._id}`"
+            class="pdp-index__tile"
+            :class="{
+              'pdp-index__tile--active': item.slug === slug,
+              'pdp-index__tile--saved': isItemSaved(item),
+            }"
           >
-            <span
-              class="pdp-index__frame"
-              :class="`pdp-index__frame--${item.orientation}`"
-            >
-              <img
-                v-if="item.imageUrl"
-                class="pdp-index__tile-image"
-                :src="item.imageUrl"
-                :alt="item.title"
-                loading="lazy"
-                draggable="false"
+            <div class="pdp-index__tile-media">
+              <span
+                class="pdp-index__frame"
+                :class="`pdp-index__frame--${item.orientation}`"
+              >
+                <img
+                  class="pdp-index__tile-image"
+                  :src="item.imageUrl || undefined"
+                  :alt="item.title"
+                  loading="lazy"
+                  draggable="false"
+                />
+              </span>
+              <button
+                type="button"
+                class="pdp-index__tile-hit"
+                :aria-label="`View ${item.title}`"
+                :aria-current="item.slug === slug ? 'page' : undefined"
+                :tabindex="indexRailVisible ? undefined : -1"
+                @click="onIndexClick(item)"
               />
               <AddButton
                 class="pdp-index__add"
@@ -84,28 +59,119 @@
                 "
                 @click.stop="onToggleSave(item, $event)"
               />
-            </span>
-          </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="pdp-index__reveals">
+    <div class="pdp-index__reveals pdp-index__reveals--left">
       <button
         type="button"
         class="pdp-index__reveal interface"
-        :aria-label="indexModeActive ? 'Hide index' : 'Show product index'"
+        :aria-label="indexRailVisible ? 'Hide index' : 'Show product index'"
+        :aria-pressed="indexRailVisible"
         @click="toggleIndexMode"
       >
-        {{ indexModeActive ? 'Hide' : 'Index' }}
+        {{ indexRailVisible ? 'Hide Index' : 'Index' }}
       </button>
+    </div>
+
+    <div v-if="hasSpiritGallery" class="pdp-index__reveals pdp-index__reveals--center">
+      <button
+        type="button"
+        class="pdp-index__reveal interface"
+        :class="{ 'pdp-index__reveal--on': spiritMode }"
+        :aria-label="spiritMode ? 'Hide spirit imagery' : 'Show spirit imagery'"
+        :aria-pressed="spiritMode ? 'true' : 'false'"
+        @click="requestSpiritToggle"
+      >
+        Spirit
+      </button>
+    </div>
+
+    <div class="pdp-index__reveals pdp-index__reveals--right">
+      <button
+        type="button"
+        class="pdp-index__reveal interface"
+        :class="{ 'pdp-index__reveal--muted': !canFilter && !relatedRailVisible }"
+        :aria-label="
+          relatedRailVisible ? 'Hide more like this' : 'Show more like this'
+        "
+        :aria-pressed="relatedRailVisible"
+        :disabled="!canFilter && !relatedRailVisible"
+        @click="toggleRelatedMode"
+      >
+        {{ relatedRailVisible ? 'Hide Related' : 'More like this' }}
+      </button>
+    </div>
+
+    <div
+      class="pdp-index__rail pdp-index__rail--right"
+      aria-label="More like this"
+      :aria-hidden="!relatedRailVisible ? 'true' : undefined"
+    >
+      <div
+        ref="relatedStripRef"
+        class="pdp-index__strip"
+        data-lenis-prevent
+        @scroll.passive="onRelatedStripScroll"
+      >
+        <div
+          v-for="item in relatedItems"
+          :key="`related-${item._id}`"
+          class="pdp-index__tile"
+          :class="{
+            'pdp-index__tile--active': item.slug === slug,
+            'pdp-index__tile--saved': isItemSaved(item),
+          }"
+        >
+          <div class="pdp-index__tile-media">
+            <span
+              class="pdp-index__frame"
+              :class="`pdp-index__frame--${item.orientation}`"
+            >
+              <img
+                class="pdp-index__tile-image"
+                :src="item.imageUrl || undefined"
+                :alt="item.title"
+                loading="lazy"
+                draggable="false"
+              />
+            </span>
+            <button
+              type="button"
+              class="pdp-index__tile-hit"
+              :aria-label="`View ${item.title}`"
+              :aria-current="item.slug === slug ? 'page' : undefined"
+              :tabindex="relatedRailVisible ? undefined : -1"
+              @click="onIndexClick(item)"
+            />
+            <AddButton
+              class="pdp-index__add"
+              :active="isItemSaved(item)"
+              :label="
+                isItemSaved(item)
+                  ? `Remove ${item.title} from selection`
+                  : `Add ${item.title} to selection`
+              "
+              @click.stop="onToggleSave(item, $event)"
+            />
+          </div>
+        </div>
+        <p v-if="!relatedItems.length" class="pdp-index__empty interface">
+          No related products
+        </p>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import Lenis from 'lenis'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+import { productCoverFrame } from '~/composables/productImages'
 import { productSlug } from '~/composables/useProductCatalog'
 
 const props = defineProps<{
@@ -156,7 +222,10 @@ const indexItems = computed((): IndexCard[] =>
         _id: item._id,
         title: item.title,
         slug,
-        imageUrl: imageUrl(item.image, IMAGE_WIDTH.thumb),
+        imageUrl: (() => {
+          const cover = productCoverFrame(item)
+          return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
+        })(),
         typeLabel: typeLabelFor(item.category || item.type),
         orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
       }
@@ -170,58 +239,132 @@ const overlapCount = (a: string[] = [], b: string[] = []) => {
   return b.reduce((n, v) => n + (set.has(v.toLowerCase()) ? 1 : 0), 0)
 }
 
-/**
- * Session state — survives remounts so scroll / filter aren't lost when the
- * page or overlay chrome refreshes around the rail.
- */
-const stripScrollTop = useState('pdp-index-rail-scroll', () => 0)
-const relatedFilterOn = useState('pdp-index-related-on', () => false)
-const frozenRelatedIdList = useState<string[] | null>('pdp-index-frozen-ids', () => null)
-const stripRef = ref<HTMLElement | null>(null)
+const indexStripScrollTop = useState('pdp-index-rail-scroll', () => 0)
+const relatedStripScrollTop = useState('pdp-related-rail-scroll', () => 0)
+const indexStripRef = ref<HTMLElement | null>(null)
+const indexTrackRef = ref<HTMLElement | null>(null)
+const relatedStripRef = ref<HTMLElement | null>(null)
 
-const frozenRelatedIds = computed(() =>
-  frozenRelatedIdList.value ? new Set(frozenRelatedIdList.value) : null,
-)
+let indexLenis: Lenis | null = null
+let indexLenisRaf = 0
+let indexResizeObserver: ResizeObserver | null = null
 
-const onStripScroll = () => {
-  if (!stripRef.value) return
-  stripScrollTop.value = stripRef.value.scrollTop
+const createRailLenis = (wrapper: HTMLElement, content: HTMLElement) =>
+  new Lenis({
+    wrapper,
+    content,
+    orientation: 'vertical',
+    gestureOrientation: 'vertical',
+    smoothWheel: true,
+    syncTouch: true,
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.55,
+    wheelMultiplier: 1.4,
+    lerp: 0.07,
+    overscroll: false,
+    // Strip keeps data-lenis-prevent for the page scroller; don't self-block.
+    prevent: () => false,
+  })
+
+const onIndexStripScroll = () => {
+  indexStripScrollTop.value =
+    indexLenis?.animatedScroll ?? indexStripRef.value?.scrollTop ?? 0
 }
 
-const restoreStripScroll = () => {
-  const el = stripRef.value
+const onRelatedStripScroll = () => {
+  if (!relatedStripRef.value) return
+  relatedStripScrollTop.value = relatedStripRef.value.scrollTop
+}
+
+const destroyIndexLenis = () => {
+  indexResizeObserver?.disconnect()
+  indexResizeObserver = null
+  if (indexLenisRaf) {
+    cancelAnimationFrame(indexLenisRaf)
+    indexLenisRaf = 0
+  }
+  indexLenis?.destroy()
+  indexLenis = null
+}
+
+const tickIndexLenis = (time: number) => {
+  indexLenis?.raf(time)
+  indexLenisRaf = requestAnimationFrame(tickIndexLenis)
+}
+
+const initIndexLenis = () => {
+  if (!import.meta.client) return
+  const wrapper = indexStripRef.value
+  const content = indexTrackRef.value
+  if (!wrapper || !content) return
+
+  destroyIndexLenis()
+  indexLenis = createRailLenis(wrapper, content)
+  indexLenis.on('scroll', onIndexStripScroll)
+  indexLenis.resize()
+  indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
+  if (!indexRailVisible.value) indexLenis.stop()
+  if (typeof ResizeObserver !== 'undefined') {
+    indexResizeObserver = new ResizeObserver(() => indexLenis?.resize())
+    indexResizeObserver.observe(content)
+  }
+  indexLenisRaf = requestAnimationFrame(tickIndexLenis)
+}
+
+const restoreIndexStripScroll = () => {
+  if (indexLenis) {
+    indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
+    return
+  }
+  const el = indexStripRef.value
   if (!el) return
-  el.scrollTop = stripScrollTop.value
+  el.scrollTop = indexStripScrollTop.value
 }
 
-/** Soft-loaded product for related picks — never remounts the rail. */
-const activeProduct = shallowRef<Awaited<ReturnType<typeof fetchProduct>>>(null)
-let relatedToken = 0
+const restoreRelatedStripScroll = () => {
+  const el = relatedStripRef.value
+  if (!el) return
+  el.scrollTop = relatedStripScrollTop.value
+}
+
+// Payload-backed so SSR HTML and the first client VDOM share the same related
+// tile list (local shallowRef + async watch was hydrating empty vs full).
+const { data: activeProduct } = await useAsyncData(
+  () => `pdp-rail-product-${props.slug}`,
+  () => fetchProduct(props.slug),
+  { watch: [() => props.slug] },
+)
 
 watch(
   () => props.slug,
-  async (slug) => {
-    const top = stripRef.value?.scrollTop ?? stripScrollTop.value
-    stripScrollTop.value = top
-
-    const token = ++relatedToken
-    const next = await fetchProduct(slug)
-    if (token !== relatedToken) return
-    activeProduct.value = next
+  async () => {
+    const indexTop =
+      indexLenis?.animatedScroll ??
+      indexStripRef.value?.scrollTop ??
+      indexStripScrollTop.value
+    indexStripScrollTop.value = indexTop
+    const relatedTop =
+      relatedStripRef.value?.scrollTop ?? relatedStripScrollTop.value
+    relatedStripScrollTop.value = relatedTop
 
     if (!import.meta.client) return
     await nextTick()
-    restoreStripScroll()
-    requestAnimationFrame(() => restoreStripScroll())
+    indexLenis?.resize()
+    restoreIndexStripScroll()
+    restoreRelatedStripScroll()
+    requestAnimationFrame(() => {
+      restoreIndexStripScroll()
+      restoreRelatedStripScroll()
+    })
   },
-  { immediate: true },
 )
 
 const libraryItem = computed(() =>
   libraryItems.value.find((item) => productSlug(item) === props.slug),
 )
 
-/** Related ids for the *current* product — used only when freezing a filter. */
+/** Related ids for the *current* product — includes the active item. */
 const computeRelatedIdsForActive = () => {
   const ids = new Set<string>()
   const product = activeProduct.value
@@ -266,54 +409,114 @@ const computeRelatedIdsForActive = () => {
 
 const canFilter = computed(() => computeRelatedIdsForActive().size > 1)
 
+const relatedItems = computed((): IndexCard[] => {
+  const ids = frozenRelatedIdList.value
+    ? new Set(frozenRelatedIdList.value)
+    : computeRelatedIdsForActive()
+  if (!ids.size) return []
+  // Omit the open product — it already fills the gallery.
+  return indexItems.value.filter(
+    (item) => ids.has(item._id) && item.slug !== props.slug,
+  )
+})
+
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
   default: () => true,
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
 
+const syncIndexRailDom = () => {
+  if (!import.meta.client) return
+  document.documentElement.classList.toggle(
+    'pdp-index-rail-closed',
+    !indexRailVisible.value,
+  )
+}
+
+watch(indexRailVisible, syncIndexRailDom, { immediate: true })
+
+watch(indexRailVisible, (visible) => {
+  if (!indexLenis) return
+  if (visible) {
+    indexLenis.start()
+    indexLenis.resize()
+  } else {
+    indexLenis.stop()
+  }
+})
+
+const {
+  relatedRailVisible,
+  frozenRelatedIdList,
+  syncRelatedRailDom,
+  closeRelatedRail,
+} = usePdpRelatedRail()
+
 /** Shared with ProductDetail — rail chrome fades with the PDP sides. */
 const pdpChromeVisible = useState('pdp-chrome-visible', () => false)
+const { closingFlip } = useProductOverlay()
 
-const indexModeActive = computed(
-  () => indexRailVisible.value && !relatedFilterOn.value,
-)
-const relatedModeActive = computed(
-  () => indexRailVisible.value && relatedFilterOn.value,
-)
+/** Shared with ProductDetail — Spirit imagery gallery mode. */
+const spiritMode = useState('pdp-spirit-mode', () => false)
+const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
 
-const showAllProducts = () => {
-  relatedFilterOn.value = false
-  frozenRelatedIdList.value = null
-  indexRailVisible.value = true
-}
+const hasSpiritGallery = computed(() => {
+  const items = activeProduct.value?.spiritGallery
+  return Array.isArray(items) && items.length > 0
+})
 
-const showRelatedProducts = () => {
-  const ids = computeRelatedIdsForActive()
-  if (ids.size <= 1) return
-  frozenRelatedIdList.value = [...ids]
-  relatedFilterOn.value = true
-  indexRailVisible.value = true
-}
-
-const hideIndexRail = () => {
-  indexRailVisible.value = false
+const requestSpiritToggle = () => {
+  if (!hasSpiritGallery.value) return
+  spiritToggleRequest.value += 1
 }
 
 const toggleIndexMode = () => {
-  if (indexModeActive.value) hideIndexRail()
-  else showAllProducts()
+  indexRailVisible.value = !indexRailVisible.value
 }
 
 const toggleRelatedMode = () => {
-  if (relatedModeActive.value) hideIndexRail()
-  else showRelatedProducts()
+  if (relatedRailVisible.value) {
+    closeRelatedRail()
+    return
+  }
+  const ids = computeRelatedIdsForActive()
+  if (!ids.size) return
+  frozenRelatedIdList.value = [...ids]
+  relatedRailVisible.value = true
+  syncRelatedRailDom()
 }
+
+watch(
+  relatedRailVisible,
+  () => {
+    syncRelatedRailDom()
+  },
+  { immediate: true },
+)
+
+// Soft product swaps must keep the stack push if More like this stays open.
+watch(
+  () => props.slug,
+  () => {
+    if (relatedRailVisible.value) syncRelatedRailDom()
+  },
+)
+
+onBeforeUnmount(() => {
+  destroyIndexLenis()
+  // Only clear the document push when related was closed already, or when there
+  // is no overlay session left. Avoid stripping the class while related is still
+  // open — remount races were snapping the stack without swapping the PDP.
+  if (!import.meta.client) return
+  if (relatedRailVisible.value) return
+  document.documentElement.classList.remove('pdp-related-rail-open')
+})
 
 const onIndexClick = (item: IndexCard) => {
   if (item.slug === props.slug) return
-  // Capture scroll before navigate in case the host remounts
-  onStripScroll()
+  onIndexStripScroll()
+  onRelatedStripScroll()
   emit('navigate', item.slug)
 }
 
@@ -337,38 +540,38 @@ const onToggleSave = (item: IndexCard, event?: MouseEvent) => {
 }
 
 onMounted(() => {
-  nextTick(() => restoreStripScroll())
+  syncIndexRailDom()
+  syncRelatedRailDom()
+  requestAnimationFrame(() => {
+    document.documentElement.classList.add('pdp-rail-motion-ready')
+  })
+  nextTick(() => {
+    initIndexLenis()
+    restoreIndexStripScroll()
+    restoreRelatedStripScroll()
+  })
 })
 </script>
 
 <style scoped>
 .pdp-index {
   --index-tabs-height: 2.25rem;
-  --index-rail-width: min(18vw, 280px);
-  --index-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  --index-rail-width: var(--pdp-rail-open-width);
+  --index-motion: var(--pdp-rail-motion);
   --index-chrome-motion: 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   --rail-padding: 35px;
+  --rail-padding: 20px;
 
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 110;
-  width: var(--index-rail-width);
   pointer-events: none;
   opacity: 0;
-  transform: translateX(0);
-  transition:
-    opacity var(--index-chrome-motion),
-    transform var(--index-motion);
+  transition: opacity var(--index-chrome-motion);
 }
 
 .pdp-index--chrome {
   opacity: 1;
-}
-
-.pdp-index--hidden {
-  transform: translateX(-100%);
 }
 
 .pdp-index:not(.pdp-index--chrome) .pdp-index__rail,
@@ -377,80 +580,96 @@ onMounted(() => {
 }
 
 .pdp-index__rail {
-  position: relative;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
+  width: var(--index-rail-width);
   overflow: hidden;
-  background: color-mix(in srgb, var(--cream) 80%, transparent);
+  background: color-mix(in srgb,var(--cream) 80%,transparent);
   backdrop-filter: blur(15px);
   pointer-events: auto;
+  /* Position follows html @property lengths; close exit adds transform */
+  transition: none;
 }
 
-.pdp-index--hidden .pdp-index__rail {
+.pdp-index__rail--left {
+  left: calc(var(--pdp-index-rail-width) - var(--index-rail-width));
+  border-right: 1px solid var(--grid-line);
+  transform: translateX(0);
+}
+
+.pdp-index--index-hidden .pdp-index__rail--left {
   pointer-events: none;
 }
 
-.pdp-index__toolbar {
-  position: relative;
-  z-index: 2;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.75rem;
-  padding: 0;
-  border-bottom: 1px solid var(--grid-line);
+.pdp-index__rail--right {
+  right: calc(var(--pdp-related-rail-width) - var(--index-rail-width));
+  border-left: 1px solid var(--grid-line);
+  transform: translateX(0);
 }
 
-.pdp-index__tabs {
-  display: flex;
-  align-items: center;
-  gap: 0rem;
-  min-width: 0;
+.pdp-index--related-hidden .pdp-index__rail--right {
+  pointer-events: none;
 }
 
-.pdp-index__tab {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.2s ease;
-  height: var(--index-tabs-height);
-  border-right: 1px solid var(--grid-line);
-  padding: 0px calc(var(--rail-padding) / 2);
+/* Close: rails slide off before the flyer / backdrop */
+.pdp-index--exiting .pdp-index__rail {
+  transition: transform var(--index-motion);
+  pointer-events: none;
 }
 
-.pdp-index__tab:hover {
-  color: var(--charcoal);
+.pdp-index--exiting .pdp-index__rail--left {
+  transform: translateX(-110%);
 }
 
-.pdp-index__tab--active {
-  color: var(--charcoal);
+.pdp-index--exiting .pdp-index__rail--right {
+  transform: translateX(110%);
 }
 
-.pdp-index__tab:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+.pdp-index--exiting .pdp-index__reveals {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
 }
 
 .pdp-index__reveals {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(100% + 20px);
   z-index: 111;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
   gap: 20px;
+  /* Column is full-height — only the buttons capture clicks so the
+     gallery heart (top-right of the frame) stays reachable */
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.pdp-index__reveals .pdp-index__reveal {
   pointer-events: auto;
+}
+
+.pdp-index__reveals--left {
+  left: calc(var(--pdp-index-rail-width) + 20px);
+  align-items: flex-start;
+}
+
+.pdp-index__reveals--center {
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+.pdp-index__reveals--right {
+  right: calc(var(--pdp-related-rail-width) + 20px);
+  align-items: flex-end;
 }
 
 .pdp-index__reveal {
@@ -460,30 +679,30 @@ onMounted(() => {
   background: transparent;
   font-size: var(--text-sm);
   color: #fff;
-  text-decoration: underline;
-  text-underline-offset: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
 
 .pdp-index__reveal:hover:not(:disabled) {
-  text-decoration-thickness: 2px;
+  color: #fff;
 }
 
-.pdp-index__reveal:disabled {
+.pdp-index__reveal--on {
+  color: #fff;
+}
+
+.pdp-index__reveal:disabled,
+.pdp-index__reveal--muted:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
 
 .pdp-index__strip {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
   flex: 1;
   min-height: 0;
-  width: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
@@ -491,8 +710,19 @@ onMounted(() => {
   overscroll-behavior: contain;
 }
 
+.pdp-index__strip-track {
+  display: block;
+  width: 100%;
+}
+
 .pdp-index__strip::-webkit-scrollbar {
   display: none;
+}
+
+.pdp-index__empty {
+  margin: 2rem var(--rail-padding);
+  color: var(--muted);
+  font-size: var(--text-xs);
 }
 
 .pdp-index__tile {
@@ -506,30 +736,43 @@ onMounted(() => {
   border-bottom: 1px solid var(--grid-line);
 }
 
-.pdp-index__tile--hidden {
-  display: none;
+.pdp-index__tile--active {
+  opacity: 0.2;
 }
 
 .pdp-index__tile-media {
   position: relative;
   display: block;
-  aspect-ratio: 1;
+  aspect-ratio: var(--rail-aspect);
   width: 100%;
   height: auto;
   max-height: none;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.pdp-index__tile-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   line-height: 0;
-  overflow: hidden;
 }
 
 .pdp-index__frame {
   position: absolute;
   display: block;
   line-height: 0;
+  pointer-events: none;
 }
 
 .pdp-index__frame--portrait {
@@ -550,6 +793,11 @@ onMounted(() => {
   max-height: 100%;
   aspect-ratio: 3 / 2;
   transform: translate(-50%, -50%);
+}
+
+.pdp-index__frame--landscape,
+.pdp-index__frame--portrait {
+  aspect-ratio: var(--rail-aspect);
 }
 
 .pdp-index__tile-image {

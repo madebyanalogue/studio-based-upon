@@ -105,6 +105,26 @@ onUnmounted(() => {
   right: var(--boards-panel-width);
   height: 100dvh;
   z-index: 320; /* above cart stage; selection rail rises to 340 while PDP is open */
+  /* Always dark UI — independent of site theme */
+  color-scheme: dark;
+  --cream: #1a1a1a;
+  --warm-white: #1f1c18;
+  --sand: #2a2621;
+  --stone: #6b635a;
+  --charcoal: #f1ede4;
+  --black: #faf7f2;
+  --slate: #c8c0b6;
+  --accent: #c4a574;
+  --grid-line: rgba(255, 255, 255, 0.1);
+  --handwritten-color: var(--charcoal);
+  --ui-border-color: rgba(255, 255, 255, 0.14);
+  --panel-bg: rgba(31, 28, 24, 0.88);
+  --elevated-bg: #2a2621;
+  --shadow-color: rgba(0, 0, 0, 0.45);
+  --thumb-ctrl-color: var(--charcoal);
+  --thumb-ctrl-bg: var(--cream);
+  --text-color: var(--charcoal);
+  --background-color: var(--cream);
   transition:
     left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     right 0.35s cubic-bezier(0.22, 1, 0.36, 1);

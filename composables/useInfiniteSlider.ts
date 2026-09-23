@@ -14,6 +14,7 @@ export const INFINITE_SLIDER_PAGE_QUERY = `*[_type == "infiniteSliderPage"][0] {
     _key,
     title,
     tags,
+    location,
     accent,
     linkLabel,
     link,
@@ -28,6 +29,7 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
   {
     title: 'Studioform',
     tags: ['Studio & Movement', 'Fitness & Method', 'Space & Design'],
+    location: 'London, UK',
     accent: '#a9d0f5',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
@@ -37,6 +39,7 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
   {
     title: 'Nightbloom',
     tags: ['Editorial & Portrait', 'Concept & Series', 'Art & Direction'],
+    location: 'Paris, FR',
     accent: '#f5a97a',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
@@ -46,6 +49,7 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
   {
     title: 'Stillpose',
     tags: ['Movement & Wellness', 'Body & Practice', 'Brand & Identity'],
+    location: 'New York, US',
     accent: '#b7e0a0',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
@@ -55,6 +59,7 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
   {
     title: 'Matchawork',
     tags: ['Beverage & Craft', 'Content & Styling', 'Product & Story'],
+    location: 'Tokyo, JP',
     accent: '#c9a97a',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
@@ -64,6 +69,7 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
   {
     title: 'Blurface',
     tags: ['Fashion & Portrait', 'Motion & Study', 'Brand & Identity'],
+    location: 'Milan, IT',
     accent: '#e8e8e8',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
@@ -76,7 +82,7 @@ export const useInfiniteSlider = async () => {
   const { imageUrl } = useSanityImage()
 
   const { data, pending, error, refresh } = await useAsyncData(
-    'infiniteSliderPage',
+    'infiniteSliderPage-v2',
     () =>
       $fetch('/api/sanity/query', {
         method: 'POST',
@@ -118,6 +124,7 @@ export const useInfiniteSlider = async () => {
         return {
           title: String(slide.title || 'Untitled'),
           tags,
+          location: String(slide.location || '').trim() || undefined,
           accent: String(slide.accent || '#e8e8e8').trim() || '#e8e8e8',
           link,
           linkLabel: String(slide.linkLabel || 'View Full Project').trim() || 'View Full Project',

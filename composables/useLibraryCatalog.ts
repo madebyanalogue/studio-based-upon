@@ -2,8 +2,10 @@ import {
   DEMO_PRODUCTS,
   PRODUCT_TYPE_FILTERS,
   isPrecraftedItem,
+  normalizeFormTag,
   type FormalItem,
 } from './demoData'
+import { productCoverFrame, productGalleryFrames } from './productImages'
 
 export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
   _id,
@@ -18,6 +20,8 @@ export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
   "colours": colours[]->title,
   image { asset-> { _id, url, metadata { dimensions { width, height } } } },
   gallery[] { asset-> { _id, url, metadata { dimensions { width, height } } } },
+  gridRatio,
+  gridSize,
   spiritGallery[] {
     _type,
     _key,
@@ -49,8 +53,7 @@ export type LibraryItem = FormalItem & {
   externalUrl?: string
   /** width / height of the primary thumbnail image */
   aspectRatio: number
-  image: { asset?: LibraryImageAsset }
-  gallery?: { asset?: LibraryImageAsset }[]
+  gallery: { asset?: LibraryImageAsset }[]
   spiritGallery?: LibrarySpiritMedia[]
 }
 
@@ -66,9 +69,43 @@ const LEGACY_FORM_TAGS = new Set([
   'tramazite',
   'liquidmetal',
   'liquid metal',
+  'liquid-metal',
 ])
 
 const PRIMARY_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'origin'])
+
+const GRID_RATIO_PRESETS = [
+  { key: 'portrait' as const, ar: 3 / 4 },
+  { key: 'square' as const, ar: 1 },
+  { key: 'landscape' as const, ar: 4 / 3 },
+]
+
+/** Closest of portrait (3:4), square (1:1), landscape (4:3). */
+export const closestGridRatio = (
+  aspectRatio: number,
+): NonNullable<FormalItem['gridRatio']> => {
+  const ar = Number(aspectRatio)
+  if (!Number.isFinite(ar) || ar <= 0) return 'square'
+  let best: (typeof GRID_RATIO_PRESETS)[number] = GRID_RATIO_PRESETS[1]!
+  let bestDist = Infinity
+  for (const preset of GRID_RATIO_PRESETS) {
+    const dist = Math.abs(ar - preset.ar)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = preset
+    }
+  }
+  return best.key
+}
+
+export const GRID_RATIO_AR: Record<
+  NonNullable<FormalItem['gridRatio']>,
+  number
+> = {
+  portrait: 3 / 4,
+  square: 1,
+  landscape: 4 / 3,
+}
 
 const assetAspect = (asset?: LibraryImageAsset | null) => {
   const w = asset?.metadata?.dimensions?.width
@@ -93,7 +130,11 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     ((item.categories as string[] | undefined)?.[0] ?? '')
 
   const rawKey = String(rawCategory).toLowerCase().replace(/[^a-z]/g, '')
-  const isLegacyTag = LEGACY_FORM_TAGS.has(rawKey) || LEGACY_FORM_TAGS.has(String(rawCategory).toLowerCase())
+  const rawLower = String(rawCategory).toLowerCase()
+  const isLegacyTag =
+    LEGACY_FORM_TAGS.has(rawKey) ||
+    LEGACY_FORM_TAGS.has(rawLower) ||
+    LEGACY_FORM_TAGS.has(normalizeFormTag(rawCategory))
   const category = PRIMARY_TYPES.has(rawKey) ? rawKey : isLegacyTag ? 'forms' : rawKey
 
   const categories = Array.from(
@@ -108,17 +149,36 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
   const tags = Array.from(
     new Set(
       [
-        ...((item.tags as string[] | undefined) || []),
-        ...(isLegacyTag ? [rawKey === 'liquidmetal' ? 'liquidmetal' : rawKey] : []),
+        ...((item.tags as string[] | undefined) || []).map(normalizeFormTag),
+        ...(isLegacyTag ? [normalizeFormTag(rawCategory) || normalizeFormTag(rawKey)] : []),
       ].filter(Boolean),
     ),
   )
 
-  const image = item.image as LibraryItem['image']
+  const gallery = productGalleryFrames({
+    gallery: item.gallery as LibraryItem['gallery'],
+    image: item.image as { asset?: LibraryImageAsset } | undefined,
+  })
+  const cover = productCoverFrame({ gallery }) || gallery[0]
   const linkType = (item.linkType as string) || 'none'
   const series = String((item.series as string) || '').trim()
   const feature = String((item.feature as string) || '').trim()
   const id = String(item._id || '')
+
+  const aspectRatio = assetAspect(cover?.asset) ?? fallbackAspect(id || 'item')
+  const rawRatio = String(item.gridRatio || '').toLowerCase()
+  const gridRatio =
+    rawRatio === 'portrait' || rawRatio === 'square' || rawRatio === 'landscape'
+      ? (rawRatio as FormalItem['gridRatio'])
+      : closestGridRatio(aspectRatio)
+  const rawSize = String(item.gridSize || '').toLowerCase()
+  const gridSize =
+    rawSize === 'small' ||
+    rawSize === 'medium' ||
+    rawSize === 'large' ||
+    rawSize === 'full'
+      ? (rawSize as FormalItem['gridSize'])
+      : undefined
 
   return {
     _id: id,
@@ -133,9 +193,10 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     feature: feature || undefined,
     materials: (item.materials as string[]) || [],
     colours: (item.colours as string[]) || [],
-    image: image || { asset: { url: '' } },
-    aspectRatio: assetAspect(image?.asset) ?? fallbackAspect(id || 'item'),
-    gallery: (item.gallery as LibraryItem['gallery']) || [],
+    gallery: gallery.length ? gallery : [{ asset: { url: '' } }],
+    gridRatio,
+    gridSize,
+    aspectRatio,
     spiritGallery: (item.spiritGallery as LibraryItem['spiritGallery']) || [],
     linkType,
     externalUrl: item.externalUrl as string | undefined,
@@ -161,7 +222,6 @@ export const toDiscoveryItem = (item: LibraryItem) => ({
   categories: item.categories?.length ? item.categories : item.type ? [item.type] : [],
   category: item.category || item.type,
   tags: item.tags || [],
-  image: item.image,
   gallery: item.gallery || [],
   spiritGallery: item.spiritGallery || [],
   linkType: item.linkType || 'none',
@@ -178,7 +238,7 @@ export const discoveryFilterLabels = [
 ]
 
 export const useLibraryCatalog = async () => {
-  const { data, pending, error, refresh } = await useAsyncData('libraryItems-v2', () =>
+  const { data, pending, error, refresh } = await useAsyncData('libraryItems-v4', () =>
     $fetch('/api/sanity/query', { method: 'POST', body: { query: LIBRARY_QUERY } })
       .then((r: { result?: unknown }) => r?.result ?? null)
       .catch(() => null),

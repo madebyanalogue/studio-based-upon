@@ -1,4 +1,8 @@
 import { Flip } from 'gsap/Flip'
+import {
+  PDP_RELATED_RAIL_MS,
+  usePdpRelatedRail,
+} from '~/composables/usePdpRelatedRail'
 
 export type ProductOverlayOpenOptions = {
   /** Clicked thumbnail — Flip animates from / back to this element */
@@ -25,6 +29,9 @@ export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 40
 export const PRODUCT_OVERLAY_FLIP_OPEN_S = 0.42
 export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 0.4
 /** PDP chrome fade before the return flyer — keep in sync with ProductDetail CSS. */
+/** PDP chrome (index / aside / sibling frames) exit before the close flyer moves. */
+export const PRODUCT_OVERLAY_CHROME_EXIT_MS = 350
+/** UI fade after chrome has exited — kept short; chrome exit owns the wait. */
 export const PRODUCT_OVERLAY_UI_FADE_MS = 200
 
 /** Beat on the landed flyer before the cream clears, then the fade itself. */
@@ -141,9 +148,12 @@ export const useProductOverlay = () => {
 
   const open = (slug: string, options: ProductOverlayOpenOptions = {}) => {
     const alreadyOpen = !!openSlug.value
+    const { resetRelatedRail } = usePdpRelatedRail()
 
     if (import.meta.client && !alreadyOpen) {
       clearCloseArtifacts()
+      // Fresh PDP — never reopen a leftover "More like this" session.
+      resetRelatedRail()
       returnUrl.value =
         window.location.pathname + window.location.search + window.location.hash
 
@@ -167,6 +177,7 @@ export const useProductOverlay = () => {
           : 0
       returnImage.value = null
     } else if (!alreadyOpen) {
+      resetRelatedRail()
       clearFlipSource()
       pendingFlip.value = false
       closingFlip.value = false
@@ -183,12 +194,18 @@ export const useProductOverlay = () => {
       // so one Back / close returns to the original page.
       if (alreadyOpen) {
         window.history.replaceState(state, '', url)
-        // In-overlay nav — keep cream up; only ProductDetail soft-swaps content
-        restoreFlipSource()
-        clearFlipSource()
-        pendingFlip.value = false
-        closingFlip.value = false
+        // In-overlay nav — keep cream + related rail; only ProductDetail soft-swaps.
+        // Avoid toggling pending/closing flags when already settled (Transition remounts).
+        if (pendingFlip.value || closingFlip.value) {
+          restoreFlipSource()
+          clearFlipSource()
+          pendingFlip.value = false
+          closingFlip.value = false
+        }
         openImageIndex.value = 0
+        // Re-assert stack push after soft-nav (remount races used to clear it).
+        const { relatedRailVisible, syncRelatedRailDom } = usePdpRelatedRail()
+        if (relatedRailVisible.value) syncRelatedRailDom()
       } else {
         window.history.pushState(state, '', url)
         lockPageScroll()
@@ -220,6 +237,9 @@ export const useProductOverlay = () => {
 
   const finishClose = () => {
     if (!openSlug.value && !closingFlip.value) return
+
+    const { closeRelatedRail } = usePdpRelatedRail()
+    closeRelatedRail()
 
     const target = returnUrl.value || '/'
     returnUrl.value = null
@@ -260,14 +280,25 @@ export const useProductOverlay = () => {
   const close = () => {
     if (!openSlug.value || closingFlip.value) return
 
+    const { relatedRailVisible, closeRelatedRail } = usePdpRelatedRail()
+    const hadRelated = relatedRailVisible.value
+
     if (
       import.meta.client &&
       flipSourceEl &&
       document.contains(flipSourceEl)
     ) {
-      // Keep backdrop + panel cream while PDP UI fades; pendingFlip is set
-      // after that fade so the flyer doesn’t start early.
+      // Keep related rail width stable for Flip measure — chrome slides out via CSS.
+      // finishClose() clears the related push after the flyer lands.
       closingFlip.value = true
+      return
+    }
+
+    // No Flip — slide related closed with the overlay dismiss.
+    closeRelatedRail()
+
+    if (import.meta.client && hadRelated) {
+      window.setTimeout(() => finishClose(), PDP_RELATED_RAIL_MS)
       return
     }
 
@@ -277,6 +308,8 @@ export const useProductOverlay = () => {
   /** Clear overlay after browser Back — URL already changed via history. */
   const syncFromHistory = () => {
     if (!openSlug.value) return
+    const { closeRelatedRail } = usePdpRelatedRail()
+    closeRelatedRail()
     openSlug.value = null
     restoreFlipSource()
     clearFlipSource()

@@ -36,6 +36,7 @@ import type {
   InfiniteCanvasSelectPayload,
 } from '~/lib/infinite-canvas/types'
 import { productSlug } from '~/composables/useProductCatalog'
+import { productCoverFrame } from '~/composables/productImages'
 
 type DiscoveryItem = {
   _id: string
@@ -131,14 +132,15 @@ const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
     const slug = productSlug(item)
     if (!slug) continue
 
+    const cover = productCoverFrame(item)
     const remote =
-      imageUrl(item.image, 900) ||
-      getImageSrc(item.image?.asset) ||
-      (item.gallery?.[0] ? imageUrl(item.gallery[0], 900) : '')
+      (cover ? imageUrl(cover, 900) : '') ||
+      (cover?.asset ? getImageSrc(cover.asset) : '') ||
+      ''
     const url = toCanvasTextureUrl(remote)
     if (!url) continue
 
-    const dims = parseDimensions(item.image?.asset || item.gallery?.[0]?.asset)
+    const dims = parseDimensions(cover?.asset)
     media.push({
       url,
       width: dims.width,

@@ -23,6 +23,15 @@ const { data: product } = await useAsyncData(
 )
 
 const onClose = () => {
+  const { relatedRailVisible, closeRelatedRail } = usePdpRelatedRail()
+  const hadRelated = relatedRailVisible.value
+  closeRelatedRail()
+  if (hadRelated) {
+    window.setTimeout(() => {
+      router.push('/materials-and-forms')
+    }, PDP_RELATED_RAIL_MS)
+    return
+  }
   router.push('/materials-and-forms')
 }
 

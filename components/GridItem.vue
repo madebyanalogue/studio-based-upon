@@ -48,7 +48,12 @@
 <script setup lang="ts">
 import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
-import { uniqueImageUrls, randomImageIndex } from '~/composables/productImages'
+import {
+  uniqueImageUrls,
+  randomImageIndex,
+  productGalleryFrames,
+  productCoverFrame,
+} from '~/composables/productImages'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 type GridItemData = {
@@ -120,13 +125,11 @@ const productSlug = computed(() =>
   }),
 )
 
-const imageAssets = computed(() => [
-  props.item.image,
-  ...(props.item.gallery || []),
-])
+const imageAssets = computed(() => productGalleryFrames(props.item))
 
 const projectImages = computed(() => {
-  const thumb = props.imageUrl || buildUrl(props.item.image, IMAGE_WIDTH.thumb)
+  const cover = productCoverFrame(props.item)
+  const thumb = props.imageUrl || (cover ? buildUrl(cover, IMAGE_WIDTH.thumb) : '')
   return uniqueImageUrls(
     thumb,
     ...imageAssets.value.map((asset) =>
@@ -243,7 +246,8 @@ const cycle = (direction: 1 | -1) => {
 const onToggle = (event?: MouseEvent) => {
   const urls = projectImages.value
   const idx = imageIndex.value
-  const hero = props.imageUrl || buildUrl(props.item.image)
+  const cover = productCoverFrame(props.item)
+  const hero = props.imageUrl || (cover ? buildUrl(cover) : '')
   const source =
     imageRef.value ||
     ((event?.currentTarget as HTMLElement | null)

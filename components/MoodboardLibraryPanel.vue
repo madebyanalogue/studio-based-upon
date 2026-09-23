@@ -66,6 +66,7 @@ import {
   normalizeLibraryItem,
   type LibraryItem,
 } from '~/composables/useLibraryCatalog'
+import { productCoverFrame } from '~/composables/productImages'
 
 defineProps<{
   open: boolean
@@ -94,7 +95,8 @@ const items = computed<LibraryItem[]>(() => {
 })
 
 const thumbUrl = (item: LibraryItem) => {
-  const url = imageUrl(item.image, 400)
+  const cover = productCoverFrame(item)
+  const url = cover ? imageUrl(cover, 400) : ''
   if (!url || url.includes('picsum.photos')) return ''
   return url
 }

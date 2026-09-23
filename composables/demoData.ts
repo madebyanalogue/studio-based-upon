@@ -25,7 +25,12 @@ export type FormalItem = {
   feature?: string
   materials: string[]
   colours: string[]
-  image: { asset: { url: string } }
+  /** First frame is the cover / thumbnail */
+  gallery: { asset: { url: string } }[]
+  /** Materials & Forms grid tile crop */
+  gridRatio?: 'portrait' | 'square' | 'landscape'
+  /** Materials & Forms grid tile width */
+  gridSize?: 'small' | 'medium' | 'large' | 'full'
   linkType?: string
 }
 
@@ -47,7 +52,7 @@ const TEXTURE_NAMES = [
 const SHAPE_NAMES = ['Organic Curve', 'Linear Relief', 'Fractured Plane', 'Undulating Form']
 
 const TYPE_POOL = ['forms', 'surface', 'spirit', 'origin'] as const
-const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquidmetal'] as const
+const FORM_TAG_POOL = ['furniture', 'interior', 'tramazite', 'liquid-metal'] as const
 const MATERIAL_POOL = ['gold', 'bronze', 'silver', 'steel', 'glass', 'stone']
 const COLOUR_POOL = ['gold', 'bronze', 'silver', 'pink', 'charcoal', 'ivory']
 const SERIES_POOL = ['Twist', 'Earth Summer', 'Camona', 'Patina', 'Strata']
@@ -95,7 +100,7 @@ const buildProducts = (): FormalItem[] => {
       feature: pickOne(FEATURE_POOL, i),
       materials: pickFrom(MATERIAL_POOL, i),
       colours: pickFrom(COLOUR_POOL, i, 1),
-      image: seededImage(`p${i + 1}`),
+      gallery: [seededImage(`p${i + 1}`), seededImage(`p${i + 1}b`)],
       linkType: 'product',
     }
   })
@@ -112,7 +117,7 @@ const buildProducts = (): FormalItem[] => {
       feature: pickOne(FEATURE_POOL, i + 3),
       materials: pickFrom(MATERIAL_POOL, i + 1),
       colours: pickFrom(COLOUR_POOL, i + 2),
-      image: seededImage(`t${i + 1}`),
+      gallery: [seededImage(`t${i + 1}`)],
       linkType: 'none',
     }
   })
@@ -129,7 +134,7 @@ const buildProducts = (): FormalItem[] => {
       feature: pickOne(FEATURE_POOL, i + 2),
       materials: pickFrom(MATERIAL_POOL, i + 4),
       colours: pickFrom(COLOUR_POOL, i + 3),
-      image: seededImage(`s${i + 1}`),
+      gallery: [seededImage(`s${i + 1}`)],
       linkType: 'none',
     }
   })
@@ -167,7 +172,7 @@ export const PRODUCT_FORM_TAG_FILTERS = [
   { label: 'Furniture', value: 'furniture' },
   { label: 'Interior', value: 'interior' },
   { label: 'Tramazite', value: 'tramazite' },
-  { label: 'Liquid Metal', value: 'liquidmetal' },
+  { label: 'Liquid Metal', value: 'liquid-metal' },
 ]
 
 /** Default Materials & Forms chip row (mix of tags + types, no Forms). */
@@ -176,7 +181,7 @@ export const DEFAULT_LIBRARY_PAGE_FILTERS = [
   { kind: 'tag' as const, value: 'tramazite', label: 'Tramazite' },
   { kind: 'tag' as const, value: 'interior', label: 'Interior' },
   { kind: 'type' as const, value: 'origin', label: 'Origin' },
-  { kind: 'tag' as const, value: 'liquidmetal', label: 'Liquid Metal' },
+  { kind: 'tag' as const, value: 'liquid-metal', label: 'Liquid Metal' },
   { kind: 'type' as const, value: 'spirit', label: 'Spirit' },
 ]
 
@@ -186,17 +191,29 @@ export type LibraryPageFilter = {
   label: string
 }
 
+/** Canonical form-tag slugs (kebab-case). Maps legacy smushed values. */
+export const normalizeFormTag = (value: string) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return ''
+  if (raw === 'liquidmetal' || raw === 'liquid metal') return 'liquid-metal'
+  return raw.replace(/\s+/g, '-')
+}
+
 export const parseLibraryFilterKey = (
   key: string,
 ): { kind: 'type' | 'tag' | 'materiality'; value: string } | null => {
   const [kind, ...rest] = String(key || '').split(':')
-  const value = rest.join(':')
+  let value = rest.join(':')
   if ((kind !== 'type' && kind !== 'tag' && kind !== 'materiality') || !value) return null
+  if (kind === 'tag') value = normalizeFormTag(value)
   return { kind, value }
 }
 
-export const libraryFilterKey = (filter: Pick<LibraryPageFilter, 'kind' | 'value'>) =>
-  `${filter.kind}:${filter.value}`
+export const libraryFilterKey = (filter: Pick<LibraryPageFilter, 'kind' | 'value'>) => {
+  const value =
+    filter.kind === 'tag' ? normalizeFormTag(filter.value) : filter.value
+  return `${filter.kind}:${value}`
+}
 
 type LibraryFilterEntry = {
   filter?: string
@@ -230,10 +247,11 @@ export const resolveLibraryPageFilters = (
         }
       }
       if (entry.kind === 'tag' && entry.tag) {
-        const match = defaults.find((f) => f.kind === 'tag' && f.value === entry.tag)
+        const tag = normalizeFormTag(entry.tag)
+        const match = defaults.find((f) => f.kind === 'tag' && f.value === tag)
         return {
           kind: 'tag' as const,
-          value: entry.tag,
+          value: tag,
           label: entry.label?.trim() || match?.label || entry.tag,
         }
       }

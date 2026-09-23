@@ -28,50 +28,47 @@
             class="showcase__track"
             :ref="(el) => setTrackRef(column.instanceId, el)"
           >
-            <div
-              class="showcase__spacer"
-              :style="spacerStyle(slotIndex)"
-              aria-hidden="true"
-            />
             <button
-              v-for="(image, imageIndex) in column.images"
-              :key="image.id"
+              v-for="cell in loopedCells(slotIndex, column)"
+              :key="cell.renderKey"
               type="button"
               class="showcase__cell"
               :class="{
-                'showcase__cell--active': settledIndexes[slotIndex] === imageIndex,
+                'showcase__cell--active':
+                  settledIndexes[slotIndex] === cell.logicalIndex,
               }"
-              :data-cell-key="cellKey(slotIndex, image.id)"
-              :aria-label="`${column.title} — image ${imageIndex + 1}`"
-              @click="onSelect(column, imageIndex)"
+              :data-cell-key="cell.cellKey"
+              :data-image-id="cell.image.id"
+              :data-logical-index="cell.logicalIndex"
+              :data-loop-copy="cell.copyIndex"
+              :aria-label="`${column.title} — image ${cell.logicalIndex + 1}`"
+              @click="onSelect(column, cell.logicalIndex)"
             >
               <img
-                v-if="shouldLoadImage(slotIndex, imageIndex)"
-                :ref="(el) => bindShowcaseImg(el, slotIndex, image.id)"
+                v-if="shouldLoadImage(slotIndex, cell.logicalIndex)"
+                :ref="(el) => bindShowcaseImg(el, slotIndex, cell.image.id)"
                 class="showcase__img"
-                :class="{ 'showcase__img--in': isImageRevealed(slotIndex, image.id) }"
-                :src="image.src"
+                :class="{
+                  'showcase__img--in': isImageRevealed(slotIndex, cell.image.id),
+                }"
+                :src="cell.image.src"
                 :alt="column.title"
-                :fetchpriority="isSelectedImage(slotIndex, imageIndex) ? 'high' : 'low'"
-                :loading="isSelectedImage(slotIndex, imageIndex) ? 'eager' : 'lazy'"
+                :fetchpriority="
+                  isSelectedImage(slotIndex, cell.logicalIndex) ? 'high' : 'low'
+                "
+                :loading="
+                  isSelectedImage(slotIndex, cell.logicalIndex) ? 'eager' : 'lazy'
+                "
                 decoding="async"
                 draggable="false"
-                @load="onShowcaseImgLoad(slotIndex, image.id)"
-                @error="onShowcaseImgLoad(slotIndex, image.id)"
+                @load="onShowcaseImgLoad(slotIndex, cell.image.id)"
+                @error="onShowcaseImgLoad(slotIndex, cell.image.id)"
               />
             </button>
-            <div
-              class="showcase__spacer"
-              :style="spacerStyle(slotIndex)"
-              aria-hidden="true"
-            />
           </div>
         </div>
 
-        <div
-          class="showcase__remove-zone"
-          :style="removeZoneStyle(slotIndex)"
-        >
+        <div class="showcase__remove-zone">
           <button
             type="button"
             class="showcase__lock"
@@ -121,6 +118,22 @@
               <span class="showcase__remove-minus" />
             </span>
           </button>
+          <button
+            type="button"
+            class="showcase__fork"
+            :disabled="!canAddColumn"
+            :aria-label="
+              canAddColumn
+                ? `Add ${column.title} images as a new column to the right`
+                : 'Column limit reached'
+            "
+            @click.stop="forkColumnBeside(slotIndex)"
+          >
+            <span class="showcase__fork-circle" aria-hidden="true">
+              <span class="showcase__fork-plus showcase__fork-plus--h" />
+              <span class="showcase__fork-plus showcase__fork-plus--v" />
+            </span>
+          </button>
         </div>
       </div>
 
@@ -163,7 +176,7 @@
           <span class="showcase__tooltip interface" aria-hidden="true">Upload</span>
         </label>
 
-        <div ref="colourToolRef" class="showcase__colour-tool">
+        <div v-if="COLOUR_WASH_ENABLED" ref="colourToolRef" class="showcase__colour-tool">
           <button
             type="button"
             class="showcase__ctrl"
@@ -293,7 +306,7 @@
       </div>
 
     <div
-      v-if="washColour"
+      v-if="COLOUR_WASH_ENABLED && washColour"
       class="showcase__wash"
       :style="{ background: washColour }"
       aria-hidden="true"
@@ -337,20 +350,62 @@ type ShowcaseColumn = {
 
 const MAX_COLUMNS = SHOWCASE_MAX_COLUMNS
 const DEFAULT_COLUMNS = SHOWCASE_DEFAULT_COLUMNS
-const SNAP_IDLE_MS = 55
-const SNAP_DURATION = 0.42
+const SNAP_IDLE_MS = 150
+const SNAP_DURATION = 0.55
 const SURRENDER_DURATION = 1.15
-const VELOCITY_SNAP_THRESHOLD = 0.12
-const ASPECT = 0.8
+/** Don't snap while still coasting from a flick. */
+const VELOCITY_SNAP_THRESHOLD = 0.35
+/** Must match `--showcase-aspect` (width / height). */
+const ASPECT = 0.6
+/** Colour wash control — hidden for now. */
+const COLOUR_WASH_ENABLED = false
+/** Triple-copy track so each column can scroll forever. */
+const LOOP_COPIES = 3
+const LOOP_MIDDLE = 1
 /** Shared floor for Surrender + column lock/minus controls. */
 const SHOWCASE_BOTTOM_INSET_PX = 60
 const CTRL_SIZE_PX = 44
 
-const lenisEasing = (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t))
 /** power3.inOut — used for snap + Surrender. */
 const power3InOut = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 const surrenderEasing = power3InOut
+
+/** Lenis internals used to wrap the loop without killing flick velocity. */
+type LenisLoopInternals = Lenis & {
+  animatedScroll: number
+  targetScroll: number
+  setScroll: (scroll: number) => void
+  preventNextNativeScrollEvent: () => void
+  animate: { from: number; to: number; value: number }
+}
+
+type LoopedCell = {
+  image: ShowcaseBucketImage
+  logicalIndex: number
+  copyIndex: number
+  renderKey: string
+  cellKey: string
+}
+
+const loopedCells = (slotIndex: number, column: ShowcaseColumn): LoopedCell[] => {
+  const images = column.images
+  if (!images.length) return []
+  const out: LoopedCell[] = []
+  for (let copy = 0; copy < LOOP_COPIES; copy += 1) {
+    for (let i = 0; i < images.length; i += 1) {
+      const image = images[i]!
+      out.push({
+        image,
+        logicalIndex: i,
+        copyIndex: copy,
+        renderKey: `${column.instanceId}:${copy}:${image.id}:${i}`,
+        cellKey: `${slotIndex}:${copy}:${image.id}`,
+      })
+    }
+  }
+  return out
+}
 
 const createColumnLenis = (wrapper: HTMLElement, content: HTMLElement) =>
   new Lenis({
@@ -360,12 +415,14 @@ const createColumnLenis = (wrapper: HTMLElement, content: HTMLElement) =>
     gestureOrientation: 'vertical',
     smoothWheel: true,
     syncTouch: true,
-    syncTouchLerp: 0.12,
-    touchInertiaExponent: 1.35,
-    touchMultiplier: 1.1,
-    wheelMultiplier: 1.05,
-    duration: 0.9,
-    easing: lenisEasing,
+    // Lower lerp = longer coast / smoother flick (Lenis default ~0.075).
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.55,
+    wheelMultiplier: 1.4,
+    // Lerp-only wheel (no duration) so successive wheel ticks keep momentum.
+    lerp: 0.07,
+    overscroll: false,
   })
 
 const props = defineProps<{
@@ -488,6 +545,72 @@ const cellKey = (slotIndex: number, id: string) => `${slotIndex}:${id}`
 
 const imageRevealKey = (slotIndex: number, id: string) => `${slotIndex}:${id}`
 
+const queryMiddleCell = (
+  slotIndex: number,
+  opts: { imageId?: string; logicalIndex?: number },
+) => {
+  const el = columnEls[slotIndex]
+  if (!el) return null
+  if (opts.imageId) {
+    return el.querySelector<HTMLElement>(
+      `.showcase__cell[data-loop-copy="${LOOP_MIDDLE}"][data-image-id="${CSS.escape(opts.imageId)}"]`,
+    )
+  }
+  if (opts.logicalIndex != null) {
+    return el.querySelector<HTMLElement>(
+      `.showcase__cell[data-loop-copy="${LOOP_MIDDLE}"][data-logical-index="${opts.logicalIndex}"]`,
+    )
+  }
+  return el.querySelector<HTMLElement>(
+    `.showcase__cell[data-loop-copy="${LOOP_MIDDLE}"]`,
+  )
+}
+
+const loopPeriodHeight = (slotIndex: number) => {
+  const el = columnEls[slotIndex]
+  const count = columns.value[slotIndex]?.images.length || 0
+  if (!el || !count) return 0
+  const cell = el.querySelector<HTMLElement>('.showcase__cell')
+  const cellH = cell?.offsetHeight || el.clientWidth / ASPECT
+  return cellH * count
+}
+
+/** Keep scroll inside the middle copy band so the track never hits a hard end. */
+const wrapLoopScroll = (slotIndex: number) => {
+  const period = loopPeriodHeight(slotIndex)
+  if (period <= 1) return false
+
+  const lenis = lenisBySlot[slotIndex] as LenisLoopInternals | null
+  const el = columnEls[slotIndex]
+  if (!el) return false
+
+  // Prefer Lenis animated position so wrap stays in sync with in-flight flick.
+  let scroll = lenis?.animatedScroll ?? currentScroll(slotIndex)
+  let next = scroll
+  while (next < period) next += period
+  while (next >= period * 2) next -= period
+  const delta = next - scroll
+  if (Math.abs(delta) < 0.5) return false
+
+  withScrollSuppressed(() => {
+    if (lenis) {
+      // Shift the live animation window — do NOT scrollTo(immediate) (that resets velocity).
+      lenis.animatedScroll += delta
+      lenis.targetScroll += delta
+      if (lenis.animate) {
+        lenis.animate.from += delta
+        lenis.animate.to += delta
+        lenis.animate.value += delta
+      }
+      lenis.setScroll(lenis.animatedScroll)
+      lenis.preventNextNativeScrollEvent()
+    } else {
+      el.scrollTop = next
+    }
+  })
+  return true
+}
+
 const isImageRevealed = (slotIndex: number, id: string) =>
   Boolean(revealedImages.value[imageRevealKey(slotIndex, id)])
 
@@ -559,11 +682,16 @@ const resetImageRevealState = () => {
 
 const imageIdFromActiveKey = (slotIndex: number, key: string | null) => {
   if (!key) return null
-  const prefix = `${slotIndex}:`
-  if (key.startsWith(prefix)) return key.slice(prefix.length)
-  // After add/remove, keys can briefly carry a stale slot prefix — keep the id.
-  const colon = key.indexOf(':')
-  return colon >= 0 ? key.slice(colon + 1) : key
+  const parts = key.split(':')
+  if (parts[0] !== String(slotIndex) || parts.length < 2) {
+    const colon = key.indexOf(':')
+    return colon >= 0 ? key.slice(colon + 1) : key
+  }
+  // Physical loop key: slot:copy:id — or canonical slot:id
+  if (parts.length >= 3 && /^\d+$/.test(parts[1] || '')) {
+    return parts.slice(2).join(':')
+  }
+  return parts.slice(1).join(':')
 }
 
 const captureActiveImageIds = () =>
@@ -647,6 +775,19 @@ const createUploadColumn = (file: File, src: string): ShowcaseColumn => {
   }
 }
 
+/** Copy a column's product images into a fresh column instance (no shared revoke). */
+const cloneColumn = (source: ShowcaseColumn): ShowcaseColumn => {
+  instanceSeq += 1
+  return {
+    instanceId: `fork-${instanceSeq}-${source.productId}`,
+    productId: source.productId,
+    bucketId: source.bucketId,
+    title: source.title,
+    slug: source.slug,
+    images: source.images.map((image) => ({ ...image })),
+  }
+}
+
 const pickNextBucket = (): ShowcaseBucket | null => {
   const pool = bucketPool.value.filter(
     (bucket) => bucket.images?.length && bucket.id,
@@ -679,85 +820,16 @@ const spacerStyle = (slotIndex: number) => ({
   height: `${spacerPads.value[slotIndex] ?? 0}px`,
 })
 
-const removeZoneStyle = (slotIndex: number) => {
-  const top = removeZoneTops.value[slotIndex]
-  // 0 means unmeasured — pin to surrender inset so controls never flash at the top.
-  if (top == null || top <= 0) {
-    return {
-      top: 'auto',
-      bottom: `${SHOWCASE_BOTTOM_INSET_PX}px`,
-    }
-  }
-  return {
-    top: `${top}px`,
-    bottom: 'auto',
-  }
-}
+/** Column controls sit in CSS between centre and Surrender — no per-cell tracking. */
+const updateRemoveZone = (_slotIndex: number) => {}
 
-const updateRemoveZone = (slotIndex: number) => {
-  const el = columnEls[slotIndex]
-  const shell = el?.parentElement
-  if (!el || !shell) return
-
-  const shellH = shell.clientHeight || window.innerHeight || 0
-  // Avoid writing top:0 while the shell still has no height.
-  if (shellH <= CTRL_SIZE_PX) return
-
-  const maxTop = Math.max(0, shellH - SHOWCASE_BOTTOM_INSET_PX - CTRL_SIZE_PX)
-
-  const key = activeKeys.value[slotIndex]
-  const cell = key
-    ? el.querySelector<HTMLElement>(`[data-cell-key="${CSS.escape(key)}"]`)
-    : el.querySelector<HTMLElement>('.showcase__cell')
-
-  const cellH =
-    cell?.offsetHeight || el.clientWidth / ASPECT || Math.round(shellH * 0.5)
-
-  // Full-viewport (or nearly) cells: sit on the same floor as Surrender.
-  if (cellH >= shellH - 2) {
-    const next = removeZoneTops.value.slice()
-    next[slotIndex] = maxTop
-    removeZoneTops.value = next
-    return
-  }
-
-  // Centre in the band under the snapped cell, clamped to the bottom inset.
-  const snappedCellBottom = Math.min(shellH, (shellH + cellH) / 2)
-  const idealTop = (snappedCellBottom + shellH) / 2 - CTRL_SIZE_PX / 2
-
-  const next = removeZoneTops.value.slice()
-  next[slotIndex] = Math.max(0, Math.min(Math.max(idealTop, 1), maxTop))
-  removeZoneTops.value = next
-}
-
-const updateAllRemoveZones = () => {
-  for (let i = 0; i < columns.value.length; i += 1) {
-    updateRemoveZone(i)
-  }
-}
+const updateAllRemoveZones = () => {}
 
 const measureSpacerPads = () => {
+  // Infinite loop columns centre via the middle copy — spacers stay at 0.
   const prev = spacerPads.value
-  let changed = false
-  const next = Array.from({ length: MAX_COLUMNS }, (_, slotIndex) => {
-    if (slotIndex >= columns.value.length) return 0
-    const el = columnEls[slotIndex]
-    if (!el) return prev[slotIndex] ?? 0
-
-    const cell = el.querySelector<HTMLElement>('.showcase__cell')
-    const viewportHeight = el.clientHeight || window.innerHeight
-    const fromAspect = el.clientWidth / ASPECT
-    // Prefer live column width so pads track flex shrink before paint settles.
-    const cellHeight = Math.min(
-      cell?.offsetHeight || fromAspect,
-      fromAspect,
-      viewportHeight,
-    )
-    // Round so first/last land cleanly in the centre slot (avoids sub-pixel shortfall).
-    const pad = Math.max(0, Math.round((viewportHeight - cellHeight) / 2))
-    if (pad !== prev[slotIndex]) changed = true
-    return pad
-  })
+  const next = Array.from({ length: MAX_COLUMNS }, () => 0)
+  const changed = next.some((pad, i) => pad !== (prev[i] ?? 0))
   if (changed) spacerPads.value = next
   return changed
 }
@@ -882,11 +954,6 @@ const findCenteredCell = (slotIndex: number): HTMLElement | null => {
 
   const { min, max } = scrollLimits(slotIndex)
   const current = currentScroll(slotIndex)
-  const tol = endSnapTolerance(slotIndex)
-
-  // Same rules as resolveSnapTarget — geometry midY fails for first/last.
-  if (current <= tol) return cells[0] || null
-  if (current >= max - tol) return cells[cells.length - 1] || null
 
   let best: HTMLElement | null = null
   let bestDist = Infinity
@@ -904,8 +971,12 @@ const findCenteredCell = (slotIndex: number): HTMLElement | null => {
   return best
 }
 
-const findCenteredKey = (slotIndex: number) =>
-  findCenteredCell(slotIndex)?.dataset.cellKey || null
+const findCenteredKey = (slotIndex: number) => {
+  const cell = findCenteredCell(slotIndex)
+  if (!cell) return null
+  const imageId = cell.dataset.imageId
+  return imageId ? cellKey(slotIndex, imageId) : null
+}
 
 const scrollLimits = (slotIndex: number) => {
   const el = columnEls[slotIndex]
@@ -930,7 +1001,7 @@ const rawCenterScrollForCell = (slotIndex: number, cell: HTMLElement) => {
   return currentScroll(slotIndex) + (cellCenter - midY)
 }
 
-/** Pick the snap target, clamping to scroll bounds so first/last can settle. */
+/** Pick the snap target from the nearest cell (infinite loop — no hard ends). */
 const resolveSnapTarget = (slotIndex: number) => {
   const el = columnEls[slotIndex]
   if (!el) return { scroll: 0, key: null as string | null }
@@ -940,18 +1011,9 @@ const resolveSnapTarget = (slotIndex: number) => {
 
   const { min, max } = scrollLimits(slotIndex)
   const current = currentScroll(slotIndex)
-  const tol = endSnapTolerance(slotIndex)
-  const firstKey = cells[0]?.dataset.cellKey || null
-  const lastKey = cells[cells.length - 1]?.dataset.cellKey || null
-
-  if (current <= tol) {
-    return { scroll: min, key: firstKey }
-  }
-  if (current >= max - tol) {
-    return { scroll: max, key: lastKey }
-  }
 
   let bestScroll = min
+  let bestCell: HTMLElement | null = null
   let bestDist = Infinity
 
   for (const cell of cells) {
@@ -961,25 +1023,15 @@ const resolveSnapTarget = (slotIndex: number) => {
     if (dist < bestDist) {
       bestDist = dist
       bestScroll = clamped
+      bestCell = cell
     }
   }
 
-  // Multiple cells can clamp to the same bound — always attribute ends to first/last.
-  if (bestScroll <= min + SNAP_DONE_PX) {
-    return { scroll: min, key: firstKey }
+  const imageId = bestCell?.dataset.imageId
+  return {
+    scroll: bestScroll,
+    key: imageId ? cellKey(slotIndex, imageId) : null,
   }
-  if (bestScroll >= max - SNAP_DONE_PX) {
-    return { scroll: max, key: lastKey }
-  }
-
-  const bestCell =
-    cells.find((cell) => {
-      const raw = rawCenterScrollForCell(slotIndex, cell)
-      const clamped = Math.min(max, Math.max(min, raw))
-      return Math.abs(clamped - bestScroll) <= SNAP_DONE_PX
-    }) || cells[0]!
-
-  return { scroll: bestScroll, key: bestCell.dataset.cellKey || null }
 }
 
 
@@ -1295,16 +1347,7 @@ const markSettled = (slotIndex: number, key?: string | null) => {
   settleLockUntil[slotIndex] = performance.now() + SETTLE_LOCK_MS
   lastUserIntentAt[slotIndex] = 0
 
-  const { min, max } = scrollLimits(slotIndex)
-  const current = currentScroll(slotIndex)
-  const tol = endSnapTolerance(slotIndex)
   const images = columns.value[slotIndex]?.images || []
-  const el = columnEls[slotIndex]
-  const lenis = lenisBySlot[slotIndex]
-  const cells = el
-    ? Array.from(el.querySelectorAll<HTMLElement>('.showcase__cell'))
-    : []
-
   const explicitKey = key ?? null
   let resolvedKey = explicitKey ?? findCenteredKey(slotIndex)
   let resolvedIndex = imageIndexForKey(slotIndex, resolvedKey)
@@ -1320,31 +1363,11 @@ const markSettled = (slotIndex: number, key?: string | null) => {
     }
   }
 
-  // Scroll-bound end pin only when we don't already have an explicit selection.
-  // (Realign resets scroll to 0 first — that must not steal a middle selection.)
-  if (explicitKey == null || resolvedIndex == null) {
-    if (images.length && current <= tol) {
-      resolvedIndex = 0
-      resolvedKey = cells[0]?.dataset.cellKey || cellKey(slotIndex, images[0]!.id)
-    } else if (images.length && current >= max - tol) {
-      resolvedIndex = images.length - 1
-      resolvedKey =
-        cells[cells.length - 1]?.dataset.cellKey ||
-        cellKey(slotIndex, images[resolvedIndex]!.id)
-    }
-  }
-
   if (resolvedIndex == null && images.length) {
     resolvedIndex = 0
     resolvedKey = cellKey(slotIndex, images[0]!.id)
-  }
-
-  if (resolvedIndex === 0 && images.length) {
-    resolvedKey = cells[0]?.dataset.cellKey || cellKey(slotIndex, images[0]!.id)
-  } else if (images.length && resolvedIndex === images.length - 1) {
-    resolvedKey =
-      cells[cells.length - 1]?.dataset.cellKey ||
-      cellKey(slotIndex, images[resolvedIndex]!.id)
+  } else if (resolvedIndex != null && images[resolvedIndex]) {
+    resolvedKey = cellKey(slotIndex, images[resolvedIndex]!.id)
   }
 
   const nextActive = activeKeys.value.slice()
@@ -1355,15 +1378,19 @@ const markSettled = (slotIndex: number, key?: string | null) => {
   nextSettled[slotIndex] = resolvedIndex
   settledIndexes.value = nextSettled
 
-  if (resolvedIndex === 0) {
-    if (Math.abs(current - min) > SNAP_DONE_PX) {
-      if (lenis) lenis.scrollTo(min, { immediate: true })
-      else if (el) el.scrollTop = min
-    }
-  } else if (images.length && resolvedIndex === images.length - 1) {
-    if (Math.abs(current - max) > SNAP_DONE_PX) {
-      if (lenis) lenis.scrollTo(max, { immediate: true })
-      else if (el) el.scrollTop = max
+  // Keep the snapped cell in the middle copy band.
+  if (resolvedIndex != null) {
+    const target = scrollTargetForImageIndex(slotIndex, resolvedIndex)
+    if (target) {
+      const current = currentScroll(slotIndex)
+      if (Math.abs(current - target.scroll) > SNAP_DONE_PX) {
+        const lenis = lenisBySlot[slotIndex]
+        const el = columnEls[slotIndex]
+        withScrollSuppressed(() => {
+          if (lenis) lenis.scrollTo(target.scroll, { immediate: true })
+          else if (el) el.scrollTop = target.scroll
+        })
+      }
     }
   }
 
@@ -1443,18 +1470,13 @@ const scrollTargetForImageIndex = (slotIndex: number, imageIndex: number) => {
   if (!column || !image || !el) return null
 
   const key = cellKey(slotIndex, image.id)
-  const min = 0
-  // Prefer DOM extent over lenis.limit so scroll handlers stay read-only.
-  const max = Math.max(0, el.scrollHeight - el.clientHeight)
+  const { min, max } = scrollLimits(slotIndex)
 
-  if (imageIndex <= 0) return { scroll: min, key }
-  if (imageIndex >= column.images.length - 1) return { scroll: max, key }
+  const cell =
+    queryMiddleCell(slotIndex, { logicalIndex: imageIndex }) ||
+    queryMiddleCell(slotIndex, { imageId: image.id })
 
-  const cell = el.querySelector<HTMLElement>(
-    `[data-cell-key="${CSS.escape(key)}"]`,
-  )
   if (cell) {
-    // offsetTop includes the leading spacer — no dependency on current scroll.
     const raw = cell.offsetTop + cell.offsetHeight / 2 - el.clientHeight / 2
     return {
       scroll: Math.min(max, Math.max(min, raw)),
@@ -1463,8 +1485,8 @@ const scrollTargetForImageIndex = (slotIndex: number, imageIndex: number) => {
   }
 
   const cellH = el.clientWidth / ASPECT
-  const pad = spacerPads.value[slotIndex] ?? 0
-  const cellTop = pad + imageIndex * cellH
+  const period = cellH * column.images.length
+  const cellTop = period * LOOP_MIDDLE + imageIndex * cellH
   const raw = cellTop + cellH / 2 - el.clientHeight / 2
   return {
     scroll: Math.min(max, Math.max(min, raw)),
@@ -1625,22 +1647,23 @@ const onColumnScroll = (slotIndex: number) => {
 
   scrollHandlerDepth += 1
   try {
+    // Jump between triple-copy bands before snap math runs.
+    wrapLoopScroll(slotIndex)
+
     const settledIndex = settledIndexes.value[slotIndex]
     const intentAge = performance.now() - lastUserIntentAt[slotIndex]
     const hasRecentIntent = intentAge < USER_INTENT_MS
     const lenis = lenisBySlot[slotIndex]
     const current = currentScroll(slotIndex)
     const images = columns.value[slotIndex]?.images || []
-    const lastIndex = images.length > 0 ? images.length - 1 : -1
 
-    // Stay settled until scroll actually leaves the snapped cell (esp. first/last).
-    // Use image-index math only — never scrollTargetForKey (must stay resize-free).
+    // Stay settled until scroll actually leaves the snapped cell.
     if (settledIndex != null && images[settledIndex]) {
       const ideal = scrollTargetForImageIndex(slotIndex, settledIndex)
-      const isEnd = settledIndex === 0 || settledIndex === lastIndex
-      const leaveTol = isEnd
-        ? endSnapTolerance(slotIndex)
-        : Math.max(SNAP_DONE_PX * 4, endSnapTolerance(slotIndex) * 0.25)
+      const leaveTol = Math.max(
+        SNAP_DONE_PX * 4,
+        endSnapTolerance(slotIndex) * 0.25,
+      )
 
       if (ideal && Math.abs(ideal.scroll - current) <= leaveTol) {
         return
@@ -1736,8 +1759,10 @@ const initLenisForSlot = (slotIndex: number) => {
 
   const lenis = createColumnLenis(wrapper, content)
   withScrollSuppressed(() => {
-    lenis.scrollTo(0, { immediate: true })
     lenis.resize()
+    const target = scrollTargetForImageIndex(slotIndex, 0)
+    const scroll = target?.scroll ?? loopPeriodHeight(slotIndex)
+    lenis.scrollTo(scroll, { immediate: true })
   })
   lenis.on('scroll', () => onColumnScroll(slotIndex))
   wrapper.addEventListener(
@@ -1828,6 +1853,17 @@ const settleColumnInstant = (slotIndex: number) => {
   settledIndexes.value = nextSettled
 
   lastUserIntentAt[slotIndex] = 0
+
+  withScrollSuppressed(() => {
+    const lenis = lenisBySlot[slotIndex]
+    const el = columnEls[slotIndex]
+    lenis?.resize()
+    const target = scrollTargetForImageIndex(slotIndex, 0)
+    const scroll = target?.scroll ?? loopPeriodHeight(slotIndex)
+    if (lenis) lenis.scrollTo(scroll, { immediate: true })
+    else if (el) el.scrollTop = scroll
+  })
+
   nextTick(() => {
     updateRemoveZone(slotIndex)
     clearInstantDim(slotIndex)
@@ -1841,8 +1877,13 @@ const primeColumn = (slotIndex: number, force = false, settleImmediately = false
   if (!el) return
 
   if (force || !columnPrimed[slotIndex]) {
-    if (lenis) lenis.scrollTo(0, { immediate: true })
-    else el.scrollTop = 0
+    withScrollSuppressed(() => {
+      lenis?.resize()
+      const target = scrollTargetForImageIndex(slotIndex, 0)
+      const scroll = target?.scroll ?? loopPeriodHeight(slotIndex)
+      if (lenis) lenis.scrollTo(scroll, { immediate: true })
+      else el.scrollTop = scroll
+    })
     columnPrimed[slotIndex] = true
 
     if (settleImmediately) settleColumnInstant(slotIndex)
@@ -2035,6 +2076,34 @@ const addColumn = () => {
   restoreColumnsAfterLayout(preserved, { settleNewInstant: true })
 }
 
+/** Insert a copy of this column's images immediately to its right. */
+const forkColumnBeside = (slotIndex: number) => {
+  if (!canAddColumn.value) return
+  const source = columns.value[slotIndex]
+  if (!source?.images.length) return
+
+  const clone = cloneColumn(source)
+  const preserved = captureActiveImageIds()
+  const sourceActive =
+    preserved[slotIndex] ?? clone.images[0]?.id ?? null
+  preserved.splice(slotIndex + 1, 0, sourceActive)
+
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    clearSnapTimer(i)
+    snappingSlot[i] = false
+  }
+  destroyLenis()
+  stopRaf()
+
+  const next = columns.value.slice()
+  next.splice(slotIndex + 1, 0, clone)
+  columns.value = next
+
+  columnPrimed[slotIndex + 1] = false
+  syncSlotElsFromIds()
+  restoreColumnsAfterLayout(preserved)
+}
+
 const onUploadChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -2143,13 +2212,17 @@ watch(
 onMounted(() => {
   if (!columns.value.length) resetFromBuckets()
   else remountMotion({ settleImmediately: true })
-  document.addEventListener('pointerdown', onColourDocPointerDown)
+  if (COLOUR_WASH_ENABLED) {
+    document.addEventListener('pointerdown', onColourDocPointerDown)
+  }
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', onColourDocPointerDown)
-  window.removeEventListener('pointermove', onSpectrumPointerMove)
-  window.removeEventListener('pointerup', onSpectrumPointerUp)
+  if (COLOUR_WASH_ENABLED) {
+    document.removeEventListener('pointerdown', onColourDocPointerDown)
+    window.removeEventListener('pointermove', onSpectrumPointerMove)
+    window.removeEventListener('pointerup', onSpectrumPointerUp)
+  }
   window.clearTimeout(layoutRealignTimer)
   layoutRealignTimer = 0
   resizeObserver?.disconnect()
@@ -2167,8 +2240,8 @@ onBeforeUnmount(() => {
   --showcase-column-gap: 0px;
   --showcase-item-gap: 0px;
   --showcase-slots: 4;
-  --showcase-aspect: 0.8;
-  --showcase-dim-opacity: 0;
+  --showcase-aspect: 0.6;
+  --showcase-dim-opacity: 0.15;
   --showcase-dim-delay: 0.2s;
   --showcase-dim-duration: 0.45s;
   --showcase-surrender-dim-delay: 0.55s;
@@ -2301,6 +2374,12 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   right: 0;
+  /* Midway between screen centre and Surrender (bottom inset). */
+  top: calc(
+    75% - (var(--showcase-bottom-inset) / 2) -
+      (var(--showcase-ctrl-size) * 0.75)
+  );
+  bottom: auto;
   z-index: 5;
   display: flex;
   align-items: center;
@@ -2311,6 +2390,7 @@ onBeforeUnmount(() => {
 }
 
 .showcase__remove,
+.showcase__fork,
 .showcase__lock {
   position: relative;
   display: grid;
@@ -2328,11 +2408,22 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease;
 }
 
+.showcase__fork:disabled {
+  cursor: not-allowed;
+  opacity: 0;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .showcase__column-shell:hover .showcase__remove,
+  .showcase__column-shell:hover .showcase__fork:not(:disabled),
   .showcase__column-shell:hover .showcase__lock {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .showcase__column-shell:hover .showcase__fork:disabled {
+    opacity: 0.35;
+    pointer-events: none;
   }
 }
 
@@ -2342,6 +2433,7 @@ onBeforeUnmount(() => {
 }
 
 .showcase__remove-circle,
+.showcase__fork-circle,
 .showcase__lock-circle {
   position: relative;
   box-sizing: border-box;
@@ -2359,6 +2451,8 @@ onBeforeUnmount(() => {
 
 .showcase__remove:hover .showcase__remove-circle,
 .showcase__remove:focus-visible .showcase__remove-circle,
+.showcase__fork:hover:not(:disabled) .showcase__fork-circle,
+.showcase__fork:focus-visible:not(:disabled) .showcase__fork-circle,
 .showcase__lock:hover .showcase__lock-circle,
 .showcase__lock:focus-visible .showcase__lock-circle {
   background: color-mix(in srgb, var(--charcoal) 6%, transparent);
@@ -2370,14 +2464,24 @@ onBeforeUnmount(() => {
   border-color: var(--charcoal);
 }
 
-.showcase__remove-minus {
+.showcase__remove-minus,
+.showcase__fork-plus {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: calc(var(--showcase-ctrl-size) * 0.4);
-  height: 1px;
   background: currentColor;
   transform: translate(-50%, -50%);
+}
+
+.showcase__remove-minus,
+.showcase__fork-plus--h {
+  width: calc(var(--showcase-ctrl-size) * 0.4);
+  height: 1px;
+}
+
+.showcase__fork-plus--v {
+  width: 1px;
+  height: calc(var(--showcase-ctrl-size) * 0.4);
 }
 
 .showcase__adder {

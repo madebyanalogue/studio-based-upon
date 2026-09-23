@@ -4835,7 +4835,7 @@ onBeforeUnmount(() => {
 
 .stack__rail {
   position: fixed;
-  right: var(--boards-panel-width);
+  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width));
   left: auto;
   bottom: 0;
   z-index: 210;
@@ -4846,7 +4846,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
   overflow: visible;
   transition:
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.35s ease;
 }
@@ -4854,7 +4853,7 @@ onBeforeUnmount(() => {
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
 .stack__boards-rail {
   position: fixed;
-  right: var(--boards-panel-width);
+  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width));
   bottom: 0;
   z-index: 210;
   display: flex;
@@ -4863,7 +4862,8 @@ onBeforeUnmount(() => {
   gap: 0;
   pointer-events: none;
   overflow: visible;
-  transition: right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Push distance is animated via --pdp-related-rail-width on html */
+  transition: none;
 }
 
 /*
@@ -6149,8 +6149,8 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1rem;
+  height: 1rem;
   padding: 0;
   border: 0;
   background: transparent;
@@ -6164,10 +6164,10 @@ onBeforeUnmount(() => {
 
 .stack__title-caret-icon {
   display: block;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.25px solid currentColor;
+  border-bottom: 1.25px solid currentColor;
   transform: translateY(-15%) rotate(45deg);
 }
 
@@ -6342,8 +6342,8 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--serif);
-  font-size: var(--text-md);
+  font-family: var(--mono);
+  font-size: 16px;
   font-weight: 400;
   font-style: normal;
   letter-spacing: normal;

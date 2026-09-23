@@ -17,6 +17,9 @@ useHead(() => ({
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
+  htmlAttrs: {
+    class: 'dark',
+  },
 }))
 </script>
 

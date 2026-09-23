@@ -124,6 +124,24 @@ useHead(() => ({
   style: [
     {
       children: `
+        /* Logo sizing before scoped/component CSS — prevents hard-load SVG resize */
+        .based-upon-logo {
+          display: block;
+          width: 100%;
+          height: auto;
+        }
+        .header__logo-mark {
+          position: absolute;
+          top: 20px;
+          width: 180px;
+          height: auto;
+        }
+        .preloader__logo-svg svg {
+          display: block;
+          height: clamp(2rem, 5vw, 3.25rem);
+          width: auto;
+          margin: 0 auto;
+        }
         html:not(.css-loaded) body {
           visibility: hidden !important;
           opacity: 0 !important;

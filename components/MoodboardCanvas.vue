@@ -701,7 +701,7 @@
 </template>
 
 <script setup lang="ts">
-import { uniqueImageUrls } from '~/composables/productImages'
+import { uniqueImageUrls, productGalleryFrames } from '~/composables/productImages'
 
 const {
   isMoodboard,
@@ -1545,11 +1545,11 @@ const onLibrarySelect = (item: {
   gallery?: { asset?: { url?: string } }[]
   spiritGallery?: { asset?: { url?: string } }[]
 }) => {
-  const assets = [item.image, ...(item.gallery || [])]
+  const assets = productGalleryFrames(item)
   const urls = uniqueImageUrls(
     ...assets.map((asset) => (asset ? buildLibraryUrl(asset, 1200) : '')),
   )
-  const url = urls[0] || item.image?.asset?.url
+  const url = urls[0] || assets[0]?.asset?.url
   const isSample = !url || url.includes('picsum.photos')
   if (isSample) {
     addImage(LIBRARY_PLACEHOLDER, item.title)
@@ -2471,7 +2471,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background: var(--cream);
+  background: #eee;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.42s ease;

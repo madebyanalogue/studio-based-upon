@@ -1,5 +1,13 @@
 <template>
-  <section ref="rootEl" class="split-slider" aria-label="Infinite split slider">
+  <section
+    ref="rootEl"
+    class="split-slider"
+    :class="{
+      'split-slider--ready': surfaceReady,
+      'split-slider--type-on': typeLayerVisible,
+    }"
+    aria-label="Infinite split slider"
+  >
     <svg class="split-slider__filter" viewBox="0 0 0 0" aria-hidden="true">
       <defs>
         <filter :id="blurFilterId">
@@ -39,6 +47,19 @@
         {{ activeSlide?.title || '' }}
       </h1>
 
+      <p
+        v-if="activeSlide?.location"
+        ref="locationEl"
+        class="split-slider__location"
+        :class="{ 'split-slider__location--pending': !locationSplitReady }"
+        :style="{
+          filter: titleFilter,
+          WebkitFilter: titleFilter,
+        }"
+      >
+        {{ activeSlide.location }}
+      </p>
+
       <a
         v-if="activeSlide"
         ref="linkEl"
@@ -64,6 +85,7 @@ import { SplitText } from 'gsap/SplitText'
 export type SplitSliderSlide = {
   title: string
   tags: string[]
+  location?: string
   accent: string
   link: string
   linkLabel?: string
@@ -89,6 +111,8 @@ const LINK_IN_FULL = .85
 const LINK_OUT_START = 1.14
 const LINK_OUT_END = 2
 const LINK_INTRO_DELAY = 0
+/** Hold type until the surface has started fading in. */
+const TYPE_INTRO_DELAY_MS = 380
 
 const settings = {
   scrollSensitivity: 1200,
@@ -105,6 +129,7 @@ const rootEl = ref<HTMLElement | null>(null)
 const leftEl = ref<HTMLElement | null>(null)
 const rightEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLElement | null>(null)
+const locationEl = ref<HTMLElement | null>(null)
 const linkEl = ref<HTMLElement | null>(null)
 
 const activeKey = ref('')
@@ -112,7 +137,12 @@ const activeSlide = ref<SplitSliderSlide | null>(null)
 const typeEffect = ref(0)
 const linkEffect = ref(0)
 const titleSplitReady = ref(false)
+const locationSplitReady = ref(false)
 const linkSplitReady = ref(false)
+/** Columns fade in once active images + clip paths are ready. */
+const surfaceReady = ref(false)
+/** Type layer revealed after a short delay following the surface fade. */
+const typeLayerVisible = ref(false)
 
 let scrollPosition = 1
 let scrollTarget = 1
@@ -120,6 +150,7 @@ let lastTouchY = 0
 let rafId = 0
 let running = false
 let titleSplitInstance: InstanceType<typeof SplitText> | null = null
+let locationSplitInstance: InstanceType<typeof SplitText> | null = null
 let linkSplitInstance: InstanceType<typeof SplitText> | null = null
 let lastDataIndex = -1
 /** One-shot Showcase-style entrance on first paint. */
@@ -153,6 +184,8 @@ const createSlide = (side: Side, index: number) => {
   const el = document.createElement('div')
   el.className = 'split-slider__slide'
   el.style.zIndex = String(index)
+  // Clip immediately so buffer slides never flash full-bleed before updateSlider
+  el.style.clipPath = getRevealShape(side, scrollPosition - index)
 
   const img = document.createElement('img')
   img.src = side === 'left' ? data.leftImage : data.rightImage
@@ -200,11 +233,18 @@ const linkEffectFromProgress = (slideProgress: number) => {
 const titleWords = () =>
   titleEl.value?.querySelectorAll('.split-slider__word') ?? []
 
+const locationWords = () =>
+  locationEl.value?.querySelectorAll('.split-slider__location-word') ?? []
+
 const linkWords = () =>
   linkEl.value?.querySelectorAll('.split-slider__link-word') ?? []
 
 const revertSplits = () => {
-  for (const instance of [titleSplitInstance, linkSplitInstance]) {
+  for (const instance of [
+    titleSplitInstance,
+    locationSplitInstance,
+    linkSplitInstance,
+  ]) {
     if (!instance) continue
     try {
       instance.revert()
@@ -213,8 +253,10 @@ const revertSplits = () => {
     }
   }
   titleSplitInstance = null
+  locationSplitInstance = null
   linkSplitInstance = null
   titleSplitReady.value = false
+  locationSplitReady.value = false
   linkSplitReady.value = false
 }
 
@@ -231,6 +273,15 @@ const splitActiveType = async () => {
     titleSplitReady.value = true
   }
 
+  const location = locationEl.value
+  if (location && activeSlide.value?.location) {
+    locationSplitInstance = new SplitText(location, {
+      type: 'words',
+      wordsClass: 'split-slider__location-word',
+    })
+    locationSplitReady.value = true
+  }
+
   const link = linkEl.value
   if (link && activeSlide.value) {
     linkSplitInstance = new SplitText(link, {
@@ -241,11 +292,12 @@ const splitActiveType = async () => {
   }
 
   if (needsIntro) {
-    needsIntro = false
-    playIntroType()
-  } else {
-    applyTypeEffect(typeEffect.value, linkEffect.value)
+    // First paint entrance is owned by runEntranceSequence (surface fade → type).
+    applyTypeEffect(0, 0)
+    return
   }
+
+  applyTypeEffect(typeEffect.value, linkEffect.value)
 }
 
 const applyWordEffect = (words: NodeListOf<Element> | never[], effect: number) => {
@@ -259,14 +311,16 @@ const applyWordEffect = (words: NodeListOf<Element> | never[], effect: number) =
 
 const applyTypeEffect = (titleFx: number, linkFx: number) => {
   applyWordEffect(titleWords(), titleFx)
+  applyWordEffect(locationWords(), linkFx)
   applyWordEffect(linkWords(), linkFx)
 }
 
 /** Same entrance as the former Showcase carousel title. */
 const playIntroType = () => {
   const title = titleWords()
+  const location = locationWords()
   const link = linkWords()
-  if (!title.length && !link.length) {
+  if (!title.length && !location.length && !link.length) {
     introPlaying = false
     return
   }
@@ -275,6 +329,9 @@ const playIntroType = () => {
   introTween?.kill()
 
   gsap.set(title, { filter: `blur(${TITLE_BLUR_MAX}px)`, opacity: 0 })
+  if (location.length) {
+    gsap.set(location, { filter: `blur(${TITLE_BLUR_MAX}px)`, opacity: 0 })
+  }
   if (link.length) {
     gsap.set(link, { filter: `blur(${TITLE_BLUR_MAX}px)`, opacity: 0 })
   }
@@ -298,6 +355,20 @@ const playIntroType = () => {
         ease: 'power3.out',
       },
       0,
+    )
+  }
+
+  if (location.length) {
+    tl.fromTo(
+      location,
+      { filter: `blur(${TITLE_BLUR_MAX}px)`, opacity: 0 },
+      {
+        filter: 'blur(0px)',
+        opacity: 1,
+        duration: 2,
+        ease: 'power3.out',
+      },
+      LINK_INTRO_DELAY,
     )
   }
 
@@ -327,10 +398,68 @@ const cancelIntro = () => {
     introTween = null
   }
   const title = titleWords()
+  const location = locationWords()
   const link = linkWords()
   if (title.length) gsap.killTweensOf(title)
+  if (location.length) gsap.killTweensOf(location)
   if (link.length) gsap.killTweensOf(link)
-  applyTypeEffect(typeEffect.value, linkEffect.value)
+  if (typeLayerVisible.value) {
+    applyTypeEffect(typeEffect.value, linkEffect.value)
+  } else {
+    applyTypeEffect(0, 0)
+  }
+}
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const preloadImage = (src: string) =>
+  new Promise<void>((resolve) => {
+    if (!src) {
+      resolve()
+      return
+    }
+    const img = new Image()
+    img.onload = () => resolve()
+    img.onerror = () => resolve()
+    img.src = src
+    if (img.complete) resolve()
+  })
+
+const activeSlideData = () => {
+  const list = props.slides
+  if (!list.length) return null
+  const activeIndex = Math.round(scrollPosition - 1)
+  const dataIndex = ((activeIndex % list.length) + list.length) % list.length
+  return list[dataIndex] || null
+}
+
+/** Wait until the aligned slide’s left/right frames are decoded. */
+const preloadActiveSlideImages = async () => {
+  const slide = activeSlideData()
+  if (!slide) return
+  await Promise.all([
+    preloadImage(slide.leftImage),
+    preloadImage(slide.rightImage),
+  ])
+}
+
+const runEntranceSequence = async () => {
+  await preloadActiveSlideImages()
+  // One more layout pass so clip-paths settle before we fade in
+  updateSlider()
+  await nextTick()
+  surfaceReady.value = true
+
+  await delay(TYPE_INTRO_DELAY_MS)
+  if (!running) return
+
+  typeLayerVisible.value = true
+  if (needsIntro) {
+    needsIntro = false
+    playIntroType()
+  } else {
+    applyTypeEffect(typeEffect.value, linkEffect.value)
+  }
 }
 
 const syncTypeLayer = () => {
@@ -354,7 +483,7 @@ const syncTypeLayer = () => {
 
   const dataIndex = ((activeIndex % list.length) + list.length) % list.length
   const slide = list[dataIndex]!
-  const key = `${dataIndex}:${slide.title}:${slide.linkLabel || ''}`
+  const key = `${dataIndex}:${slide.title}:${slide.location || ''}:${slide.linkLabel || ''}`
 
   typeEffect.value = titleFx
   linkEffect.value = linkFx
@@ -365,7 +494,11 @@ const syncTypeLayer = () => {
     activeSlide.value = slide
     void splitActiveType()
   } else if (!introPlaying) {
-    applyTypeEffect(titleFx, linkFx)
+    if (needsIntro || !typeLayerVisible.value) {
+      applyTypeEffect(0, 0)
+    } else {
+      applyTypeEffect(titleFx, linkFx)
+    }
   }
 }
 
@@ -443,6 +576,7 @@ onMounted(() => {
 
   updateSlider()
   rafId = requestAnimationFrame(tick)
+  void runEntranceSequence()
 })
 
 onBeforeUnmount(() => {
@@ -499,6 +633,12 @@ watch(
   height: 100%;
   overflow: hidden;
   z-index: 1;
+  opacity: 0;
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.split-slider--ready .split-slider__column {
+  opacity: 1;
 }
 
 .split-slider :deep(.split-slider__slide) {
@@ -532,6 +672,11 @@ watch(
   z-index: 2;
   pointer-events: none;
   font-family: var(--sans);
+  opacity: 0;
+}
+
+.split-slider--type-on .split-slider__type {
+  opacity: 1;
 }
 
 .split-slider__title {
@@ -556,6 +701,7 @@ watch(
 }
 
 .split-slider__title :deep(.split-slider__word),
+.split-slider__location :deep(.split-slider__location-word),
 .split-slider__link :deep(.split-slider__link-word) {
   display: inline-block;
   will-change: filter, opacity;
@@ -576,9 +722,29 @@ watch(
   display: none;
 }
 
-.split-slider__link {
+.split-slider__location {
   position: absolute;
   top: 62.5%;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  text-transform: uppercase;
+  font-size: clamp(0.75rem, 1.4vw, 1.25rem);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: inherit;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.split-slider__location--pending {
+  visibility: hidden;
+}
+
+.split-slider__link {
+  position: absolute;
+  bottom: 10%;
   left: 50%;
   transform: translateX(-50%);
   text-decoration: none;

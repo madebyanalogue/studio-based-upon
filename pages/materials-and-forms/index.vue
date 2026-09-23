@@ -1,19 +1,44 @@
 <template>
   <div class="products">
     <section class="products__header section">
-      <h4 class="page-title">{{ pageTitle }}</h4>
+      <svg class="products__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
+        <defs>
+          <filter
+            :id="titleFilterId"
+            x="-40%"
+            y="-40%"
+            width="180%"
+            height="180%"
+            color-interpolation-filters="sRGB"
+          >
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 255 -140"
+            />
+          </filter>
+        </defs>
+      </svg>
+      <h4
+        ref="titleEl"
+        class="page-title products__title"
+        :class="{ 'products__title--pending': !titleSplitReady }"
+        :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
+      >
+        {{ titleText }}
+      </h4>
       <p v-if="pageDescription" class="products__intro">{{ pageDescription }}</p>
     </section>
 
-    <div class="products__controls">
-      <div class="products__filters interface" role="group" aria-label="Filter by type or tag">
+    <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
+      <div class="products__filters" role="group" aria-label="Filter by type or tag">
         <button
           type="button"
           class="type-chip"
           :class="{ 'type-chip--active': activeFilter === '' }"
           @click="activeFilter = ''"
         >
-          All
+          All <span class="type-chip__count">({{ filterCount('') }})</span>
         </button>
         <button
           v-for="filter in pageFilters"
@@ -24,11 +49,10 @@
           @click="activeFilter = filterKey(filter)"
         >
           {{ filter.label }}
+          <span class="type-chip__count">({{ filterCount(filterKey(filter)) }})</span>
         </button>
-      </div>
 
-      <div class="products__tools">
-        <label class="products__search">
+        <label class="products__search type-chip">
           <span class="products__search-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7" />
@@ -43,136 +67,43 @@
             aria-label="Search materials and forms"
           />
         </label>
-
-        <div ref="facetsEl" class="products__facets">
-          <div v-for="facet in facets" :key="facet.id" class="filter-dropdown">
-            <button
-              type="button"
-              class="filter-dropdown__toggle"
-              :class="{ 'filter-dropdown__toggle--active': facet.active.length }"
-              :aria-expanded="openDropdown === facet.id"
-              @click="toggleDropdown(facet.id)"
-            >
-              {{ facet.label }}<span
-                v-if="facet.mode === 'single' && facet.active.length"
-                class="filter-dropdown__value"
-              >{{ activeOptionLabel(facet) }}</span>
-              <span
-                v-else-if="facet.active.length"
-                class="filter-dropdown__count"
-              >{{ facet.active.length }}</span>
-              <span class="filter-dropdown__caret" aria-hidden="true">{{ openDropdown === facet.id ? '−' : '+' }}</span>
-            </button>
-            <div
-              v-if="openDropdown === facet.id"
-              class="filter-dropdown__menu"
-              :role="facet.mode === 'single' ? 'radiogroup' : undefined"
-              :aria-label="facet.label"
-            >
-              <button
-                v-if="facet.mode === 'single' && facet.options.length"
-                type="button"
-                role="radio"
-                :aria-checked="!facet.active.length"
-                class="filter-dropdown__option filter-dropdown__option--radio"
-                :class="{ 'filter-dropdown__option--active': !facet.active.length }"
-                @click="clearFacet(facet.id)"
-              >
-                <span class="filter-dropdown__radio" aria-hidden="true" />
-                All
-              </button>
-              <button
-                v-for="option in facet.options"
-                :key="option.value"
-                type="button"
-                :role="facet.mode === 'single' ? 'radio' : 'menuitemcheckbox'"
-                :aria-checked="facet.active.includes(option.value)"
-                class="filter-dropdown__option"
-                :class="{
-                  'filter-dropdown__option--active': facet.active.includes(option.value),
-                  'filter-dropdown__option--radio': facet.mode === 'single',
-                }"
-                @click="toggle(facet.id, option.value)"
-              >
-                <span
-                  v-if="facet.mode === 'single'"
-                  class="filter-dropdown__radio"
-                  aria-hidden="true"
-                />
-                {{ option.label }}
-              </button>
-              <p v-if="!facet.options.length" class="filter-dropdown__empty">
-                Nothing tagged yet
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="products__grid-size" role="group" aria-label="Grid size">
-          <button
-            v-for="size in gridSizes"
-            :key="size.columns"
-            type="button"
-            class="grid-size-btn interface"
-            :class="{ 'grid-size-btn--active': columns === size.columns }"
-            :aria-pressed="columns === size.columns"
-            :aria-label="size.ariaLabel"
-            :disabled="gridAnimating"
-            @click="setColumns(size.columns)"
-          >
-            {{ size.label }}
-          </button>
-        </div>
-
-        <div class="products__flip-mode" role="group" aria-label="Grid transition style">
-          <button
-            v-for="mode in flipModes"
-            :key="mode.id"
-            type="button"
-            class="flip-mode-btn interface"
-            :class="{ 'flip-mode-btn--active': flipMode === mode.id }"
-            :aria-pressed="flipMode === mode.id"
-            :disabled="gridAnimating"
-            @click="flipMode = mode.id"
-          >
-            {{ mode.label }}
-          </button>
-        </div>
       </div>
     </div>
 
     <section class="products__grid-wrap section section--wide">
-      <p class="products__count">{{ visibleCount }} items</p>
       <div
         ref="gridEl"
         class="products__grid"
         :class="{
           'products__grid--revealed': gridRevealed,
           'products__grid--animating': gridAnimating,
-          'products__grid--wide': columns === 10,
-          'products__grid--dense': columns === 6 || columns === 10,
         }"
-        :style="{ '--columns': columns }"
       >
-        <template v-for="row in displayRows" :key="row.key">
+        <template v-for="(row, rowIndex) in displayRows" :key="row.key">
           <div
             v-if="row.empty"
             class="products__spacer"
-            :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) }"
-            :style="thumbStyle(row.key)"
+            :class="[
+              archiveMeta(row.item, rowIndex).className,
+              { 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) },
+            ]"
+            :style="archiveMeta(row.item, rowIndex).style"
             :data-flip-id="row.key"
             aria-hidden="true"
           />
           <ProductCard
             v-else
-            :class="{ 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) }"
+            :class="[
+              archiveMeta(row.item, rowIndex).className,
+              { 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) },
+            ]"
             :item="row.item"
             :image-url="cardImage(row.item)"
             :order-label="orderLabel(row.item._id)"
             :forced-image-index="row.forcedImageIndex"
             :lock-image="row.lockImage"
             :expand-on-click="EXPAND_GALLERY_ON_CLICK && !row.lockImage"
-            :style="thumbStyle(row.key)"
+            :style="archiveMeta(row.item, rowIndex).style"
             :data-flip-id="row.key"
             @expand="expandGallery(row.item._id)"
           />
@@ -187,15 +118,30 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
-import { Flip } from 'gsap/Flip'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { SplitText } from 'gsap/SplitText'
+import type Lenis from 'lenis'
 import {
   libraryFilterKey,
   parseLibraryFilterKey,
   type FormalItem,
 } from '~/composables/demoData'
-import { uniqueImageUrls } from '~/composables/productImages'
+import { uniqueImageUrls, productGalleryFrames, productCoverFrame } from '~/composables/productImages'
 import type { LibraryItem } from '~/composables/useLibraryCatalog'
+import { GRID_RATIO_AR } from '~/composables/useLibraryCatalog'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+
+/** Match InfiniteSplitSlider gooey melt. */
+const TITLE_BLUR_MAX = 75
+/** Scroll distance after stick before title is fully melted out. */
+const TITLE_GOOEY_SCROLL_VH = 0.48
+/** Thumbnail clip-mask out / in (shared with title swap timing). */
+const CLIP_OUT_DUR = 0.85
+const CLIP_IN_DUR = 0.95
+/** Beat after paint before intro clip/title starts. */
+const INTRO_START_DELAY_MS = 100
+/** Title gooeys in shortly after thumbnails begin. */
+const INTRO_TITLE_DELAY_MS = 280
 
 /**
  * TEMP: first click fans gallery images into the grid; those tiles open the PDP.
@@ -214,14 +160,6 @@ type GridRow = {
 }
 
 type FacetId = 'series' | 'feature' | 'materiality' | 'colour'
-
-type FacetView = {
-  id: FacetId
-  label: string
-  mode: 'single' | 'multi'
-  options: { value: string; label: string }[]
-  active: string[]
-}
 
 type LibraryPrefs = {
   filter: string
@@ -242,8 +180,7 @@ const expandedIds = ref<Set<string>>(new Set())
 
 const galleryImageCount = (item: LibraryItem) => {
   const urls = uniqueImageUrls(
-    imageUrl(item.image, IMAGE_WIDTH.thumb),
-    ...(item.gallery || []).map((asset) =>
+    ...productGalleryFrames(item).map((asset) =>
       asset ? imageUrl(asset, IMAGE_WIDTH.thumb) : '',
     ),
   )
@@ -311,6 +248,264 @@ const pageDescription = computed(() => {
   return typeof subtitle === 'string' ? subtitle.trim() : ''
 })
 
+const titleEl = ref<HTMLElement | null>(null)
+const titleText = ref(
+  (pageData.value as { heroTitle?: string } | null)?.heroTitle || 'Materials & Forms',
+)
+const titleSplitReady = ref(true)
+const titleFilterId = `maf-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
+
+let titleSplitInstance: InstanceType<typeof SplitText> | null = null
+let titleGooeyTrigger: ScrollTrigger | null = null
+let titleGooeyBooted = false
+let titleSwapLock = false
+let titleSwapGen = 0
+let titleSwapTween: gsap.core.Tween | null = null
+let titleSwapAbort: (() => void) | null = null
+
+const prefersReducedMotion = () =>
+  import.meta.client &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const titleWords = () =>
+  (titleEl.value?.querySelectorAll('.products__title-word') ||
+    []) as NodeListOf<Element> | never[]
+
+const applyTitleGooey = (effect: number) => {
+  if (titleSwapLock) return
+  const t = Math.max(0, Math.min(1, effect))
+  const words = titleWords()
+  if (!words.length) {
+    if (titleEl.value) gsap.set(titleEl.value, { opacity: t })
+    return
+  }
+  if (prefersReducedMotion()) {
+    gsap.set(words, { filter: 'none', opacity: t })
+    return
+  }
+  gsap.set(words, {
+    filter: `blur(${TITLE_BLUR_MAX * (1 - t)}px)`,
+    opacity: t,
+  })
+}
+
+const abortTitleSwapTween = () => {
+  const tween = titleSwapTween
+  const abort = titleSwapAbort
+  titleSwapTween = null
+  titleSwapAbort = null
+  tween?.kill()
+  abort?.()
+}
+
+const gooeyTween = (targets: gsap.TweenTarget, vars: gsap.TweenVars) =>
+  new Promise<void>((resolve) => {
+    abortTitleSwapTween()
+    let settled = false
+    const settle = () => {
+      if (settled) return
+      settled = true
+      titleSwapAbort = null
+      titleSwapTween = null
+      resolve()
+    }
+    titleSwapAbort = settle
+    titleSwapTween = gsap.to(targets, {
+      ...vars,
+      onComplete: settle,
+    })
+  })
+
+const teardownTitleGooey = () => {
+  abortTitleSwapTween()
+  titleSwapLock = false
+  titleGooeyTrigger?.kill()
+  titleGooeyTrigger = null
+  titleSplitInstance?.revert()
+  titleSplitInstance = null
+  if (titleEl.value) gsap.set(titleEl.value, { clearProps: 'opacity,filter' })
+  titleSplitReady.value = true
+}
+
+const resplitTitleWords = () => {
+  titleSplitInstance?.revert()
+  titleSplitInstance = null
+  if (!titleEl.value || prefersReducedMotion()) return
+  titleSplitInstance = new SplitText(titleEl.value, {
+    type: 'words',
+    wordsClass: 'products__title-word',
+  })
+}
+
+const scrollTitleEffect = () =>
+  titleGooeyTrigger ? 1 - titleGooeyTrigger.progress : 1
+
+/** Gooey-melt the current page title out (text stays until titleGooeyIn). */
+const titleGooeyOut = async () => {
+  if (!import.meta.client || !titleEl.value || !titleGooeyBooted) return
+  if (prefersReducedMotion()) {
+    applyTitleGooey(0)
+    return
+  }
+
+  const gen = ++titleSwapGen
+  abortTitleSwapTween()
+  titleSwapLock = true
+
+  const outWords = Array.from(titleWords())
+  const outTarget = outWords.length ? outWords : titleEl.value
+
+  await gooeyTween(outTarget, {
+    filter: outWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
+    opacity: 0,
+    duration: CLIP_OUT_DUR,
+    ease: 'power2.in',
+  })
+
+  if (gen !== titleSwapGen) return
+}
+
+/** Swap title copy and gooey-melt it in. */
+const titleGooeyIn = async (next: string, forcedEffect?: number) => {
+  if (!import.meta.client || !titleEl.value) {
+    titleText.value = next
+    return
+  }
+
+  const gen = titleSwapGen
+  titleSwapLock = true
+
+  titleSplitInstance?.revert()
+  titleSplitInstance = null
+  if (titleEl.value) gsap.set(titleEl.value, { clearProps: 'opacity' })
+  titleText.value = next
+  await nextTick()
+  if (!titleEl.value || gen !== titleSwapGen) return
+
+  resplitTitleWords()
+  const inWords = Array.from(titleWords())
+  const inTarget = inWords.length ? inWords : titleEl.value
+  // After filter scroll-to-top, ScrollTrigger progress can still read as scrolled
+  // for a frame — allow callers to force a fully-visible land.
+  const targetEffect =
+    forcedEffect != null ? forcedEffect : scrollTitleEffect()
+
+  if (prefersReducedMotion()) {
+    titleSwapLock = false
+    applyTitleGooey(targetEffect)
+    return
+  }
+
+  gsap.set(inTarget, {
+    filter: inWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
+    opacity: 0,
+  })
+
+  await gooeyTween(inTarget, {
+    filter: inWords.length
+      ? `blur(${TITLE_BLUR_MAX * (1 - targetEffect)}px)`
+      : undefined,
+    opacity: targetEffect,
+    duration: CLIP_IN_DUR,
+    ease: 'power3.out',
+  })
+
+  if (gen !== titleSwapGen) return
+  titleSwapLock = false
+  applyTitleGooey(targetEffect)
+}
+
+const swapTitleGooey = async (next: string) => {
+  if (next === titleText.value) return
+  await titleGooeyOut()
+  await titleGooeyIn(next)
+}
+
+const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
+  if (!import.meta.client || !titleEl.value) return
+
+  teardownTitleGooey()
+  gsap.registerPlugin(ScrollTrigger, SplitText)
+
+  try {
+    await document.fonts?.ready
+  } catch {
+    /* ignore */
+  }
+
+  // Allow Vue to paint the latest title text before splitting.
+  await nextTick()
+  if (!titleEl.value) return
+
+  if (!prefersReducedMotion()) {
+    titleSplitReady.value = false
+    resplitTitleWords()
+    titleSplitReady.value = true
+  }
+
+  titleGooeyTrigger = ScrollTrigger.create({
+    trigger: titleEl.value.closest('.products__header') || titleEl.value,
+    start: 'top top',
+    end: () => `+=${Math.max(240, window.innerHeight * TITLE_GOOEY_SCROLL_VH)}`,
+    scrub: 0.55,
+    invalidateOnRefresh: true,
+    onUpdate: (self) => applyTitleGooey(1 - self.progress),
+  })
+
+  if (opts?.startHidden) {
+    titleSwapLock = true
+    applyTitleGooey(0)
+  } else {
+    applyTitleGooey(1 - titleGooeyTrigger.progress)
+  }
+}
+
+const bootTitleGooey = async (opts?: { startHidden?: boolean }) => {
+  titleGooeyBooted = true
+  await setupTitleGooey(opts)
+}
+
+/** Gooey-melt the current title in without changing copy (page intro). */
+const playTitleGooeyIn = async (forcedEffect = 1) => {
+  if (!import.meta.client || !titleEl.value || !titleGooeyBooted) return
+
+  const gen = ++titleSwapGen
+  abortTitleSwapTween()
+  titleSwapLock = true
+
+  let inWords = Array.from(titleWords())
+  if (!inWords.length && !prefersReducedMotion()) {
+    resplitTitleWords()
+    inWords = Array.from(titleWords())
+  }
+  const inTarget = inWords.length ? inWords : titleEl.value
+
+  if (prefersReducedMotion()) {
+    titleSwapLock = false
+    applyTitleGooey(forcedEffect)
+    return
+  }
+
+  gsap.set(inTarget, {
+    filter: inWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
+    opacity: 0,
+  })
+
+  await gooeyTween(inTarget, {
+    filter: inWords.length
+      ? `blur(${TITLE_BLUR_MAX * (1 - forcedEffect)}px)`
+      : undefined,
+    opacity: forcedEffect,
+    duration: CLIP_IN_DUR,
+    ease: 'power3.out',
+  })
+
+  if (gen !== titleSwapGen) return
+  titleSwapLock = false
+  applyTitleGooey(forcedEffect)
+}
+
 useHead(() => {
   const page = pageData.value as
     | { seoTitle?: string; seoDescription?: string }
@@ -323,19 +518,14 @@ useHead(() => {
   }
 })
 
-const cardImage = (item: FormalItem) => imageUrl(item.image, IMAGE_WIDTH.thumb)
+const cardImage = (item: FormalItem) => {
+  const cover = productCoverFrame(item)
+  return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
+}
 const filterKey = libraryFilterKey
 
-/** Column counts — Wide ≈ Codrops demo 75% (10 cols). */
-const gridSizes = [
-  { columns: 2, label: '2', ariaLabel: 'Show 2 columns' },
-  { columns: 3, label: '3', ariaLabel: 'Show 3 columns' },
-  { columns: 4, label: '4', ariaLabel: 'Show 4 columns' },
-  { columns: 5, label: '5', ariaLabel: 'Show 5 columns' },
-  { columns: 6, label: '6', ariaLabel: 'Show 6 columns' },
-  { columns: 10, label: 'Wide', ariaLabel: 'Wide grid, 10 columns' },
-] as const
-const allowedColumns = gridSizes.map((s) => s.columns)
+const route = useRoute()
+const router = useRouter()
 
 const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
   default: () => ({
@@ -345,176 +535,321 @@ const prefs = useCookie<LibraryPrefs>('sba-maf-prefs', {
     materiality: [],
     colours: [],
     search: '',
-    columns: 3,
+    columns: 6,
   }),
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
 
-const activeFilter = ref(prefs.value.filter || '')
-// Series is single-select; clamp in case an older cookie stored several.
-const activeSeries = ref<string[]>((prefs.value.series || []).slice(0, 1))
-const activeFeatures = ref<string[]>([...(prefs.value.feature || [])])
-const activeMateriality = ref<string[]>([...(prefs.value.materiality || [])])
-const activeColours = ref<string[]>([...(prefs.value.colours || [])])
-const searchQuery = ref(prefs.value.search || '')
+const queryString = (value: unknown) =>
+  typeof value === 'string' ? value : Array.isArray(value) ? String(value[0] || '') : ''
+
+/** Normalize legacy smushed tag slugs (e.g. liquidmetal → liquid-metal). */
+const canonicalizeFilterKey = (key: string) => {
+  if (!key) return ''
+  const parsed = parseLibraryFilterKey(key)
+  return parsed ? libraryFilterKey(parsed) : key
+}
+
+const isKnownFilter = (key: string) => {
+  if (!key) return true
+  const canonical = canonicalizeFilterKey(key)
+  return pageFilters.value.some((filter) => filterKey(filter) === canonical)
+}
+
+const initialQueryFilter = (() => {
+  const fromUrl = canonicalizeFilterKey(queryString(route.query.filter))
+  return isKnownFilter(fromUrl) ? fromUrl : ''
+})()
+const initialQuerySearch = queryString(route.query.q)
+
+const activeFilter = ref(
+  initialQueryFilter ||
+    (isKnownFilter(prefs.value.filter || '')
+      ? canonicalizeFilterKey(prefs.value.filter || '')
+      : '') ||
+    '',
+)
+// Facet dropdowns are hidden; clear so cookie state cannot silently filter.
+const activeSeries = ref<string[]>([])
+const activeFeatures = ref<string[]>([])
+const activeMateriality = ref<string[]>([])
+const activeColours = ref<string[]>([])
+const searchQuery = ref(initialQuerySearch || prefs.value.search || '')
+
+const displayTitle = computed(() => {
+  if (!activeFilter.value) return pageTitle.value
+  const match = pageFilters.value.find(
+    (filter) => filterKey(filter) === activeFilter.value,
+  )
+  return match?.label || pageTitle.value
+})
+
+// Sync before first paint (incl. restored cookie filter) — no gooey on load.
+titleText.value = displayTitle.value
+
+/** Keep filter + search shareable via ?filter=&q= without spamming history. */
+let syncingFromRoute = false
+const syncFilterToRoute = () => {
+  if (!import.meta.client || syncingFromRoute) return
+
+  const nextFilter = activeFilter.value || undefined
+  const nextQ = searchQuery.value.trim() || undefined
+  const curFilter = queryString(route.query.filter) || undefined
+  const curQ = queryString(route.query.q) || undefined
+  if (curFilter === nextFilter && curQ === nextQ) return
+
+  const query: Record<string, string> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key === 'filter' || key === 'q') continue
+    const str = queryString(value)
+    if (str) query[key] = str
+  }
+  if (nextFilter) query.filter = nextFilter
+  if (nextQ) query.q = nextQ
+
+  void router.replace({ path: route.path, query })
+}
+
+watch([activeFilter, searchQuery], syncFilterToRoute, { immediate: true })
+
+watch(
+  () => [queryString(route.query.filter), queryString(route.query.q)] as const,
+  ([filter, q]) => {
+    const nextFilter = isKnownFilter(filter) ? canonicalizeFilterKey(filter) : ''
+    const nextQ = q
+    if (nextFilter === activeFilter.value && nextQ === searchQuery.value) return
+    syncingFromRoute = true
+    activeFilter.value = nextFilter
+    searchQuery.value = nextQ
+    nextTick(() => {
+      syncingFromRoute = false
+    })
+  },
+)
+
 /** Applied to the grid after typing pauses */
 const debouncedSearchQuery = ref(searchQuery.value)
 const SEARCH_DEBOUNCE_MS = 350
-const columns = ref(
-  allowedColumns.includes(prefs.value.columns as (typeof allowedColumns)[number])
-    ? prefs.value.columns
-    : 5,
-)
+/** Kept for cookie shape only — layout is a fixed 6-col archive grid. */
+const columns = ref(6)
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
 
-type ThumbSize = { w: number; h: number }
-const gridWidth = ref(0)
-const thumbSizes = ref<Record<string, ThumbSize>>({})
+/**
+ * Tile layout from CMS `gridSize` + cover snap to portrait / square / landscape.
+ * Size fallback rhythm when unset: two small, one medium, repeat.
+ */
+const archiveMeta = (item: LibraryItem, index: number) => {
+  const fallbackSize = index % 3 === 2 ? 'medium' : 'small'
+  const size = item.gridSize || fallbackSize
+  const ratioKey = item.gridRatio || 'square'
+  const ar = GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square
 
-const readCardGap = () => {
-  if (!import.meta.client || !gridEl.value) return 5
-  const raw =
-    getComputedStyle(gridEl.value).columnGap ||
-    getComputedStyle(gridEl.value).gap ||
-    '5'
-  const n = parseFloat(raw)
-  return Number.isFinite(n) ? n : 5
-}
-
-/** Justified rows: shared row height, widths from image aspect (like discovery proportions). */
-const packThumbs = () => {
-  if (!import.meta.client) return
-  const width = gridWidth.value
-  if (width <= 0) return
-
-  const gap = readCardGap()
-  const cols = window.matchMedia('(max-width: 767px)').matches ? 2 : columns.value
-  const targetH = Math.max(72, (width - gap * Math.max(0, cols - 1)) / cols)
-
-  const visible = displayRows.value.filter(
-    (row) => !visibilitySeeded.value || visibleIds.value.has(row.item._id),
-  )
-  const aspects = visible.map((row) => {
-    if (row.empty) return 1
-    const ar = row.item.aspectRatio || 1
-    return Math.min(2.6, Math.max(0.4, ar))
-  })
-
-  const next: Record<string, ThumbSize> = {}
-  let rowStart = 0
-  let rowNat = 0
-
-  const flush = (end: number, stretch: boolean) => {
-    const count = end - rowStart
-    if (count <= 0) return
-    const gaps = (count - 1) * gap
-    let natural = 0
-    for (let i = rowStart; i < end; i++) natural += aspects[i]! * targetH
-    const h =
-      stretch && natural > 0
-        ? Math.max(56, ((width - gaps) / natural) * targetH)
-        : targetH
-    for (let i = rowStart; i < end; i++) {
-      next[visible[i]!.key] = { w: h * aspects[i]!, h }
-    }
-  }
-
-  for (let i = 0; i < visible.length; i++) {
-    const w = aspects[i]! * targetH
-    const nextW = rowNat === 0 ? w : rowNat + gap + w
-    if (rowNat > 0 && nextW > width + 0.5) {
-      flush(i, true)
-      rowStart = i
-      rowNat = w
-    } else {
-      rowNat = nextW
-    }
-  }
-  flush(visible.length, false)
-
-  for (const row of displayRows.value) {
-    if (!next[row.key]) next[row.key] = { w: targetH, h: targetH }
-  }
-  thumbSizes.value = next
-}
-
-const thumbStyle = (key: string) => {
-  const size = thumbSizes.value[key]
-  if (!size) return undefined
   return {
-    '--thumb-w': `${size.w}px`,
-    '--thumb-h': `${size.h}px`,
+    className: `product-card--archive-${size}`,
+    style: {
+      '--thumb-ar': String(ar),
+    },
   }
 }
 
-type FlipMode = 'default' | 'stagger'
-const flipModes = [
-  { id: 'default' as const, label: 'Default' },
-  { id: 'stagger' as const, label: 'Stagger' },
-]
-const flipMode = ref<FlipMode>('default')
 const visibleIds = ref<Set<string>>(new Set())
 /** Distinguishes "no matches" from "not yet computed" — an empty set means both. */
 const visibilitySeeded = ref(false)
 const visibleCount = computed(() => visibleIds.value.size)
 let filterTransitionsReady = false
 let searchFlipTimer: ReturnType<typeof setTimeout> | null = null
+let filterTransitionGen = 0
 
-const flipStagger = () =>
-  flipMode.value === 'stagger'
-    ? { amount: 0.3, from: 'random' as const }
-    : undefined
+const { $lenis } = useNuxtApp()
 
-const gridCards = () =>
-  gridEl.value?.querySelectorAll<HTMLElement>('.product-card') ?? []
+const scrollPageToTop = () => {
+  const lenis = $lenis as Lenis | undefined
+  if (lenis) lenis.scrollTo(0, { immediate: true })
+  else window.scrollTo(0, 0)
+  // Lenis immediate scroll can lag ScrollTrigger by a frame — force sync.
+  ScrollTrigger.update()
+  titleGooeyTrigger?.refresh()
+  ScrollTrigger.update()
+}
+
+type CardClipPrep = {
+  card: HTMLElement
+  media: HTMLElement | null
+  meta: HTMLElement | null
+  lineMovers: HTMLElement[]
+  lineSplits: InstanceType<typeof SplitText>[]
+}
+
+const CLIP_VISIBLE = 'inset(0% 0% 0% 0%)'
+/** Clip from the top downward — layout size stays put, crop unchanged. */
+const CLIP_HIDDEN = 'inset(100% 0% 0% 0%)'
+
+const clearCardClipProps = (prep: CardClipPrep) => {
+  for (const split of prep.lineSplits) {
+    try {
+      split.revert()
+    } catch {
+      /* ignore */
+    }
+  }
+  prep.lineSplits.length = 0
+  prep.lineMovers.length = 0
+  if (prep.media) gsap.set(prep.media, { clearProps: 'clipPath,webkitClipPath' })
+  if (prep.meta) gsap.set(prep.meta, { clearProps: 'clipPath,webkitClipPath' })
+  gsap.set(prep.card, { clearProps: 'opacity,visibility' })
+}
+
+const maskMetaLines = (meta: HTMLElement) => {
+  const splits: InstanceType<typeof SplitText>[] = []
+  const movers: HTMLElement[] = []
+  meta
+    .querySelectorAll<HTMLElement>('.product-card__title, .product-card__provenance')
+    .forEach((el) => {
+      if (!el.textContent?.trim()) return
+      const split = new SplitText(el, {
+        type: 'lines',
+        linesClass: 'product-card__clip-line',
+      })
+      splits.push(split)
+      split.lines.forEach((line) => {
+        const lineEl = line as HTMLElement
+        const mask = document.createElement('div')
+        mask.className = 'product-card__line-mask'
+        lineEl.parentNode?.insertBefore(mask, lineEl)
+        mask.appendChild(lineEl)
+        movers.push(lineEl)
+      })
+    })
+  return { splits, movers }
+}
+
+/** Clip-path only — thumbnail layout height never changes. */
+const prepareCardClip = (card: HTMLElement, collapsed: boolean): CardClipPrep => {
+  const media = card.querySelector<HTMLElement>('.product-card__media')
+  const meta = card.querySelector<HTMLElement>('.product-card__meta')
+
+  let lineSplits: InstanceType<typeof SplitText>[] = []
+  let lineMovers: HTMLElement[] = []
+  if (meta && !prefersReducedMotion()) {
+    const masked = maskMetaLines(meta)
+    lineSplits = masked.splits
+    lineMovers = masked.movers
+  }
+
+  if (media) {
+    gsap.set(media, { clipPath: collapsed ? CLIP_HIDDEN : CLIP_VISIBLE })
+  }
+  if (lineMovers.length) {
+    gsap.set(lineMovers, { yPercent: collapsed ? 110 : 0 })
+  }
+
+  return { card, media, meta, lineMovers, lineSplits }
+}
+
+const animateCardsOut = (cards: HTMLElement[]) => {
+  if (!cards.length) return Promise.resolve([] as CardClipPrep[])
+  gsap.registerPlugin(SplitText)
+  const prepared = cards.map((card) => prepareCardClip(card, false))
+
+  if (prefersReducedMotion()) {
+    for (const prep of prepared) {
+      if (prep.media) gsap.set(prep.media, { clipPath: CLIP_HIDDEN })
+      if (prep.lineMovers.length) gsap.set(prep.lineMovers, { yPercent: 110 })
+    }
+    return Promise.resolve(prepared)
+  }
+
+  const medias = prepared.map((p) => p.media).filter(Boolean) as HTMLElement[]
+  const lines = prepared.flatMap((p) => p.lineMovers)
+
+  return new Promise<CardClipPrep[]>((resolve) => {
+    const tl = gsap.timeline({
+      onComplete: () => resolve(prepared),
+    })
+    if (medias.length) {
+      tl.to(
+        medias,
+        {
+          clipPath: CLIP_HIDDEN,
+          duration: CLIP_OUT_DUR,
+          ease: 'power3.inOut',
+          stagger: { amount: 0.2, from: 'random' },
+        },
+        0,
+      )
+    }
+    if (lines.length) {
+      tl.to(
+        lines,
+        {
+          yPercent: 110,
+          duration: CLIP_OUT_DUR * 0.45,
+          ease: 'power3.in',
+          stagger: { amount: 0.12, from: 'random' },
+        },
+        0,
+      )
+    }
+    if (!medias.length && !lines.length) resolve(prepared)
+  })
+}
+
+const animateCardsIn = (prepared: CardClipPrep[]) => {
+  if (!prepared.length) return Promise.resolve()
+
+  if (prefersReducedMotion()) {
+    for (const prep of prepared) clearCardClipProps(prep)
+    return Promise.resolve()
+  }
+
+  const medias = prepared.map((p) => p.media).filter(Boolean) as HTMLElement[]
+  const lines = prepared.flatMap((p) => p.lineMovers)
+
+  return new Promise<void>((resolve) => {
+    const tl = gsap.timeline({
+      onComplete: () => {
+        for (const prep of prepared) clearCardClipProps(prep)
+        resolve()
+      },
+    })
+    if (medias.length) {
+      tl.fromTo(
+        medias,
+        { clipPath: CLIP_HIDDEN },
+        {
+          clipPath: CLIP_VISIBLE,
+          duration: CLIP_IN_DUR,
+          ease: 'power3.inOut',
+          stagger: { amount: 0.22, from: 'random' },
+        },
+        0,
+      )
+    }
+    if (lines.length) {
+      tl.fromTo(
+        lines,
+        { yPercent: 110 },
+        {
+          yPercent: 0,
+          duration: CLIP_IN_DUR * 0.45,
+          ease: 'power3.out',
+          stagger: { amount: 0.12, from: 'random' },
+        },
+        CLIP_IN_DUR * 0.55,
+      )
+    }
+    if (!medias.length && !lines.length) {
+      for (const prep of prepared) clearCardClipProps(prep)
+      resolve()
+    }
+  })
+}
 
 const visibleGridCards = () =>
   gridEl.value?.querySelectorAll<HTMLElement>('.product-card:not(.is-filtered-out)') ??
   []
-
-const setColumns = async (size: number) => {
-  if (!import.meta.client || gridAnimating.value || size === columns.value) return
-
-  // Mobile layout ignores --columns — skip Flip.
-  if (window.matchMedia('(max-width: 767px)').matches) {
-    columns.value = size
-    return
-  }
-
-  const cards = visibleGridCards()
-  if (!cards.length) {
-    columns.value = size
-    return
-  }
-
-  gridAnimating.value = true
-  const state = Flip.getState(cards)
-  columns.value = size
-  await nextTick()
-
-  if (flipMode.value === 'stagger') {
-    Flip.from(state, {
-      absolute: true,
-      duration: 1,
-      ease: 'expo.inOut',
-      stagger: flipStagger(),
-      onComplete: () => {
-        gridAnimating.value = false
-      },
-    })
-    return
-  }
-
-  Flip.from(state, {
-    duration: 0.8,
-    ease: 'expo.inOut',
-    onComplete: () => {
-      gridAnimating.value = false
-    },
-  })
-}
 
 const transitionFilter = async (nextIds: Set<string>) => {
   if (!import.meta.client || !filterTransitionsReady) {
@@ -527,107 +862,82 @@ const transitionFilter = async (nextIds: Set<string>) => {
     [...nextIds].every((id) => visibleIds.value.has(id))
   if (same) return
 
-  if (gridAnimating.value) {
-    visibleIds.value = nextIds
-    return
-  }
+  const gen = ++filterTransitionGen
+  const titleNext = displayTitle.value
+  const titleNeedsSwap = titleNext !== titleText.value
 
-  if (!gridEl.value || window.matchMedia('(max-width: 767px)').matches) {
-    visibleIds.value = nextIds
-    return
-  }
-
-  const prevIds = visibleIds.value
-  const leavingIds = [...prevIds].filter((id) => !nextIds.has(id))
-  const enteringIds = [...nextIds].filter((id) => !prevIds.has(id))
-  const cardById = (id: string) =>
-    gridEl.value?.querySelector<HTMLElement>(
-      `.product-card[data-flip-id="${CSS.escape(id)}"]`,
-    ) ?? null
-
+  // Claim title ownership so displayTitle watch doesn't double-animate.
   gridAnimating.value = true
+  titleSwapLock = true
 
-  const FADE_OUT = 0.4
-  const FADE_IN = 0.8
-  const BEAT = 120
-
-  // 1) Obvious fade-out for items leaving the filter.
-  const leavingEls = leavingIds.map(cardById).filter(Boolean) as HTMLElement[]
-  if (leavingEls.length) {
-    await gsap.to(leavingEls, {
-      autoAlpha: 0,
-      duration: FADE_OUT,
-      ease: 'power2.out',
-    })
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, BEAT)
-    })
+  if (gridEl.value) {
+    gsap.killTweensOf(
+      gridEl.value.querySelectorAll(
+        '.product-card__media, .product-card__clip-line',
+      ),
+    )
   }
 
-  // 2) Hide entrants before they re-enter the flow so they never flash opaque.
-  const enteringEls = enteringIds.map(cardById).filter(Boolean) as HTMLElement[]
-  if (enteringEls.length) gsap.set(enteringEls, { autoAlpha: 0 })
+  const leavingCards = Array.from(visibleGridCards())
 
-  // Capture positions of items that stay, then apply the new visibility set.
-  const stayingEls = [...prevIds]
-    .filter((id) => nextIds.has(id))
-    .map(cardById)
-    .filter(Boolean) as HTMLElement[]
+  const preparedOut = await Promise.all([
+    animateCardsOut(leavingCards),
+    titleNeedsSwap ? titleGooeyOut() : Promise.resolve(null),
+  ]).then(([out]) => out)
 
-  const state = Flip.getState(stayingEls.length ? stayingEls : gridCards())
+  if (gen !== filterTransitionGen) return
+
+  // Screen is empty — jump to top before revealing the next set.
+  scrollPageToTop()
+
   visibleIds.value = nextIds
   await nextTick()
+  if (gen !== filterTransitionGen) return
 
-  // Re-assert after display:none is cleared — first paint must stay invisible.
-  if (enteringEls.length) gsap.set(enteringEls, { autoAlpha: 0 })
-
-  // Clear leftover visibility on leavers for a clean later re-entry.
-  for (const id of leavingIds) {
-    const el = cardById(id)
-    if (el) gsap.set(el, { clearProps: 'opacity,visibility' })
+  // Restore only cards that left the set (they're display:none now).
+  for (const prep of preparedOut) {
+    const id = prep.card.getAttribute('data-flip-id') || ''
+    if (!nextIds.has(id)) clearCardClipProps(prep)
   }
 
-  const finish = () => {
-    gridAnimating.value = false
-  }
-
-  const afterRearrange = async () => {
-    if (!enteringEls.length) {
-      finish()
-      return
+  const enterCards = Array.from(visibleGridCards())
+  gsap.registerPlugin(SplitText)
+  const preparedIn = enterCards.map((card) => {
+    const id = card.getAttribute('data-flip-id') || ''
+    const prior = preparedOut.find(
+      (prep) => (prep.card.getAttribute('data-flip-id') || '') === id,
+    )
+    if (prior) {
+      // Still clipped — reuse for clip-in.
+      if (prior.media) gsap.set(prior.media, { clipPath: CLIP_HIDDEN })
+      if (prior.lineMovers.length) gsap.set(prior.lineMovers, { yPercent: 110 })
+      return prior
     }
-
-    // Same beat as after fade-out, then a softer mirrored fade-in.
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, BEAT)
-    })
-
-    gsap.to(enteringEls, {
-      autoAlpha: 1,
-      duration: FADE_IN,
-      ease: 'power4.in',
-      onComplete: () => {
-        gsap.set(enteringEls, { clearProps: 'opacity,visibility' })
-        finish()
-      },
-    })
-  }
-
-  if (!stayingEls.length) {
-    // Nothing to rearrange — just reveal entrants.
-    void afterRearrange()
-    return
-  }
-
-  Flip.from(state, {
-    absolute: true,
-    duration: flipMode.value === 'stagger' ? 1 : 0.75,
-    ease: 'expo.inOut',
-    stagger: flipStagger(),
-    onComplete: () => {
-      void afterRearrange()
-    },
+    return prepareCardClip(card, true)
   })
+
+  await Promise.all([
+    animateCardsIn(preparedIn),
+    (async () => {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 220)
+      })
+      if (gen !== filterTransitionGen) return
+      if (titleNeedsSwap) await titleGooeyIn(titleNext, 1)
+      else {
+        titleSwapLock = false
+        applyTitleGooey(1)
+      }
+    })(),
+  ])
+
+  if (gen !== filterTransitionGen) return
+
+  titleSwapLock = false
+  titleGooeyTrigger?.refresh()
+  ScrollTrigger.update()
+  applyTitleGooey(1)
+  gridAnimating.value = false
 }
 
 watch(
@@ -656,63 +966,97 @@ watch(
 
 const gridRevealed = ref(false)
 let revealTimer: ReturnType<typeof setTimeout> | null = null
-let gridResizeObserver: ResizeObserver | null = null
+let introRan = false
 
-const openDropdown = ref<FacetId | null>(null)
-const facetsEl = ref<HTMLElement | null>(null)
+const waitMs = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
 
-const toggleDropdown = (id: FacetId) => {
-  openDropdown.value = openDropdown.value === id ? null : id
+const runPageIntro = async () => {
+  if (!import.meta.client || introRan) return
+  introRan = true
+
+  gridAnimating.value = true
+  titleSwapLock = true
+
+  await bootTitleGooey({ startHidden: true })
+  await nextTick()
+
+  const cards = Array.from(visibleGridCards())
+  gsap.registerPlugin(SplitText)
+  const prepared = cards.map((card) => prepareCardClip(card, true))
+
+  // Show the grid (opacity) only once cards are clipped shut.
+  gridRevealed.value = true
+  await waitMs(INTRO_START_DELAY_MS)
+
+  await Promise.all([
+    animateCardsIn(prepared),
+    (async () => {
+      await waitMs(INTRO_TITLE_DELAY_MS)
+      await playTitleGooeyIn(1)
+    })(),
+  ])
+
+  titleSwapLock = false
+  applyTitleGooey(1)
+  gridAnimating.value = false
+  filterTransitionsReady = true
 }
 
-const onDocumentClick = (event: MouseEvent) => {
-  if (facetsEl.value?.contains(event.target as Node)) return
-  openDropdown.value = null
+const startPageIntro = () => {
+  void runPageIntro()
 }
 
 onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
   seedVisibility()
-  // Allow one frame so initial filter state paints without a Flip.
-  requestAnimationFrame(() => {
-    filterTransitionsReady = true
-  })
-  revealTimer = setTimeout(() => {
-    gridRevealed.value = true
-  }, 1000)
 
-  if (gridEl.value) {
-    gridWidth.value = gridEl.value.clientWidth
-    packThumbs()
-    gridResizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      const w = entry?.contentRect.width ?? gridEl.value?.clientWidth ?? 0
-      if (Math.abs(w - gridWidth.value) < 0.5) return
-      gridWidth.value = w
-      packThumbs()
-    })
-    gridResizeObserver.observe(gridEl.value)
+  if (document.body.classList.contains('preloader-complete')) {
+    startPageIntro()
+  } else {
+    document.addEventListener('preloader-complete', startPageIntro, { once: true })
   }
+  document.addEventListener(
+    'basedupon:scroll-system-ready',
+    () => {
+      titleGooeyTrigger?.refresh()
+    },
+    { once: true },
+  )
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  gridResizeObserver?.disconnect()
-  gridResizeObserver = null
+  introRan = false
+  filterTransitionGen += 1
+  titleSwapGen += 1
   if (revealTimer) clearTimeout(revealTimer)
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
+  teardownTitleGooey()
   if (import.meta.client && gridEl.value) {
-    Flip.killFlipsOf(gridEl.value.querySelectorAll('.product-card'))
+    gsap.killTweensOf(
+      gridEl.value.querySelectorAll(
+        '.product-card__media, .product-card__clip-line',
+      ),
+    )
   }
 })
 
-watch(
-  [columns, visibleIds, displayRows, visibilitySeeded],
-  () => {
-    packThumbs()
-  },
-  { deep: true },
-)
+watch(displayTitle, (next) => {
+  if (!import.meta.client) {
+    titleText.value = next
+    return
+  }
+  if (!titleGooeyBooted) {
+    titleText.value = next
+    return
+  }
+  // Defer so transitionFilter can claim the title on the same tick.
+  nextTick(() => {
+    if (gridAnimating.value || next === titleText.value) return
+    void swapTitleGooey(next)
+  })
+})
 
 const activeFacets = {
   series: activeSeries,
@@ -727,86 +1071,6 @@ const facetValues = (item: FormalItem, id: FacetId): string[] => {
   if (id === 'feature') return item.feature ? [item.feature] : []
   if (id === 'materiality') return item.materials || []
   return item.colours || []
-}
-
-/** Sanity taxonomy titles arrive display-ready; demo/legacy slugs need casing. */
-const optionLabel = (value: string) =>
-  value === value.toLowerCase()
-    ? value.replace(/\b[a-z]/g, (char) => char.toUpperCase())
-    : value
-
-const facetOptions = (id: FacetId) => {
-  const labels = new Map<string, string>()
-  for (const item of items.value) {
-    for (const value of facetValues(item, id)) {
-      const trimmed = String(value || '').trim()
-      if (trimmed && !labels.has(trimmed)) labels.set(trimmed, optionLabel(trimmed))
-    }
-  }
-  return [...labels.entries()]
-    .map(([value, label]) => ({ value, label }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-}
-
-const seriesOptions = computed(() => facetOptions('series'))
-const featureOptions = computed(() => facetOptions('feature'))
-const materialityOptions = computed(() => facetOptions('materiality'))
-const colourOptions = computed(() => facetOptions('colour'))
-
-const facets = computed<FacetView[]>(() => [
-  {
-    id: 'series' as const,
-    label: 'Series',
-    mode: 'single' as const,
-    options: seriesOptions.value,
-    active: activeSeries.value,
-  },
-  {
-    id: 'feature' as const,
-    label: 'Feature',
-    mode: 'multi' as const,
-    options: featureOptions.value,
-    active: activeFeatures.value,
-  },
-  {
-    id: 'materiality' as const,
-    label: 'Materiality',
-    mode: 'multi' as const,
-    options: materialityOptions.value,
-    active: activeMateriality.value,
-  },
-  {
-    id: 'colour' as const,
-    label: 'Colour',
-    mode: 'multi' as const,
-    options: colourOptions.value,
-    active: activeColours.value,
-  },
-])
-
-/** Single-select facets hold at most one value; the array shape stays uniform. */
-const SINGLE_SELECT_FACETS = new Set<FacetId>(['series'])
-
-const activeOptionLabel = (facet: FacetView) =>
-  facet.options.find((option) => option.value === facet.active[0])?.label ||
-  facet.active[0] ||
-  ''
-
-const toggle = (id: FacetId, value: string) => {
-  const list = activeFacets[id]
-  if (SINGLE_SELECT_FACETS.has(id)) {
-    list.value = list.value[0] === value ? [] : [value]
-    openDropdown.value = null
-    return
-  }
-  list.value = list.value.includes(value)
-    ? list.value.filter((v) => v !== value)
-    : [...list.value, value]
-}
-
-const clearFacet = (id: FacetId) => {
-  activeFacets[id].value = []
-  openDropdown.value = null
 }
 
 const matchesFacet = (item: FormalItem, id: FacetId) => {
@@ -852,28 +1116,57 @@ const matchesPageFilter = (item: FormalItem, key: string) => {
   return (item.tags || []).includes(parsed.value)
 }
 
+const matchesSearch = (item: FormalItem, query: string) => {
+  if (!query) return true
+  return (
+    item.title.toLowerCase().includes(query) ||
+    (item.category || '').toLowerCase().includes(query) ||
+    (item.type || '').toLowerCase().includes(query) ||
+    (item.series || '').toLowerCase().includes(query) ||
+    (item.feature || '').toLowerCase().includes(query) ||
+    (item.tags || []).some((t) => t.toLowerCase().includes(query)) ||
+    (item.materials || []).some((m) => m.toLowerCase().includes(query)) ||
+    (item.colours || []).some((c) => c.toLowerCase().includes(query))
+  )
+}
+
+const matchesFacets = (item: FormalItem) =>
+  matchesFacet(item, 'series') &&
+  matchesFacet(item, 'feature') &&
+  matchesFacet(item, 'materiality') &&
+  matchesFacet(item, 'colour')
+
+const filterCounts = computed(() => {
+  const query = debouncedSearchQuery.value.trim().toLowerCase()
+  const counts: Record<string, number> = { '': 0 }
+
+  for (const filter of pageFilters.value) {
+    counts[filterKey(filter)] = 0
+  }
+
+  for (const item of items.value) {
+    if (!matchesFacets(item) || !matchesSearch(item, query)) continue
+    if (matchesPageFilter(item, '')) counts[''] += 1
+    for (const filter of pageFilters.value) {
+      const key = filterKey(filter)
+      if (matchesPageFilter(item, key)) counts[key] += 1
+    }
+  }
+
+  return counts
+})
+
+const filterCount = (key: string) => filterCounts.value[key] ?? 0
+
 const filteredItems = computed(() => {
   const query = debouncedSearchQuery.value.trim().toLowerCase()
 
-  return items.value.filter((item) => {
-    const pageMatch = matchesPageFilter(item, activeFilter.value)
-    const facetMatch =
-      matchesFacet(item, 'series') &&
-      matchesFacet(item, 'feature') &&
-      matchesFacet(item, 'materiality') &&
-      matchesFacet(item, 'colour')
-    const searchMatch =
-      !query ||
-      item.title.toLowerCase().includes(query) ||
-      (item.category || '').toLowerCase().includes(query) ||
-      (item.type || '').toLowerCase().includes(query) ||
-      (item.series || '').toLowerCase().includes(query) ||
-      (item.feature || '').toLowerCase().includes(query) ||
-      (item.tags || []).some((t) => t.toLowerCase().includes(query)) ||
-      (item.materials || []).some((m) => m.toLowerCase().includes(query)) ||
-      (item.colours || []).some((c) => c.toLowerCase().includes(query))
-    return pageMatch && facetMatch && searchMatch
-  })
+  return items.value.filter(
+    (item) =>
+      matchesPageFilter(item, activeFilter.value) &&
+      matchesFacets(item) &&
+      matchesSearch(item, query),
+  )
 })
 
 const filteredIdSet = computed(
@@ -944,8 +1237,35 @@ useHead(() => ({
 }
 
 .products__header {
-  padding-bottom: 0rem;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding-bottom: 110px;
   max-width: none;
+}
+
+.products__title-filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.products__title {
+  width: max-content;
+  max-width: 100%;
+  pointer-events: none;
+  will-change: filter, opacity;
+}
+
+.products__title--pending {
+  visibility: hidden;
+}
+
+.products__title :deep(.products__title-word) {
+  display: inline-block;
+  will-change: filter, opacity;
 }
 
 .products__intro {
@@ -954,71 +1274,73 @@ useHead(() => ({
   color: var(--muted);
 }
 
-.products__controls {
-  position: sticky;
-  top: calc(var(--header-height) + 2.5vw);
-  z-index: 50;
+.products__filter-tool {
+  position: fixed;
+  left: 50%;
+  bottom: 130px;
+  z-index: 60;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  padding: 1rem var(--gutter);
+  width: max-content;
+  max-width: unset;
+  padding: 1.25rem 1.5rem;
+  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .products__filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: start;
-  gap: 0.5rem 1.5rem;
-  flex-direction: column;
-  text-align: left;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  text-align: center;
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .type-chip {
   font-size: var(--text-sm);
   color: var(--charcoal);
   opacity: 1;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, background 0.2s ease;
+  padding: 12px 20px;
+  border: none;
 }
 
 .type-chip:hover {
-  opacity: 0.3;
+  opacity: 1;
 }
 
 .type-chip--active {
-  opacity: 0.3;
+  opacity: 1;
+  background: var(--white);
+  border-radius: 20px;
 }
 
-.products__tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-.products__facets {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1.5rem;
+.type-chip__count {
+  font-variant-numeric: tabular-nums;
+  display: none;
 }
 
 .products__search {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  min-width: 9rem;
-  max-width: 14rem;
-  padding: 0.25rem 0;
-  border-bottom: 1px solid var(--ui-border-color);
-  color: var(--muted);
-  transition: color 0.2s ease, border-color 0.2s ease;
+  min-width: 7rem;
+  max-width: 12rem;
+  margin: 0;
+  border-color: transparent;
+  color: var(--charcoal);
+  cursor: text;
 }
 
+.products__search:hover,
 .products__search:focus-within {
-  color: var(--charcoal);
-  border-color: var(--charcoal);
+  opacity: 1;
 }
 
 .products__search-icon {
@@ -1031,9 +1353,11 @@ useHead(() => ({
   width: 100%;
   min-width: 0;
   border: 0;
+  padding: 0;
   background: transparent;
+  font: inherit;
   font-size: var(--text-sm);
-  color: var(--charcoal);
+  color: inherit;
   outline: none;
 }
 
@@ -1045,212 +1369,23 @@ useHead(() => ({
   appearance: none;
 }
 
-.filter-dropdown {
-  position: relative;
-}
-
-.filter-dropdown__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
-}
-
-.filter-dropdown__toggle:hover,
-.filter-dropdown__toggle--active {
-  color: var(--charcoal);
-}
-
-.filter-dropdown__count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.15rem;
-  height: 1.15rem;
-  padding: 0 0.3rem;
-  font-size: var(--text-xs);
-  color: var(--warm-white);
-  background: var(--charcoal);
-  border-radius: 999px;
-}
-
-.filter-dropdown__caret {
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--muted);
-}
-
-.filter-dropdown__value {
-  max-width: 8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--charcoal);
-}
-
-.filter-dropdown__menu {
-  position: absolute;
-  top: calc(100% + 0.75rem);
-  right: 0;
-  z-index: 60;
-  min-width: 11rem;
-  max-height: 18rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 0.5rem;
-  background: var(--warm-white);
-  border: 1px solid var(--ui-border-color);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
-}
-
-.filter-dropdown__option {
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  border-radius: 8px;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-
-.filter-dropdown__option:hover {
-  color: var(--charcoal);
-  background: var(--cream);
-}
-
-.filter-dropdown__option--active {
-  color: var(--charcoal);
-  background: var(--cream);
-}
-
-.filter-dropdown__option--active::after {
-  content: '✓';
-  float: right;
-}
-
-.filter-dropdown__option--radio {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.filter-dropdown__option--radio::after {
-  content: none;
-}
-
-.filter-dropdown__radio {
-  position: relative;
-  flex-shrink: 0;
-  width: 0.7rem;
-  height: 0.7rem;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  opacity: 0.6;
-}
-
-.filter-dropdown__option--radio.filter-dropdown__option--active .filter-dropdown__radio {
-  opacity: 1;
-}
-
-.filter-dropdown__option--radio.filter-dropdown__option--active
-  .filter-dropdown__radio::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.filter-dropdown__empty {
-  margin: 0;
-  padding: 0.5rem 0.6rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-}
-
-.products__grid-size {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.grid-size-btn {
-  display: grid;
-  place-items: center;
-  min-width: 1.75rem;
-  padding: 0.3rem 0.45rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
-}
-
-.grid-size-btn:last-child {
-  min-width: auto;
-  padding-inline: 0.55rem;
-}
-
-.grid-size-btn:hover:not(:disabled) {
-  color: var(--charcoal);
-}
-
-.grid-size-btn--active {
-  color: var(--charcoal);
-}
-
-.grid-size-btn:disabled {
-  cursor: default;
-}
-
-.products__flip-mode {
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-  margin-left: 0.5rem;
-  padding-left: 0.75rem;
-  border-left: 1px solid var(--ui-border-color);
-}
-
-.flip-mode-btn {
-  padding: 0.3rem 0.5rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  transition: color 0.2s ease;
-}
-
-.flip-mode-btn:hover:not(:disabled) {
-  color: var(--charcoal);
-}
-
-.flip-mode-btn--active {
-  color: var(--charcoal);
-}
-
-.flip-mode-btn:disabled {
-  cursor: default;
-}
-
 .products__grid-wrap {
   padding-top: 1.5rem;
 }
 
-.products__count {
-  padding: 0 var(--gutter);
-  margin: 0 0 1rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  display: none;
-}
-
 .products__grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--card-gap);
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
   margin: 0 var(--gutter);
   opacity: 0;
-  transition: opacity 0.85s ease;
+}
+
+@media (max-width: 2060px) {
+  .products__grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 .products__grid--revealed {
@@ -1261,14 +1396,65 @@ useHead(() => ({
   pointer-events: none;
 }
 
+.products__grid :deep(.product-card) {
+  width: auto;
+  max-width: none;
+  flex: none;
+  min-width: 0;
+}
+
+.products__grid :deep(.product-card--archive-small),
+.products__spacer.product-card--archive-small {
+  grid-column: span 1;
+}
+
+.products__grid :deep(.product-card--archive-medium),
+.products__spacer.product-card--archive-medium {
+  grid-column: span 2;
+}
+
+.products__grid :deep(.product-card--archive-large),
+.products__spacer.product-card--archive-large {
+  grid-column: span 4;
+}
+
+.products__grid :deep(.product-card--archive-full),
+.products__spacer.product-card--archive-full {
+  grid-column: span 6;
+}
+
+@media (max-width: 2060px) {
+  .products__grid .product-card--archive-large, .products__spacer.product-card--archive-large {
+    grid-column: span 3;
+  }
+}
+
+.products__grid :deep(.product-card__media) {
+  height: auto;
+  aspect-ratio: var(--thumb-ar, 1);
+}
+
+.products__grid :deep(.product-card__image) {
+  object-fit: cover;
+  object-position: center center;
+}
+
 .products__grid :deep(.product-card.is-filtered-out) {
   display: none !important;
 }
 
+.products__grid :deep(.product-card__line-mask) {
+  display: block;
+  overflow: hidden;
+}
+
+.products__grid :deep(.product-card__clip-line) {
+  display: block;
+}
+
 .products__spacer {
-  width: var(--thumb-w, 100px);
-  height: var(--thumb-h, 100px);
-  flex: 0 0 auto;
+  width: 100%;
+  aspect-ratio: var(--thumb-ar, 1);
   min-width: 0;
   pointer-events: none;
 }
@@ -1277,7 +1463,7 @@ useHead(() => ({
   display: none !important;
 }
 
-.products__grid--dense :deep(.product-card__type) {
+.products__grid :deep(.product-card__type) {
   display: none;
 }
 
@@ -1286,10 +1472,34 @@ useHead(() => ({
   color: var(--muted);
 }
 
+@media (max-width: 899px) {
+  .products__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .products__grid :deep(.product-card--archive-large),
+  .products__spacer.product-card--archive-large {
+    grid-column: span 4;
+  }
+
+  .products__grid :deep(.product-card--archive-full),
+  .products__spacer.product-card--archive-full {
+    grid-column: span 4;
+  }
+}
+
 @media (max-width: 767px) {
-  .products__grid-size,
-  .products__flip-mode {
-    display: none;
+  .products__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .products__grid :deep(.product-card--archive-medium),
+  .products__spacer.product-card--archive-medium,
+  .products__grid :deep(.product-card--archive-large),
+  .products__spacer.product-card--archive-large,
+  .products__grid :deep(.product-card--archive-full),
+  .products__spacer.product-card--archive-full {
+    grid-column: span 2;
   }
 }
 </style>

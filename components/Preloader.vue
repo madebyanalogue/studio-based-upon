@@ -52,9 +52,9 @@ const { title, logo, disablePreloader } = useSiteSettings()
 const DEFAULT_STATEMENT =
   'Award-winning surfaces, collectible design and architectural features. From concept to completion.'
 
-const statementQuery = `*[_type == "homePage"][0].preloaderStatement`
+const statementQuery = `*[_type == "infiniteSliderPage"][0].preloaderStatement`
 
-const { data: preloaderStatement } = useAsyncData('preloaderStatement', () =>
+const { data: preloaderStatement } = useAsyncData('preloaderStatement-v2', () =>
   $fetch('/api/sanity/query', { method: 'POST', body: { query: statementQuery } })
     .then((r: { result?: string }) => r?.result || null)
     .catch(() => null),

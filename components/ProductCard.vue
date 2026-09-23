@@ -17,6 +17,7 @@
         <img
           v-if="activeImage"
           class="product-card__image"
+          :class="{ 'product-card__image--cover': imageIndex > 0 }"
           :src="activeImage"
           :alt="item.title"
           loading="lazy"
@@ -31,6 +32,17 @@
           @click.stop.prevent="onToggle"
         />
       </component>
+
+      <ImageCycleArrows
+        v-if="!isImageLocked && projectImages.length > 1"
+        class="product-card__cycle"
+        :index="imageIndex"
+        :count="projectImages.length"
+        hide-count
+        boxed
+        @prev="cycle(-1)"
+        @next="cycle(1)"
+      />
     </div>
 
     <div class="product-card__meta">
@@ -41,7 +53,10 @@
         :aria-label="href ? `View ${item.title}` : undefined"
         @click="onOpen"
       >
-        <p class="product-card__title">{{ item.title }}</p>
+        <div class="product-card__meta-main">
+          <p class="product-card__title">{{ item.title }}</p>
+          <p class="product-card__provenance">{{ provenance }}</p>
+        </div>
         <div class="product-card__type">
           <span>{{ typeLabel }}</span>
           <div v-if="orderLabel" class="product-card__sep">/</div>
@@ -56,7 +71,7 @@
 import { PRODUCT_TYPE_FILTERS, type FormalItem } from '~/composables/demoData'
 import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import type { LibraryItem } from '~/composables/useLibraryCatalog'
-import { uniqueImageUrls } from '~/composables/productImages'
+import { uniqueImageUrls, productGalleryFrames } from '~/composables/productImages'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 const props = withDefaults(
@@ -84,6 +99,9 @@ const props = withDefaults(
 const emit = defineEmits<{
   expand: []
 }>()
+
+/** Placeholder until CMS location / year fields exist. */
+const provenance = "Sotheby's London, 2020"
 
 const { requestSave, isSaved } = useBucket()
 const { open, returnImage } = useProductOverlay()
@@ -151,7 +169,7 @@ const productSlug = computed(() =>
 
 const imageAssets = computed(() => {
   const item = props.item as LibraryItem
-  return [item.image, ...(item.gallery || [])]
+  return productGalleryFrames(item)
 })
 
 /** Grid display — thumb tier */
@@ -204,6 +222,13 @@ watch(projectImages, (urls) => {
         : 0
   }
 })
+
+const cycle = (direction: 1 | -1) => {
+  if (isImageLocked.value) return
+  const count = projectImages.value.length
+  if (count < 2) return
+  imageIndex.value = (imageIndex.value + direction + count) % count
+}
 
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
@@ -313,6 +338,12 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.7s ease, filter 0.7s ease;
 }
 
+/* Later gallery frames fill the silhouette set by the first image */
+.product-card__image--cover {
+  object-fit: cover;
+  object-position: center center;
+}
+
 .product-card__type-label {
   font-size: 15cqi;
   line-height: 0.95;
@@ -336,15 +367,25 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
+.product-card__cycle {
+  position: absolute;
+  right: var(--thumb-ctrl-inset);
+  bottom: var(--thumb-ctrl-inset);
+  z-index: 3;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
 /* Wide: heart rides the hover; a saved heart stays readable */
 @media (min-width: 1000px) {
-  .product-card__add {
+  .product-card__add,
+  .product-card__cycle {
     opacity: 0;
     transform: translateY(4px);
     pointer-events: none;
   }
 
   .product-card:hover .product-card__add,
+  .product-card:hover .product-card__cycle,
   .product-card--saved .product-card__add {
     opacity: 1;
     transform: translateY(0);
@@ -356,7 +397,7 @@ const onToggle = (event?: MouseEvent) => {
   /* position: absolute; */
   inset: auto 0 0 0;
   z-index: 1;
-  padding: var(--title-pad);
+  padding: 16px 0;
   min-width: 0;
   opacity: 1;
   transition: opacity 0.6s ease;
@@ -365,8 +406,8 @@ const onToggle = (event?: MouseEvent) => {
 }
 
 .product-card__meta * {
-  font-size: var(--text-sm);
-  font-size: clamp(10px,.5cqi, 12px);
+  font-size: 9px;
+  letter-spacing: 0.125em;
 }
 
 .product-card__meta *,
@@ -380,7 +421,8 @@ const onToggle = (event?: MouseEvent) => {
     color: var(--charcoal);
   }
 
-  .product-card__add {
+  .product-card__add,
+  .product-card__cycle {
     opacity: 1;
     transform: none;
     pointer-events: auto;
@@ -389,17 +431,33 @@ const onToggle = (event?: MouseEvent) => {
 
 .product-card__meta-link {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   min-width: 0;
   color: inherit;
 }
 
+.product-card__meta-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .product-card__title {
   margin: 0;
   min-width: 0;
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-card__provenance {
+  margin: 0;
+  min-width: 0;
+  color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

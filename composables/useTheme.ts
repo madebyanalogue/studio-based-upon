@@ -7,6 +7,9 @@ const STORAGE_KEY = 'basedupon:theme'
 const isPrecraftedPath = (path: string) =>
   path === '/pre-crafted' || path.startsWith('/pre-crafted/')
 
+const isCuratePath = (path: string) =>
+  path === '/curate' || path.startsWith('/curate/')
+
 const readStored = (): ThemeMode | null => {
   if (!import.meta.client) return null
   try {
@@ -31,14 +34,16 @@ const applyDom = (mode: ThemeMode) => {
   document.documentElement.classList.toggle('dark', mode === 'dark')
 }
 
-/** Light / dark theme with localStorage persistence. Homepage always dark; (Pre)Crafted always light. */
+/** Light / dark theme with localStorage persistence. Homepage + Curate always dark; (Pre)Crafted always light. */
 export const useTheme = () => {
   // Always the same on server + first client paint so hydration matches.
   // Client storage is applied after mount via initTheme().
   const theme = useState<ThemeMode>('theme-mode', () => 'light')
   const route = useRoute()
 
-  const forcedDark = computed(() => isHomepagePath(route.path))
+  const forcedDark = computed(
+    () => isHomepagePath(route.path) || isCuratePath(route.path),
+  )
   const forcedLight = computed(() => isPrecraftedPath(route.path))
   const isDark = computed(() => {
     if (forcedDark.value) return true

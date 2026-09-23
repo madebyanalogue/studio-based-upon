@@ -10,143 +10,82 @@
       'pdp--no-related': true,
       'pdp--index': true,
       'pdp--index-hidden': !indexRailVisible,
+      'pdp--related-hidden': !relatedRailVisible,
       'pdp--gallery': galleryVisible,
+      'pdp--closing': closingFlip,
     }"
   >
     <aside class="pdp__col pdp__col--left">
       <div class="pdp__toolbar">
-        <button type="button" class="pdp__close  interface" @click="$emit('close')">Close</button>
-        <div
-          class="pdp__meta interface pdp__pane-fade"
+        <button type="button" class="pdp__close interface" @click="$emit('close')">Close</button>
+        <button
+          type="button"
+          class="pdp__info-toggle interface pdp__pane-fade"
           :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
+          :aria-expanded="showInfo"
+          @click="showInfo = !showInfo"
         >
-          <span>{{ typeLabel }}</span>
-          <template v-if="orderLabel">
-            <span class="pdp__meta-sep" aria-hidden="true">/</span>
-            <span class="pdp__meta-order">{{ orderLabel }}</span>
-          </template>
-        </div>
+          Info
+        </button>
       </div>
 
       <div
         class="pdp__body pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
       >
-        <div class="pdp__title-row">
-          <h1 class="pdp__title">{{ product.title }}</h1>
-          <AddButton
-            class="pdp__title-add"
-            :active="isProductSaved"
-            :label="
-              isProductSaved
-                ? `Remove ${product.title} from selection`
-                : `Add ${product.title} to selection`
-            "
-            @click="onAddToSelection"
-          />
+        <div class="pdp__spec pdp__spec--toggle pdp__spec--title">
+          <div class="pdp__disclosure pdp__title-row">
+            <h1 class="pdp__title interface">{{ product.title }}</h1>
+          </div>
         </div>
 
-        <dl class="pdp__specs">
-          <div class="pdp__spec pdp__spec--toggle">
-            <button
-              type="button"
-              class="pdp__disclosure"
-              :aria-expanded="showMateriality"
-              @click="showMateriality = !showMateriality"
-            >
-              <span class="interface">Materiality</span>
-              <span class="pdp__disclosure-mark" aria-hidden="true">
-                <span class="pdp__disclosure-mark-bar" />
-                <span class="pdp__disclosure-mark-bar" />
-              </span>
-            </button>
-            <div v-if="showMateriality" class="pdp__spec-panel">
-              <div v-if="product.style" class="pdp__spec">
-                <dt class="serif-italic">Style</dt>
-                <dd>{{ product.style }}</dd>
-              </div>
-              <div v-if="product.comCol" class="pdp__spec">
-                <dt class="serif-italic">COM / COL</dt>
-                <dd>{{ product.comCol }}</dd>
-              </div>
-              <div v-if="materials.length" class="pdp__spec">
-                <dt class="serif-italic">Materiality</dt>
-                <dd>
-                  <ul class="pdp__options">
-                    <li v-for="material in materials" :key="material">{{ material }}</li>
-                  </ul>
-                </dd>
-              </div>
-              <div class="pdp__spec pdp__spec--download">
-                <dt class="serif-italic">Spec Sheet</dt>
-                <dd>
-                  <button type="button" class="pdp__spec-download" @click="downloadSpec">
-                    Download <span class="pdp__spec-download-arrow" aria-hidden="true">↓</span>
-                  </button>
-                </dd>
-              </div>
+        <div v-if="showInfo" class="pdp__info-panel">
+          <dl class="pdp__specs">
+            <div v-if="product.style" class="pdp__spec">
+              <dt class="serif-italic">Style</dt>
+              <dd>{{ product.style }}</dd>
             </div>
-          </div>
-
-          <div v-if="product.dimensions" class="pdp__spec pdp__spec--toggle">
-            <button
-              type="button"
-              class="pdp__disclosure"
-              :aria-expanded="showDimensions"
-              @click="showDimensions = !showDimensions"
-            >
-              <span class="interface">Dimensions</span>
-              <span class="pdp__disclosure-mark" aria-hidden="true">
-                <span class="pdp__disclosure-mark-bar" />
-                <span class="pdp__disclosure-mark-bar" />
-              </span>
-            </button>
-            <div v-if="showDimensions" class="pdp__spec-panel">
-              <div class="pdp__spec">
-                <dt class="serif-italic">Dimensions</dt>
-                <dd>{{ product.dimensions }}</dd>
-              </div>
+            <div v-if="product.comCol" class="pdp__spec">
+              <dt class="serif-italic">COM / COL</dt>
+              <dd>{{ product.comCol }}</dd>
             </div>
-          </div>
-        </dl>
+            <div v-if="materials.length" class="pdp__spec">
+              <dt class="serif-italic">Materiality</dt>
+              <dd>
+                <ul class="pdp__options">
+                  <li v-for="material in materials" :key="material">{{ material }}</li>
+                </ul>
+              </dd>
+            </div>
+            <div v-if="product.dimensions" class="pdp__spec">
+              <dt class="serif-italic">Dimensions</dt>
+              <dd>{{ product.dimensions }}</dd>
+            </div>
+            <div class="pdp__spec pdp__spec--download">
+              <dt class="serif-italic">Spec Sheet</dt>
+              <dd>
+                <button type="button" class="pdp__spec-download" @click="downloadSpec">
+                  Download <span class="pdp__spec-download-arrow" aria-hidden="true">↓</span>
+                </button>
+              </dd>
+            </div>
+          </dl>
 
-        <section v-if="product.description || product.edition" class="pdp__info">
-          <button
-            type="button"
-            class="pdp__disclosure pdp__info-toggle"
-            :aria-expanded="showDetails"
-            @click="showDetails = !showDetails"
+          <div
+            v-if="product.description || product.edition"
+            class="pdp__info-copy"
           >
-            <span class="interface">Details</span>
-            <span class="pdp__disclosure-mark" aria-hidden="true">
-              <span class="pdp__disclosure-mark-bar" />
-              <span class="pdp__disclosure-mark-bar" />
-            </span>
-          </button>
-          <div v-if="showDetails" class="pdp__info-panel">
             <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
             <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
           </div>
-        </section>
 
-        
-
-        <div v-if="product.finishes?.length" class="pdp__links">
-          <button
-            type="button"
-            class="pdp__link interface"
-            @click="showFinishes = !showFinishes"
-          >
-            Finishes
-          </button>
+          <ul v-if="product.finishes?.length" class="pdp__finishes">
+            <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
+          </ul>
         </div>
 
-        <ul v-if="showFinishes && product.finishes?.length" class="pdp__finishes">
-          <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
-        </ul>
-
         <div v-if="nextProduct" class="pdp__next">
-          <button type="button" class="pdp__next-label  interface" @click="goToNext">
+          <button type="button" class="pdp__next-label interface" @click="goToNext">
             Next Product
           </button>
           <button type="button" class="pdp__next-media" @click="goToNext">
@@ -155,7 +94,7 @@
         </div>
       </div>
       <div class="pdp__actions">
-        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire About This</button>
+        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire</button>
       </div>
     </aside>
 
@@ -166,95 +105,124 @@
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
         @click="onStageClick"
       >
-        <button
-          v-if="hasSpiritGallery"
-          type="button"
-          class="pdp__spirit-toggle interface"
-          :class="{ 'pdp__spirit-toggle--on': spiritMode }"
-          :aria-pressed="spiritMode ? 'true' : 'false'"
-          :aria-label="spiritMode ? 'Show product gallery' : 'Show spirit imagery'"
-          @click.stop="toggleSpiritMode"
-        >
-          Spirit
-        </button>
-
         <div
           v-if="galleryEntries.length"
           ref="stripRef"
           class="pdp__strip"
           data-lenis-prevent
-          @scroll.passive="onStripScroll"
         >
-          <figure
-            v-for="(entry, i) in galleryEntries"
-            :key="entry.id"
-            class="pdp__strip-item"
-            :class="{ 'pdp__strip-item--active': i === selectedIndex }"
-            :data-strip-index="i"
-          >
-            <div
-              class="pdp__hero-frame"
-              :class="{
-                'pdp__hero-frame--zoomed':
-                  entry.kind === 'image' && i === selectedIndex && imageExpanded,
-              }"
-              :style="
-                galleryAspects[entry.id]
-                  ? { '--pdp-ar': String(galleryAspects[entry.id]) }
-                  : undefined
-              "
+          <div ref="stripTrackRef" class="pdp__strip-track">
+            <figure
+              v-for="(entry, i) in galleryEntries"
+              :key="entry.id"
+              class="pdp__strip-item"
+              :class="{ 'pdp__strip-item--active': i === selectedIndex }"
+              :data-strip-index="i"
             >
-              <video
-                v-if="entry.kind === 'video'"
-                :ref="(el) => setStripVideoRef(i, el)"
-                class="pdp__hero-image pdp__hero-video"
+              <div
+                class="pdp__hero-frame"
                 :class="{
-                  'pdp__hero-image--ready': galleryReady[entry.id],
-                }"
-                :src="entry.src"
-                :poster="entry.posterSrc || undefined"
-                muted
-                loop
-                playsinline
-                preload="metadata"
-                draggable="false"
-                @loadedmetadata="onStripVideoMeta(i, $event)"
-                @click.stop="selectImage(i)"
-              />
-              <img
-                v-else
-                :ref="(el) => setStripImageRef(i, el)"
-                :src="
-                  i === selectedIndex && imageExpanded && frameZoomHiRes
-                    ? entry.zoomSrc || entry.src
-                    : entry.src
-                "
-                :alt="`${product.title} — image ${i + 1}`"
-                class="pdp__hero-image"
-                :class="{
-                  'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded,
-                  'pdp__hero-image--ready': galleryReady[entry.id],
+                  'pdp__hero-frame--zoomed':
+                    entry.kind === 'image' && i === selectedIndex && imageExpanded,
+                  'pdp__hero-frame--ready': galleryReady[entry.id],
                 }"
                 :style="
-                  i === selectedIndex && imageExpanded
-                    ? {
-                        transformOrigin: `${zoomOriginX}% ${zoomOriginY}%`,
-                        transform: `scale(${FRAME_ZOOM_SCALE})`,
-                      }
+                  galleryAspects[entry.id]
+                    ? { '--pdp-ar': String(galleryAspects[entry.id]) }
                     : undefined
                 "
-                draggable="false"
-                @load="onStripImageLoad(i)"
-                @click.stop="onStripImageClick(i, $event)"
-                @mousemove="onFrameZoomMove($event, i)"
-              />
-            </div>
-          </figure>
+              >
+                <video
+                  v-if="entry.kind === 'video'"
+                  :ref="(el) => setStripVideoRef(i, el)"
+                  class="pdp__hero-image pdp__hero-video"
+                  :class="{
+                    'pdp__hero-image--ready': galleryReady[entry.id],
+                  }"
+                  :src="entry.src"
+                  :poster="entry.posterSrc || undefined"
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  draggable="false"
+                  @loadedmetadata="onStripVideoMeta(i, $event)"
+                  @click.stop="selectImage(i)"
+                />
+                <img
+                  v-else
+                  :ref="(el) => setStripImageRef(i, el)"
+                  :src="
+                    i === selectedIndex && imageExpanded && frameZoomHiRes
+                      ? entry.zoomSrc || entry.src
+                      : entry.src
+                  "
+                  :alt="`${product.title} — image ${i + 1}`"
+                  class="pdp__hero-image"
+                  :class="{
+                    'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded,
+                    'pdp__hero-image--ready': galleryReady[entry.id],
+                  }"
+                  :style="
+                    i === selectedIndex && imageExpanded
+                      ? {
+                          transformOrigin: `${zoomOriginX}% ${zoomOriginY}%`,
+                          transform: `scale(${FRAME_ZOOM_SCALE})`,
+                        }
+                      : undefined
+                  "
+                  draggable="false"
+                  @load="onStripImageLoad(i)"
+                  @click.stop="onStripImageClick(i)"
+                />
+                <AddButton
+                  class="pdp__frame-add"
+                  :active="isFrameSaved(i)"
+                  :label="
+                    isFrameSaved(i)
+                      ? `Remove ${product.title} image ${i + 1} from selection`
+                      : `Add ${product.title} image ${i + 1} to selection`
+                  "
+                  @click.stop="onAddFrame(i)"
+                />
+              </div>
+            </figure>
+          </div>
         </div>
 
         <p v-else class="pdp__gallery-empty interface">
           No images available.
         </p>
+
+        <div
+          v-if="spiritMode && spiritGalleryEntries.length"
+          class="pdp__spirit-layer"
+          aria-label="Spirit imagery"
+        >
+          <div class="pdp__spirit-tray" @click.stop>
+            <template v-for="(entry, i) in spiritGalleryEntries" :key="entry.id">
+              <video
+                v-if="entry.kind === 'video'"
+                class="pdp__spirit-media"
+                :src="entry.src"
+                :poster="entry.posterSrc || undefined"
+                muted
+                loop
+                autoplay
+                playsinline
+                preload="metadata"
+                draggable="false"
+              />
+              <img
+                v-else
+                class="pdp__spirit-media"
+                :src="entry.src"
+                :alt="`${product.title} — spirit ${i + 1}`"
+                draggable="false"
+              />
+            </template>
+          </div>
+        </div>
       </div>
     </div>
   </article>
@@ -268,11 +236,13 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
-import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
+import Lenis from 'lenis'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
+import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import {
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
   PRODUCT_OVERLAY_BACKDROP_OPEN_MS,
+  PRODUCT_OVERLAY_CHROME_EXIT_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS,
   PRODUCT_OVERLAY_FLIP_CLOSE_S,
@@ -315,7 +285,6 @@ const {
   setCloseVeilActive,
 } = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
-const { items: libraryItems } = await useLibraryCatalog()
 
 // Stable key so in-PDP nav never clears `product` (which would unmount the
 // index rail and reset its scroll). Soft-swap assigns the next product in place.
@@ -324,6 +293,7 @@ const { data: product, refresh } = await useAsyncData(
   pdpDataKey,
   () => fetchProduct(props.slug),
   {
+    watch: [() => props.slug],
     getCachedData(key, nuxtApp) {
       const cached =
         nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]
@@ -331,42 +301,20 @@ const { data: product, refresh } = await useAsyncData(
       if (cached && (cached as { slug?: string }).slug === props.slug) {
         return cached
       }
+      // Drop stale shared payload so soft-nav / remounts don't keep the previous product
+      if (cached && nuxtApp.payload.data[key]) {
+        delete nuxtApp.payload.data[key]
+      }
       return undefined
     },
   },
 )
 
-const libraryItem = computed(() =>
-  libraryItems.value.find((item) => item._id === product.value?._id),
-)
-
-const typeLabel = computed(() => {
-  const key =
-    libraryItem.value?.category ||
-    libraryItem.value?.type ||
-    product.value?.series ||
-    ''
-  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
-  return match?.label || key || 'Item'
-})
-
-/** 1-based index in the Materials & Forms catalog, matching ProductCard. */
-const orderLabel = computed(() => {
-  if (!product.value) return ''
-  const list = libraryItems.value
-  const index = list.findIndex((item) => item._id === product.value!._id)
-  if (index < 0) return ''
-  const digits = Math.max(2, String(list.length).length)
-  return String(index + 1).padStart(digits, '0')
-})
-
-const showMateriality = ref(false)
-const showDimensions = ref(false)
-const showDetails = ref(false)
-const showFinishes = ref(false)
+const showInfo = ref(false)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
+const stripTrackRef = ref<HTMLElement | null>(null)
 const contentReady = ref(false)
 /** Shared with ProductIndexRail so open/close chrome stays in lockstep. */
 const sidesVisible = useState('pdp-chrome-visible', () => false)
@@ -377,8 +325,10 @@ let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
-/** When true, gallery shows Spirit Imagery instead of product gallery. */
-const spiritMode = ref(false)
+/** Shared with ProductIndexRail — gallery shows Spirit Imagery when true. */
+const spiritMode = useState('pdp-spirit-mode', () => false)
+/** Shared with ProductIndexRail — rail increments to request a Spirit toggle. */
+const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
 /** In-frame gallery zoom (stays inside the image footprint) */
 const imageExpanded = ref(false)
 const frameZoomHiRes = ref(false)
@@ -388,8 +338,10 @@ const FRAME_ZOOM_SCALE = 2.5
 let stripScrollRaf = 0
 let frameZoomToken = 0
 const stripVideoEls: (HTMLVideoElement | null)[] = []
+const stripImageEls: (HTMLImageElement | null)[] = []
 
 const setStripImageRef = (index: number, el: Element | null) => {
+  stripImageEls[index] = el instanceof HTMLImageElement ? el : null
   if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
     markGalleryImageReady(index, el)
   }
@@ -460,7 +412,7 @@ const pushImageEntry = (
 const buildProductGalleryEntries = (
   record: NonNullable<typeof product.value>,
 ): GalleryEntry[] => {
-  const assets = [record.image, ...(record.gallery || [])].filter(Boolean)
+  const assets = productGalleryFrames(record)
   const seen = new Set<string>()
   const entries: GalleryEntry[] = []
   for (const asset of assets) {
@@ -488,7 +440,7 @@ const buildSpiritGalleryEntries = (
       const key = src.replace(/\?.*$/, '')
       if (seen.has(key)) continue
       seen.add(key)
-      const posterSrc = video.poster ? imageUrl(video.poster, IMAGE_WIDTH.hero) : ''
+      const posterSrc = video.poster ? imageUrl(video.poster, 1000) : ''
       entries.push({
         id: `${record._id}-vid-${entries.length}`,
         kind: 'video',
@@ -500,7 +452,19 @@ const buildSpiritGalleryEntries = (
       continue
     }
 
-    pushImageEntry(entries, seen, record._id, item as { asset?: { url?: string } })
+    const asset = item as { asset?: { url?: string; _id?: string } }
+    const src = imageUrl(asset, 1000)
+    if (!src) continue
+    const key = src.replace(/\?.*$/, '')
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({
+      id: `${record._id}-img-${entries.length}`,
+      kind: 'image',
+      src,
+      thumbSrc: src,
+      zoomSrc: src,
+    })
   }
 
   return entries
@@ -516,27 +480,18 @@ const spiritGalleryEntries = computed((): GalleryEntry[] =>
 
 const hasSpiritGallery = computed(() => spiritGalleryEntries.value.length > 0)
 
-const galleryEntries = computed((): GalleryEntry[] =>
-  spiritMode.value && hasSpiritGallery.value
-    ? spiritGalleryEntries.value
-    : productGalleryEntries.value,
-)
+/** Product gallery only — Spirit imagery overlays separately when spiritMode is on. */
+const galleryEntries = computed((): GalleryEntry[] => productGalleryEntries.value)
 
 const toggleSpiritMode = () => {
   if (!hasSpiritGallery.value) return
   spiritMode.value = !spiritMode.value
-  selectedIndex.value = 0
-  collapseImage()
-  nextTick(() => {
-    scrollGalleryInitial()
-    syncStripVideos()
-    const strip = stripRef.value
-    const media = strip?.querySelector<HTMLElement>(
-      `[data-strip-index="0"] .pdp__hero-image`,
-    )
-    if (media instanceof HTMLImageElement) heroRef.value = media
-  })
 }
+
+watch(spiritToggleRequest, () => {
+  if (!import.meta.client) return
+  toggleSpiritMode()
+})
 
 /** Intrinsic width/height ratio — reserves strip width before paint. */
 const galleryAspects = reactive<Record<string, number>>({})
@@ -672,7 +627,21 @@ const cycleImage = (direction: 1 | -1) => {
   selectImage((selectedIndex.value + direction + count) % count)
 }
 
-/** Center the active frame in the visible strip. */
+/** Strip padding clears the index / related rails — center in that open span. */
+const getStripRailPads = (strip: HTMLElement) => {
+  const track = stripTrackRef.value
+  const style = getComputedStyle(track ?? strip)
+  return {
+    left: Number.parseFloat(style.paddingLeft) || 0,
+    right: Number.parseFloat(style.paddingRight) || 0,
+  }
+}
+
+/**
+ * Center the active frame in the clear span between rail paddings.
+ * Wide frames that can't fit are pinned flush to the start of that span
+ * so they never sit under the index rail.
+ */
 const scrollSelectedIntoView = (smooth = false) => {
   const strip = stripRef.value
   if (!strip) return
@@ -680,17 +649,27 @@ const scrollSelectedIntoView = (smooth = false) => {
     `[data-strip-index="${selectedIndex.value}"]`,
   )
   if (!item) return
-  const target = item.offsetLeft + item.offsetWidth / 2 - strip.clientWidth / 2
-  strip.scrollTo({
-    left: Math.max(0, target),
-    behavior: smooth ? 'smooth' : 'auto',
-  })
+  const { left: padL, right: padR } = getStripRailPads(strip)
+  const visible = Math.max(0, strip.clientWidth - padL - padR)
+  const ideal = item.offsetLeft + item.offsetWidth / 2 - padL - visible / 2
+  // Keep the frame's left edge at or past the index padding; right edge
+  // at or before the related padding when the frame fits.
+  const maxLeftClear = Math.max(0, item.offsetLeft - padL)
+  const minRightClear = Math.max(
+    0,
+    item.offsetLeft + item.offsetWidth - padL - visible,
+  )
+  const target =
+    minRightClear > maxLeftClear
+      ? maxLeftClear
+      : Math.min(Math.max(ideal, minRightClear), maxLeftClear)
+  setStripScroll(target, { immediate: !smooth })
 }
 
-/** Hard-load + open rail: park at scrollLeft 0 so frames clear the rail padding. */
+/** First frame: flush after index padding. Later frames: center in the clear span. */
 const scrollGalleryInitial = () => {
-  if (props.standalone && indexRailVisible.value) {
-    stripRef.value?.scrollTo({ left: 0, behavior: 'auto' })
+  if (selectedIndex.value === 0) {
+    setStripScroll(0, { immediate: true })
     return
   }
   scrollSelectedIntoView(false)
@@ -699,7 +678,9 @@ const scrollGalleryInitial = () => {
 const syncSelectedFromScroll = () => {
   const strip = stripRef.value
   if (!strip || !galleryEntries.value.length) return
-  const focusX = strip.scrollLeft + strip.clientWidth / 2
+  const { left: padL, right: padR } = getStripRailPads(strip)
+  const visible = Math.max(0, strip.clientWidth - padL - padR)
+  const focusX = getStripScroll() + padL + visible / 2
   let best = 0
   let bestDist = Infinity
   strip.querySelectorAll<HTMLElement>('[data-strip-index]').forEach((el) => {
@@ -730,14 +711,97 @@ const onStripScroll = () => {
   })
 }
 
-let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
+let galleryLenis: Lenis | null = null
+let galleryLenisRaf = 0
 
-const setZoomOriginFromEvent = (event: MouseEvent, el: HTMLElement) => {
-  const rect = el.getBoundingClientRect()
-  if (!rect.width || !rect.height) return
-  zoomOriginX.value = Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100))
-  zoomOriginY.value = Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100))
+const getStripScroll = () =>
+  galleryLenis?.animatedScroll ?? stripRef.value?.scrollLeft ?? 0
+
+const setStripScroll = (
+  left: number,
+  { immediate = true }: { immediate?: boolean } = {},
+) => {
+  if (galleryLenis) {
+    galleryLenis.scrollTo(left, immediate ? { immediate: true } : { lerp: 0.12 })
+    return
+  }
+  stripRef.value?.scrollTo({
+    left,
+    behavior: immediate ? 'auto' : 'smooth',
+  })
 }
+
+const destroyGalleryLenis = () => {
+  if (galleryLenisRaf) {
+    cancelAnimationFrame(galleryLenisRaf)
+    galleryLenisRaf = 0
+  }
+  galleryLenis?.destroy()
+  galleryLenis = null
+}
+
+const tickGalleryLenis = (time: number) => {
+  galleryLenis?.raf(time)
+  galleryLenisRaf = requestAnimationFrame(tickGalleryLenis)
+}
+
+const initGalleryLenis = () => {
+  if (!import.meta.client) return
+  const wrapper = stripRef.value
+  const content = stripTrackRef.value
+  const stage = stageRef.value
+  if (!wrapper || !content) return
+
+  destroyGalleryLenis()
+
+  galleryLenis = new Lenis({
+    wrapper,
+    content,
+    eventsTarget: stage ?? wrapper,
+    orientation: 'horizontal',
+    gestureOrientation: 'both',
+    smoothWheel: true,
+    syncTouch: true,
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.4,
+    wheelMultiplier: 1.15,
+    lerp: 0.08,
+    overscroll: false,
+    // Strip keeps data-lenis-prevent for the page scroller; don't self-block.
+    prevent: () => false,
+  })
+
+  galleryLenis.on('scroll', onStripScroll)
+  galleryLenis.resize()
+  if (imageExpanded.value) galleryLenis.stop()
+  galleryLenisRaf = requestAnimationFrame(tickGalleryLenis)
+}
+
+const resizeGalleryLenis = () => {
+  galleryLenis?.resize()
+}
+
+watch(imageExpanded, (expanded) => {
+  if (!galleryLenis) return
+  if (expanded) galleryLenis.stop()
+  else galleryLenis.start()
+})
+
+watch(
+  () => galleryEntries.value.map((entry) => entry.id).join('|'),
+  async () => {
+    await nextTick()
+    if (!stripRef.value || !stripTrackRef.value) {
+      destroyGalleryLenis()
+      return
+    }
+    if (!galleryLenis) initGalleryLenis()
+    else resizeGalleryLenis()
+  },
+)
+
+let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
 
 const collapseImage = () => {
   frameZoomToken += 1
@@ -745,49 +809,12 @@ const collapseImage = () => {
   frameZoomHiRes.value = false
 }
 
-const enterFrameZoom = async (event: MouseEvent) => {
-  if (activeEntry.value?.kind === 'video') return
-  const img = event.currentTarget as HTMLImageElement | null
-  if (!img) return
-  setZoomOriginFromEvent(event, img)
-  imageExpanded.value = true
-
-  const src = activeEntry.value?.zoomSrc
-  if (!src || src === activeEntry.value?.src) return
-
-  const token = ++frameZoomToken
-  await prefetchImage(src)
-  if (token !== frameZoomToken || !imageExpanded.value) return
-  frameZoomHiRes.value = true
-}
-
-const onHeroClick = (event: MouseEvent) => {
-  if (activeEntry.value?.kind === 'video') return
-  if (imageExpanded.value) collapseImage()
-  else void enterFrameZoom(event)
-}
-
-const onStripImageClick = (index: number, event: MouseEvent) => {
-  if (index !== selectedIndex.value) {
-    selectImage(index)
-    return
-  }
-  onHeroClick(event)
-}
-
-const onFrameZoomMove = (event: MouseEvent, index: number) => {
-  if (!imageExpanded.value || index !== selectedIndex.value) return
-  const img = event.currentTarget as HTMLImageElement | null
-  if (!img) return
-  setZoomOriginFromEvent(event, img)
+const onStripImageClick = (index: number) => {
+  if (index !== selectedIndex.value) selectImage(index)
 }
 
 /** Close PDP when clicking empty stage chrome (not the image / thumbs / controls). */
 const onStageClick = (event: MouseEvent) => {
-  if (imageExpanded.value) {
-    collapseImage()
-    return
-  }
   const target = event.target as HTMLElement | null
   if (!target) return
   // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
@@ -795,24 +822,7 @@ const onStageClick = (event: MouseEvent) => {
   emit('close')
 }
 
-/** Vertical wheel → horizontal scroll; horizontal wheel stays horizontal. */
-const onStageWheel = (event: WheelEvent) => {
-  if (imageExpanded.value) return
-  const strip = stripRef.value
-  if (!strip || galleryEntries.value.length < 2) return
-  event.preventDefault()
-  const delta =
-    Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY
-  if (!delta) return
-  strip.scrollLeft += delta
-}
-
 const onGalleryKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && imageExpanded.value) {
-    event.preventDefault()
-    collapseImage()
-    return
-  }
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -828,9 +838,8 @@ const onGalleryKeydown = (event: KeyboardEvent) => {
 }
 
 onMounted(() => {
-  // Cached image may already be complete before @load fires
   nextTick(() => {
-    stageRef.value?.addEventListener('wheel', onStageWheel, { passive: false })
+    initGalleryLenis()
     scrollGalleryInitial()
     if (heroRef.value?.complete) void runFlipOpen()
     else if (!activeEntry.value) revealWithoutFlip()
@@ -839,7 +848,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stageRef.value?.removeEventListener('wheel', onStageWheel)
+  destroyGalleryLenis()
   window.removeEventListener('keydown', onGalleryKeydown)
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
@@ -858,30 +867,47 @@ const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
   sameSite: 'lax',
 })
 
+/** Shared with ProductIndexRail — session-only (not cookie). */
+const { relatedRailVisible } = usePdpRelatedRail()
+
+watch([indexRailVisible, relatedRailVisible], async () => {
+  await nextTick()
+  resizeGalleryLenis()
+  // Pads animate via html @property — refresh limits after the tween.
+  window.setTimeout(() => resizeGalleryLenis(), 360)
+})
+
 const nextProduct = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
-const nextImageUrl = computed(() =>
-  nextProduct.value ? imageUrl(nextProduct.value.image, IMAGE_WIDTH.thumb) : '',
-)
+const nextImageUrl = computed(() => {
+  if (!nextProduct.value) return ''
+  const cover = productCoverFrame(nextProduct.value)
+  return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
+})
 
 const goToNext = () => {
   if (nextProduct.value) emit('navigate', nextProduct.value.slug)
 }
 
-const isProductSaved = computed(() =>
-  product.value ? isSaved(product.value._id) : false,
-)
+const isFrameSaved = (index: number) =>
+  product.value ? isSaved(product.value._id, index) : false
 
-/** Add / remove the product (not a specific gallery frame). */
-const onAddToSelection = () => {
+/** Add / remove a specific gallery frame. */
+const onAddFrame = (index: number) => {
   if (!product.value) return
-  const imageUrlSrc =
-    activeEntry.value?.src || imageUrl(product.value.image, IMAGE_WIDTH.hero) || ''
-  const source = heroRef.value
+  const entry = galleryEntries.value[index]
+  if (!entry?.src) return
+  const imageUrls = galleryEntries.value.map((item) => item.src).filter(Boolean)
+  const source =
+    stripImageEls[index] ||
+    (stripVideoEls[index] as HTMLElement | null) ||
+    heroRef.value
   requestSave(
     {
       id: product.value._id,
       title: product.value.title,
-      imageUrl: imageUrlSrc,
+      imageUrl: entry.src,
+      imageUrls,
+      imageIndex: index,
       itemType: product.value.series || 'item',
       link: `/materials-and-forms/${product.value.slug}`,
     },
@@ -891,8 +917,9 @@ const onAddToSelection = () => {
 
 const sendEnquiry = () => {
   if (!product.value) return
+  const cover = productCoverFrame(product.value)
   const image =
-    activeEntry.value?.src || imageUrl(product.value.image, 900) || undefined
+    activeEntry.value?.src || (cover ? imageUrl(cover, 900) : undefined) || undefined
   openFromProduct({
     id: product.value._id,
     title: product.value.title,
@@ -1073,16 +1100,16 @@ const runFlipOpen = async () => {
     absolute: true,
     scale: false,
     onComplete: () => {
-      // Reveal hero under the flyer first so removing it can’t flash empty
+      // Reveal strip + hero under the flyer before removing it — avoids a
+      // blank frame and prevents the gallery from flashing ahead of Flip.
       gsap.set(flipHero, { visibility: 'visible' })
+      clearPendingFlip()
+      contentReady.value = true
+      sidesVisible.value = true
+      galleryVisible.value = true
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           flyer.remove()
-          // PDP chrome only after the flyer has landed
-          clearPendingFlip()
-          contentReady.value = true
-          sidesVisible.value = true
-          galleryVisible.value = true
         })
       })
     },
@@ -1101,9 +1128,6 @@ const runFlipClose = async () => {
     return
   }
 
-  const UI_FADE_MS = PRODUCT_OVERLAY_UI_FADE_MS
-  // Flyer is position:fixed, so it must not outlive the veil — the grid is
-  // interactive again as soon as finishClose() runs and would scroll under it.
   const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
   const FLYER_FADE_MS = PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
   const waitMs = (ms: number) =>
@@ -1111,14 +1135,13 @@ const runFlipClose = async () => {
       window.setTimeout(resolve, ms)
     })
 
-  // 1) PDP UI fades out first — flyer must not move until this finishes
+  // 1) Chrome exits first (index + aside slide left, siblings fade) while the
+  // active hero stays put for the flyer. Keep sidesVisible so opacity chrome
+  // doesn’t kill the translate mid-flight.
   const uiFadeStarted = performance.now()
-  contentReady.value = false
-  sidesVisible.value = false
-  galleryVisible.value = false
   await nextTick()
 
-  // Prep return thumb while UI is fading (under the solid backdrop)
+  // Prep return thumb while chrome is exiting (under the solid backdrop)
   setReturnImage(product.value._id, selectedIndex.value)
   await nextTick()
   await nextTick()
@@ -1132,8 +1155,13 @@ const runFlipClose = async () => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   })
 
-  const uiElapsed = performance.now() - uiFadeStarted
-  await waitMs(Math.max(0, UI_FADE_MS - uiElapsed))
+  const chromeElapsed = performance.now() - uiFadeStarted
+  await waitMs(Math.max(0, PRODUCT_OVERLAY_CHROME_EXIT_MS - chromeElapsed))
+
+  contentReady.value = false
+  sidesVisible.value = false
+  await nextTick()
+  await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
   // Panel cream can drop now that chrome is gone
   pendingFlip.value = true
@@ -1292,10 +1320,7 @@ watch(
   async (slug, prevSlug) => {
     if (!slug || slug === prevSlug) return
 
-    showMateriality.value = false
-    showDimensions.value = false
-    showDetails.value = false
-    showFinishes.value = false
+    showInfo.value = false
     collapseImage()
 
     const token = ++slugSwapToken
@@ -1323,14 +1348,15 @@ watch(
 
       await nextTick()
       if (token !== slugSwapToken) return
-      if (stripRef.value) stripRef.value.scrollLeft = 0
+      setStripScroll(0, { immediate: true })
+      resizeGalleryLenis()
 
       const hero = heroRef.value
       if (hero && !hero.complete) await waitForImage(hero)
       if (token !== slugSwapToken) return
 
       galleryVisible.value = true
-      if (stripRef.value) stripRef.value.scrollLeft = 0
+      setStripScroll(0, { immediate: true })
       return
     }
 
@@ -1366,7 +1392,8 @@ watch(
     applyProduct(next)
     selectedIndex.value = 0
     await nextTick()
-    if (stripRef.value) stripRef.value.scrollLeft = 0
+    setStripScroll(0, { immediate: true })
+    resizeGalleryLenis()
     galleryVisible.value = true
   },
   { immediate: true },
@@ -1383,9 +1410,28 @@ watch(
   background: transparent;
   transition: background var(--theme-ms) var(--theme-ease);
   --index-tabs-height: 2.25rem;
-  --index-rail-width: min(18vw, 280px);
-  /* Shared by rail slot width + gallery clearance — keep in lockstep */
-  --index-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  --index-rail-width: var(--pdp-rail-open-width);
+  --index-motion: var(--pdp-rail-motion);
+  /* Always dark UI — independent of site theme (also covers standalone PDP) */
+  color-scheme: dark;
+  --cream: #1a1a1a;
+  --warm-white: #1f1c18;
+  --sand: #2a2621;
+  --stone: #6b635a;
+  --charcoal: #f1ede4;
+  --black: #faf7f2;
+  --slate: #c8c0b6;
+  --accent: #c4a574;
+  --grid-line: rgba(255, 255, 255, 0.1);
+  --handwritten-color: var(--charcoal);
+  --ui-border-color: rgba(255, 255, 255, 0.14);
+  --panel-bg: rgba(31, 28, 24, 0.88);
+  --elevated-bg: #2a2621;
+  --shadow-color: rgba(0, 0, 0, 0.45);
+  --thumb-ctrl-color: var(--charcoal);
+  --thumb-ctrl-bg: var(--cream);
+  --text-color: var(--charcoal);
+  --background-color: var(--cream);
 }
 
 .pdp--no-related {
@@ -1422,7 +1468,9 @@ watch(
 .pdp__col--left,
 .pdp__col--right {
   opacity: 0;
-  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform var(--pdp-rail-motion, 0.35s linear);
   /* Side columns are not dismiss targets — never inherit the stage close cursor */
   cursor: auto;
 }
@@ -1435,14 +1483,14 @@ watch(
 .pdp__col--left {
   --grid-line: rgba(255, 255, 255, 0.25);
   position: absolute;
-  top: 50%;
-  left: auto;
-  right: 20px;
+  top: 0;
+  left: 0;
+  right: auto;
   bottom: unset;
-  z-index: 4;
-  width: var(--side-column-width);
+  z-index: 120;
+  width: var(--index-rail-width);
   height: auto;
-  max-height: calc(100% - 40px);
+  max-height: 100%;
   min-height: 0;
   border: 0 solid var(--grid-line);
   /* border-radius: 30px; */
@@ -1455,7 +1503,14 @@ watch(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-  transform: translateY(-50%);
+  transform: translateX(0);
+}
+
+/* Close: aside slides off left before the flyer / backdrop */
+.pdp--closing.pdp--sides .pdp__col--left {
+  opacity: 0;
+  transform: translateX(calc(-100% - 12px));
+  pointer-events: none;
 }
 
 .pdp__col--right {
@@ -1509,27 +1564,34 @@ watch(
   position: relative;
 }
 
-.pdp__spirit-toggle {
+.pdp__spirit-layer {
   position: absolute;
-  top: 0.85rem;
-  right: 1rem;
-  z-index: 3;
-  margin: 0;
-  padding: 0.35rem 0.55rem;
-  border: 0;
-  background: transparent;
-  color: var(--charcoal);
-  cursor: pointer;
-  opacity: 0.45;
-  transition: opacity 0.2s ease;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
-.pdp__spirit-toggle:hover {
-  opacity: 0.85;
+.pdp__spirit-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0rem;
+  max-width: 100%;
+  pointer-events: auto;
 }
 
-.pdp__spirit-toggle--on {
-  opacity: 1;
+.pdp__spirit-media {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 20vw;
+  max-height: 20vw;
+  object-fit: cover;
+  aspect-ratio: 0.675;
 }
 
 .pdp__strip-item .pdp__hero-video {
@@ -1543,28 +1605,29 @@ watch(
   min-height: 0;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
   scroll-behavior: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* Clear the index rail on the left; collapses in lockstep when the rail hides */
-  padding-left: var(--index-rail-width);
-  padding-right: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  box-sizing: border-box;
-  transition: padding-left var(--index-motion);
   /* Don't inherit the stage close cursor into image gaps / strip chrome */
   cursor: auto;
 }
 
-.pdp--index-hidden .pdp__strip {
-  padding-left: 0;
+.pdp__strip-track {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 1px;
+  height: 100%;
+  width: max-content;
+  min-height: 100%;
+  box-sizing: border-box;
+  /* Insets follow html @property tokens — same values that slide the rails */
+  padding-left: var(--pdp-index-rail-width);
+  padding-right: var(--pdp-related-rail-width);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .pdp__strip::-webkit-scrollbar {
@@ -1580,14 +1643,27 @@ watch(
   display: flex;
   align-items: stretch;
   justify-content: center;
-  /* Sibling frames stay hidden until Flip lands, then fade in */
   opacity: 1;
+}
+
+/* Hide the whole strip (including the active frame) until Flip lands —
+   otherwise the first gallery image flashes at full size before the flyer. */
+.pdp:not(.pdp--gallery) .pdp__strip-item {
+  opacity: 0;
+  pointer-events: none;
+  transition: none;
+}
+
+/* Sibling frames fade in after open; active snaps under the flyer */
+.pdp--gallery .pdp__strip-item:not(.pdp__strip-item--active) {
   transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.pdp:not(.pdp--gallery) .pdp__strip-item:not(.pdp__strip-item--active) {
+/* Close: other gallery frames fade before the flyer / backdrop */
+.pdp--closing .pdp__strip-item:not(.pdp__strip-item--active) {
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.28s ease;
 }
 
 .pdp__strip-item .pdp__hero-frame {
@@ -1602,7 +1678,33 @@ watch(
   align-items: stretch;
   line-height: 0;
   overflow: hidden;
-  background: color-mix(in srgb, var(--charcoal) 4%, transparent);
+  background: transparent;
+  /* Hide the reserved frame until the bitmap is ready — no placeholder wash */
+  visibility: hidden;
+}
+
+.pdp__strip-item .pdp__hero-frame--ready {
+  visibility: visible;
+}
+
+.pdp__frame-add {
+  position: absolute;
+  top: var(--thumb-ctrl-inset, 4px);
+  right: var(--thumb-ctrl-inset, 4px);
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+/* Match hero fade — don’t flash the heart over an empty/transparent frame */
+.pdp__hero-frame--ready .pdp__frame-add {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pdp__frame-add :deep(.add-btn__icon) {
+  background: transparent;
 }
 
 .pdp__strip-item .pdp__hero-image {
@@ -1612,7 +1714,7 @@ watch(
   max-width: none;
   max-height: 100%;
   object-fit: contain;
-  cursor: zoom-in;
+  cursor: auto;
   transform-origin: center center;
   will-change: transform;
   opacity: 0;
@@ -1624,18 +1726,11 @@ watch(
 }
 
 .pdp__strip-item .pdp__hero-image--zoomed {
-  cursor: zoom-out;
+  cursor: auto;
 }
 
-/* Close cross only after the open flyer has finished */
+/* Close cross only after the open flyer has finished — dark UI cursor */
 .pdp--ready .pdp__stage {
-  /* Match cart close control: 25×25 square with cross */
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%23ffffff' stroke='%231a1a1a'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%231a1a1a' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
-}
-
-/* Fully global selector — `:global(html.dark) .pdp__stage` was compiling to
-   `html.dark { cursor: … }` and painting the close cursor site-wide. */
-:global(html.dark .pdp--ready .pdp__stage) {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%232a2621' stroke='%23f2ecdf'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%23f2ecdf' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
@@ -1671,7 +1766,7 @@ watch(
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  cursor: zoom-in;
+  cursor: auto;
   will-change: transform;
 }
 
@@ -1742,7 +1837,9 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem var(--gutter);
+  height: var(--toolbar-height);
+  padding: 0 var(--gutter);
+  box-sizing: border-box;
   background: transparent;
   border-bottom: 1px solid var(--grid-line);
   transition:
@@ -1758,21 +1855,19 @@ watch(
   color: var(--charcoal);
 }
 
-.pdp__meta {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  font-size: var(--text-sm);
+.pdp__info-toggle {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.pdp__info-toggle:hover,
+.pdp__info-toggle[aria-expanded='true'] {
   color: var(--charcoal);
-}
-
-.pdp__meta-sep {
-  flex-shrink: 0;
-  color: var(--muted);
-}
-
-.pdp__meta-order {
-  color: var(--muted);
 }
 
 .pdp__body {
@@ -1784,29 +1879,24 @@ watch(
 
 .pdp__title-row {
   display: flex;
-  align-items: flex-start;
+  width: 100%;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
   margin: 0;
-  padding: var(--gutter);
+  padding: 0.85rem 0;
+  text-align: left;
+  pointer-events: none;
 }
 
 .pdp__title {
   margin: 0;
   min-width: 0;
   flex: 1;
-  font-family: var(--font-serif);
-  font-size: var(--text-2xl);
-  line-height: 1.15;
-}
-
-.pdp__title-add {
-  flex-shrink: 0;
-  margin-top: 0em;
-}
-
-.pdp__title-add :deep(.add-btn__icon) {
-  background: transparent;
+  font-size: inherit;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--charcoal);
 }
 
 .pdp__specs {
@@ -1819,7 +1909,7 @@ watch(
   align-items: baseline;
   gap: 0.75rem;
   padding: 0.85rem 0;
-  border-top: 1px solid var(--grid-line);
+  /* border-top: 1px solid var(--grid-line); */
 }
 
 .pdp__spec:last-child {
@@ -1829,7 +1919,7 @@ watch(
 .pdp__spec--toggle {
   display: block;
   padding: 0 var(--gutter);
-  border-top: 1px solid var(--grid-line);
+  /* border-top: 1px solid var(--grid-line); */
   border-bottom: 1px solid var(--grid-line);
 }
 
@@ -1943,8 +2033,9 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  margin-top: 50px;
+  margin-top: 0;
   margin-bottom: 0;
+  padding:10px;
 }
 
 .pdp__inquire {
@@ -1953,7 +2044,7 @@ watch(
   padding: 13px;
   background: var(--red);
   color: white;
-  font-size: 13px;
+  font-size: 12px;
   font-family: var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2010,30 +2101,24 @@ watch(
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   margin: 1rem 0 0;
-  padding: 0;
+  padding: 0 var(--gutter);
   list-style: none;
   color: var(--muted);
   font-size: var(--text-sm);
 }
 
-.pdp__info {
-  margin: 0;
-  padding: 0 var(--gutter);
+.pdp__info-panel {
+  padding: 0 0 0.85rem;
   border-bottom: 1px solid var(--grid-line);
 }
 
-.pdp__info-toggle {
-  display: flex;
-  width: 100%;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.85rem 0;
-  text-align: left;
+.pdp__info-panel .pdp__specs {
+  padding: 0 var(--gutter);
 }
 
-.pdp__info-panel {
-  padding-bottom: 0.85rem;
+.pdp__info-copy {
+  margin: 0;
+  padding: 0.85rem var(--gutter) 0;
 }
 
 .pdp__info-text {
@@ -2067,7 +2152,7 @@ watch(
 .pdp__next-media {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: var(--rail-aspect);
   background: var(--warm-white);
 }
 
@@ -2111,12 +2196,15 @@ watch(
   }
 
   .pdp__strip {
-    padding: 0 1rem;
     align-items: stretch;
     transition: none;
   }
 
-  .pdp--index-hidden .pdp__strip {
+  .pdp__strip-track {
+    padding: 0 1rem;
+  }
+
+  .pdp--index-hidden .pdp__strip-track {
     padding: 0 1rem;
   }
 

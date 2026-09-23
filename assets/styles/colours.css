@@ -28,6 +28,26 @@
   /* Board builder right rail — matches ProductIndexRail */
   --boards-panel-open-width: min(18vw, 280px);
   --boards-panel-width: 0px;
+  /* PDP side rails — one animated length each drives gallery pad + rail slide + stack */
+  --pdp-rail-open-width: min(14vw, 250px);
+  --pdp-index-rail-width: var(--pdp-rail-open-width);
+  --pdp-related-rail-open-width: var(--pdp-rail-open-width);
+  --pdp-related-rail-width: 0px;
+  /* Shared by gallery inset, index/related rails, and stack push */
+  --pdp-rail-motion: 0.25s ease-out;
+}
+
+/* Single source of motion: html transitions these; gallery/rails/stack only read them */
+@property --pdp-index-rail-width {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --pdp-related-rail-width {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
 }
 
 html.selections-panel-hidden {
@@ -36,6 +56,21 @@ html.selections-panel-hidden {
 
 html.boards-panel-open {
   --boards-panel-width: var(--boards-panel-open-width);
+}
+
+html.pdp-index-rail-closed {
+  --pdp-index-rail-width: 0px;
+}
+
+html.pdp-related-rail-open {
+  --pdp-related-rail-width: var(--pdp-related-rail-open-width);
+}
+
+/* Armed after ProductIndexRail syncs open/closed classes — avoids open→closed FOUC tween */
+html.pdp-rail-motion-ready {
+  transition:
+    --pdp-index-rail-width var(--pdp-rail-motion),
+    --pdp-related-rail-width var(--pdp-rail-motion);
 }
 
 @media (max-width: 999px) {

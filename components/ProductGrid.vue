@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { DEFAULT_FILTERS, filterKey, isPrecraftedItem } from '~/composables/demoData'
 import { toDiscoveryItem, demoLibraryItems } from '~/composables/useLibraryCatalog'
+import { productCoverFrame } from '~/composables/productImages'
 import {
   useDiscoveryCanvas,
   type DiscoveryLayoutEntry,
@@ -59,6 +60,7 @@ type GridItemData = {
   materials?: string[]
   colours?: string[]
   image?: { asset?: { url?: string } }
+  gallery?: { asset?: { url?: string } }[]
   linkType?: string
   externalUrl?: string
 }
@@ -278,7 +280,10 @@ watch(zoom, (next, prev) => {
   clampPan()
 })
 
-const getItemImage = (item: GridItemData) => imageUrl(item.image, 900)
+const getItemImage = (item: GridItemData) => {
+  const cover = productCoverFrame(item)
+  return cover ? imageUrl(cover, 900) : ''
+}
 
 /* ---------------------------- Pan + drag state ---------------------------- */
 const viewport = ref<HTMLElement | null>(null)
@@ -463,7 +468,7 @@ watch(visibleItems, (items) => {
     regenerate(false)
     return
   }
-  const needsImages = layout.value.some((entry) => !entry.item.image?.asset?.url)
+  const needsImages = layout.value.some((entry) => !productCoverFrame(entry.item)?.asset?.url)
   if (needsImages) restoreSession()
 })
 

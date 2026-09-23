@@ -14,8 +14,8 @@
   --black: #000000;
   /* Derived from current text colour so light/dark stay in sync */
   --muted: color-mix(in srgb, var(--charcoal) 45%, transparent);
-  --accent: #8b7355;
-  --red: rgb(230, 76, 26);
+  --accent: var(--red);
+  --red: #e64c1a;
   --grid-line: rgba(0, 0, 0, 0.06);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
@@ -25,16 +25,20 @@
 
   --bucket-thumb-width: 130px;
   --dock-gutter: 0px;
+  --toolbar-height: 49px;
 
   /* Thumbnail overlay controls ([+], [−], clone, cycle) */
-  --thumb-ctrl-inset: 4px;
+  --thumb-ctrl-inset: 8px;
   --thumb-ctrl-size: 23px;
   --thumb-ctrl-color: var(--black);
   --thumb-ctrl-bg: var(--cream);
-  --thumb-ctrl-radius: 4px;
+  --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
   --thumb-radius: 0px;
   --undo-remove-ms: 5s;
+
+  --rail-aspect: 5/4;
+
 
 
   --card-pad: 0;
@@ -57,6 +61,27 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* Logo — global so hard load doesn't paint SVG at intrinsic size before scoped CSS */
+.based-upon-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.header__logo-mark {
+  position: absolute;
+  top: 20px;
+  width: 180px;
+  height: auto;
+}
+
+.preloader__logo-svg svg {
+  display: block;
+  height: clamp(2rem, 5vw, 3.25rem);
+  width: auto;
+  margin: 0 auto;
 }
 
 html {
@@ -175,7 +200,7 @@ img {
 }
 
 .section {
-  padding: calc(var(--header-height) + 3rem) var(--gutter) 4rem;
+  padding: calc(var(--header-height) + 4rem) var(--gutter) 4rem;
   max-width: 1200px;
 }
 
@@ -239,9 +264,10 @@ html.stack-chrome-hidden .stack__boards-rail {
 .stack__rail,
 .stack__boards-rail {
   left: auto !important;
-  right: var(--boards-panel-width) !important;
+  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width)) !important;
   transition:
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    /* `right` follows --pdp-related-rail-width (@property on html) — don't also
+       transition `right` or it double-eases and staggers against the rails */
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.35s ease;
 }

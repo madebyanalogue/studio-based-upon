@@ -1,5 +1,37 @@
 import { imageAssetKey } from '~/composables/useSanityImage'
 
+export type ProductImageFrame = {
+  asset?: { url?: string; _id?: string; metadata?: unknown }
+}
+
+/**
+ * Canonical product image list. Gallery is the source of truth (first = cover).
+ * Legacy `image` is prepended when still present and not already in gallery.
+ */
+export const productGalleryFrames = <T extends ProductImageFrame>(item: {
+  gallery?: T[] | null
+  image?: T | null
+}): T[] => {
+  const frames: T[] = []
+  const seen = new Set<string>()
+  const push = (frame?: T | null) => {
+    if (!frame?.asset) return
+    const key = String(frame.asset._id || frame.asset.url || '')
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    frames.push(frame)
+  }
+  push(item.image ?? null)
+  for (const frame of item.gallery || []) push(frame)
+  return frames
+}
+
+/** Cover / thumbnail frame — gallery[0] after migration. */
+export const productCoverFrame = <T extends ProductImageFrame>(item: {
+  gallery?: T[] | null
+  image?: T | null
+}): T | undefined => productGalleryFrames(item)[0]
+
 /** Deduplicate image URLs for project galleries (Forms, Surfaces, etc.). */
 export const uniqueImageUrls = (
   ...urls: Array<string | null | undefined>

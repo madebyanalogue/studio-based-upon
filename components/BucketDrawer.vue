@@ -296,7 +296,7 @@
 <script setup lang="ts">
 import type { BucketItem } from '~/composables/useBucket'
 import { productIdFromBucketId } from '~/composables/useBucket'
-import { uniqueImageUrls } from '~/composables/productImages'
+import { uniqueImageUrls, productGalleryFrames } from '~/composables/productImages'
 import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 
 const {
@@ -382,8 +382,7 @@ const hydrateGalleries = async () => {
     if (!product || token !== galleryHydrateToken) continue
     const urls = uniqueImageUrls(
       item.imageUrl,
-      buildUrl(product.image, 1200),
-      ...(product.gallery || []).map((img) => buildUrl(img, 1200)),
+      ...productGalleryFrames(product).map((img) => buildUrl(img, 1200)),
     )
     if (urls.length > 1) setItemGallery(item.id, urls)
   }

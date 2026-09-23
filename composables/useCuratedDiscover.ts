@@ -1,6 +1,7 @@
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 export type DiscoverDisplayMode = 'gallery' | 'editorial' | 'feature'
+export type DiscoverCardRatio = '3/2' | '2/3' | '1/1'
 export type DiscoverBreakerType = 'statement' | 'image' | 'imageText'
 
 export type DiscoverArtwork = {
@@ -8,7 +9,12 @@ export type DiscoverArtwork = {
   title: string
   artist?: string
   year?: number | null
+  /** Cover shown on the collection rail (may be a gallery frame). */
   imageUrl: string
+  /** Extra gallery frames for hover cycle (cover is first / imageUrl). */
+  galleryUrls?: string[]
+  /** Per-artwork card frame ratio in this collection. */
+  cardRatio?: DiscoverCardRatio
   slug?: string
 }
 
@@ -64,15 +70,39 @@ export const DISCOVER_PAGE_QUERY = `*[_type == "discoverPage"][0] {
         _id,
         title,
         description,
-        products[]->{
-          _id,
-          title,
-          year,
-          commissionedBy,
-          "series": series->title,
-          "slug": slug.current,
-          linkType,
-          image { asset->{ _id, url } }
+        products[] {
+          // Legacy bare references + new { product, thumbnail, cardRatio } entries
+          _key,
+          defined(_ref) => {
+            "thumbnail": null,
+            "cardRatio": "3/2",
+            ...@->{
+              _id,
+              title,
+              year,
+              commissionedBy,
+              "series": series->title,
+              "slug": slug.current,
+              linkType,
+              image { asset->{ _id, url } },
+              gallery[] { asset->{ _id, url } }
+            }
+          },
+          defined(product) => {
+            "thumbnail": thumbnail { asset->{ _id, url } },
+            "cardRatio": coalesce(cardRatio, "3/2"),
+            ...product->{
+              _id,
+              title,
+              year,
+              commissionedBy,
+              "series": series->title,
+              "slug": slug.current,
+              linkType,
+              image { asset->{ _id, url } },
+              gallery[] { asset->{ _id, url } }
+            }
+          }
         }
       }
     },
@@ -88,14 +118,31 @@ export const DISCOVER_PAGE_QUERY = `*[_type == "discoverPage"][0] {
   }
 }`
 
-const demoArt = (n: number, seed: string): DiscoverArtwork => ({
-  id: `demo-art-${seed}-${n}`,
-  title: `Work ${n}`,
-  artist: 'Studio Based Upon',
-  year: 2020 + (n % 6),
-  imageUrl: `https://picsum.photos/seed/sba-discover-${seed}-${n}/1200/1500`,
-  slug: undefined,
-})
+const demoArt = (
+  n: number,
+  seed: string,
+  cardRatio: DiscoverCardRatio = '3/2',
+): DiscoverArtwork => {
+  const imageUrl = `https://picsum.photos/seed/sba-discover-${seed}-${n}/1200/1500`
+  const galleryUrls =
+    n % 2 === 0
+      ? [
+          imageUrl,
+          `https://picsum.photos/seed/sba-discover-${seed}-${n}-b/1100/1400`,
+          `https://picsum.photos/seed/sba-discover-${seed}-${n}-c/1400/1100`,
+        ]
+      : undefined
+  return {
+    id: `demo-art-${seed}-${n}`,
+    title: `Work ${n}`,
+    artist: 'Studio Based Upon',
+    year: 2020 + (n % 6),
+    imageUrl,
+    galleryUrls,
+    cardRatio,
+    slug: undefined,
+  }
+}
 
 const demoCollection = (
   id: string,
@@ -105,7 +152,11 @@ const demoCollection = (
   id,
   title,
   description: 'A considered grouping of material studies and forms.',
-  artworks: Array.from({ length: count }, (_, i) => demoArt(i + 1, id)),
+  artworks: Array.from({ length: count }, (_, i) => {
+    const ratio: DiscoverCardRatio =
+      i % 3 === 0 ? '3/2' : i % 3 === 1 ? '2/3' : '1/1'
+    return demoArt(i + 1, id, ratio)
+  }),
 })
 
 /** Editorial demo page when CMS content is empty. */
@@ -169,6 +220,11 @@ export const demoDiscoverPage = (): DiscoverPageData => ({
   ],
 })
 
+const normalizeCardRatio = (value: unknown): DiscoverCardRatio => {
+  if (value === '2/3' || value === '1/1') return value
+  return '3/2'
+}
+
 export const useCuratedDiscover = async () => {
   const { imageUrl, getImageSrc } = useSanityImage()
 
@@ -177,7 +233,7 @@ export const useCuratedDiscover = async () => {
     return imageUrl({ asset }, IMAGE_WIDTH.thumb) || getImageSrc(asset) || ''
   }
 
-  const { data, pending, error, refresh } = await useAsyncData('discoverPage', () =>
+  const { data, pending, error, refresh } = await useAsyncData('discoverPage-v6', () =>
     $fetch('/api/sanity/query', { method: 'POST', body: { query: DISCOVER_PAGE_QUERY } })
       .then((r: { result?: unknown }) => r?.result ?? null)
       .catch(() => null),
@@ -213,9 +269,40 @@ export const useCuratedDiscover = async () => {
           const artworks: DiscoverArtwork[] = products
             .map((product: Record<string, unknown>) => {
               if (!product?._id) return null
-              const image = product.image as { asset?: { _id?: string; url?: string } } | undefined
-              const src = resolveSrc(image?.asset)
-              if (!src) return null
+              const galleryRaw = Array.isArray(product.gallery) ? product.gallery : []
+              const legacyImage = product.image as
+                | { asset?: { _id?: string; url?: string } }
+                | undefined
+              const galleryFrames = [
+                legacyImage,
+                ...galleryRaw,
+              ]
+                .map((frame: { asset?: { _id?: string; url?: string } } | undefined) =>
+                  resolveSrc(frame?.asset),
+                )
+                .filter(Boolean)
+              // Deduplicate while preserving order (cover first)
+              const seen = new Set<string>()
+              const uniqueFrames = galleryFrames.filter((url) => {
+                if (seen.has(url)) return false
+                seen.add(url)
+                return true
+              })
+
+              const thumb = product.thumbnail as
+                | { asset?: { _id?: string; url?: string } }
+                | null
+                | undefined
+              const thumbSrc = resolveSrc(thumb?.asset)
+              const primary = uniqueFrames[0] || ''
+              if (!primary && !thumbSrc) return null
+
+              const cover = thumbSrc || primary
+              const galleryUrls = [
+                cover,
+                ...uniqueFrames.filter((url) => url && url !== cover),
+              ]
+
               const artist =
                 String(product.series || '').trim() ||
                 String(product.commissionedBy || '').trim() ||
@@ -225,7 +312,9 @@ export const useCuratedDiscover = async () => {
                 title: String(product.title || 'Untitled'),
                 artist,
                 year: typeof product.year === 'number' ? product.year : null,
-                imageUrl: src,
+                imageUrl: cover,
+                galleryUrls: galleryUrls.length > 1 ? galleryUrls : undefined,
+                cardRatio: normalizeCardRatio(product.cardRatio),
                 slug:
                   product.linkType === 'product' && product.slug
                     ? String(product.slug)

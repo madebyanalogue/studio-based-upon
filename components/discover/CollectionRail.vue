@@ -56,9 +56,8 @@
       ref="scrollerEl"
       class="collection-rail__scroller"
       data-lenis-prevent-horizontal
-      @scroll="onScroll"
     >
-      <div class="collection-rail__track">
+      <div ref="trackEl" class="collection-rail__track">
         <DiscoverArtworkCard
           v-for="artwork in collection.artworks"
           :key="artwork.id"
@@ -71,6 +70,7 @@
 </template>
 
 <script setup lang="ts">
+import Lenis from 'lenis'
 import type {
   DiscoverCollection,
   DiscoverDisplayMode,
@@ -85,8 +85,13 @@ const props = withDefaults(
 )
 
 const scrollerEl = ref<HTMLElement | null>(null)
+const trackEl = ref<HTMLElement | null>(null)
 const canPrev = ref(false)
 const canNext = ref(false)
+
+let railLenis: Lenis | null = null
+let railLenisRaf = 0
+let railResizeObserver: ResizeObserver | null = null
 
 const showControls = computed(
   () => props.displayMode !== 'feature' && (props.collection?.artworks.length || 0) > 1,
@@ -96,6 +101,9 @@ const secondaryArtworks = computed(
   () => props.collection?.artworks.slice(1, 3) || [],
 )
 
+const getScrollLeft = () =>
+  railLenis?.animatedScroll ?? scrollerEl.value?.scrollLeft ?? 0
+
 const syncControls = () => {
   const el = scrollerEl.value
   if (!el) {
@@ -103,44 +111,136 @@ const syncControls = () => {
     canNext.value = false
     return
   }
-  const max = el.scrollWidth - el.clientWidth
-  canPrev.value = el.scrollLeft > 4
-  canNext.value = el.scrollLeft < max - 4
+  const left = getScrollLeft()
+  const max = Math.max(0, el.scrollWidth - el.clientWidth)
+  canPrev.value = left > 4
+  canNext.value = left < max - 4
 }
 
-const onScroll = () => syncControls()
+const destroyRailLenis = () => {
+  railResizeObserver?.disconnect()
+  railResizeObserver = null
+  if (railLenisRaf) {
+    cancelAnimationFrame(railLenisRaf)
+    railLenisRaf = 0
+  }
+  railLenis?.destroy()
+  railLenis = null
+}
+
+const tickRailLenis = (time: number) => {
+  railLenis?.raf(time)
+  railLenisRaf = requestAnimationFrame(tickRailLenis)
+}
+
+const initRailLenis = () => {
+  if (!import.meta.client) return
+  if (props.displayMode === 'feature') {
+    destroyRailLenis()
+    return
+  }
+  const wrapper = scrollerEl.value
+  const content = trackEl.value
+  if (!wrapper || !content) return
+
+  destroyRailLenis()
+  railLenis = new Lenis({
+    wrapper,
+    content,
+    orientation: 'horizontal',
+    // Horizontal gestures only — vertical wheel/trackpad scrolls the page.
+    gestureOrientation: 'horizontal',
+    smoothWheel: true,
+    syncTouch: true,
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.4,
+    wheelMultiplier: 1.15,
+    lerp: 0.08,
+    overscroll: false,
+    prevent: () => false,
+  })
+  railLenis.on('scroll', syncControls)
+  railLenis.resize()
+  if (typeof ResizeObserver !== 'undefined') {
+    railResizeObserver = new ResizeObserver(() => {
+      railLenis?.resize()
+      syncControls()
+    })
+    railResizeObserver.observe(content)
+    railResizeObserver.observe(wrapper)
+  }
+  railLenisRaf = requestAnimationFrame(tickRailLenis)
+  syncControls()
+}
 
 const scrollByPage = (direction: 1 | -1) => {
   const el = scrollerEl.value
   if (!el) return
   const amount = Math.max(el.clientWidth * 0.85, 240)
+  const next = Math.max(
+    0,
+    Math.min(
+      getScrollLeft() + direction * amount,
+      Math.max(0, el.scrollWidth - el.clientWidth),
+    ),
+  )
+  if (railLenis) {
+    railLenis.scrollTo(next, { lerp: 0.1 })
+    return
+  }
   el.scrollBy({ left: direction * amount, behavior: 'smooth' })
 }
 
+const onWindowResize = () => {
+  railLenis?.resize()
+  syncControls()
+}
+
 onMounted(() => {
-  nextTick(syncControls)
-  window.addEventListener('resize', syncControls)
+  nextTick(() => {
+    initRailLenis()
+    syncControls()
+  })
+  window.addEventListener('resize', onWindowResize)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', syncControls)
+  window.removeEventListener('resize', onWindowResize)
+  destroyRailLenis()
 })
 
 watch(
-  () => props.collection?.artworks.length,
-  () => nextTick(syncControls),
+  () => [props.displayMode, props.collection?.artworks.map((a) => a.id).join('|')] as const,
+  async () => {
+    await nextTick()
+    if (props.displayMode === 'feature' || !scrollerEl.value || !trackEl.value) {
+      destroyRailLenis()
+      syncControls()
+      return
+    }
+    if (!railLenis) initRailLenis()
+    else {
+      railLenis.resize()
+      syncControls()
+    }
+  },
 )
 </script>
 
 <style scoped>
 .collection-rail {
-  --rail-card-basis: calc((100% - (var(--discover-rail-gap) * 3)) / 4.15);
+  --discover-rail-gap: 15px;
+  /* 3.5 cards in view → 3 gaps between the visible slots */
+  --rail-cols: 3.5;
+  --rail-gaps: 3;
   padding: 0 var(--discover-gutter, var(--gutter));
   margin-bottom: var(--discover-section-gap, 5rem);
 }
 
 .collection-rail--editorial {
-  --rail-card-basis: calc((100% - (var(--discover-rail-gap) * 2)) / 3.2);
+  --rail-cols: 2.5;
+  --rail-gaps: 2;
 }
 
 .collection-rail__header {
@@ -153,13 +253,14 @@ watch(
 
 .collection-rail__heading {
   min-width: 0;
-  max-width: 36rem;
+  max-width: 100%;
+  flex: 1;
 }
 
 .collection-rail__title {
   margin: 0;
-  font-size: clamp(1.35rem, 2.4vw, 1.85rem);
-  line-height: 1.15;
+  font-size: 10vw;
+  line-height: 1;
   font-weight: 400;
 }
 
@@ -204,12 +305,19 @@ watch(
 }
 
 .collection-rail__scroller {
+  /* Card widths use 100cqi against this box so max-content track = used widths */
+  container-type: inline-size;
+  container-name: collection-rail;
+  --rail-card-basis: calc(
+    (100cqi - (var(--discover-rail-gap) * var(--rail-gaps))) / var(--rail-cols)
+  );
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   margin-inline: calc(var(--discover-gutter, var(--gutter)) * -1);
+  /* Matching end inset — last card stops at the inside right edge */
   padding-inline: var(--discover-gutter, var(--gutter));
 }
 
@@ -220,15 +328,17 @@ watch(
 .collection-rail__track {
   display: flex;
   align-items: flex-end;
-  gap: var(--discover-rail-gap, 1.25rem);
+  gap: var(--discover-rail-gap);
   width: max-content;
-  min-width: 100%;
   padding-bottom: 0.25rem;
 }
 
 .collection-rail__card {
+  flex: 0 0 auto;
+  box-sizing: border-box;
   width: min(var(--rail-card-basis), 72vw, 900px);
   min-width: min(220px, 72vw);
+  max-width: 100cqi;
 }
 
 .collection-rail__feature {
@@ -245,11 +355,13 @@ watch(
 
 @media (max-width: 899px) {
   .collection-rail {
-    --rail-card-basis: calc((100% - var(--discover-rail-gap)) / 2.25);
+    --rail-cols: 2.5;
+    --rail-gaps: 2;
   }
 
   .collection-rail--editorial {
-    --rail-card-basis: calc((100% - var(--discover-rail-gap)) / 2.05);
+    --rail-cols: 1.35;
+    --rail-gaps: 1;
   }
 
   .collection-rail__feature {
@@ -257,10 +369,10 @@ watch(
   }
 }
 
-@media (max-width: 639px) {
-  .collection-rail,
-  .collection-rail--editorial {
-    --rail-card-basis: 78vw;
+@media (max-width: 599px) {
+  .collection-rail {
+    --rail-cols: 1.35;
+    --rail-gaps: 1;
   }
 }
 </style>

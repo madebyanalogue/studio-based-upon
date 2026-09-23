@@ -5,7 +5,7 @@ export type RelatedProduct = {
   title: string
   slug: string
   category?: string
-  image?: { asset?: { url?: string } }
+  gallery?: { asset?: { url?: string } }[]
 }
 
 export type ProductRecord = {
@@ -29,8 +29,10 @@ export type ProductRecord = {
   materials?: string[]
   colours?: string[]
   tags?: string[]
-  image?: { asset?: { url?: string } }
+  /** First frame is the cover / thumbnail */
   gallery?: { asset?: { url?: string } }[]
+  /** @deprecated Legacy cover — coalesced into gallery by productGalleryFrames */
+  image?: { asset?: { url?: string } }
   spiritGallery?: Array<
     | { _type?: 'image'; asset?: { url?: string; _id?: string } }
     | {
@@ -107,7 +109,7 @@ function normalizeDemoItem(item: FormalItem): ProductRecord {
     categories: item.materials,
     finishes: finishesFrom(item.colours),
     edition: `Unique work. Limited Edition ${100 + hashIndex(item._id, 150)}. Serial Number and Certificate of Authenticity. Year 2026. Hand crafted in London.`,
-    image: item.image,
+    gallery: item.gallery,
     description: `Part of the ${typeLabel} collection. A Studio Based Upon piece exploring materiality, surface and the shifting dialogue between texture and light.`,
   }
 }
@@ -203,6 +205,7 @@ export const useProductCatalog = () => {
       "series": series->title,
       "materials": materiality[]->title,
       "colours": colours[]->title,
+      gallery[] { asset-> { url } },
       image { asset-> { url } }
     }
   }`
@@ -214,6 +217,7 @@ export const useProductCatalog = () => {
     category,
     description,
     categories,
+    gallery[] { asset-> { url } },
     image { asset-> { url } }
   }`
 
