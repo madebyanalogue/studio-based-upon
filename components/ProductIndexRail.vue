@@ -3,6 +3,7 @@
     class="pdp-index"
     :class="{
       'pdp-index--chrome': pdpChromeVisible,
+      'pdp-index--chrome-enter': chromeEnterMotion,
       'pdp-index--index-hidden': !indexRailVisible,
       'pdp-index--related-hidden': !relatedRailVisible,
       'pdp-index--exiting': closingFlip,
@@ -24,7 +25,7 @@
             :key="`index-${item._id}`"
             class="pdp-index__tile"
             :class="{
-              'pdp-index__tile--active': item.slug === slug,
+              'pdp-index__tile--active': item.slug === indexActiveSlug,
               'pdp-index__tile--saved': isItemSaved(item),
             }"
           >
@@ -45,7 +46,7 @@
                 type="button"
                 class="pdp-index__tile-hit"
                 :aria-label="`View ${item.title}`"
-                :aria-current="item.slug === slug ? 'page' : undefined"
+                :aria-current="item.slug === indexActiveSlug ? 'page' : undefined"
                 :tabindex="indexRailVisible ? undefined : -1"
                 @click="onIndexClick(item)"
               />
@@ -64,6 +65,30 @@
         </div>
       </div>
     </div>
+
+    <button
+      type="button"
+      class="pdp-index__edge-close pdp-index__edge-close--left"
+      aria-label="Hide index"
+      :tabindex="indexRailVisible && pdpChromeVisible ? undefined : -1"
+      :aria-hidden="!indexRailVisible || !pdpChromeVisible ? 'true' : undefined"
+      @click="toggleIndexMode"
+    >
+      <svg
+        class="pdp-index__edge-chevron"
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M14.5 6.5 9 12l5.5 5.5" />
+      </svg>
+    </button>
 
     <div class="pdp-index__reveals pdp-index__reveals--left">
       <button
@@ -86,7 +111,7 @@
         :aria-pressed="spiritMode ? 'true' : 'false'"
         @click="requestSpiritToggle"
       >
-        Spirit
+        {{ spiritMode ? 'Close' : 'Spirit' }}
       </button>
     </div>
 
@@ -164,6 +189,30 @@
         </p>
       </div>
     </div>
+
+    <button
+      type="button"
+      class="pdp-index__edge-close pdp-index__edge-close--right"
+      aria-label="Hide related"
+      :tabindex="relatedRailVisible && pdpChromeVisible ? undefined : -1"
+      :aria-hidden="!relatedRailVisible || !pdpChromeVisible ? 'true' : undefined"
+      @click="toggleRelatedMode"
+    >
+      <svg
+        class="pdp-index__edge-chevron"
+        viewBox="0 0 24 24"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M9.5 6.5 15 12l-5.5 5.5" />
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -186,6 +235,7 @@ const { imageUrl } = useSanityImage()
 const { fetchProduct } = useProductCatalog()
 const { requestSave, isSaved } = useBucket()
 const { items: libraryItems } = await useLibraryCatalog()
+const { closingFlip, getFlipSourceProductId } = useProductOverlay()
 
 type IndexCard = {
   _id: string
@@ -204,18 +254,40 @@ const typeLabelFor = (type?: string) => {
   return PRODUCT_TYPE_FILTERS.find((t) => t.value === type)?.label || type
 }
 
-const indexItems = computed((): IndexCard[] =>
-  libraryItems.value
+const normalizeTypeKey = (type?: string) =>
+  String(type || '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '')
+
+const isSatelliteType = (type?: string) =>
+  INDEX_EXCLUDED_TYPES.has(normalizeTypeKey(type))
+
+const { data: activeProduct } = await useAsyncData(
+  () => `pdp-rail-product-${props.slug}`,
+  () => fetchProduct(props.slug),
+  { watch: [() => props.slug] },
+)
+
+/** When a Spirit/Origin PDP is open, Index shows only that singularity. */
+const activeSingularity = computed(() => {
+  const cat = normalizeTypeKey(activeProduct.value?.category)
+  return cat === 'spirit' || cat === 'origin' ? cat : null
+})
+
+const indexItems = computed((): IndexCard[] => {
+  const singularity = activeSingularity.value
+  return libraryItems.value
     .map((item) => {
       const slug = productSlug(item)
       if (!slug) return null
-      const typeKey = String(item.category || item.type || '')
-        .toLowerCase()
-        .replace(/[^a-z]/g, '')
-      const cats = (item.categories || []).map((c) =>
-        String(c).toLowerCase().replace(/[^a-z]/g, ''),
-      )
-      if (INDEX_EXCLUDED_TYPES.has(typeKey) || cats.some((c) => INDEX_EXCLUDED_TYPES.has(c))) {
+      const typeKey = normalizeTypeKey(item.category || item.type)
+      const cats = (item.categories || []).map((c) => normalizeTypeKey(c))
+      if (singularity) {
+        if (typeKey !== singularity && !cats.includes(singularity)) return null
+      } else if (
+        INDEX_EXCLUDED_TYPES.has(typeKey) ||
+        cats.some((c) => INDEX_EXCLUDED_TYPES.has(c))
+      ) {
         return null
       }
       return {
@@ -230,8 +302,8 @@ const indexItems = computed((): IndexCard[] =>
         orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
       }
     })
-    .filter((item): item is IndexCard => !!item),
-)
+    .filter((item): item is IndexCard => !!item)
+})
 
 const overlapCount = (a: string[] = [], b: string[] = []) => {
   if (!a.length || !b.length) return 0
@@ -268,6 +340,8 @@ const createRailLenis = (wrapper: HTMLElement, content: HTMLElement) =>
   })
 
 const onIndexStripScroll = () => {
+  // Ignore clamp-to-0 events while the rail is closed / closing.
+  if (!indexRailVisible.value) return
   indexStripScrollTop.value =
     indexLenis?.animatedScroll ?? indexStripRef.value?.scrollTop ?? 0
 }
@@ -275,6 +349,13 @@ const onIndexStripScroll = () => {
 const onRelatedStripScroll = () => {
   if (!relatedStripRef.value) return
   relatedStripScrollTop.value = relatedStripRef.value.scrollTop
+}
+
+const captureIndexStripScroll = () => {
+  indexStripScrollTop.value =
+    indexLenis?.animatedScroll ??
+    indexStripRef.value?.scrollTop ??
+    indexStripScrollTop.value
 }
 
 const destroyIndexLenis = () => {
@@ -306,7 +387,13 @@ const initIndexLenis = () => {
   indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
   if (!indexRailVisible.value) indexLenis.stop()
   if (typeof ResizeObserver !== 'undefined') {
-    indexResizeObserver = new ResizeObserver(() => indexLenis?.resize())
+    indexResizeObserver = new ResizeObserver(() => {
+      // Closing animates --pdp-index-rail-width; resize then clamps scroll to 0.
+      if (!indexLenis || !indexRailVisible.value) return
+      const y = indexLenis.animatedScroll
+      indexLenis.resize()
+      indexLenis.scrollTo(y, { immediate: true })
+    })
     indexResizeObserver.observe(content)
   }
   indexLenisRaf = requestAnimationFrame(tickIndexLenis)
@@ -327,14 +414,6 @@ const restoreRelatedStripScroll = () => {
   if (!el) return
   el.scrollTop = relatedStripScrollTop.value
 }
-
-// Payload-backed so SSR HTML and the first client VDOM share the same related
-// tile list (local shallowRef + async watch was hydrating empty vs full).
-const { data: activeProduct } = await useAsyncData(
-  () => `pdp-rail-product-${props.slug}`,
-  () => fetchProduct(props.slug),
-  { watch: [() => props.slug] },
-)
 
 watch(
   () => props.slug,
@@ -363,6 +442,24 @@ watch(
 const libraryItem = computed(() =>
   libraryItems.value.find((item) => productSlug(item) === props.slug),
 )
+
+/**
+ * Highlight the open product. Spirit / Origin now appear in Index, so use
+ * their own slug; only fall back for satellite shells that somehow lack a tile.
+ */
+const indexActiveSlug = computed(() => {
+  const product = activeProduct.value
+  if (!product || !isSatelliteType(product.category)) return props.slug
+  if (indexItems.value.some((item) => item.slug === props.slug)) return props.slug
+
+  const shellId = getFlipSourceProductId()
+  if (shellId && shellId !== product._id) {
+    const shell = indexItems.value.find((item) => item._id === shellId)
+    if (shell) return shell.slug
+  }
+
+  return props.slug
+})
 
 /** Related ids for the *current* product — includes the active item. */
 const computeRelatedIdsForActive = () => {
@@ -441,8 +538,18 @@ watch(indexRailVisible, (visible) => {
   if (visible) {
     indexLenis.start()
     indexLenis.resize()
+    // Resize after open can clamp — put the strip back where it was.
+    indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
+    if (indexStripRef.value) {
+      indexStripRef.value.scrollTop = indexStripScrollTop.value
+    }
+    requestAnimationFrame(() => restoreIndexStripScroll())
   } else {
+    captureIndexStripScroll()
     indexLenis.stop()
+    if (indexStripRef.value) {
+      indexStripRef.value.scrollTop = indexStripScrollTop.value
+    }
   }
 })
 
@@ -451,11 +558,13 @@ const {
   frozenRelatedIdList,
   syncRelatedRailDom,
   closeRelatedRail,
+  relatedToggleRequest,
 } = usePdpRelatedRail()
 
 /** Shared with ProductDetail — rail chrome fades with the PDP sides. */
 const pdpChromeVisible = useState('pdp-chrome-visible', () => false)
-const { closingFlip } = useProductOverlay()
+/** Overlay flip only — hard-load skips translate-in. */
+const chromeEnterMotion = useState('pdp-chrome-enter-motion', () => false)
 
 /** Shared with ProductDetail — Spirit imagery gallery mode. */
 const spiritMode = useState('pdp-spirit-mode', () => false)
@@ -487,6 +596,11 @@ const toggleRelatedMode = () => {
   syncRelatedRailDom()
 }
 
+watch(relatedToggleRequest, (value, previous) => {
+  if (value === previous) return
+  toggleRelatedMode()
+})
+
 watch(
   relatedRailVisible,
   () => {
@@ -511,6 +625,17 @@ onBeforeUnmount(() => {
   if (!import.meta.client) return
   if (relatedRailVisible.value) return
   document.documentElement.classList.remove('pdp-related-rail-open')
+})
+
+watch(indexActiveSlug, async (active) => {
+  if (!import.meta.client || !active || !indexRailVisible.value) return
+  await nextTick()
+  const tile = indexTrackRef.value?.querySelector<HTMLElement>(
+    '.pdp-index__tile--active',
+  )
+  if (!tile || !indexLenis) return
+  const top = tile.offsetTop - (indexStripRef.value?.clientHeight || 0) / 2 + tile.offsetHeight / 2
+  indexLenis.scrollTo(Math.max(0, top), { immediate: true })
 })
 
 const onIndexClick = (item: IndexCard) => {
@@ -560,26 +685,32 @@ onMounted(() => {
   --index-motion: var(--pdp-rail-motion);
   --index-chrome-motion: 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   --rail-padding: 35px;
-  --rail-padding: 20px;
+  --rail-padding: 30px;
 
   position: absolute;
   inset: 0;
   z-index: 110;
   pointer-events: none;
   opacity: 0;
-  transition: opacity var(--index-chrome-motion);
+  transition: none;
 }
 
 .pdp-index--chrome {
   opacity: 1;
 }
 
+.pdp-index--chrome-enter {
+  transition: opacity var(--index-chrome-motion);
+}
+
 .pdp-index:not(.pdp-index--chrome) .pdp-index__rail,
-.pdp-index:not(.pdp-index--chrome) .pdp-index__reveals {
+.pdp-index:not(.pdp-index--chrome) .pdp-index__reveals,
+.pdp-index:not(.pdp-index--chrome) .pdp-index__edge-close {
   pointer-events: none;
 }
 
 .pdp-index__rail {
+  --rail-surface: color-mix(in srgb, #222 80%, transparent);
   position: absolute;
   top: 0;
   bottom: 0;
@@ -589,16 +720,27 @@ onMounted(() => {
   flex-direction: column;
   width: var(--index-rail-width);
   overflow: hidden;
-  background: color-mix(in srgb,var(--cream) 80%,transparent);
+  background: var(--rail-surface);
   backdrop-filter: blur(15px);
   pointer-events: auto;
-  /* Position follows html @property lengths; close exit adds transform */
-  transition: none;
 }
 
 .pdp-index__rail--left {
   left: calc(var(--pdp-index-rail-width) - var(--index-rail-width));
   border-right: 1px solid var(--grid-line);
+  transform: translateX(0);
+  transition: none;
+}
+
+.pdp-index--chrome-enter:not(.pdp-index--chrome) .pdp-index__rail--left {
+  transform: translateX(-110%);
+}
+
+.pdp-index--chrome-enter .pdp-index__rail--left {
+  transition: transform var(--index-motion);
+}
+
+.pdp-index--chrome .pdp-index__rail--left {
   transform: translateX(0);
 }
 
@@ -610,23 +752,95 @@ onMounted(() => {
   right: calc(var(--pdp-related-rail-width) - var(--index-rail-width));
   border-left: 1px solid var(--grid-line);
   transform: translateX(0);
+  transition: none;
+}
+
+.pdp-index--chrome-enter:not(.pdp-index--chrome) .pdp-index__rail--right {
+  transform: translateX(110%);
+}
+
+.pdp-index--chrome-enter .pdp-index__rail--right {
+  transition: transform var(--index-motion);
+}
+
+.pdp-index--chrome .pdp-index__rail--right {
+  transform: translateX(0);
 }
 
 .pdp-index--related-hidden .pdp-index__rail--right {
   pointer-events: none;
 }
 
-/* Close: rails slide off before the flyer / backdrop */
-.pdp-index--exiting .pdp-index__rail {
-  transition: transform var(--index-motion);
+.pdp-index__edge-close {
+  --edge-close-size: 2.75rem;
+  --rail-surface: color-mix(in srgb, #222 80%, transparent);
+  display: none;
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  box-sizing: border-box;
+  place-items: center;
+  width: calc(var(--edge-close-size) / 2);
+  height: var(--edge-close-size);
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--grid-line);
+  background: var(--rail-surface);
+  backdrop-filter: blur(15px);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
   pointer-events: none;
+  transform: translateY(-50%);
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease,
+    left var(--index-motion),
+    right var(--index-motion);
 }
 
-.pdp-index--exiting .pdp-index__rail--left {
+.pdp-index__edge-close:hover {
+  color: color-mix(in srgb, #fff 70%, transparent);
+}
+
+/* Flat side flush to panel; half-disc into the gallery. */
+.pdp-index__edge-close--left {
+  left: var(--pdp-index-rail-width);
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+}
+
+.pdp-index__edge-close--right {
+  right: var(--pdp-related-rail-width);
+  border-right: 0;
+  border-radius: 999px 0 0 999px;
+}
+
+.pdp-index--chrome:not(.pdp-index--index-hidden):not(.pdp-index--exiting)
+  .pdp-index__edge-close--left,
+.pdp-index--chrome:not(.pdp-index--related-hidden):not(.pdp-index--exiting)
+  .pdp-index__edge-close--right {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pdp-index__edge-chevron {
+  display: block;
+}
+
+/* Close: rails slide off before the flyer / backdrop */
+.pdp-index--exiting .pdp-index__rail {
+  pointer-events: none;
+  transition: transform var(--index-motion);
+}
+
+.pdp-index--exiting .pdp-index__rail--left,
+.pdp-index--exiting.pdp-index--chrome .pdp-index__rail--left {
   transform: translateX(-110%);
 }
 
-.pdp-index--exiting .pdp-index__rail--right {
+.pdp-index--exiting .pdp-index__rail--right,
+.pdp-index--exiting.pdp-index--chrome .pdp-index__rail--right {
   transform: translateX(110%);
 }
 
@@ -732,8 +946,8 @@ onMounted(() => {
   height: auto;
   padding: var(--rail-padding);
   margin: 0;
+  padding-bottom: 4px;
   line-height: 0;
-  border-bottom: 1px solid var(--grid-line);
 }
 
 .pdp-index__tile--active {

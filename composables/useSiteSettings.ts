@@ -50,7 +50,7 @@ export const useSiteSettings = () => {
   const logo = computed(() => settings.value?.logo || '')
   const disablePreloader = computed(() => settings.value?.disablePreloader === true)
   const enquiryEmail = computed(() => settings.value?.enquiryEmail || 'enquiries@studiobasedupon.com')
-  const phone = computed(() => settings.value?.phone || '020 8320 2122')
+  const phone = computed(() => settings.value?.phone || '+44 20 8320 2122')
   const phoneTel = computed(
     () => settings.value?.phoneTel || '+442083202122',
   )

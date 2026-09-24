@@ -6,7 +6,7 @@
   --header-height: 56px;
   --filter-bar-height: 72px;
   /* PDP side columns */
-  --side-column-width: 280px;
+  --side-column-width: 320px;
   --bucket-rail-width: 2.15rem;
   --bucket-close-ms: 0.4s;
   /* Shared light/dark surface fade (header, PDP, overlay).
@@ -34,7 +34,7 @@
   --pdp-related-rail-open-width: var(--pdp-rail-open-width);
   --pdp-related-rail-width: 0px;
   /* Shared by gallery inset, index/related rails, and stack push */
-  --pdp-rail-motion: 0.25s ease-out;
+  --pdp-rail-motion: 0.5s ease-in-out;
 }
 
 /* Single source of motion: html transitions these; gallery/rails/stack only read them */

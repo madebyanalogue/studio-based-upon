@@ -31,11 +31,19 @@ export const usePdpRelatedRail = () => {
     closeRelatedRail()
   }
 
+  /** Bumped by PDP actions; ProductIndexRail watches and runs its toggle. */
+  const relatedToggleRequest = useState('pdp-related-toggle-req', () => 0)
+  const requestRelatedToggle = () => {
+    relatedToggleRequest.value += 1
+  }
+
   return {
     relatedRailVisible,
     frozenRelatedIdList,
     syncRelatedRailDom,
     closeRelatedRail,
     resetRelatedRail,
+    relatedToggleRequest,
+    requestRelatedToggle,
   }
 }

@@ -1,7 +1,10 @@
 <template>
   <header
     class="header"
-    :class="{ 'header--product-page': isProductPage }"
+    :class="{
+      'header--product-page': isProductPage,
+      'header--scroll-hidden': headerScrollHidden,
+    }"
   >
     <div class="header__inner">
       <NuxtLink
@@ -15,7 +18,7 @@
       <nav
         class="header__nav"
         aria-label="Main navigation"
-        :aria-hidden="isProductPage ? 'true' : undefined"
+        :aria-hidden="isProductPage || headerScrollHidden ? 'true' : undefined"
       >
         <NuxtLink
           v-for="item in headerMenu.items"
@@ -26,116 +29,121 @@
         >
           {{ item.text }}
         </NuxtLink>
+
+        <div class="header__tools" role="group" aria-label="Site tools">
+          <button
+            type="button"
+            class="header__version interface"
+            :aria-label="
+              textCase === 'uppercase'
+                ? 'Titles are uppercase. Switch to sentence case'
+                : 'Titles are sentence case. Switch to uppercase'
+            "
+            @click="toggleTextCase"
+          >
+            {{ textCase === 'uppercase' ? 'AA' : 'Aa' }}
+          </button>
+
+          <button
+            type="button"
+            class="header__icon-btn"
+            :class="{ 'header__icon-btn--tooltip-hidden': hiddenTooltip === 'theme' }"
+            :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+            :aria-pressed="isDark"
+            @click="onThemeClick"
+            @mouseleave="clearTooltipHide('theme')"
+          >
+            <!-- Both icons in DOM; visibility follows html.dark so SSR/hydration match -->
+            <svg
+              class="header__icon header__icon--sun"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
+            </svg>
+            <svg
+              class="header__icon header__icon--moon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
+            </svg>
+            <span
+              v-if="frozenThemeTooltip"
+              class="header__tooltip interface"
+              aria-hidden="true"
+            >
+              {{ frozenThemeTooltip }}
+            </span>
+            <template v-else>
+              <span class="header__tooltip header__tooltip--to-light interface" aria-hidden="true">
+                Light
+              </span>
+              <span class="header__tooltip header__tooltip--to-dark interface" aria-hidden="true">
+                Dark
+              </span>
+            </template>
+          </button>
+
+          <button
+            type="button"
+            class="header__version interface"
+            :class="{ 'header__version--active': isOpen && panelTab === 'selections' }"
+            :aria-label="selectionNavLabel"
+            @click="onSelectionsClick"
+            @mouseenter="onSelectionsHover(true)"
+            @mouseleave="onSelectionsHover(false)"
+          >
+            {{ selectionNavLabel }}
+          </button>
+
+          <button
+            type="button"
+            class="header__version interface"
+            :class="{ 'header__version--active': boardsPanelOpen }"
+            :aria-pressed="boardsPanelOpen"
+            aria-label="My Boards"
+            @click="onMyBoardsClick"
+          >
+            My Boards
+          </button>
+        </div>
       </nav>
 
       <div
         class="header__actions"
         :aria-hidden="isProductPage ? 'true' : undefined"
       >
-        <a
-          class="header__phone interface"
-          :href="`tel:${phoneTel}`"
-        >
-          {{ phone }}
-        </a>
-
-        <button
-          type="button"
-          class="header__version interface"
-          :aria-label="
-            textCase === 'uppercase'
-              ? 'Titles are uppercase. Switch to sentence case'
-              : 'Titles are sentence case. Switch to uppercase'
-          "
-          @click="toggleTextCase"
-        >
-          {{ textCase === 'uppercase' ? 'AA' : 'Aa' }}
-        </button>
-
-        <button
-          type="button"
-          class="header__icon-btn"
-          :class="{ 'header__icon-btn--tooltip-hidden': hiddenTooltip === 'theme' }"
-          :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
-          :aria-pressed="isDark"
-          @click="onThemeClick"
-          @mouseleave="clearTooltipHide('theme')"
-        >
-          <!-- Both icons in DOM; visibility follows html.dark so SSR/hydration match -->
-          <svg
-            class="header__icon header__icon--sun"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+        <div class="header__cta" role="group" aria-label="Contact">
+          <NuxtLink to="/enquire" class="header__enquire interface">
+            Enquire
+          </NuxtLink>
+          <a
+            class="header__phone interface"
+            :href="`tel:${phoneTel}`"
           >
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
-          </svg>
-          <svg
-            class="header__icon header__icon--moon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
-          </svg>
-          <span
-            v-if="frozenThemeTooltip"
-            class="header__tooltip interface"
-            aria-hidden="true"
-          >
-            {{ frozenThemeTooltip }}
-          </span>
-          <template v-else>
-            <span class="header__tooltip header__tooltip--to-light interface" aria-hidden="true">
-              Light
-            </span>
-            <span class="header__tooltip header__tooltip--to-dark interface" aria-hidden="true">
-              Dark
-            </span>
-          </template>
-        </button>
-
-        <button
-          type="button"
-          class="header__version interface"
-          :class="{ 'header__version--active': isOpen && panelTab === 'selections' }"
-          :aria-label="selectionNavLabel"
-          @click="onSelectionsClick"
-          @mouseenter="onSelectionsHover(true)"
-          @mouseleave="onSelectionsHover(false)"
-        >
-          {{ selectionNavLabel }}
-        </button>
-
-        <button
-          type="button"
-          class="header__version interface"
-          :class="{ 'header__version--active': boardsPanelOpen }"
-          :aria-pressed="boardsPanelOpen"
-          aria-label="My Boards"
-          @click="onMyBoardsClick"
-        >
-          My Boards
-        </button>
-
-        <NuxtLink to="/enquire" class="header__enquire interface">
-          Enquire
-        </NuxtLink>
+            {{ phone }}
+          </a>
+        </div>
       </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+import type Lenis from 'lenis'
+
 const { headerMenu, phone, phoneTel } = useSiteSettings()
 const {
   isOpen,
@@ -149,11 +157,107 @@ const { textCase, toggleTextCase } = useTextCase()
 const { boardsPanelOpen, openBoardsPanel, closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
+const { $lenis } = useNuxtApp()
 
 /** Hard-loaded PDP: keep the logo in place; hide the rest of the chrome. */
 const isProductPage = computed(() =>
   /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
 )
+
+/** Archive index only — fade nav out on scroll down, back in on scroll up. */
+const isMaterialsIndex = computed(
+  () =>
+    route.path === '/materials-and-forms' || route.path === '/materials-and-forms/',
+)
+
+const headerScrollHidden = ref(false)
+const SCROLL_DELTA = 8
+const SHOW_AT_TOP = 48
+let lastScrollY = 0
+let lenisScrollUnsub: (() => void) | null = null
+let windowScrollUnsub: (() => void) | null = null
+
+const readScrollY = () => {
+  const lenis = $lenis as Lenis | undefined
+  if (lenis && typeof lenis.scroll === 'number') return lenis.scroll
+  if (!import.meta.client) return 0
+  return window.scrollY || document.documentElement.scrollTop || 0
+}
+
+const syncHeaderScrollHidden = (scrollY = readScrollY()) => {
+  if (!isMaterialsIndex.value) {
+    headerScrollHidden.value = false
+    lastScrollY = scrollY
+    return
+  }
+
+  if (scrollY <= SHOW_AT_TOP) {
+    headerScrollHidden.value = false
+    lastScrollY = scrollY
+    return
+  }
+
+  const delta = scrollY - lastScrollY
+  if (Math.abs(delta) < SCROLL_DELTA) return
+
+  headerScrollHidden.value = delta > 0
+  lastScrollY = scrollY
+}
+
+const bindLenisScroll = () => {
+  lenisScrollUnsub?.()
+  lenisScrollUnsub = null
+  const lenis = $lenis as Lenis | undefined
+  if (!lenis) return
+
+  const onScroll = () => syncHeaderScrollHidden(lenis.scroll)
+  lenis.on('scroll', onScroll)
+  lenisScrollUnsub = () => lenis.off('scroll', onScroll)
+  syncHeaderScrollHidden(lenis.scroll)
+}
+
+const bindWindowScroll = () => {
+  windowScrollUnsub?.()
+  windowScrollUnsub = null
+  if (!import.meta.client) return
+
+  const onScroll = () => syncHeaderScrollHidden()
+  window.addEventListener('scroll', onScroll, { passive: true })
+  windowScrollUnsub = () => window.removeEventListener('scroll', onScroll)
+}
+
+watch(isMaterialsIndex, (active) => {
+  if (!active) {
+    headerScrollHidden.value = false
+    return
+  }
+  bindLenisScroll()
+  lastScrollY = readScrollY()
+  syncHeaderScrollHidden()
+})
+
+watch(headerScrollHidden, (hidden) => {
+  if (!import.meta.client) return
+  document.documentElement.classList.toggle('header-scroll-hidden', hidden)
+})
+
+onMounted(() => {
+  bindLenisScroll()
+  bindWindowScroll()
+  document.addEventListener('basedupon:scroll-system-ready', bindLenisScroll)
+  syncHeaderScrollHidden()
+})
+
+onBeforeUnmount(() => {
+  lenisScrollUnsub?.()
+  lenisScrollUnsub = null
+  windowScrollUnsub?.()
+  windowScrollUnsub = null
+  if (import.meta.client) {
+    document.removeEventListener('basedupon:scroll-system-ready', bindLenisScroll)
+    document.documentElement.classList.remove('header-scroll-hidden')
+  }
+})
 
 const selectionNavLabel = computed(
   () => activeMoodboard.value?.name?.trim() || 'My Selection',
@@ -214,11 +318,33 @@ const onMyBoardsClick = () => {
   z-index: 100;
   background: transparent;
   transition:
-    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1),
     left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     background var(--theme-ms) var(--theme-ease),
     color var(--theme-ms) var(--theme-ease);
+}
+
+.header__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.75rem;
+  opacity: 1;
+  transition: opacity 0.55s ease;
+}
+
+.header__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+}
+
+.header--scroll-hidden .header__nav {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .header--product-page .header__nav,
@@ -255,15 +381,6 @@ const onMyBoardsClick = () => {
   height: auto;
 }
 
-.header__nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  justify-self: center;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.75rem;
-}
-
 .header__nav-link {
   font-size: var(--text-sm);
   color: var(--charcoal);
@@ -284,21 +401,32 @@ const onMyBoardsClick = () => {
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
 }
 
+.header__cta {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.header__enquire,
 .header__phone {
-  margin-right: 0.35rem;
-  padding: 0.2rem 0;
-  font-size: var(--text-xs);
-  color: var(--red);
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--ui-border-radius);
+  font-size: var(--text-sm);
+  color: var(--white);
+  background: var(--red);
   text-decoration: none;
-  transition: opacity 0.2s ease;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
+.header__enquire:hover,
 .header__phone:hover {
-  opacity: 0.7;
+  opacity: 0.88;
 }
 
 .header__version {
@@ -500,20 +628,6 @@ const onMyBoardsClick = () => {
   opacity: 0;
   transform: translateX(-50%) translateY(-2px);
   transition: none;
-}
-
-.header__enquire {
-  margin-left: 0.35rem;
-  padding: 6px 12px;
-  border-radius: 5px;
-  font-size: var(--text-sm);
-  color: var(--warm-white);
-  background: var(--charcoal);
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-.header__enquire:hover {
-  background: var(--accent);
 }
 
 @media (max-width: 767px) {

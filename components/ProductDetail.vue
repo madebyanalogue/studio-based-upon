@@ -6,6 +6,7 @@
       'pdp--standalone': standalone,
       'pdp--ready': contentReady,
       'pdp--sides': sidesVisible,
+      'pdp--chrome-enter': chromeEnterMotion,
       'pdp--zoomed': imageExpanded,
       'pdp--no-related': true,
       'pdp--index': true,
@@ -13,76 +14,112 @@
       'pdp--related-hidden': !relatedRailVisible,
       'pdp--gallery': galleryVisible,
       'pdp--closing': closingFlip,
+      'pdp--singularity': isSpiritOrOrigin,
     }"
   >
     <aside class="pdp__col pdp__col--left">
       <div class="pdp__toolbar">
-        <button type="button" class="pdp__close interface" @click="$emit('close')">Close</button>
-        <button
-          type="button"
-          class="pdp__info-toggle interface pdp__pane-fade"
+        <button type="button" class="pdp__close interface" @click="onCloseClick">Close</button>
+        <div
+          class="pdp__meta interface pdp__pane-fade"
           :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
-          :aria-expanded="showInfo"
-          @click="showInfo = !showInfo"
         >
-          Info
-        </button>
+          <span>{{ typeLabel }}</span>
+          <template v-if="orderLabel">
+            <span class="pdp__meta-sep" aria-hidden="true">/</span>
+            <span class="pdp__meta-order">{{ orderLabel }}</span>
+          </template>
+        </div>
       </div>
 
       <div
         class="pdp__body pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
       >
-        <div class="pdp__spec pdp__spec--toggle pdp__spec--title">
-          <div class="pdp__disclosure pdp__title-row">
-            <h1 class="pdp__title interface">{{ product.title }}</h1>
+        <h1 class="pdp__title">
+          <AddButton
+            class="pdp__title-add"
+            :active="isFrameSaved(selectedIndex)"
+            :label="
+              isFrameSaved(selectedIndex)
+                ? `Remove ${product.title} from selection`
+                : `Add ${product.title} to selection`
+            "
+            @click="onAddFrame(selectedIndex)"
+          />
+          {{ product.title }}
+        </h1>
+
+        <dl class="pdp__specs">
+          <div class="pdp__spec pdp__spec--toggle">
+            <button
+              type="button"
+              class="pdp__disclosure"
+              :aria-expanded="showSpecs"
+              @click="showSpecs = !showSpecs"
+            >
+              <span class="serif-italic">Specifications</span>
+              <span class="pdp__disclosure-mark" aria-hidden="true">{{
+                showSpecs ? '−' : '+'
+              }}</span>
+            </button>
+            <div v-if="showSpecs" class="pdp__spec-panel">
+              <div class="pdp__spec">
+                <dt class="serif-italic">Year</dt>
+                <dd>{{ product.year || '2024' }}</dd>
+              </div>
+              <div class="pdp__spec">
+                <dt class="serif-italic">Client</dt>
+                <dd>{{ product.client || 'Private Client' }}</dd>
+              </div>
+              <div class="pdp__spec">
+                <dt class="serif-italic">Location</dt>
+                <dd>{{ product.location || 'London, UK' }}</dd>
+              </div>
+              <div class="pdp__spec">
+                <dt class="serif-italic">Dimensions</dt>
+                <dd>{{ product.dimensions || '3200mm W × 1200mm H × 20mm D' }}</dd>
+              </div>
+              <div class="pdp__spec">
+                <dt class="serif-italic">Materiality</dt>
+                <dd>
+                  <ul v-if="materials.length" class="pdp__options">
+                    <li v-for="material in materials" :key="material">{{ material }}</li>
+                  </ul>
+                  <template v-else>Tramazite, Camona Gold</template>
+                </dd>
+              </div>
+              <div v-if="product.style" class="pdp__spec">
+                <dt class="serif-italic">Style</dt>
+                <dd>{{ product.style }}</dd>
+              </div>
+              <div v-if="product.comCol" class="pdp__spec">
+                <dt class="serif-italic">COM / COL</dt>
+                <dd>{{ product.comCol }}</dd>
+              </div>
+              <div class="pdp__spec pdp__spec--download">
+                <dt class="serif-italic">Spec Sheet</dt>
+                <dd>
+                  <button type="button" class="pdp__spec-download" @click="downloadSpec">
+                    Download <span class="pdp__spec-download-arrow" aria-hidden="true">↓</span>
+                  </button>
+                </dd>
+              </div>
+
+              <div
+                v-if="product.description || product.edition"
+                class="pdp__info-copy"
+              >
+                <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
+                <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
+              </div>
+
+              <ul v-if="product.finishes?.length" class="pdp__finishes">
+                <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
+              </ul>
+            </div>
           </div>
-        </div>
-
-        <div v-if="showInfo" class="pdp__info-panel">
-          <dl class="pdp__specs">
-            <div v-if="product.style" class="pdp__spec">
-              <dt class="serif-italic">Style</dt>
-              <dd>{{ product.style }}</dd>
-            </div>
-            <div v-if="product.comCol" class="pdp__spec">
-              <dt class="serif-italic">COM / COL</dt>
-              <dd>{{ product.comCol }}</dd>
-            </div>
-            <div v-if="materials.length" class="pdp__spec">
-              <dt class="serif-italic">Materiality</dt>
-              <dd>
-                <ul class="pdp__options">
-                  <li v-for="material in materials" :key="material">{{ material }}</li>
-                </ul>
-              </dd>
-            </div>
-            <div v-if="product.dimensions" class="pdp__spec">
-              <dt class="serif-italic">Dimensions</dt>
-              <dd>{{ product.dimensions }}</dd>
-            </div>
-            <div class="pdp__spec pdp__spec--download">
-              <dt class="serif-italic">Spec Sheet</dt>
-              <dd>
-                <button type="button" class="pdp__spec-download" @click="downloadSpec">
-                  Download <span class="pdp__spec-download-arrow" aria-hidden="true">↓</span>
-                </button>
-              </dd>
-            </div>
-          </dl>
-
-          <div
-            v-if="product.description || product.edition"
-            class="pdp__info-copy"
-          >
-            <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
-            <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
-          </div>
-
-          <ul v-if="product.finishes?.length" class="pdp__finishes">
-            <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
-          </ul>
-        </div>
+        </dl>
 
         <div v-if="nextProduct" class="pdp__next">
           <button type="button" class="pdp__next-label interface" @click="goToNext">
@@ -92,9 +129,12 @@
             <img :src="nextImageUrl" :alt="nextProduct.title" />
           </button>
         </div>
-      </div>
-      <div class="pdp__actions">
-        <button type="button" class="pdp__inquire" @click="sendEnquiry">Enquire</button>
+
+        <div class="pdp__actions">
+          <button type="button" class="pdp__inquire" @click="sendEnquiry">
+            Enquire About This
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -198,8 +238,9 @@
           v-if="spiritMode && spiritGalleryEntries.length"
           class="pdp__spirit-layer"
           aria-label="Spirit imagery"
+          @click.stop="closeSpiritMode"
         >
-          <div class="pdp__spirit-tray" @click.stop>
+          <div class="pdp__spirit-tray">
             <template v-for="(entry, i) in spiritGalleryEntries" :key="entry.id">
               <video
                 v-if="entry.kind === 'video'"
@@ -237,6 +278,7 @@
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import Lenis from 'lenis'
+import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import {
@@ -272,6 +314,8 @@ const {
   close,
   finishClose,
   getFlipSource,
+  getFlipSourceProductId,
+  flipSourceIsArchiveGrid,
   getFlipImageUrl,
   clearPendingFlip,
   setBackdropReady,
@@ -282,9 +326,11 @@ const {
   closingFlip,
   openImageIndex,
   setReturnImage,
+  requestGridSwap,
   setCloseVeilActive,
 } = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
+const { items: libraryItems } = await useLibraryCatalog()
 
 // Stable key so in-PDP nav never clears `product` (which would unmount the
 // index rail and reset its scroll). Soft-swap assigns the next product in place.
@@ -310,7 +356,7 @@ const { data: product, refresh } = await useAsyncData(
   },
 )
 
-const showInfo = ref(false)
+const showSpecs = ref(false)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
@@ -318,6 +364,8 @@ const stripTrackRef = ref<HTMLElement | null>(null)
 const contentReady = ref(false)
 /** Shared with ProductIndexRail so open/close chrome stays in lockstep. */
 const sidesVisible = useState('pdp-chrome-visible', () => false)
+/** Overlay flip only — hard-load / standalone skip chrome translate-in. */
+const chromeEnterMotion = useState('pdp-chrome-enter-motion', () => false)
 const galleryVisible = ref(false)
 /** Fades left/center copy + gallery; column rules stay put */
 const paneContentVisible = ref(true)
@@ -367,6 +415,7 @@ const onStripImageLoad = (index: number) => {
   )
   if (img) heroRef.value = img
   if (!flipStarted.value) void runFlipOpen()
+  if (isSpiritOrOrigin.value) nextTick(() => scrollSelectedIntoView(false))
 }
 
 const onStripVideoMeta = (index: number, event: Event) => {
@@ -486,6 +535,19 @@ const galleryEntries = computed((): GalleryEntry[] => productGalleryEntries.valu
 const toggleSpiritMode = () => {
   if (!hasSpiritGallery.value) return
   spiritMode.value = !spiritMode.value
+}
+
+const closeSpiritMode = () => {
+  spiritMode.value = false
+}
+
+/** Close spirit overlay first; otherwise dismiss the PDP. */
+const onCloseClick = () => {
+  if (spiritMode.value) {
+    closeSpiritMode()
+    return
+  }
+  emit('close')
 }
 
 watch(spiritToggleRequest, () => {
@@ -666,8 +728,18 @@ const scrollSelectedIntoView = (smooth = false) => {
   setStripScroll(target, { immediate: !smooth })
 }
 
-/** First frame: flush after index padding. Later frames: center in the clear span. */
+/** First frame: flush after index padding. Later frames: center in the clear span.
+ *  Spirit / Origin: always center the active frame in the open gallery. */
+const isSpiritOrOrigin = computed(() => {
+  const cat = String(product.value?.category || '').toLowerCase()
+  return cat === 'spirit' || cat === 'origin'
+})
+
 const scrollGalleryInitial = () => {
+  if (isSpiritOrOrigin.value) {
+    scrollSelectedIntoView(false)
+    return
+  }
   if (selectedIndex.value === 0) {
     setStripScroll(0, { immediate: true })
     return
@@ -819,10 +891,19 @@ const onStageClick = (event: MouseEvent) => {
   if (!target) return
   // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
   if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, button, a')) return
+  if (spiritMode.value) {
+    closeSpiritMode()
+    return
+  }
   emit('close')
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && spiritMode.value) {
+    event.preventDefault()
+    closeSpiritMode()
+    return
+  }
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -860,6 +941,30 @@ const materials = computed(() =>
     .map((m) => m.charAt(0).toUpperCase() + m.slice(1)),
 )
 
+const libraryItem = computed(() =>
+  libraryItems.value.find((item) => item._id === product.value?._id),
+)
+
+const typeLabel = computed(() => {
+  const key =
+    libraryItem.value?.category ||
+    libraryItem.value?.type ||
+    product.value?.series ||
+    ''
+  const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
+  return match?.label || key || 'Item'
+})
+
+/** 1-based index in the Materials & Forms catalog, matching ProductCard. */
+const orderLabel = computed(() => {
+  if (!product.value) return ''
+  const list = libraryItems.value
+  const index = list.findIndex((item) => item._id === product.value!._id)
+  if (index < 0) return ''
+  const digits = Math.max(2, String(list.length).length)
+  return String(index + 1).padStart(digits, '0')
+})
+
 /** Shared with ProductIndexRail — drives gallery left padding. */
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
   default: () => true,
@@ -868,7 +973,11 @@ const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
 })
 
 /** Shared with ProductIndexRail — session-only (not cookie). */
-const { relatedRailVisible } = usePdpRelatedRail()
+const { relatedRailVisible, requestRelatedToggle } = usePdpRelatedRail()
+
+const toggleIndexRail = () => {
+  indexRailVisible.value = !indexRailVisible.value
+}
 
 watch([indexRailVisible, relatedRailVisible], async () => {
   await nextTick()
@@ -957,6 +1066,7 @@ const revealWithoutFlip = () => {
   restoreFlipSource()
   setBackdropReady(true)
   clearPendingFlip()
+  chromeEnterMotion.value = false
   contentReady.value = true
   sidesVisible.value = true
   galleryVisible.value = true
@@ -991,6 +1101,9 @@ const runFlipOpen = async () => {
     revealWithoutFlip()
     return
   }
+
+  // Animate chrome in after the flyer lands (not on hard-load / standalone).
+  chromeEnterMotion.value = true
 
   // Source is already locked at hover look from open() — keep it through load
   source.style.transition = 'none'
@@ -1141,8 +1254,24 @@ const runFlipClose = async () => {
   const uiFadeStarted = performance.now()
   await nextTick()
 
+  // After in-PDP nav, Flip still targets the original shell. Swap shell ↔
+  // closing in the archive grid first (stable slot keys keep the Flip source
+  // DOM in place) so the shell shows the closing product before we measure.
+  const shellProductId = getFlipSourceProductId()
+  const closingProductId = product.value._id
+  if (
+    shellProductId &&
+    closingProductId &&
+    shellProductId !== closingProductId &&
+    flipSourceIsArchiveGrid()
+  ) {
+    requestGridSwap(shellProductId, closingProductId)
+    await nextTick()
+    await nextTick()
+  }
+
   // Prep return thumb while chrome is exiting (under the solid backdrop)
-  setReturnImage(product.value._id, selectedIndex.value)
+  setReturnImage(closingProductId, selectedIndex.value)
   await nextTick()
   await nextTick()
   if (source instanceof HTMLImageElement) {
@@ -1160,6 +1289,7 @@ const runFlipClose = async () => {
 
   contentReady.value = false
   sidesVisible.value = false
+  chromeEnterMotion.value = false
   await nextTick()
   await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
@@ -1320,7 +1450,7 @@ watch(
   async (slug, prevSlug) => {
     if (!slug || slug === prevSlug) return
 
-    showInfo.value = false
+    showSpecs.value = false
     collapseImage()
 
     const token = ++slugSwapToken
@@ -1348,7 +1478,7 @@ watch(
 
       await nextTick()
       if (token !== slugSwapToken) return
-      setStripScroll(0, { immediate: true })
+      scrollGalleryInitial()
       resizeGalleryLenis()
 
       const hero = heroRef.value
@@ -1356,7 +1486,7 @@ watch(
       if (token !== slugSwapToken) return
 
       galleryVisible.value = true
-      setStripScroll(0, { immediate: true })
+      scrollGalleryInitial()
       return
     }
 
@@ -1366,6 +1496,7 @@ watch(
     flipCloseStarted.value = false
     contentReady.value = false
     sidesVisible.value = false
+    chromeEnterMotion.value = false
     paneContentVisible.value = true
     selectedIndex.value = openImageIndex.value
     await refresh()
@@ -1412,26 +1543,6 @@ watch(
   --index-tabs-height: 2.25rem;
   --index-rail-width: var(--pdp-rail-open-width);
   --index-motion: var(--pdp-rail-motion);
-  /* Always dark UI — independent of site theme (also covers standalone PDP) */
-  color-scheme: dark;
-  --cream: #1a1a1a;
-  --warm-white: #1f1c18;
-  --sand: #2a2621;
-  --stone: #6b635a;
-  --charcoal: #f1ede4;
-  --black: #faf7f2;
-  --slate: #c8c0b6;
-  --accent: #c4a574;
-  --grid-line: rgba(255, 255, 255, 0.1);
-  --handwritten-color: var(--charcoal);
-  --ui-border-color: rgba(255, 255, 255, 0.14);
-  --panel-bg: rgba(31, 28, 24, 0.88);
-  --elevated-bg: #2a2621;
-  --shadow-color: rgba(0, 0, 0, 0.45);
-  --thumb-ctrl-color: var(--charcoal);
-  --thumb-ctrl-bg: var(--cream);
-  --text-color: var(--charcoal);
-  --background-color: var(--cream);
 }
 
 .pdp--no-related {
@@ -1468,9 +1579,7 @@ watch(
 .pdp__col--left,
 .pdp__col--right {
   opacity: 0;
-  transition:
-    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    transform var(--pdp-rail-motion, 0.35s linear);
+  transition: none;
   /* Side columns are not dismiss targets — never inherit the stage close cursor */
   cursor: auto;
 }
@@ -1480,20 +1589,23 @@ watch(
   opacity: 1;
 }
 
+.pdp--chrome-enter .pdp__col--left,
+.pdp--chrome-enter .pdp__col--right {
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .pdp__col--left {
-  --grid-line: rgba(255, 255, 255, 0.25);
   position: absolute;
   top: 0;
   left: 0;
   right: auto;
   bottom: unset;
-  z-index: 120;
-  width: var(--index-rail-width);
+  z-index: 120; /* above header logo (100) and index rail (110) */
+  width: var(--side-column-width);
   height: auto;
   max-height: 100%;
   min-height: 0;
-  border: 0 solid var(--grid-line);
-  /* border-radius: 30px; */
+  border: 1px solid var(--grid-line);
   corner-shape: squircle;
   background: color-mix(in srgb, var(--cream) 70%, transparent);
   backdrop-filter: blur(15px);
@@ -1503,7 +1615,13 @@ watch(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-  transform: translateX(0);
+  /* Clear the index rail when open */
+  transform: translateX(var(--pdp-index-rail-width));
+  transition: transform var(--pdp-rail-motion, 0.5s ease-in-out);
+}
+
+.pdp--sides .pdp__col--left {
+  transform: translateX(var(--pdp-index-rail-width));
 }
 
 /* Close: aside slides off left before the flyer / backdrop */
@@ -1511,6 +1629,9 @@ watch(
   opacity: 0;
   transform: translateX(calc(-100% - 12px));
   pointer-events: none;
+  transition:
+    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform var(--pdp-rail-motion, 0.35s linear);
 }
 
 .pdp__col--right {
@@ -1571,7 +1692,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%232a2621' stroke='%23f2ecdf'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%23f2ecdf' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
 }
 
 .pdp__spirit-tray {
@@ -1581,17 +1703,17 @@ watch(
   justify-content: center;
   gap: 0rem;
   max-width: 100%;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .pdp__spirit-media {
   display: block;
   width: auto;
   height: auto;
-  max-width: 20vw;
-  max-height: 20vw;
-  object-fit: cover;
-  aspect-ratio: 0.675;
+  max-width: 30vw;
+  max-height: 30vw;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .pdp__strip-item .pdp__hero-video {
@@ -1628,6 +1750,12 @@ watch(
   padding-right: var(--pdp-related-rail-width);
   padding-top: 0;
   padding-bottom: 0;
+}
+
+/* Spirit / Origin — center frames in the clear gallery span when they fit */
+.pdp--singularity .pdp__strip-track {
+  min-width: 100%;
+  justify-content: safe center;
 }
 
 .pdp__strip::-webkit-scrollbar {
@@ -1855,19 +1983,21 @@ watch(
   color: var(--charcoal);
 }
 
-.pdp__info-toggle {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 0.2s ease;
+.pdp__meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: var(--text-sm);
+  color: var(--charcoal);
 }
 
-.pdp__info-toggle:hover,
-.pdp__info-toggle[aria-expanded='true'] {
-  color: var(--charcoal);
+.pdp__meta-sep {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.pdp__meta-order {
+  color: var(--muted);
 }
 
 .pdp__body {
@@ -1877,26 +2007,32 @@ watch(
   min-height: 0;
 }
 
-.pdp__title-row {
-  display: flex;
-  width: 100%;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0.85rem 0;
-  text-align: left;
-  pointer-events: none;
-}
-
 .pdp__title {
   margin: 0;
-  min-width: 0;
-  flex: 1;
-  font-size: inherit;
+  padding: 17px;
+  font-family: var(--mono);
+  font-size: 18px;
+  line-height: 1.15;
   font-weight: 400;
-  line-height: 1.4;
   color: var(--charcoal);
+}
+
+.pdp__title-add {
+  float: right;
+  margin: 0 0 0 0.35em;
+  --thumb-ctrl-size: 23px;
+  --thumb-ctrl-color: var(--charcoal);
+  --thumb-ctrl-bg: transparent;
+  --thumb-ctrl-blend: normal;
+  vertical-align: middle;
+}
+
+.pdp__title-add:hover {
+  --thumb-ctrl-color: var(--charcoal);
+}
+
+.pdp__title-add :deep(.add-btn__icon) {
+  background: transparent;
 }
 
 .pdp__specs {
@@ -1957,36 +2093,24 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   font-size: var(--text-sm);
+  font-family: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--charcoal);
+  cursor: pointer;
 }
 
 .pdp__disclosure-mark {
-  position: relative;
-  display: inline-block;
-  width: 10px;
-  height: 10px;
   flex-shrink: 0;
   color: var(--muted);
-}
-
-.pdp__disclosure-mark-bar {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 10px;
-  height: 1px;
-  margin-top: -0.5px;
-  background: currentColor;
-  transform-origin: center center;
-}
-
-.pdp__disclosure-mark-bar:last-child {
-  transform: rotate(90deg);
-}
-
-.pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark-bar:last-child {
-  opacity: 0;
+  font-size: var(--text-sm);
+  line-height: 1;
 }
 
 .pdp__options {
@@ -2053,6 +2177,25 @@ watch(
 
 .pdp__inquire:hover {
   opacity: 0.9;
+}
+
+.pdp__rail-links {
+  display: none;
+}
+
+.pdp__rail-link {
+  display: block;
+  width: 100%;
+  padding: 0.35rem 0;
+  text-align: left;
+  color: var(--charcoal);
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+
+.pdp__rail-link:hover,
+.pdp__rail-link[aria-pressed='true'] {
+  opacity: 1;
 }
 
 .pdp__save {
@@ -2218,6 +2361,7 @@ watch(
     max-height: none;
     border-radius: 0;
     corner-shape: initial;
+    border: none;
     border-bottom: 1px solid var(--grid-line);
     z-index: auto;
     transform: none;

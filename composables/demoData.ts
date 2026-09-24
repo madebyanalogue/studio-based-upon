@@ -225,10 +225,26 @@ type LibraryFilterEntry = {
   materialityTitle?: string
 }
 
+/** Spirit + Origin always available on Materials & Forms (same archive layout). */
+const SINGULARITY_PAGE_FILTERS: LibraryPageFilter[] = [
+  { kind: 'type', value: 'origin', label: 'Origin' },
+  { kind: 'type', value: 'spirit', label: 'Spirit' },
+]
+
+const ensureSingularityFilters = (filters: LibraryPageFilter[]) => {
+  const keys = new Set(filters.map((filter) => libraryFilterKey(filter)))
+  const missing = SINGULARITY_PAGE_FILTERS.filter(
+    (filter) => !keys.has(libraryFilterKey(filter)),
+  )
+  return missing.length ? [...filters, ...missing] : filters
+}
+
 export const resolveLibraryPageFilters = (
   entries?: LibraryFilterEntry[] | null,
 ): LibraryPageFilter[] => {
-  if (!Array.isArray(entries) || !entries.length) return DEFAULT_LIBRARY_PAGE_FILTERS
+  if (!Array.isArray(entries) || !entries.length) {
+    return ensureSingularityFilters(DEFAULT_LIBRARY_PAGE_FILTERS)
+  }
 
   const defaults = [
     ...PRODUCT_TYPE_FILTERS.map((f) => ({ ...f, kind: 'type' as const })),
@@ -276,7 +292,9 @@ export const resolveLibraryPageFilters = (
     })
     .filter(Boolean) as LibraryPageFilter[]
 
-  return resolved.length ? resolved : DEFAULT_LIBRARY_PAGE_FILTERS
+  return ensureSingularityFilters(
+    resolved.length ? resolved : DEFAULT_LIBRARY_PAGE_FILTERS,
+  )
 }
 
 export const isPrecraftedItem = (item: {

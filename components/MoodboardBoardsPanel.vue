@@ -27,6 +27,23 @@
         data-moodboard-scroll
         data-lenis-prevent
       >
+        <button
+          type="button"
+          class="boards-panel__create"
+          aria-label="Create a Board"
+          @click="emit('create')"
+        >
+          <span class="boards-panel__create-frame" aria-hidden="true">
+            <span class="boards-panel__create-plus">
+              <span class="boards-panel__create-plus-h" />
+              <span class="boards-panel__create-plus-v" />
+            </span>
+          </span>
+          <span class="boards-panel__name boards-panel__create-label">
+            Create a Board
+          </span>
+        </button>
+
         <div
           v-for="board in boardList"
           :key="board.id"
@@ -133,10 +150,6 @@
           </div>
           <p class="boards-panel__name">{{ board.name }}</p>
         </div>
-
-        <p v-if="!boardList.length" class="boards-panel__empty interface">
-          No boards yet.
-        </p>
       </div>
     </div>
   </aside>
@@ -156,6 +169,7 @@ const emit = defineEmits<{
   select: [id: string]
   delete: [id: string]
   send: [id: string]
+  create: []
 }>()
 
 const { boards, activeBoardId, closeBoardsPanel } = useBoards()
@@ -172,7 +186,7 @@ const scrollEl = ref<HTMLElement | null>(null)
 <style scoped>
 .boards-panel {
   --boards-motion: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-  --rail-padding: 35px;
+  --rail-padding: 25px;
   /* Always-dark hover chrome (matches boards cart actions) */
   --boards-thumb-ui-bg: #1f1c18;
   --boards-thumb-ui-bg-hover: #161412;
@@ -413,18 +427,80 @@ const scrollEl = ref<HTMLElement | null>(null)
   color: var(--charcoal);
 }
 
+.boards-panel__create {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--charcoal);
+  text-align: left;
+  cursor: pointer;
+}
+
+.boards-panel__create-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  border: 1px dashed color-mix(in srgb, var(--text-color) 35%, transparent);
+  background: transparent;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.boards-panel__create:hover .boards-panel__create-frame,
+.boards-panel__create:focus-visible .boards-panel__create-frame {
+  border-color: var(--text-color);
+}
+
+.boards-panel__create-plus {
+  position: relative;
+  display: block;
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid currentColor;
+}
+
+.boards-panel__create-plus-h,
+.boards-panel__create-plus-v {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.boards-panel__create-plus-h {
+  width: 12px;
+  height: 1px;
+}
+
+.boards-panel__create-plus-v {
+  width: 1px;
+  height: 12px;
+}
+
+.boards-panel__create-label {
+  color: var(--muted);
+  text-transform: none;
+}
+
+.boards-panel__create:hover .boards-panel__create-label,
+.boards-panel__create:focus-visible .boards-panel__create-label {
+  color: var(--charcoal);
+}
+
 .boards-panel__item:hover .boards-panel__thumb,
 .boards-panel__item:focus-within .boards-panel__thumb,
 .boards-panel__item--active .boards-panel__thumb {
   outline: 1px solid var(--boards-thumb-ui-line);
   outline-offset: 2px;
-}
-
-.boards-panel__empty {
-  margin: 2rem 0;
-  text-align: center;
-  color: var(--muted);
-  font-size: var(--text-xs);
 }
 
 @media (max-width: 999px) {

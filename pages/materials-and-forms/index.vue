@@ -22,7 +22,7 @@
       <h4
         ref="titleEl"
         class="page-title products__title"
-        :class="{ 'products__title--pending': !titleSplitReady }"
+        :class="{ 'products__title--pending': !titlePaintReady }"
         :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
       >
         {{ titleText }}
@@ -31,42 +31,105 @@
     </section>
 
     <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
-      <div class="products__filters" role="group" aria-label="Filter by type or tag">
-        <button
-          type="button"
-          class="type-chip"
-          :class="{ 'type-chip--active': activeFilter === '' }"
-          @click="activeFilter = ''"
-        >
-          All <span class="type-chip__count">({{ filterCount('') }})</span>
-        </button>
-        <button
-          v-for="filter in pageFilters"
-          :key="filterKey(filter)"
-          type="button"
-          class="type-chip"
-          :class="{ 'type-chip--active': activeFilter === filterKey(filter) }"
-          @click="activeFilter = filterKey(filter)"
-        >
-          {{ filter.label }}
-          <span class="type-chip__count">({{ filterCount(filterKey(filter)) }})</span>
-        </button>
+      <div
+        ref="filtersEl"
+        class="products__filters"
+        role="group"
+        aria-label="Filter by type or tag"
+      >
+        <svg class="products__filters-svg" aria-hidden="true" focusable="false">
+          <defs>
+            <filter
+              :id="filtersGooId"
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+              color-interpolation-filters="sRGB"
+            >
+              <!-- Gooey only on the sliding indicator as it morphs between chips. -->
+              <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+              <feColorMatrix
+                in="blur"
+                mode="matrix"
+                values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
+                result="goo"
+              />
+            </filter>
+          </defs>
+        </svg>
 
-        <label class="products__search type-chip">
-          <span class="products__search-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20l-3.5-3.5" />
-            </svg>
-          </span>
-          <input
-            v-model="searchQuery"
-            type="search"
-            class="products__search-input"
-            placeholder="Search"
-            aria-label="Search materials and forms"
-          />
-        </label>
+        <span
+          ref="filterPillEl"
+          class="products__filters-pill"
+          :style="filterPillStyle"
+          aria-hidden="true"
+        />
+
+        <div class="products__filters-list">
+          <button
+            type="button"
+            class="type-chip"
+            data-filter-chip="all"
+            :class="{
+              'type-chip--active': activeChipKey === 'all',
+              'type-chip--lit': activeChipKey === 'all',
+            }"
+            @click="selectFilter('')"
+          >
+            All <span class="type-chip__count">({{ filterCount('') }})</span>
+          </button>
+          <button
+            v-for="filter in pageFilters"
+            :key="filterKey(filter)"
+            type="button"
+            class="type-chip"
+            :data-filter-chip="filterKey(filter)"
+            :class="{
+              'type-chip--active': activeChipKey === filterKey(filter),
+              'type-chip--lit': activeChipKey === filterKey(filter),
+            }"
+            @click="selectFilter(filterKey(filter))"
+          >
+            {{ filter.label }}
+            <span class="type-chip__count">({{ filterCount(filterKey(filter)) }})</span>
+          </button>
+
+          <label
+            class="products__search type-chip"
+            data-filter-chip="__search__"
+            :class="{
+              'type-chip--active': activeChipKey === '__search__',
+              'type-chip--lit': activeChipKey === '__search__',
+            }"
+          >
+            <span class="products__search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.5-3.5" />
+              </svg>
+            </span>
+            <input
+              v-model="searchQuery"
+              type="search"
+              class="products__search-input"
+              placeholder="Search"
+              aria-label="Search materials and forms"
+            />
+            <button
+              v-if="isSearchUiActive"
+              type="button"
+              class="products__search-clear"
+              aria-label="Clear search"
+              @click.prevent="clearSearch"
+            >
+              <span class="products__search-x" aria-hidden="true">
+                <span class="products__search-x-arm" />
+                <span class="products__search-x-arm" />
+              </span>
+            </button>
+          </label>
+        </div>
       </div>
     </div>
 
@@ -79,7 +142,7 @@
           'products__grid--animating': gridAnimating,
         }"
       >
-        <template v-for="(row, rowIndex) in displayRows" :key="row.key">
+        <template v-for="(row, rowIndex) in displayRows" :key="row.slotKey">
           <div
             v-if="row.empty"
             class="products__spacer"
@@ -88,7 +151,7 @@
               { 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) },
             ]"
             :style="archiveMeta(row.item, rowIndex).style"
-            :data-flip-id="row.key"
+            :data-flip-id="row.item._id"
             aria-hidden="true"
           />
           <ProductCard
@@ -104,7 +167,7 @@
             :lock-image="row.lockImage"
             :expand-on-click="EXPAND_GALLERY_ON_CLICK && !row.lockImage"
             :style="archiveMeta(row.item, rowIndex).style"
-            :data-flip-id="row.key"
+            :data-flip-id="row.item._id"
             @expand="expandGallery(row.item._id)"
           />
         </template>
@@ -131,6 +194,11 @@ import type { LibraryItem } from '~/composables/useLibraryCatalog'
 import { GRID_RATIO_AR } from '~/composables/useLibraryCatalog'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
+// Custom intro/outro own the leave — skip the global page opacity fade.
+definePageMeta({
+  pageTransition: false,
+})
+
 /** Match InfiniteSplitSlider gooey melt. */
 const TITLE_BLUR_MAX = 75
 /** Scroll distance after stick before title is fully melted out. */
@@ -138,10 +206,12 @@ const TITLE_GOOEY_SCROLL_VH = 0.48
 /** Thumbnail clip-mask out / in (shared with title swap timing). */
 const CLIP_OUT_DUR = 0.85
 const CLIP_IN_DUR = 0.95
+/** Title gooey-in — slower than clip so the melt reads clearly. */
+const TITLE_GOOEY_IN_DUR = 1.85
 /** Beat after paint before intro clip/title starts. */
 const INTRO_START_DELAY_MS = 100
 /** Title gooeys in shortly after thumbnails begin. */
-const INTRO_TITLE_DELAY_MS = 280
+const INTRO_TITLE_DELAY_MS = 320
 
 /**
  * TEMP: first click fans gallery images into the grid; those tiles open the PDP.
@@ -150,7 +220,8 @@ const INTRO_TITLE_DELAY_MS = 280
 const EXPAND_GALLERY_ON_CLICK = false
 
 type GridRow = {
-  key: string
+  /** Stable Vue key — survives product swaps so the Flip shell DOM stays put. */
+  slotKey: string
   item: LibraryItem
   /** Locked gallery frame when expanded; null = normal card behaviour. */
   forcedImageIndex: number | null
@@ -174,6 +245,73 @@ type LibraryPrefs = {
 const { items } = await useLibraryCatalog()
 const { imageUrl } = useSanityImage()
 const { libraryFilters: pageFilters } = useSiteSettings()
+const { pendingGridSwap } = useProductOverlay()
+
+/**
+ * Client display order — can diverge from catalog after PDP close swaps the
+ * Flip shell with the product that actually closed.
+ */
+const gridOrderIds = ref<string[] | null>(null)
+
+watch(
+  items,
+  (list) => {
+    const ids = (list as LibraryItem[]).map((item) => item._id)
+    if (!gridOrderIds.value) {
+      gridOrderIds.value = ids
+      return
+    }
+    const alive = new Set(ids)
+    const kept = gridOrderIds.value.filter((id) => alive.has(id))
+    const keptSet = new Set(kept)
+    const added = ids.filter((id) => !keptSet.has(id))
+    gridOrderIds.value = [...kept, ...added]
+  },
+  { immediate: true },
+)
+
+const orderedItems = computed(() => {
+  const list = items.value as LibraryItem[]
+  const order = gridOrderIds.value
+  if (!order?.length) return list
+  const byId = new Map(list.map((item) => [item._id, item]))
+  return order
+    .map((id) => byId.get(id))
+    .filter((item): item is LibraryItem => !!item)
+})
+
+const swapGridProducts = (shellId: string, closingId: string) => {
+  if (!shellId || !closingId || shellId === closingId) return
+  const order = [...(gridOrderIds.value ?? (items.value as LibraryItem[]).map((i) => i._id))]
+  const i = order.indexOf(shellId)
+  const j = order.indexOf(closingId)
+  if (i < 0 || j < 0) return
+  ;[order[i], order[j]] = [order[j], order[i]]
+  gridOrderIds.value = order
+
+  // Visibility is keyed by product id — swap flags so the shell stays painted.
+  if (visibilitySeeded.value) {
+    const next = new Set(visibleIds.value)
+    const shellVisible = next.has(shellId)
+    const closingVisible = next.has(closingId)
+    if (shellVisible) next.add(closingId)
+    else next.delete(closingId)
+    if (closingVisible) next.add(shellId)
+    else next.delete(shellId)
+    visibleIds.value = next
+  }
+}
+
+// Apply shell ↔ closing swap synchronously before Flip measures the shell.
+watch(
+  pendingGridSwap,
+  (swap) => {
+    if (!swap) return
+    swapGridProducts(swap.shellId, swap.closingId)
+    pendingGridSwap.value = null
+  },
+  { flush: 'sync' },
+)
 
 /** Product ids whose galleries have been fanned into the grid. */
 const expandedIds = ref<Set<string>>(new Set())
@@ -189,33 +327,33 @@ const galleryImageCount = (item: LibraryItem) => {
 
 const displayRows = computed<GridRow[]>(() => {
   const rows: GridRow[] = []
-  for (const item of items.value as LibraryItem[]) {
+  orderedItems.value.forEach((item, slotIndex) => {
     const count = galleryImageCount(item)
     if (EXPAND_GALLERY_ON_CLICK && expandedIds.value.has(item._id) && count > 1) {
       for (let index = 0; index < count; index++) {
         rows.push({
-          key: `${item._id}::${index}`,
+          slotKey: `slot-${slotIndex}::${index}`,
           item,
           forcedImageIndex: index,
           lockImage: true,
         })
       }
       rows.push({
-        key: `${item._id}::spacer`,
+        slotKey: `slot-${slotIndex}::spacer`,
         item,
         forcedImageIndex: null,
         lockImage: true,
         empty: true,
       })
-      continue
+      return
     }
     rows.push({
-      key: item._id,
+      slotKey: `slot-${slotIndex}`,
       item,
       forcedImageIndex: null,
       lockImage: false,
     })
-  }
+  })
   return rows
 })
 
@@ -252,7 +390,11 @@ const titleEl = ref<HTMLElement | null>(null)
 const titleText = ref(
   (pageData.value as { heroTitle?: string } | null)?.heroTitle || 'Materials & Forms',
 )
-const titleSplitReady = ref(true)
+/**
+ * Keep the heading fully hidden (incl. during page-enter fade) until the
+ * gooey-in has words parked at opacity 0 / full blur, then paint + animate.
+ */
+const titlePaintReady = ref(false)
 const titleFilterId = `maf-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
 
@@ -325,7 +467,8 @@ const teardownTitleGooey = () => {
   titleSplitInstance?.revert()
   titleSplitInstance = null
   if (titleEl.value) gsap.set(titleEl.value, { clearProps: 'opacity,filter' })
-  titleSplitReady.value = true
+  // Stay pending — never flash solid type between teardown and the next setup.
+  titlePaintReady.value = false
 }
 
 const resplitTitleWords = () => {
@@ -393,6 +536,7 @@ const titleGooeyIn = async (next: string, forcedEffect?: number) => {
 
   if (prefersReducedMotion()) {
     titleSwapLock = false
+    titlePaintReady.value = true
     applyTitleGooey(targetEffect)
     return
   }
@@ -401,13 +545,15 @@ const titleGooeyIn = async (next: string, forcedEffect?: number) => {
     filter: inWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
     opacity: 0,
   })
+  // Reveal only once parked in the gooey-out state — never solid type first.
+  titlePaintReady.value = true
 
   await gooeyTween(inTarget, {
     filter: inWords.length
       ? `blur(${TITLE_BLUR_MAX * (1 - targetEffect)}px)`
       : undefined,
     opacity: targetEffect,
-    duration: CLIP_IN_DUR,
+    duration: TITLE_GOOEY_IN_DUR,
     ease: 'power3.out',
   })
 
@@ -438,10 +584,11 @@ const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
   await nextTick()
   if (!titleEl.value) return
 
+  // Stay CSS-hidden through setup; playTitleGooeyIn / titleGooeyIn reveal.
+  titlePaintReady.value = false
+
   if (!prefersReducedMotion()) {
-    titleSplitReady.value = false
     resplitTitleWords()
-    titleSplitReady.value = true
   }
 
   titleGooeyTrigger = ScrollTrigger.create({
@@ -450,7 +597,22 @@ const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
     end: () => `+=${Math.max(240, window.innerHeight * TITLE_GOOEY_SCROLL_VH)}`,
     scrub: 0.55,
     invalidateOnRefresh: true,
-    onUpdate: (self) => applyTitleGooey(1 - self.progress),
+    onUpdate: (self) => {
+      const effect = 1 - self.progress
+      if (titleSwapLock) {
+        // Hard-load + immediate scroll: don't let the intro tween keep a solid
+        // title while scrub has already melted past — drop the tween and follow.
+        if (self.progress > 0.04) {
+          abortTitleSwapTween()
+          titleSwapGen += 1
+          titleSwapLock = false
+          titlePaintReady.value = true
+          applyTitleGooey(effect)
+        }
+        return
+      }
+      applyTitleGooey(effect)
+    },
   })
 
   if (opts?.startHidden) {
@@ -458,6 +620,7 @@ const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
     applyTitleGooey(0)
   } else {
     applyTitleGooey(1 - titleGooeyTrigger.progress)
+    titlePaintReady.value = true
   }
 }
 
@@ -480,10 +643,14 @@ const playTitleGooeyIn = async (forcedEffect = 1) => {
     inWords = Array.from(titleWords())
   }
   const inTarget = inWords.length ? inWords : titleEl.value
+  // If the user already scrolled during hard-load, land at scrub progress —
+  // never animate to solid then snap away.
+  const targetEffect = Math.min(forcedEffect, scrollTitleEffect())
 
-  if (prefersReducedMotion()) {
+  if (prefersReducedMotion() || targetEffect < 0.05) {
     titleSwapLock = false
-    applyTitleGooey(forcedEffect)
+    titlePaintReady.value = true
+    applyTitleGooey(targetEffect)
     return
   }
 
@@ -491,19 +658,21 @@ const playTitleGooeyIn = async (forcedEffect = 1) => {
     filter: inWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
     opacity: 0,
   })
+  // First moment the heading may paint — already fully melted out.
+  titlePaintReady.value = true
 
   await gooeyTween(inTarget, {
     filter: inWords.length
-      ? `blur(${TITLE_BLUR_MAX * (1 - forcedEffect)}px)`
+      ? `blur(${TITLE_BLUR_MAX * (1 - targetEffect)}px)`
       : undefined,
-    opacity: forcedEffect,
-    duration: CLIP_IN_DUR,
+    opacity: targetEffect,
+    duration: TITLE_GOOEY_IN_DUR,
     ease: 'power3.out',
   })
 
   if (gen !== titleSwapGen) return
   titleSwapLock = false
-  applyTitleGooey(forcedEffect)
+  applyTitleGooey(scrollTitleEffect())
 }
 
 useHead(() => {
@@ -576,8 +745,107 @@ const activeFeatures = ref<string[]>([])
 const activeMateriality = ref<string[]>([])
 const activeColours = ref<string[]>([])
 const searchQuery = ref(initialQuerySearch || prefs.value.search || '')
+/**
+ * Filter remembered when search becomes active — restored by clear (X).
+ * Seeded from URL when landing with ?q=.
+ */
+const filterBeforeSearch = ref<string | null>(
+  (initialQuerySearch || prefs.value.search || '').trim()
+    ? activeFilter.value
+    : null,
+)
+
+/** Immediate UI — search owns the active chip as soon as there’s text. */
+const isSearchUiActive = computed(() => searchQuery.value.trim().length > 0)
+
+type FilterChipRect = { key: string; x: number; y: number; w: number; h: number }
+
+const filtersEl = ref<HTMLElement | null>(null)
+const filterPillEl = ref<HTMLElement | null>(null)
+const filterPillReady = ref(false)
+const filtersGooId = `maf-filters-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+let filterLiquidRaf = 0
+let filterResizeObserver: ResizeObserver | null = null
+
+const activeChipKey = computed(() => {
+  if (isSearchUiActive.value) return '__search__'
+  return activeFilter.value || 'all'
+})
+
+const filterPillStyle = computed(() =>
+  prefersReducedMotion() ? undefined : { filter: `url(#${filtersGooId})` },
+)
+
+const measureFilterPillTarget = (): FilterChipRect | null => {
+  const root = filtersEl.value
+  if (!root) return null
+  const rootRect = root.getBoundingClientRect()
+  const chips = Array.from(
+    root.querySelectorAll<HTMLElement>('[data-filter-chip]'),
+  )
+  const el =
+    chips.find((c) => c.dataset.filterChip === activeChipKey.value) ||
+    chips[0]
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  return {
+    key: el.dataset.filterChip || '',
+    x: r.left - rootRect.left,
+    y: r.top - rootRect.top,
+    w: r.width,
+    h: r.height,
+  }
+}
+
+const syncFilterPill = (immediate = false) => {
+  if (!import.meta.client || !filtersEl.value) return
+
+  const pill = filterPillEl.value
+  const target = measureFilterPillTarget()
+  if (!pill || !target) return
+
+  // Radius is CSS `--ui-border-radius` — clear any leftover GSAP inline radius.
+  pill.style.removeProperty('border-radius')
+
+  const vars = {
+    x: target.x,
+    y: target.y,
+    width: target.w,
+    height: target.h,
+  }
+
+  if (immediate || prefersReducedMotion()) {
+    gsap.set(pill, vars)
+  } else {
+    gsap.to(pill, {
+      ...vars,
+      duration: 0.55,
+      ease: 'power3.out',
+      overwrite: 'auto',
+    })
+  }
+
+  if (!filterPillReady.value) {
+    pill.classList.add('is-ready')
+    filterPillReady.value = true
+  }
+}
+
+const scheduleFilterLiquidSync = (immediate = false) => {
+  if (!import.meta.client) return
+  if (immediate) {
+    cancelAnimationFrame(filterLiquidRaf)
+    void nextTick(() => syncFilterPill(true))
+    return
+  }
+  cancelAnimationFrame(filterLiquidRaf)
+  filterLiquidRaf = requestAnimationFrame(() => {
+    syncFilterPill(false)
+  })
+}
 
 const displayTitle = computed(() => {
+  if (isSearchUiActive.value) return pageTitle.value
   if (!activeFilter.value) return pageTitle.value
   const match = pageFilters.value.find(
     (filter) => filterKey(filter) === activeFilter.value,
@@ -593,8 +861,10 @@ let syncingFromRoute = false
 const syncFilterToRoute = () => {
   if (!import.meta.client || syncingFromRoute) return
 
-  const nextFilter = activeFilter.value || undefined
-  const nextQ = searchQuery.value.trim() || undefined
+  const searching = searchQuery.value.trim()
+  // Search is its own mode — don’t keep the previous type filter in the URL.
+  const nextFilter = searching ? undefined : activeFilter.value || undefined
+  const nextQ = searching || undefined
   const curFilter = queryString(route.query.filter) || undefined
   const curQ = queryString(route.query.q) || undefined
   if (curFilter === nextFilter && curQ === nextQ) return
@@ -618,10 +888,38 @@ watch(
   ([filter, q]) => {
     const nextFilter = isKnownFilter(filter) ? canonicalizeFilterKey(filter) : ''
     const nextQ = q
-    if (nextFilter === activeFilter.value && nextQ === searchQuery.value) return
+
+    if (nextQ.trim()) {
+      // Search mode — URL omits type filter on purpose; only react to q (and an
+      // explicit filter if somehow present).
+      if (nextQ === searchQuery.value) {
+        if (nextFilter && nextFilter !== activeFilter.value) {
+          syncingFromRoute = true
+          activeFilter.value = nextFilter
+          filterBeforeSearch.value = nextFilter
+          nextTick(() => {
+            syncingFromRoute = false
+          })
+        }
+        return
+      }
+      syncingFromRoute = true
+      if (filterBeforeSearch.value === null) {
+        filterBeforeSearch.value = activeFilter.value
+      }
+      if (nextFilter) activeFilter.value = nextFilter
+      searchQuery.value = nextQ
+      nextTick(() => {
+        syncingFromRoute = false
+      })
+      return
+    }
+
+    if (nextFilter === activeFilter.value && !searchQuery.value) return
     syncingFromRoute = true
+    filterBeforeSearch.value = null
     activeFilter.value = nextFilter
-    searchQuery.value = nextQ
+    searchQuery.value = ''
     nextTick(() => {
       syncingFromRoute = false
     })
@@ -631,6 +929,31 @@ watch(
 /** Applied to the grid after typing pauses */
 const debouncedSearchQuery = ref(searchQuery.value)
 const SEARCH_DEBOUNCE_MS = 350
+
+const selectFilter = (key: string) => {
+  filterBeforeSearch.value = null
+  if (searchQuery.value) {
+    searchQuery.value = ''
+    debouncedSearchQuery.value = ''
+  }
+  activeFilter.value = key
+}
+
+const clearSearch = () => {
+  const restore = filterBeforeSearch.value
+  filterBeforeSearch.value = null
+  searchQuery.value = ''
+  debouncedSearchQuery.value = ''
+  if (restore !== null) activeFilter.value = restore
+}
+
+watch(
+  [activeChipKey, pageFilters, isSearchUiActive, searchQuery],
+  async () => {
+    await nextTick()
+    scheduleFilterLiquidSync(false)
+  },
+)
 /** Kept for cookie shape only — layout is a fixed 6-col archive grid. */
 const columns = ref(6)
 const gridEl = ref<HTMLElement | null>(null)
@@ -967,6 +1290,7 @@ watch(
 const gridRevealed = ref(false)
 let revealTimer: ReturnType<typeof setTimeout> | null = null
 let introRan = false
+let pageOutroRan = false
 
 const waitMs = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -974,7 +1298,7 @@ const waitMs = (ms: number) =>
   })
 
 const runPageIntro = async () => {
-  if (!import.meta.client || introRan) return
+  if (!import.meta.client || introRan || pageOutroRan) return
   introRan = true
 
   gridAnimating.value = true
@@ -999,10 +1323,45 @@ const runPageIntro = async () => {
     })(),
   ])
 
+  if (pageOutroRan) return
+
   titleSwapLock = false
-  applyTitleGooey(1)
+  applyTitleGooey(scrollTitleEffect())
   gridAnimating.value = false
   filterTransitionsReady = true
+}
+
+const runPageOutro = async () => {
+  if (!import.meta.client || pageOutroRan) return
+  pageOutroRan = true
+  filterTransitionsReady = false
+  gridAnimating.value = true
+  titleSwapLock = true
+  filterTransitionGen += 1
+  titleSwapGen += 1
+  abortTitleSwapTween()
+
+  // Card outro changes layout/scroll; kill scrub so it can't unlock and
+  // re-apply a visible title after the gooey melt.
+  titleGooeyTrigger?.kill()
+  titleGooeyTrigger = null
+
+  if (gridEl.value) {
+    gsap.killTweensOf(
+      gridEl.value.querySelectorAll(
+        '.product-card__media, .product-card__clip-line',
+      ),
+    )
+  }
+
+  const cards = Array.from(visibleGridCards())
+  await Promise.all([
+    animateCardsOut(cards),
+    titleGooeyBooted ? titleGooeyOut() : Promise.resolve(),
+  ])
+
+  // Hold the melted title hidden through unmount (no solid flash).
+  titlePaintReady.value = false
 }
 
 const startPageIntro = () => {
@@ -1024,14 +1383,37 @@ onMounted(() => {
     },
     { once: true },
   )
+
+  void nextTick(() => {
+    syncFilterPill(true)
+    if (filtersEl.value && typeof ResizeObserver !== 'undefined') {
+      filterResizeObserver = new ResizeObserver(() => {
+        scheduleFilterLiquidSync(true)
+      })
+      filterResizeObserver.observe(filtersEl.value)
+    }
+    window.addEventListener('resize', onFilterWindowResize)
+  })
+})
+
+const onFilterWindowResize = () => scheduleFilterLiquidSync(true)
+
+onBeforeRouteLeave(async () => {
+  await runPageOutro()
 })
 
 onBeforeUnmount(() => {
   introRan = false
+  pageOutroRan = false
   filterTransitionGen += 1
   titleSwapGen += 1
   if (revealTimer) clearTimeout(revealTimer)
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
+  cancelAnimationFrame(filterLiquidRaf)
+  filterResizeObserver?.disconnect()
+  filterResizeObserver = null
+  window.removeEventListener('resize', onFilterWindowResize)
+  if (filterPillEl.value) gsap.killTweensOf(filterPillEl.value)
   teardownTitleGooey()
   if (import.meta.client && gridEl.value) {
     gsap.killTweensOf(
@@ -1137,7 +1519,6 @@ const matchesFacets = (item: FormalItem) =>
   matchesFacet(item, 'colour')
 
 const filterCounts = computed(() => {
-  const query = debouncedSearchQuery.value.trim().toLowerCase()
   const counts: Record<string, number> = { '': 0 }
 
   for (const filter of pageFilters.value) {
@@ -1145,7 +1526,7 @@ const filterCounts = computed(() => {
   }
 
   for (const item of items.value) {
-    if (!matchesFacets(item) || !matchesSearch(item, query)) continue
+    if (!matchesFacets(item)) continue
     if (matchesPageFilter(item, '')) counts[''] += 1
     for (const filter of pageFilters.value) {
       const key = filterKey(filter)
@@ -1161,11 +1542,16 @@ const filterCount = (key: string) => filterCounts.value[key] ?? 0
 const filteredItems = computed(() => {
   const query = debouncedSearchQuery.value.trim().toLowerCase()
 
+  // Search is its own filter: full catalog (all singularities), no type chip.
+  if (query) {
+    return items.value.filter(
+      (item) => matchesFacets(item) && matchesSearch(item, query),
+    )
+  }
+
   return items.value.filter(
     (item) =>
-      matchesPageFilter(item, activeFilter.value) &&
-      matchesFacets(item) &&
-      matchesSearch(item, query),
+      matchesPageFilter(item, activeFilter.value) && matchesFacets(item),
   )
 })
 
@@ -1199,6 +1585,17 @@ watch(
 )
 
 watch(searchQuery, (value) => {
+  const trimmed = value.trim()
+  if (trimmed) {
+    if (filterBeforeSearch.value === null) {
+      filterBeforeSearch.value = activeFilter.value
+    }
+  } else if (filterBeforeSearch.value !== null && !syncingFromRoute) {
+    // Cleared via keyboard — same as X: restore previous filter.
+    const restore = filterBeforeSearch.value
+    filterBeforeSearch.value = null
+    activeFilter.value = restore
+  }
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
   searchFlipTimer = setTimeout(() => {
     debouncedSearchQuery.value = value
@@ -1260,7 +1657,8 @@ useHead(() => ({
 }
 
 .products__title--pending {
-  visibility: hidden;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 .products__title :deep(.products__title-word) {
@@ -1276,49 +1674,96 @@ useHead(() => ({
 
 .products__filter-tool {
   position: fixed;
-  left: 50%;
-  bottom: 130px;
+  right: 20px;
+  top: 90px;
   z-index: 60;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: end;
   gap: 1rem;
+  width: -moz-max-content;
   width: max-content;
   max-width: unset;
-  padding: 1.25rem 1.5rem;
-  transform: translateX(-50%);
+  padding: 0;
   pointer-events: auto;
+  justify-content: flex-end;
 }
 
 .products__filters {
+  position: relative;
+  display: block;
+  width: -moz-max-content;
+  width: max-content;
+  max-width: 530px;
+  text-align: center;
+}
+
+.products__filters-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.products__filters-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  border-radius: var(--ui-border-radius);
+  background: var(--text-color);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, width, height, border-radius;
+}
+
+.products__filters-pill.is-ready {
+  opacity: 1;
+}
+
+.products__filters-list {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 0;
-  text-align: center;
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.4);
+  justify-content: end;
+  gap: 3px;
 }
 
 .type-chip {
+  position: relative;
   font-size: var(--text-sm);
-  color: var(--charcoal);
+  color: var(--text-color);
   opacity: 1;
-  transition: opacity 0.2s ease, background 0.2s ease;
+  transition:
+    color 0.25s ease,
+    background 0.25s ease,
+    border-radius 1.6s cubic-bezier(0.22, 1, 0.36, 1);
   padding: 12px 20px;
   border: none;
+  border-radius: var(--ui-border-radius);
+  background: color-mix(in srgb, var(--text-color) 10%, transparent);
+  cursor: pointer;
 }
 
 .type-chip:hover {
   opacity: 1;
+  border-radius: var(--ui-border-radius);
 }
 
-.type-chip--active {
-  opacity: 1;
-  background: var(--white);
-  border-radius: 20px;
+.type-chip--active,
+.type-chip--lit {
+  border-radius: var(--ui-border-radius);
+  color: var(--background-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .products__filters-pill {
+    transition: none;
+    filter: none !important;
+  }
 }
 
 .type-chip__count {
@@ -1327,20 +1772,25 @@ useHead(() => ({
 }
 
 .products__search {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   min-width: 7rem;
-  max-width: 12rem;
+  max-width: 14rem;
   margin: 0;
   border-color: transparent;
-  color: var(--charcoal);
-  cursor: text;
+  cursor: pointer;
 }
 
 .products__search:hover,
 .products__search:focus-within {
   opacity: 1;
+  border-radius: var(--ui-border-radius);
+}
+
+.products__search:has(.products__search-clear) {
+  padding-right: calc(20px + 1.25rem);
 }
 
 .products__search-icon {
@@ -1352,21 +1802,92 @@ useHead(() => ({
 .products__search-input {
   width: 100%;
   min-width: 0;
-  border: 0;
+  margin: 0;
   padding: 0;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: inherit;
+  font-family: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
   color: inherit;
+  text-transform: uppercase;
   outline: none;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.products__search-input:focus,
+.products__search-input:focus-visible,
+.products__search-input:active {
+  outline: none;
+  border: 0;
+  box-shadow: none;
 }
 
 .products__search-input::placeholder {
   color: var(--muted);
+  font: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: uppercase;
+  opacity: 1;
 }
 
-.products__search-input::-webkit-search-cancel-button {
+.products__search-input::-webkit-search-decoration,
+.products__search-input::-webkit-search-cancel-button,
+.products__search-input::-webkit-search-results-button,
+.products__search-input::-webkit-search-results-decoration {
   appearance: none;
+  display: none;
+}
+
+.products__search-clear {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.products__search-x {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+
+.products__search-x-arm {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: currentColor;
+  transform-origin: center center;
+}
+
+.products__search-x-arm:first-child {
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.products__search-x-arm:last-child {
+  transform: translateX(-50%) rotate(-45deg);
 }
 
 .products__grid-wrap {
@@ -1375,18 +1896,40 @@ useHead(() => ({
 
 .products__grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   align-items: end;
   margin: 0 var(--gutter);
   opacity: 0;
+  grid-auto-flow: dense;
 }
-
-@media (max-width: 2060px) {
+@media (min-width: 900px) {
+  .products__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .products__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-flow: unset;
+  }
+}
+@media (min-width: 1400px) {
   .products__grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
+@media (min-width: 2080px) {
+  .products__grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (min-width: 2500px) {
+  .products__grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
 
 .products__grid--revealed {
   opacity: 1;
@@ -1410,8 +1953,16 @@ useHead(() => ({
 
 .products__grid :deep(.product-card--archive-medium),
 .products__spacer.product-card--archive-medium {
-  grid-column: span 2;
+  grid-column: span 1;
 }
+
+@media (min-width: 900px) {
+  .products__grid :deep(.product-card--archive-medium),
+  .products__spacer.product-card--archive-medium {
+    grid-column: span 2;
+  }
+}
+
 
 .products__grid :deep(.product-card--archive-large),
 .products__spacer.product-card--archive-large {
@@ -1427,6 +1978,12 @@ useHead(() => ({
   .products__grid .product-card--archive-large, .products__spacer.product-card--archive-large {
     grid-column: span 3;
   }
+}
+
+@media (max-width: 899px) {
+    .products__grid[data-v-5ef6242e] .product-card--archive-large, .products__spacer.product-card--archive-large[data-v-5ef6242e] {
+        grid-column: span 2 !important;
+    }
 }
 
 .products__grid :deep(.product-card__media) {
@@ -1473,9 +2030,6 @@ useHead(() => ({
 }
 
 @media (max-width: 899px) {
-  .products__grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
 
   .products__grid :deep(.product-card--archive-large),
   .products__spacer.product-card--archive-large {

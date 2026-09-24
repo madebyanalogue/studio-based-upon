@@ -19,6 +19,7 @@
   --grid-line: rgba(0, 0, 0, 0.06);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
+  --ui-border-radius: 2px;
   --panel-bg: rgba(255, 255, 255, 0.8);
   --elevated-bg: #ffffff;
   --shadow-color: rgba(0, 0, 0, 0.1);
@@ -37,6 +38,7 @@
   --thumb-radius: 0px;
   --undo-remove-ms: 5s;
 
+  --rail-aspect: 5/4;
   --rail-aspect: 5/4;
 
 

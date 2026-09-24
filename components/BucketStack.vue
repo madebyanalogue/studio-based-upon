@@ -224,9 +224,13 @@
             'stack__grid--lines': gridLinesVisible,
             'stack__grid--pdp-focus': !!pdpFocusItemId,
           }"
-          :style="gridStyle"
           data-lenis-prevent
         >
+          <div
+            ref="gridTrackRef"
+            class="stack__grid-track"
+            :style="gridStyle"
+          >
           <div
             v-for="(entry, index) in selectionEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
@@ -296,6 +300,7 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         <!-- Boards cart — same square grid; boards span 1×1 (<1000) or 3×2 (≥1000 / 6-col) -->
@@ -304,9 +309,13 @@
           ref="gridRef"
           class="stack__grid stack__grid--boards"
           :class="{ 'stack__grid--lines': gridLinesVisible }"
-          :style="gridStyle"
           data-lenis-prevent
         >
+          <div
+            ref="gridTrackRef"
+            class="stack__grid-track"
+            :style="gridStyle"
+          >
           <div
             v-for="(entry, index) in boardsGridEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.board.id"
@@ -450,6 +459,7 @@
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -682,6 +692,7 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
+import Lenis from 'lenis'
 import type { BucketItem, SelectionEntry } from '~/composables/useBucket'
 import {
   productIdFromBucketId,
@@ -764,6 +775,7 @@ const {
 const { fetchProduct } = useProductCatalog()
 
 const gridRef = ref<HTMLElement | null>(null)
+const gridTrackRef = ref<HTMLElement | null>(null)
 /** Active board pile — used for Flip / fly-to landing */
 const pileRef = ref<HTMLElement | null>(null)
 const pileEls = ref<Record<string, HTMLElement | null>>({})
@@ -4508,6 +4520,7 @@ watch(stagePresent, (present) => {
   // while openMoodboard still holds a lock.
   if (present) lockPageScroll()
   else unlockPageScroll()
+  nextTick(() => syncGridLenis())
 })
 
 watch(activeMoodboardId, () => {
@@ -4556,15 +4569,102 @@ watch(showSelectionGrid, async (show) => {
   if (!show || !import.meta.client) return
   await nextTick()
   syncCellSize()
+  syncGridLenis()
 })
 
 watch(showBoardsGrid, async (show) => {
   if (!show || !import.meta.client) return
   await nextTick()
   syncCellSize()
+  syncGridLenis()
 })
 
+watch(cellsReady, async (ready) => {
+  if (!ready || !import.meta.client) return
+  await nextTick()
+  gridLenis?.resize()
+})
+
+watch(
+  () =>
+    panelTab.value === 'boards'
+      ? boardsGridEntries.value.length
+      : selectionEntries.value.length,
+  async () => {
+    if (!import.meta.client || !gridLenis) return
+    await nextTick()
+    gridLenis.resize()
+  },
+)
+
 let cellRo: ResizeObserver | null = null
+let gridLenis: Lenis | null = null
+let gridLenisRaf = 0
+let gridLenisRo: ResizeObserver | null = null
+
+const destroyGridLenis = () => {
+  gridLenisRo?.disconnect()
+  gridLenisRo = null
+  if (gridLenisRaf) {
+    cancelAnimationFrame(gridLenisRaf)
+    gridLenisRaf = 0
+  }
+  gridLenis?.destroy()
+  gridLenis = null
+}
+
+const tickGridLenis = (time: number) => {
+  gridLenis?.raf(time)
+  gridLenisRaf = requestAnimationFrame(tickGridLenis)
+}
+
+const initGridLenis = () => {
+  if (!import.meta.client) return
+  const wrapper = gridRef.value
+  const content = gridTrackRef.value
+  if (!wrapper || !content) return
+
+  destroyGridLenis()
+  gridLenis = new Lenis({
+    wrapper,
+    content,
+    orientation: 'vertical',
+    gestureOrientation: 'vertical',
+    smoothWheel: true,
+    syncTouch: true,
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.55,
+    wheelMultiplier: 1.4,
+    lerp: 0.07,
+    overscroll: false,
+    prevent: () => false,
+  })
+  gridLenis.resize()
+  if (typeof ResizeObserver !== 'undefined') {
+    gridLenisRo = new ResizeObserver(() => {
+      const y = gridLenis?.animatedScroll ?? 0
+      gridLenis?.resize()
+      gridLenis?.scrollTo(y, { immediate: true })
+    })
+    gridLenisRo.observe(content)
+  }
+  gridLenisRaf = requestAnimationFrame(tickGridLenis)
+}
+
+const syncGridLenis = () => {
+  if (!import.meta.client) return
+  if (
+    stagePresent.value &&
+    (showSelectionGrid.value || showBoardsGrid.value) &&
+    gridRef.value &&
+    gridTrackRef.value
+  ) {
+    initGridLenis()
+  } else {
+    destroyGridLenis()
+  }
+}
 
 watch(
   gridRef,
@@ -4578,6 +4678,7 @@ watch(
       cellRo.observe(el)
       syncCellSize()
     }
+    nextTick(() => syncGridLenis())
   },
   { flush: 'post' },
 )
@@ -4736,6 +4837,7 @@ onBeforeUnmount(() => {
   registerMoodboardCloseReturn(null)
   cellRo?.disconnect()
   cellRo = null
+  destroyGridLenis()
   clearColumnPointerListeners()
   destroyColumnGhost()
   if (import.meta.client) {
@@ -5572,11 +5674,6 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: grid;
-  align-content: start;
-  align-items: stretch;
-  justify-content: start;
-  gap: 0;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -5591,6 +5688,17 @@ onBeforeUnmount(() => {
   transition: border-color 0.32s ease;
 }
 
+.stack__grid-track {
+  display: grid;
+  align-content: start;
+  align-items: stretch;
+  justify-content: start;
+  gap: 0;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
 .stack__grid::-webkit-scrollbar {
   display: none;
 }
@@ -5601,7 +5709,7 @@ onBeforeUnmount(() => {
 }
 
 /* Let product cells fill around pinned board tiles */
-.stack__grid--with-boards {
+.stack__grid--with-boards .stack__grid-track {
   grid-auto-flow: dense;
 }
 
@@ -5635,7 +5743,7 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 
-.stack__grid--boards {
+.stack__grid--boards .stack__grid-track {
   grid-auto-flow: dense;
 }
 

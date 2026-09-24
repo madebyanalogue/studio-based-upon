@@ -695,6 +695,7 @@
         @select="switchSavedBoard"
         @delete="onBoardsPanelDelete"
         @send="onBoardsPanelSend"
+        @create="onBoardsPanelCreate"
       />
     </div>
   </Teleport>
@@ -750,6 +751,7 @@ const {
   updateBoard,
   renameBoard,
   deleteBoard,
+  createBoard,
   boardsForSelection,
   boardsPanelOpen,
   openBoardsPanel,
@@ -1361,6 +1363,34 @@ const switchSavedBoard = async (id: string) => {
 const onBoardsPanelDelete = (id: string) => {
   pendingDeleteId.value = id
   confirmingDelete.value = true
+}
+
+const onBoardsPanelCreate = async () => {
+  if (activeBoardId.value) {
+    const shot = await captureBoardPreview()
+    saveActiveBoard(
+      placements.value,
+      strokes.value,
+      shot?.preview,
+      shot?.aspect,
+    )
+  }
+  const board = createBoard(
+    [],
+    [],
+    undefined,
+    undefined,
+    activeMoodboardId.value || undefined,
+  )
+  loadBoard(board.placements, board.strokes)
+  clearActive()
+  openSnapshot.value = {
+    boardId: board.id,
+    name: board.name,
+    placements: [],
+    strokes: [],
+  }
+  nextTick(() => resetHistory())
 }
 
 const onBoardsPanelSend = async (id: string) => {

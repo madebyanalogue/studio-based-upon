@@ -24,6 +24,10 @@ export type ProductRecord = {
   finishes?: string[]
   edition?: string
   description?: string
+  /** Placeholder / CMS fields for PDP specs */
+  year?: string
+  client?: string
+  location?: string
   categories?: string[]
   /** Resolved Materiality taxonomy titles (replaces old Materials strings) */
   materials?: string[]

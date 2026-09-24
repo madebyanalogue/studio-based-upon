@@ -13,6 +13,15 @@ export type ProductOverlayOpenOptions = {
   flipSrc?: string | null
   /** Cart / selection item id when opening from bucket UI */
   bucketItemId?: string | null
+  /** Sanity / catalog product id of the Flip shell card */
+  productId?: string | null
+}
+
+export type ProductGridSwap = {
+  /** Product originally clicked (Flip shell) */
+  shellId: string
+  /** Product shown when closing (may differ after in-PDP nav) */
+  closingId: string
 }
 
 export type ProductReturnImage = {
@@ -52,6 +61,7 @@ export const PRODUCT_OVERLAY_FLYER_Z = 330
 let flipSourceEl: HTMLElement | null = null
 let flipImageUrl: string | null = null
 let flipBucketItemId: string | null = null
+let flipSourceProductId: string | null = null
 
 /** Cart→PDP: hold flyer until the cart fade prelude finishes. */
 let flipOpenGate: Promise<void> | null = null
@@ -116,6 +126,7 @@ const clearFlipSource = () => {
   flipSourceEl = null
   flipImageUrl = null
   flipBucketItemId = null
+  flipSourceProductId = null
 }
 
 export const useProductOverlay = () => {
@@ -128,6 +139,15 @@ export const useProductOverlay = () => {
   const openImageIndex = useState<number>('product-overlay-image-index', () => 0)
   const returnImage = useState<ProductReturnImage | null>(
     'product-overlay-return-image',
+    () => null,
+  )
+  /**
+   * When closing a different product than the Flip shell (in-PDP nav), the
+   * materials grid swaps shell ↔ closing so the flyer lands on the closing
+   * product without moving the Flip source DOM node.
+   */
+  const pendingGridSwap = useState<ProductGridSwap | null>(
+    'product-overlay-grid-swap',
     () => null,
   )
   /** Cream veil outlives the overlay — layers above it must hold their z-index. */
@@ -161,6 +181,7 @@ export const useProductOverlay = () => {
         flipSourceEl = options.source
         flipImageUrl = options.flipSrc || null
         flipBucketItemId = options.bucketItemId || null
+        flipSourceProductId = options.productId || null
         // Lock opacity 1 before overlay mounts (hover ends → saved CSS would otherwise dip)
         lockFlipSourceFull(options.source)
         // Keep source visible until ProductDetail has a ready flyer (avoids a blank gap)
@@ -176,6 +197,7 @@ export const useProductOverlay = () => {
           ? options.imageIndex
           : 0
       returnImage.value = null
+      pendingGridSwap.value = null
     } else if (!alreadyOpen) {
       resetRelatedRail()
       clearFlipSource()
@@ -183,6 +205,7 @@ export const useProductOverlay = () => {
       closingFlip.value = false
       backdropReady.value = false
       openImageIndex.value = 0
+      pendingGridSwap.value = null
     }
 
     openSlug.value = slug
@@ -216,6 +239,17 @@ export const useProductOverlay = () => {
   /** Source thumb for open + close Flip — kept until finishClose */
   const getFlipSource = () => flipSourceEl
 
+  /** Catalog id of the Flip shell product (original click) */
+  const getFlipSourceProductId = () => flipSourceProductId
+
+  /** True when the Flip shell lives in the Materials & Forms archive grid */
+  const flipSourceIsArchiveGrid = () =>
+    !!(
+      import.meta.client &&
+      flipSourceEl &&
+      flipSourceEl.closest('.products__grid')
+    )
+
   /** Hero-tier URL preferred for the Flip flyer when prefetched */
   const getFlipImageUrl = () => flipImageUrl
 
@@ -235,6 +269,15 @@ export const useProductOverlay = () => {
     }
   }
 
+  /**
+   * Ask the archive grid to swap shell ↔ closing products (stable slot keys)
+   * before Flip measures, so the shell shows the closing product in place.
+   */
+  const requestGridSwap = (shellId: string, closingId: string) => {
+    if (!shellId || !closingId || shellId === closingId) return
+    pendingGridSwap.value = { shellId, closingId }
+  }
+
   const finishClose = () => {
     if (!openSlug.value && !closingFlip.value) return
 
@@ -248,6 +291,7 @@ export const useProductOverlay = () => {
     clearFlipSource()
     clearFlipOpenGate()
     backdropReady.value = false
+    pendingGridSwap.value = null
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -318,6 +362,7 @@ export const useProductOverlay = () => {
     closingFlip.value = false
     backdropReady.value = false
     returnUrl.value = null
+    pendingGridSwap.value = null
     if (import.meta.client) {
       unlockPageScroll()
     }
@@ -331,6 +376,8 @@ export const useProductOverlay = () => {
     finishClose,
     syncFromHistory,
     getFlipSource,
+    getFlipSourceProductId,
+    flipSourceIsArchiveGrid,
     getFlipImageUrl,
     clearPendingFlip,
     setBackdropReady,
@@ -345,6 +392,8 @@ export const useProductOverlay = () => {
     openImageIndex,
     returnImage,
     setReturnImage,
+    pendingGridSwap,
+    requestGridSwap,
     closeVeilActive,
     setCloseVeilActive,
   }

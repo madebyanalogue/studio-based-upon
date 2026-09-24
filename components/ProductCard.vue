@@ -255,6 +255,7 @@ const onOpen = (event: MouseEvent) => {
     source,
     imageIndex: imageIndex.value,
     flipSrc: flipSrc || null,
+    productId: props.item._id,
   })
 }
 

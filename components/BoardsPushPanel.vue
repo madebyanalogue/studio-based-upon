@@ -7,6 +7,7 @@
       @select="onSelect"
       @delete="onDelete"
       @send="onSend"
+      @create="onCreate"
     />
   </Teleport>
 </template>
@@ -30,6 +31,19 @@ const {
   reset: resetMoodboard,
 } = useMoodboard()
 const { openFromMoodboard } = useEnquiryForm()
+
+const onCreate = () => {
+  const board = createBoard(
+    [],
+    [],
+    undefined,
+    undefined,
+    activeMoodboardId.value || undefined,
+  )
+  loadBoard(board.placements, board.strokes)
+  clearActive()
+  openMoodboard({ reopenCart: true })
+}
 
 const onSelect = async (id: string) => {
   if (isMoodboard.value) {

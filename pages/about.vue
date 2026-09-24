@@ -55,13 +55,13 @@
 
       <div class="about-make__copy">
         <p id="about-make-title">
-          <strong>Our work moves freely between the intricate and the monumental.</strong>
+          Our work moves freely between the intricate and the monumental.
           We create unfathomable surfaces and singular objects as well as large-scale
           integrated artworks, architectural interventions and monolithic forms, bringing
           the same intensity of attention to every scale.
         </p>
         <p>
-          <strong>Our practice is rooted in curiosity, experimentation and a deep knowledge of materials.</strong>
+          Our practice is rooted in curiosity, experimentation and a deep knowledge of materials.
           Part atelier, part laboratory, the studio is a place where ideas are explored
           through making, where the hand meets the algorithm, and where traditional craft
           sits alongside advanced processes and emerging technologies.
@@ -69,26 +69,20 @@
       </div>
 
       <div class="about-sheet" role="list" aria-label="Work and process evidence">
-        <figure
+        <div
           v-for="(cell, i) in sheetCells"
-          :key="cell.id"
+          :key="cell.item._id"
           class="about-sheet__cell"
           :class="`about-sheet__cell--${cell.size}`"
           role="listitem"
         >
-          <img
-            :src="cell.src"
-            :alt="cell.alt"
-            loading="lazy"
-            decoding="async"
-            :width="cell.w"
-            :height="cell.h"
+          <ProductCard
+            :item="cell.item"
+            :image-url="cardImage(cell.item)"
+            :order-label="orderLabel(i)"
+            :style="sheetThumbStyle(cell.item)"
           />
-          <figcaption class="about-sheet__cap interface">
-            <span>{{ String(i + 1).padStart(2, '0') }}</span>
-            <span>{{ cell.label }}</span>
-          </figcaption>
-        </figure>
+        </div>
       </div>
     </section>
 
@@ -236,14 +230,14 @@
 </template>
 
 <script setup lang="ts">
+import { productCoverFrame } from '~/composables/productImages'
+import type { LibraryItem } from '~/composables/useLibraryCatalog'
+import { GRID_RATIO_AR } from '~/composables/useLibraryCatalog'
+import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+
 type SheetCell = {
-  id: string
-  src: string
-  alt: string
-  label: string
+  item: LibraryItem
   size: 'a' | 'b' | 'c' | 'd'
-  w: number
-  h: number
 }
 
 const seed = (key: string, w: number, h: number) =>
@@ -258,26 +252,13 @@ const query = `*[_type == "aboutPage"][0] {
   heroImage { asset->{ url, _id } }
 }`
 
-const workQuery = `*[_type == "gridItem" && defined(gallery[0].asset)] | order(orderRank) [0...14] {
-  _id,
-  title,
-  "src": gallery[0].asset->url
-}`
-
 const { data: page } = await useAsyncData('aboutPage-v2', () =>
   $fetch('/api/sanity/query', { method: 'POST', body: { query } })
     .then((r: { result?: Record<string, unknown> | null }) => r?.result ?? null)
     .catch(() => null),
 )
 
-const { data: workImages } = await useAsyncData('aboutWorkSheet', () =>
-  $fetch('/api/sanity/query', { method: 'POST', body: { query: workQuery } })
-    .then((r: { result?: Array<{ _id: string; title?: string; src?: string }> }) =>
-      Array.isArray(r?.result) ? r.result : [],
-    )
-    .catch(() => [] as Array<{ _id: string; title?: string; src?: string }>),
-)
-
+const { items: libraryItems } = await useLibraryCatalog()
 const { imageUrl, getImageSrc } = useSanityImage()
 
 const heroSrc = computed(() => {
@@ -308,48 +289,30 @@ const axes = [
 ]
 
 const sizes: SheetCell['size'][] = ['a', 'b', 'c', 'b', 'd', 'a', 'c', 'b', 'a', 'd', 'b', 'c']
-const labels = [
-  'Surface detail',
-  'Object',
-  'Installation',
-  'Material',
-  'Hand process',
-  'CNC',
-  'Drawing',
-  'Prototype',
-  'Experiment',
-  'Architecture',
-  'Finish',
-  'Form',
-]
 
 const sheetCells = computed((): SheetCell[] => {
-  const fromCms = (workImages.value || []).filter((item) => item.src)
-  const cells: SheetCell[] = []
-  for (let i = 0; i < 12; i += 1) {
-    const size = sizes[i]!
-    const dims =
-      size === 'a'
-        ? { w: 1200, h: 1600 }
-        : size === 'b'
-          ? { w: 1600, h: 1200 }
-          : size === 'c'
-            ? { w: 900, h: 900 }
-            : { w: 1800, h: 1100 }
-    const cms = fromCms[i]
-    cells.push({
-      id: cms?._id || `sheet-${i}`,
-      src: cms?.src
-        ? `${cms.src}?w=${dims.w}&auto=format&q=80`
-        : seed(`sheet-${i}`, dims.w, dims.h),
-      alt: cms?.title || labels[i]!,
-      label: labels[i]!,
-      size,
-      ...dims,
-    })
-  }
-  return cells
+  const list = libraryItems.value.filter((item) => Boolean(productCoverFrame(item)))
+  return list.slice(0, 12).map((item, i) => ({
+    item,
+    size: sizes[i] || 'b',
+  }))
 })
+
+const cardImage = (item: LibraryItem) => {
+  const cover = productCoverFrame(item)
+  return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
+}
+
+const sheetThumbStyle = (item: LibraryItem) => {
+  const ratioKey = item.gridRatio || 'square'
+  const ar = GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square
+  return { '--thumb-ar': String(ar) }
+}
+
+const orderLabel = (index: number) => {
+  const digits = Math.max(2, String(sheetCells.value.length).length)
+  return String(index + 1).padStart(digits, '0')
+}
 
 const workshopEvidence = computed(() =>
   [41, 87, 112, 156, 203, 244].map((n, i) => ({
@@ -542,11 +505,6 @@ useHead(() => ({
   line-height: 1.45;
 }
 
-.about-make__copy strong {
-  font-weight: 400;
-  font-family: var(--serif);
-}
-
 .about-sheet {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
@@ -576,40 +534,20 @@ useHead(() => ({
   grid-column: span 7;
 }
 
-.about-sheet__cell img {
-  display: block;
+.about-sheet__cell :deep(.product-card) {
+  width: 100%;
+  max-width: none;
+}
+
+.about-sheet__cell :deep(.product-card__media) {
   width: 100%;
   height: auto;
-  aspect-ratio: auto;
+  aspect-ratio: var(--thumb-ar, 1);
+}
+
+.about-sheet__cell :deep(.product-card__image) {
   object-fit: cover;
-  background: var(--sand);
-}
-
-.about-sheet__cell--a img {
-  aspect-ratio: 3 / 4;
-}
-
-.about-sheet__cell--b img {
-  aspect-ratio: 4 / 3;
-}
-
-.about-sheet__cell--c img {
-  aspect-ratio: 1;
-}
-
-.about-sheet__cell--d img {
-  aspect-ratio: 16 / 10;
-}
-
-.about-sheet__cap {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 0.4rem;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
+  object-position: center center;
 }
 
 @media (max-width: 799px) {
