@@ -137,17 +137,7 @@
         <li>Application</li>
         <li>Finished work</li>
       </ol>
-      <div class="about-archive" role="list" aria-label="Archive fragments">
-        <figure
-          v-for="frag in archiveFrags"
-          :key="frag.id"
-          class="about-archive__frag"
-          :style="{ '--ar': frag.ar }"
-          role="listitem"
-        >
-          <img :src="frag.src" :alt="frag.alt" loading="lazy" decoding="async" />
-        </figure>
-      </div>
+     
     </section>
 
     <!-- 06 — People -->
@@ -196,13 +186,9 @@
           v-for="entry in timeline"
           :key="entry.year + entry.title"
           class="about-timeline__entry"
-          :class="`about-timeline__entry--${entry.weight}`"
           role="listitem"
         >
           <p class="about-timeline__year interface">{{ entry.year }}</p>
-          <figure v-if="entry.src" class="about-timeline__media">
-            <img :src="entry.src" :alt="entry.title" loading="lazy" decoding="async" />
-          </figure>
           <div class="about-timeline__text">
             <h3 class="about-timeline__title">{{ entry.title }}</h3>
             <p v-if="entry.note" class="about-timeline__note">{{ entry.note }}</p>
@@ -358,14 +344,14 @@ const startPoints = [
 ]
 
 const timeline = [
-  { year: '2004', title: 'Studio begins', note: 'London workshop founded.', weight: 'lg', src: seed('y-2004', 1600, 1000) },
-  { year: '2007', title: 'Early liquid metal', note: 'Surface experiments enter the archive.', weight: 'sm', src: seed('y-2007', 900, 1100) },
-  { year: '2011', title: 'Monumental commission', note: 'Scale jumps; process deepens.', weight: 'md', src: seed('y-2011', 1400, 900) },
-  { year: '2014', title: 'Material breakthrough', note: 'Tramazite and allied innovations.', weight: 'md', src: seed('y-2014', 1200, 1200) },
-  { year: '2017', title: 'Failed / kept', note: 'Unresolved experiments retained as knowledge.', weight: 'sm', src: seed('y-2017', 800, 1000) },
-  { year: '2019', title: 'Atelier × algorithm', note: 'CNC and craft in the same room.', weight: 'md', src: seed('y-2019', 1500, 1000) },
-  { year: '2022', title: 'Global residences & yachts', note: 'Work across private and maritime contexts.', weight: 'lg', src: seed('y-2022', 1800, 1100) },
-  { year: '2026', title: 'Studio Based Upon', note: 'Twenty years of accumulated making.', weight: 'lg', src: seed('y-2026', 1600, 1200) },
+  { year: '2004', title: 'Studio begins', note: 'London workshop founded.' },
+  { year: '2007', title: 'Early liquid metal', note: 'Surface experiments enter the archive.' },
+  { year: '2011', title: 'Monumental commission', note: 'Scale jumps; process deepens.' },
+  { year: '2014', title: 'Material breakthrough', note: 'Tramazite and allied innovations.' },
+  { year: '2017', title: 'Failed / kept', note: 'Unresolved experiments retained as knowledge.' },
+  { year: '2019', title: 'Atelier × algorithm', note: 'CNC and craft in the same room.' },
+  { year: '2022', title: 'Global residences & yachts', note: 'Work across private and maritime contexts.' },
+  { year: '2026', title: 'Studio Based Upon', note: 'Twenty years of accumulated making.' },
 ]
 
 useHead(() => ({
@@ -779,13 +765,14 @@ useHead(() => ({
 .about-timeline {
   display: flex;
   flex-direction: column;
-  gap: clamp(2rem, 5vw, 3.5rem);
+  gap: clamp(1.25rem, 3vw, 1.75rem);
 }
 
 .about-timeline__entry {
   display: grid;
-  gap: 0.75rem 1.5rem;
-  align-items: start;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.35rem 1.25rem;
+  align-items: baseline;
 }
 
 .about-timeline__year {
@@ -796,56 +783,20 @@ useHead(() => ({
   color: var(--muted);
 }
 
-.about-timeline__media {
-  margin: 0;
-}
-
-.about-timeline__media img {
-  display: block;
-  width: 100%;
-  max-width: 42rem;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  background: var(--sand);
-}
-
-.about-timeline__entry--sm .about-timeline__media img {
-  max-width: 18rem;
-  aspect-ratio: 4 / 5;
-}
-
-.about-timeline__entry--md .about-timeline__media img {
-  max-width: 28rem;
-}
-
 .about-timeline__title {
   margin: 0;
   font-family: var(--serif);
-  font-size: clamp(1.35rem, 2.5vw, 1.85rem);
+  font-size: clamp(1.2rem, 2vw, 1.5rem);
   font-weight: 400;
   letter-spacing: -0.02em;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .about-timeline__note {
-  margin: 0.4rem 0 0;
-  max-width: 28rem;
+  margin: 0.25rem 0 0;
+  max-width: 32rem;
+  font-size: var(--text-sm);
   color: color-mix(in srgb, var(--charcoal) 72%, transparent);
-}
-
-@media (min-width: 900px) {
-  .about-timeline__entry--lg {
-    grid-template-columns: 5rem 1.2fr 0.8fr;
-  }
-
-  .about-timeline__entry--md {
-    grid-template-columns: 5rem minmax(0, 28rem) 1fr;
-  }
-
-  .about-timeline__entry--sm {
-    grid-template-columns: 5rem minmax(0, 18rem) 1fr;
-    padding-left: 8vw;
-  }
 }
 
 /* —— Resolve —— */

@@ -31,18 +31,13 @@
         </NuxtLink>
 
         <div class="header__tools" role="group" aria-label="Site tools">
-          <button
-            type="button"
+          <NuxtLink
+            to="/discovery"
             class="header__version interface"
-            :aria-label="
-              textCase === 'uppercase'
-                ? 'Titles are uppercase. Switch to sentence case'
-                : 'Titles are sentence case. Switch to uppercase'
-            "
-            @click="toggleTextCase"
+            :class="{ 'header__version--active': isActive('/discovery') }"
           >
-            {{ textCase === 'uppercase' ? 'AA' : 'Aa' }}
-          </button>
+            Discovery
+          </NuxtLink>
 
           <button
             type="button"
@@ -153,7 +148,6 @@ const {
   hoverSelectionStack,
   closeDrawer,
 } = useBucket()
-const { textCase, toggleTextCase } = useTextCase()
 const { boardsPanelOpen, openBoardsPanel, closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()

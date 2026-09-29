@@ -79,106 +79,86 @@ export const useSiteSettings = () => {
     resolveLibraryPageFilters(settings.value?.libraryFilters),
   )
 
+  const MAIN_NAV_ORDER = [
+    { path: '/typology', text: 'Typology' },
+    { path: '/materials-and-forms', text: 'Materials & Forms' },
+    { path: '/curate', text: 'Curate' },
+    { path: '/pre-crafted', text: '(Pre)Crafted' },
+    { path: '/about', text: 'About' },
+  ] as const
+
   const defaultMenu = {
-    items: [
-      { _key: '0', text: 'Home', path: '/' },
-      { _key: '1', text: 'Curate', path: '/curate' },
-      { _key: '2', text: 'Typology', path: '/typology' },
-      { _key: '3', text: 'Discovery', path: '/discovery' },
-      { _key: '4', text: 'Materials & Forms', path: '/materials-and-forms' },
-      { _key: '5', text: '(Pre)Crafted', path: '/pre-crafted' },
-      { _key: '6', text: 'About', path: '/about' },
-    ],
+    items: MAIN_NAV_ORDER.map((item, index) => ({
+      _key: String(index),
+      text: item.text,
+      path: item.path,
+    })),
   }
 
   const normalizeMenuItems = (items: { _key?: string; text?: string; path?: string }[] = []) => {
-    const normalized = items
-      .filter(
-        (item) =>
-          item.path !== '/contact' &&
-          item.path !== '/enquire' &&
-          item.path !== '/gs' &&
-          item.path !== '/infinite-slider',
-      )
-      .map((item) => {
-        if (item.path === '/products' || item.path === '/materials-and-forms') {
-          return { ...item, text: 'Materials & Forms', path: '/materials-and-forms' }
-        }
-        // Legacy CMS: homepage used to be Discovery / Flow State
-        if (
-          item.path === '/' &&
-          (item.text === 'Discovery' || item.text === 'Flow State')
-        ) {
-          return { ...item, text: 'Discovery', path: '/discovery' }
-        }
-        if (item.path === '/discovery' || item.text === 'Flow State') {
-          return { ...item, text: 'Discovery', path: '/discovery' }
-        }
-        if (
-          item.path === '/typology' ||
-          item.path === '/curated-discovery' ||
-          item.text === 'Typology' ||
-          item.text === 'Curated Discovery' ||
-          item.text === 'Discover'
-        ) {
-          return { ...item, text: 'Typology', path: '/typology' }
-        }
-        if (
-          item.path === '/curate' ||
-          item.path === '/#curate' ||
-          item.text === 'Curate' ||
-          item.text === 'Showcase Reels'
-        ) {
-          return { ...item, text: 'Curate', path: '/curate' }
-        }
-        if (
-          item.path === '/' ||
-          item.path === '/#showcase' ||
-          item.text === 'Showcase' ||
-          item.text === 'Home' ||
-          item.text === 'Infinite Slider'
-        ) {
-          return { ...item, text: 'Home', path: '/' }
-        }
-        return item
-      })
+    const byPath = new Map<string, { _key?: string; text?: string; path?: string }>()
 
-    const hasHome = normalized.some((item) => item.path === '/')
-    const hasCurate = normalized.some((item) => item.path === '/curate')
-    const hasTypology = normalized.some((item) => item.path === '/typology')
-    const hasDiscovery = normalized.some((item) => item.path === '/discovery')
+    for (const item of items) {
+      if (
+        !item.path ||
+        item.path === '/' ||
+        item.path === '/#showcase' ||
+        item.path === '/contact' ||
+        item.path === '/enquire' ||
+        item.path === '/gs' ||
+        item.path === '/infinite-slider' ||
+        item.path === '/discovery' ||
+        item.text === 'Home' ||
+        item.text === 'Showcase' ||
+        item.text === 'Infinite Slider' ||
+        item.text === 'Discovery' ||
+        item.text === 'Flow State'
+      ) {
+        continue
+      }
 
-    if (!hasHome) {
-      normalized.unshift({ _key: 'home', text: 'Home', path: '/' })
-    }
-    if (!hasCurate) {
-      const insertAt = normalized.findIndex((item) => item.path === '/')
-      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
-        _key: 'curate',
-        text: 'Curate',
-        path: '/curate',
-      })
-    }
-    if (!hasTypology) {
-      const insertAt = normalized.findIndex((item) => item.path === '/curate')
-      normalized.splice(Math.max(insertAt, 0) + 1, 0, {
-        _key: 'typology',
-        text: 'Typology',
-        path: '/typology',
-      })
-    }
-    if (!hasDiscovery) {
-      const insertAt = normalized.findIndex(
-        (item) => item.path === '/typology',
-      )
-      normalized.splice(insertAt + 1, 0, {
-        _key: 'discovery',
-        text: 'Discovery',
-        path: '/discovery',
-      })
+      let path = item.path
+      let text = item.text || ''
+
+      if (path === '/products' || path === '/materials-and-forms') {
+        path = '/materials-and-forms'
+        text = 'Materials & Forms'
+      } else if (
+        path === '/typology' ||
+        path === '/curated-discovery' ||
+        text === 'Typology' ||
+        text === 'Curated Discovery' ||
+        text === 'Discover'
+      ) {
+        path = '/typology'
+        text = 'Typology'
+      } else if (
+        path === '/curate' ||
+        path === '/#curate' ||
+        text === 'Curate' ||
+        text === 'Showcase Reels'
+      ) {
+        path = '/curate'
+        text = 'Curate'
+      } else if (path === '/pre-crafted' || text === '(Pre)Crafted') {
+        path = '/pre-crafted'
+        text = '(Pre)Crafted'
+      } else if (path === '/about' || text === 'About') {
+        path = '/about'
+        text = 'About'
+      }
+
+      byPath.set(path, { ...item, path, text })
     }
 
-    return normalized
+    return MAIN_NAV_ORDER.map((slot, index) => {
+      const existing = byPath.get(slot.path)
+      return {
+        _key: existing?._key || String(index),
+        text: slot.text,
+        path: slot.path,
+      }
+    })
   }
 
   const headerMenu = computed(() => {

@@ -34,11 +34,11 @@ const applyDom = (mode: ThemeMode) => {
   document.documentElement.classList.toggle('dark', mode === 'dark')
 }
 
-/** Light / dark theme with localStorage persistence. Homepage + Curate always dark; (Pre)Crafted always light. */
+/** Light / dark theme with localStorage persistence. Homepage + Curate always dark; (Pre)Crafted always light. Dark is the default when unset. */
 export const useTheme = () => {
   // Always the same on server + first client paint so hydration matches.
   // Client storage is applied after mount via initTheme().
-  const theme = useState<ThemeMode>('theme-mode', () => 'light')
+  const theme = useState<ThemeMode>('theme-mode', () => 'dark')
   const route = useRoute()
 
   const forcedDark = computed(
@@ -72,7 +72,8 @@ export const useTheme = () => {
     if (stored) {
       theme.value = stored
     } else {
-      theme.value = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+      // No preference yet — dark by default (matches early head script).
+      theme.value = 'dark'
     }
     applyEffective()
 
