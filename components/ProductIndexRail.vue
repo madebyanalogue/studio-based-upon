@@ -111,7 +111,7 @@
         :aria-pressed="spiritMode ? 'true' : 'false'"
         @click="requestSpiritToggle"
       >
-        {{ spiritMode ? 'Close' : 'Spirit' }}
+        {{ spiritMode ? 'Hide Spirit' : 'Spirit' }}
       </button>
     </div>
 
@@ -335,13 +335,32 @@ const createRailLenis = (wrapper: HTMLElement, content: HTMLElement) =>
     wheelMultiplier: 1.4,
     lerp: 0.07,
     overscroll: false,
+    // We resize only while the rail is open — Lenis autoResize was clamping
+    // scroll to 0 mid-close as --pdp-index-rail-width animates.
+    autoResize: false,
     // Strip keeps data-lenis-prevent for the page scroller; don't self-block.
     prevent: () => false,
   })
 
+const freezeIndexStripScroll = (y: number) => {
+  indexStripScrollTop.value = y
+  if (indexStripRef.value) indexStripRef.value.scrollTop = y
+  // force: stop() blocks scrollTo unless forced
+  indexLenis?.scrollTo(y, { immediate: true, force: true })
+}
+
 const onIndexStripScroll = () => {
-  // Ignore clamp-to-0 events while the rail is closed / closing.
-  if (!indexRailVisible.value) return
+  // While closed / closing, layout + Lenis can clamp to 0 — hold the freeze.
+  if (!indexRailVisible.value) {
+    const y = indexStripScrollTop.value
+    if (
+      indexStripRef.value &&
+      Math.abs(indexStripRef.value.scrollTop - y) > 1
+    ) {
+      indexStripRef.value.scrollTop = y
+    }
+    return
+  }
   indexStripScrollTop.value =
     indexLenis?.animatedScroll ?? indexStripRef.value?.scrollTop ?? 0
 }
@@ -384,29 +403,25 @@ const initIndexLenis = () => {
   indexLenis = createRailLenis(wrapper, content)
   indexLenis.on('scroll', onIndexStripScroll)
   indexLenis.resize()
-  indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
+  freezeIndexStripScroll(indexStripScrollTop.value)
   if (!indexRailVisible.value) indexLenis.stop()
   if (typeof ResizeObserver !== 'undefined') {
     indexResizeObserver = new ResizeObserver(() => {
-      // Closing animates --pdp-index-rail-width; resize then clamps scroll to 0.
+      // Closing animates --pdp-index-rail-width; skip while hidden so we
+      // don't clamp the frozen scroll to 0 mid-slide.
       if (!indexLenis || !indexRailVisible.value) return
       const y = indexLenis.animatedScroll
       indexLenis.resize()
-      indexLenis.scrollTo(y, { immediate: true })
+      freezeIndexStripScroll(y)
     })
     indexResizeObserver.observe(content)
+    indexResizeObserver.observe(wrapper)
   }
   indexLenisRaf = requestAnimationFrame(tickIndexLenis)
 }
 
 const restoreIndexStripScroll = () => {
-  if (indexLenis) {
-    indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
-    return
-  }
-  const el = indexStripRef.value
-  if (!el) return
-  el.scrollTop = indexStripScrollTop.value
+  freezeIndexStripScroll(indexStripScrollTop.value)
 }
 
 const restoreRelatedStripScroll = () => {
@@ -538,18 +553,18 @@ watch(indexRailVisible, (visible) => {
   if (visible) {
     indexLenis.start()
     indexLenis.resize()
-    // Resize after open can clamp — put the strip back where it was.
-    indexLenis.scrollTo(indexStripScrollTop.value, { immediate: true })
-    if (indexStripRef.value) {
-      indexStripRef.value.scrollTop = indexStripScrollTop.value
-    }
-    requestAnimationFrame(() => restoreIndexStripScroll())
+    freezeIndexStripScroll(indexStripScrollTop.value)
+    requestAnimationFrame(() => freezeIndexStripScroll(indexStripScrollTop.value))
   } else {
-    captureIndexStripScroll()
+    const y =
+      indexLenis.animatedScroll ??
+      indexStripRef.value?.scrollTop ??
+      indexStripScrollTop.value
+    // Lock before stop() — stop resets from actualScroll and can land on 0
+    // once the sliding rail triggers a dimension pass.
+    freezeIndexStripScroll(y)
     indexLenis.stop()
-    if (indexStripRef.value) {
-      indexStripRef.value.scrollTop = indexStripScrollTop.value
-    }
+    freezeIndexStripScroll(y)
   }
 })
 
@@ -566,7 +581,7 @@ const pdpChromeVisible = useState('pdp-chrome-visible', () => false)
 /** Overlay flip only — hard-load skips translate-in. */
 const chromeEnterMotion = useState('pdp-chrome-enter-motion', () => false)
 
-/** Shared with ProductDetail — Spirit imagery gallery mode. */
+/** Shared with ProductDetail — Spirit frames append into the gallery strip. */
 const spiritMode = useState('pdp-spirit-mode', () => false)
 const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
 

@@ -30,7 +30,7 @@
 
   /* Thumbnail overlay controls ([+], [−], clone, cycle) */
   --thumb-ctrl-inset: 8px;
-  --thumb-ctrl-size: 23px;
+  --thumb-ctrl-size: 28px;
   --thumb-ctrl-color: var(--black);
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
@@ -128,12 +128,10 @@ img {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding-left: var(--selections-panel-width);
-  padding-right: var(--boards-panel-width);
+  padding-left: calc(var(--selections-panel-width) + var(--boards-panel-width));
   padding-bottom: var(--bucket-push);
   transition:
-    padding-left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    padding-right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    padding-left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     padding-bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -219,32 +217,30 @@ html.stack-chrome-hidden .stack__boards-rail {
   pointer-events: none !important;
 }
 
-/* Fixed chrome that lives in the content column (right of selections panel) */
+/* Fixed chrome that lives in the content column (right of left rails) */
 .header {
-  left: var(--selections-panel-width) !important;
+  left: calc(var(--selections-panel-width) + var(--boards-panel-width)) !important;
   width: auto !important;
-  right: var(--boards-panel-width) !important;
+  right: 0 !important;
   transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     background var(--theme-ms) var(--theme-ease),
     color var(--theme-ms) var(--theme-ease);
 }
 
 /* PDP overlay — fixed fullscreen; inset with the boards push */
 .product-overlay {
-  left: var(--selections-panel-width) !important;
-  right: var(--boards-panel-width) !important;
+  left: calc(var(--selections-panel-width) + var(--boards-panel-width)) !important;
+  right: 0 !important;
   width: auto !important;
-  transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Curate surrender — recenter within the pushed content column */
 .showcase__surrender {
   left: calc(
     var(--selections-panel-width) +
+      var(--boards-panel-width) +
       (100vw - var(--selections-panel-width) - var(--boards-panel-width)) / 2
   ) !important;
   transition:
@@ -256,17 +252,15 @@ html.stack-chrome-hidden .stack__boards-rail {
 
 /* Curate colour wash — same inset as the page */
 .showcase__wash {
-  left: var(--selections-panel-width) !important;
-  right: var(--boards-panel-width) !important;
-  transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  left: calc(var(--selections-panel-width) + var(--boards-panel-width)) !important;
+  right: 0 !important;
+  transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .stack__rail,
 .stack__boards-rail {
   left: auto !important;
-  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width)) !important;
+  right: var(--pdp-related-rail-width) !important;
   transition:
     /* `right` follows --pdp-related-rail-width (@property on html) — don't also
        transition `right` or it double-eases and staggers against the rails */

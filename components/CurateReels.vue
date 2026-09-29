@@ -2823,14 +2823,12 @@ onBeforeUnmount(() => {
   position: fixed;
   top: 0;
   bottom: 0;
-  left: var(--selections-panel-width);
-  right: var(--boards-panel-width);
+  left: calc(var(--selections-panel-width) + var(--boards-panel-width));
+  right: 0;
   z-index: 4;
   pointer-events: none;
   mix-blend-mode: color;
-  transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .visually-hidden {
@@ -2898,6 +2896,7 @@ onBeforeUnmount(() => {
   position: fixed;
   left: calc(
     var(--selections-panel-width) +
+      var(--boards-panel-width) +
       (100vw - var(--selections-panel-width) - var(--boards-panel-width)) / 2
   );
   bottom: var(--showcase-bottom-inset, 60px);

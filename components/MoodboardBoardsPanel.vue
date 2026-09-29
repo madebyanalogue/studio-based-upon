@@ -48,7 +48,11 @@
           v-for="board in boardList"
           :key="board.id"
           class="boards-panel__item"
-          :class="{ 'boards-panel__item--active': board.id === activeBoardId }"
+          :class="{
+            'boards-panel__item--active': board.id === activeBoardId,
+            'boards-panel__item--saved': board.id === savedFlashBoardId,
+          }"
+          :data-board-id="board.id"
         >
           <div
             class="boards-panel__thumb"
@@ -159,7 +163,7 @@
 withDefaults(
   defineProps<{
     open: boolean
-    /** Fixed right rail for site-wide push (outside moodboard shell). */
+    /** Fixed left rail for site-wide push (outside moodboard shell). */
     fixed?: boolean
   }>(),
   { fixed: false },
@@ -172,7 +176,12 @@ const emit = defineEmits<{
   create: []
 }>()
 
-const { boards, activeBoardId, closeBoardsPanel } = useBoards()
+const {
+  boards,
+  activeBoardId,
+  closeBoardsPanel,
+  savedFlashBoardId,
+} = useBoards()
 
 const boardList = computed(() =>
   boards.value
@@ -181,6 +190,15 @@ const boardList = computed(() =>
 )
 
 const scrollEl = ref<HTMLElement | null>(null)
+
+watch(savedFlashBoardId, async (id) => {
+  if (!id || !import.meta.client) return
+  await nextTick()
+  const thumb = scrollEl.value?.querySelector(
+    `[data-board-id="${CSS.escape(id)}"]`,
+  ) as HTMLElement | null
+  thumb?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
 </script>
 
 <style scoped>
@@ -212,7 +230,7 @@ const scrollEl = ref<HTMLElement | null>(null)
 .boards-panel--fixed {
   position: fixed;
   top: 0;
-  right: 0;
+  left: 0;
   bottom: 0;
   z-index: 220;
   flex: none;
@@ -226,7 +244,7 @@ const scrollEl = ref<HTMLElement | null>(null)
   height: 100%;
   overflow: hidden;
   background: var(--cream);
-  border-left: 1px solid var(--grid-line);
+  border-right: 1px solid var(--grid-line);
   box-sizing: border-box;
 }
 
@@ -345,6 +363,8 @@ const scrollEl = ref<HTMLElement | null>(null)
   background: color-mix(in srgb, var(--charcoal) 6%, var(--cream));
   border: 1px solid var(--grid-line);
   box-sizing: border-box;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
 }
 
 .boards-panel__thumb img {
@@ -501,6 +521,41 @@ const scrollEl = ref<HTMLElement | null>(null)
 .boards-panel__item--active .boards-panel__thumb {
   outline: 1px solid var(--boards-thumb-ui-line);
   outline-offset: 2px;
+}
+
+.boards-panel__item--saved .boards-panel__thumb {
+  animation: boards-thumb-saved 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.boards-panel__item--saved .boards-panel__thumb img {
+  animation: boards-thumb-saved-img 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes boards-thumb-saved {
+  0% {
+    outline-color: transparent;
+    transform: scale(1);
+  }
+  35% {
+    outline-color: var(--charcoal);
+    outline-width: 2px;
+    transform: scale(1.04);
+  }
+  100% {
+    outline-color: var(--boards-thumb-ui-line);
+    outline-width: 1px;
+    transform: scale(1);
+  }
+}
+
+@keyframes boards-thumb-saved-img {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  35% {
+    filter: brightness(1.12);
+  }
 }
 
 @media (max-width: 999px) {

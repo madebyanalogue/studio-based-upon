@@ -4937,7 +4937,7 @@ onBeforeUnmount(() => {
 
 .stack__rail {
   position: fixed;
-  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width));
+  right: var(--pdp-related-rail-width);
   left: auto;
   bottom: 0;
   z-index: 210;
@@ -4955,7 +4955,7 @@ onBeforeUnmount(() => {
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
 .stack__boards-rail {
   position: fixed;
-  right: calc(var(--boards-panel-width) + var(--pdp-related-rail-width));
+  right: var(--pdp-related-rail-width);
   bottom: 0;
   z-index: 210;
   display: flex;

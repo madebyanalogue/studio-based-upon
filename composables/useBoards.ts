@@ -60,6 +60,33 @@ export const useBoards = () => {
   const boardsOpen = useState('boards-dropdown-open', () => false)
   /** Right boards push rail (MoodboardBoardsPanel). */
   const boardsPanelOpen = useState('boards-panel-open', () => false)
+  /** Briefly highlights a board thumb after save-and-close. */
+  const savedFlashBoardId = useState<string | null>('boards-saved-flash', () => null)
+  let savedFlashTimer: ReturnType<typeof setTimeout> | null = null
+
+  const flashSavedBoard = (id: string | null) => {
+    if (savedFlashTimer) {
+      clearTimeout(savedFlashTimer)
+      savedFlashTimer = null
+    }
+    if (!id) {
+      savedFlashBoardId.value = null
+      return
+    }
+    // Clear first so re-flashing the same board retriggers the CSS animation.
+    savedFlashBoardId.value = null
+    if (!import.meta.client) {
+      savedFlashBoardId.value = id
+      return
+    }
+    requestAnimationFrame(() => {
+      savedFlashBoardId.value = id
+      savedFlashTimer = setTimeout(() => {
+        if (savedFlashBoardId.value === id) savedFlashBoardId.value = null
+        savedFlashTimer = null
+      }, 1100)
+    })
+  }
   const pendingBoardRemovals = useState<PendingBoardRemoval[]>(
     'pending-board-removals',
     () => [],
@@ -440,6 +467,8 @@ export const useBoards = () => {
     boardCount,
     boardsOpen,
     boardsPanelOpen,
+    savedFlashBoardId,
+    flashSavedBoard,
     createBoard,
     updateBoard,
     saveActiveBoard,

@@ -389,11 +389,15 @@ const onMyBoardsClick = () => {
   white-space: nowrap;
 }
 
-.header__nav:hover .header__nav-link {
+.header__nav:hover .header__nav-link,
+.header__nav:hover .header__version,
+.header__nav:hover .header__icon-btn {
   opacity: 0.35;
 }
 
-.header__nav:hover .header__nav-link:hover {
+.header__nav:hover .header__nav-link:hover,
+.header__nav:hover .header__version:hover,
+.header__nav:hover .header__icon-btn:hover {
   opacity: 1;
 }
 
@@ -437,7 +441,8 @@ const onMyBoardsClick = () => {
   border: 1px solid var(--grid-line);
   border-radius: 4px;
   background: transparent;
-  transition: color 0.2s ease, border-color 0.2s ease;
+  opacity: 1;
+  transition: color 0.2s ease, border-color 0.2s ease, opacity 0.45s ease;
 }
 
 .header__version:hover {
@@ -548,7 +553,8 @@ const onMyBoardsClick = () => {
   width: 2rem;
   height: 2rem;
   color: var(--muted);
-  transition: color 0.2s ease;
+  opacity: 1;
+  transition: color 0.2s ease, opacity 0.45s ease;
 }
 
 .header__icon {

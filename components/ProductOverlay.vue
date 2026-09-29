@@ -101,13 +101,11 @@ onUnmounted(() => {
   position: fixed;
   top: 0;
   bottom: 0;
-  left: var(--selections-panel-width);
-  right: var(--boards-panel-width);
+  left: calc(var(--selections-panel-width) + var(--boards-panel-width));
+  right: 0;
   height: 100dvh;
   z-index: 320; /* above cart stage; selection rail rises to 340 while PDP is open */
-  transition:
-    left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    right 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .product-overlay__backdrop {

@@ -161,7 +161,7 @@ const demoCollection = (
 
 /** Editorial demo page when CMS content is empty. */
 export const demoDiscoverPage = (): DiscoverPageData => ({
-  heroEyebrow: 'Curated Discovery',
+  heroEyebrow: 'Typology',
   heroTitle: 'A digital exhibition',
   heroBody:
     'Explore artworks through curated collections — considered, spacious, and art-led.',
@@ -347,7 +347,10 @@ export const useCuratedDiscover = async () => {
     return {
       seoTitle: (raw.seoTitle as string) || undefined,
       seoDescription: (raw.seoDescription as string) || undefined,
-      heroEyebrow: (raw.heroEyebrow as string) || 'Curated Discovery',
+      heroEyebrow:
+        raw.heroEyebrow === 'Curated Discovery'
+          ? 'Typology'
+          : (raw.heroEyebrow as string) || 'Typology',
       heroTitle: (raw.heroTitle as string) || 'A digital exhibition',
       heroBody: (raw.heroBody as string) || undefined,
       content,

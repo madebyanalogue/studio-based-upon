@@ -5,6 +5,14 @@
       class="moodboard-shell"
       :class="{ 'moodboard-shell--instant-hide': instantHide }"
     >
+      <MoodboardBoardsPanel
+        :open="boardsPanelOpen && !instantHide"
+        @select="switchSavedBoard"
+        @delete="onBoardsPanelDelete"
+        @send="onBoardsPanelSend"
+        @create="onBoardsPanelCreate"
+      />
+
       <div
         class="moodboard"
         :class="{
@@ -619,11 +627,15 @@
             </svg>
           </button>
         </div>
-
-        <button type="button" class="btn btn--filled moodboard__enquiry" @click="sendEnquiry">
-          Send as enquiry
-        </button>
       </div>
+
+      <button
+        type="button"
+        class="moodboard__enquiry interface"
+        @click="sendEnquiry"
+      >
+        Send as enquiry
+      </button>
 
       <div v-if="drawTool === 'pen'" class="moodboard__pen-bar">
         <label class="moodboard__pen-swatch" :style="{ background: penColour }" title="Pen colour">
@@ -689,14 +701,6 @@
         @change="onImageSelected"
       />
       </div>
-
-      <MoodboardBoardsPanel
-        :open="boardsPanelOpen && !instantHide"
-        @select="switchSavedBoard"
-        @delete="onBoardsPanelDelete"
-        @send="onBoardsPanelSend"
-        @create="onBoardsPanelCreate"
-      />
     </div>
   </Teleport>
 </template>
@@ -715,7 +719,6 @@ const {
   consumeMoodboardSkipBgFade,
   consumeMoodboardStagedOpen,
   requestMoodboardRestack,
-  requestMoodboardStackExit,
   requestMoodboardReturnToColumn,
   persistMoodboardSession,
   clearMoodboardSession,
@@ -756,6 +759,7 @@ const {
   boardsPanelOpen,
   openBoardsPanel,
   closeBoardsPanel,
+  flashSavedBoard,
 } = useBoards()
 
 /** Boards for the current selection — fall back to active board's selection. */
@@ -1211,9 +1215,13 @@ const onRemovePlacement = async (id: string) => {
 }
 
 /**
- * Fade chrome out and dismiss to the page — no boards-cart Flip return.
+ * Restack selection columns, fade composer chrome, dismiss to the page.
+ * Keep the rested stacks in place — do not slide the rail off-screen.
  */
-const exitMoodboard = async () => {
+const exitMoodboard = async (opts?: {
+  keepBoardsPanel?: boolean
+  savedBoardId?: string | null
+}) => {
   if (isExiting.value) return
   isExiting.value = true
   switchOpen.value = false
@@ -1223,18 +1231,23 @@ const exitMoodboard = async () => {
   colourPickerOpen.value = false
   confirmingDelete.value = false
   pendingDeleteId.value = null
-  closeBoardsPanel()
+
+  if (opts?.keepBoardsPanel) openBoardsPanel()
+  else closeBoardsPanel()
 
   await waitMs(MOODBOARD_PAUSE_MS)
 
+  // Collapse dispersed columns back into piles before the composer lifts.
   await requestMoodboardRestack()
   await waitMs(40)
 
+  if (opts?.savedBoardId) {
+    flashSavedBoard(opts.savedBoardId)
+    await waitMs(120)
+  }
+
   chromeOut.value = true
-  await Promise.all([
-    requestMoodboardStackExit(),
-    waitMs(MOODBOARD_CHROME_EXIT_MS),
-  ])
+  await waitMs(MOODBOARD_CHROME_EXIT_MS)
 
   itemsOut.value = true
   gridOut.value = true
@@ -1249,6 +1262,13 @@ const exitMoodboard = async () => {
   instantHide.value = false
   await closeMoodboard({ skipCartReturn: true })
 
+  // BoardsPushPanel remounts after composer unmount — flash again so the
+  // fixed rail thumb still reads as saved.
+  if (opts?.keepBoardsPanel && opts.savedBoardId) {
+    await nextTick()
+    flashSavedBoard(opts.savedBoardId)
+  }
+
   isExiting.value = false
 }
 
@@ -1258,6 +1278,7 @@ const onSaveAndClose = async () => {
     cancelRevertTimer = null
   }
   if (isExiting.value) return
+  const boardId = activeBoardId.value
   const shot = await captureBoardPreview()
   saveActiveBoard(
     placements.value,
@@ -1265,7 +1286,10 @@ const onSaveAndClose = async () => {
     shot?.preview,
     shot?.aspect,
   )
-  await exitMoodboard()
+  await exitMoodboard({
+    keepBoardsPanel: true,
+    savedBoardId: boardId,
+  })
 }
 
 const onCancelEdits = async () => {
@@ -2495,7 +2519,8 @@ onUnmounted(() => {
   overscroll-behavior: none;
 }
 
-/* Background layer — fades independently of the info panel */
+/* Background layer — fades independently of the info panel.
+   Light: soft grey; dark: theme cream (via html.dark — full :global selector). */
 .moodboard::before {
   content: '';
   position: absolute;
@@ -2505,6 +2530,10 @@ onUnmounted(() => {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.42s ease;
+}
+
+:global(html.dark .moodboard::before) {
+  background: var(--cream);
 }
 
 .moodboard--ready::before {
@@ -2579,6 +2608,7 @@ onUnmounted(() => {
 .moodboard--capturing .moodboard__arrow--active .moodboard__arrow-hit,
 .moodboard--capturing .moodboard__history,
 .moodboard--capturing .moodboard__footer,
+.moodboard--capturing .moodboard__enquiry,
 .moodboard--capturing .moodboard__save-close,
 .moodboard--capturing .moodboard__titlebar,
 .moodboard--capturing .moodboard__actions {
@@ -2590,6 +2620,7 @@ onUnmounted(() => {
 .moodboard__actions,
 .moodboard__pen-bar,
 .moodboard__footer,
+.moodboard__enquiry,
 .moodboard__save-close,
 .moodboard__titlebar {
   opacity: 0;
@@ -2616,6 +2647,10 @@ onUnmounted(() => {
   transform: translate(-50%, 2.5rem);
 }
 
+.moodboard__enquiry {
+  transform: translateY(100%);
+}
+
 .moodboard--panel-ready .moodboard__actions,
 .moodboard--panel-ready .moodboard__pen-bar,
 .moodboard--panel-ready .moodboard__save-close {
@@ -2634,6 +2669,12 @@ onUnmounted(() => {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%);
+}
+
+.moodboard--panel-ready .moodboard__enquiry {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .moodboard--panel-ready .moodboard__tear-hint {
@@ -2670,9 +2711,16 @@ onUnmounted(() => {
   transform: translate(-50%, 2.5rem);
 }
 
+.moodboard--chrome-out .moodboard__enquiry {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(100%);
+}
+
 .moodboard--items-out .moodboard__actions,
 .moodboard--items-out .moodboard__pen-bar,
 .moodboard--items-out .moodboard__footer,
+.moodboard--items-out .moodboard__enquiry,
 .moodboard--items-out .moodboard__save-close,
 .moodboard--items-out .moodboard__titlebar {
   opacity: 0;
@@ -2699,7 +2747,7 @@ onUnmounted(() => {
 .moodboard__footer {
   position: absolute;
   left: 50%;
-  bottom: var(--gutter);
+  bottom: calc(3.25rem + var(--gutter) + env(safe-area-inset-bottom, 0px));
   z-index: 400;
   display: flex;
   flex-direction: column;
@@ -2707,8 +2755,32 @@ onUnmounted(() => {
   gap: 0.75rem;
 }
 
+/* Full-width enquiry — cart pattern, scoped to the composer (not over boards panel) */
 .moodboard__enquiry {
-  min-width: 11rem;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 3.25rem;
+  margin: 0;
+  padding: 0.9rem var(--gutter) calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  background: var(--red);
+  color: #fff;
+  font-size: var(--text-sm);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.moodboard__enquiry:hover {
+  filter: brightness(0.95);
 }
 
 .moodboard__history-btn {

@@ -134,6 +134,26 @@
           <button type="button" class="pdp__inquire" @click="sendEnquiry">
             Enquire About This
           </button>
+          <button
+            type="button"
+            class="pdp__rail-btn"
+            :aria-pressed="indexRailVisible"
+            :aria-label="indexRailVisible ? 'Hide product index' : 'Show product index'"
+            @click="toggleIndexRail"
+          >
+            {{ indexRailVisible ? 'Hide Index' : 'Product Index' }}
+          </button>
+          <button
+            type="button"
+            class="pdp__rail-btn"
+            :aria-pressed="relatedRailVisible"
+            :aria-label="
+              relatedRailVisible ? 'Hide more like this' : 'Show more like this'
+            "
+            @click="requestRelatedToggle"
+          >
+            {{ relatedRailVisible ? 'Hide Related' : 'More like this' }}
+          </button>
         </div>
       </div>
     </aside>
@@ -233,37 +253,6 @@
         <p v-else class="pdp__gallery-empty interface">
           No images available.
         </p>
-
-        <div
-          v-if="spiritMode && spiritGalleryEntries.length"
-          class="pdp__spirit-layer"
-          aria-label="Spirit imagery"
-          @click.stop="closeSpiritMode"
-        >
-          <div class="pdp__spirit-tray">
-            <template v-for="(entry, i) in spiritGalleryEntries" :key="entry.id">
-              <video
-                v-if="entry.kind === 'video'"
-                class="pdp__spirit-media"
-                :src="entry.src"
-                :poster="entry.posterSrc || undefined"
-                muted
-                loop
-                autoplay
-                playsinline
-                preload="metadata"
-                draggable="false"
-              />
-              <img
-                v-else
-                class="pdp__spirit-media"
-                :src="entry.src"
-                :alt="`${product.title} — spirit ${i + 1}`"
-                draggable="false"
-              />
-            </template>
-          </div>
-        </div>
       </div>
     </div>
   </article>
@@ -373,7 +362,7 @@ let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
-/** Shared with ProductIndexRail — gallery shows Spirit Imagery when true. */
+/** Shared with ProductIndexRail — Spirit frames are appended into the gallery strip. */
 const spiritMode = useState('pdp-spirit-mode', () => false)
 /** Shared with ProductIndexRail — rail increments to request a Spirit toggle. */
 const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
@@ -529,19 +518,49 @@ const spiritGalleryEntries = computed((): GalleryEntry[] =>
 
 const hasSpiritGallery = computed(() => spiritGalleryEntries.value.length > 0)
 
-/** Product gallery only — Spirit imagery overlays separately when spiritMode is on. */
-const galleryEntries = computed((): GalleryEntry[] => productGalleryEntries.value)
+/** Product gallery, plus Spirit frames when Spirit is on. */
+const galleryEntries = computed((): GalleryEntry[] => {
+  const product = productGalleryEntries.value
+  if (!spiritMode.value) return product
+  const spirit = spiritGalleryEntries.value
+  if (!spirit.length) return product
+  // Dedupe against product covers so Spirit doesn't repeat the same frame
+  const seen = new Set(product.map((entry) => entry.src.replace(/\?.*$/, '')))
+  const extra = spirit.filter((entry) => !seen.has(entry.src.replace(/\?.*$/, '')))
+  return extra.length ? [...product, ...extra] : product
+})
 
 const toggleSpiritMode = () => {
   if (!hasSpiritGallery.value) return
-  spiritMode.value = !spiritMode.value
+  const enabling = !spiritMode.value
+  const productCount = productGalleryEntries.value.length
+  spiritMode.value = enabling
+  if (enabling) {
+    // Jump to the first Spirit frame so the insert is obvious
+    nextTick(() => {
+      const firstSpirit = productCount
+      if (firstSpirit < galleryEntries.value.length) {
+        selectImage(firstSpirit)
+      }
+    })
+    return
+  }
+  // Leaving Spirit — stay on a product frame if we were past the end
+  if (selectedIndex.value >= productCount) {
+    selectImage(Math.max(0, productCount - 1))
+  }
 }
 
 const closeSpiritMode = () => {
+  if (!spiritMode.value) return
+  const productCount = productGalleryEntries.value.length
   spiritMode.value = false
+  if (selectedIndex.value >= productCount) {
+    selectImage(Math.max(0, productCount - 1))
+  }
 }
 
-/** Close spirit overlay first; otherwise dismiss the PDP. */
+/** Collapse Spirit frames first; otherwise dismiss the PDP. */
 const onCloseClick = () => {
   if (spiritMode.value) {
     closeSpiritMode()
@@ -891,10 +910,6 @@ const onStageClick = (event: MouseEvent) => {
   if (!target) return
   // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
   if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, button, a')) return
-  if (spiritMode.value) {
-    closeSpiritMode()
-    return
-  }
   emit('close')
 }
 
@@ -1615,9 +1630,9 @@ watch(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-  /* Clear the index rail when open */
+  /* Clear the index rail when open — follow --pdp-index-rail-width @property
+     (no transform transition, or it double-eases and lags the rail) */
   transform: translateX(var(--pdp-index-rail-width));
-  transition: transform var(--pdp-rail-motion, 0.5s ease-in-out);
 }
 
 .pdp--sides .pdp__col--left {
@@ -1683,37 +1698,6 @@ watch(
   overscroll-behavior: contain;
   cursor: auto;
   position: relative;
-}
-
-.pdp__spirit-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto;
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25' viewBox='0 0 25 25'%3E%3Crect x='0.5' y='0.5' width='24' height='24' fill='%232a2621' stroke='%23f2ecdf'/%3E%3Cpath d='M7.5 7.5l10 10M17.5 7.5l-10 10' stroke='%23f2ecdf' stroke-width='1'/%3E%3C/svg%3E") 12 12, pointer;
-}
-
-.pdp__spirit-tray {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0rem;
-  max-width: 100%;
-  pointer-events: none;
-}
-
-.pdp__spirit-media {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 30vw;
-  max-height: 30vw;
-  object-fit: contain;
-  pointer-events: none;
 }
 
 .pdp__strip-item .pdp__hero-video {
@@ -1832,7 +1816,7 @@ watch(
 }
 
 .pdp__frame-add :deep(.add-btn__icon) {
-  background: transparent;
+  background: var(--thumb-ctrl-bg);
 }
 
 .pdp__strip-item .pdp__hero-image {
@@ -2179,23 +2163,28 @@ watch(
   opacity: 0.9;
 }
 
-.pdp__rail-links {
-  display: none;
-}
-
-.pdp__rail-link {
+.pdp__rail-btn {
   display: block;
   width: 100%;
-  padding: 0.35rem 0;
-  text-align: left;
-  color: var(--charcoal);
-  opacity: 0.55;
-  transition: opacity 0.2s ease;
+  margin: 0;
+  padding: 13px;
+  border: 0;
+  background: #2a2a2a;
+  color: #f1ede4;
+  font-size: 12px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.2s ease, background 0.2s ease;
 }
 
-.pdp__rail-link:hover,
-.pdp__rail-link[aria-pressed='true'] {
-  opacity: 1;
+.pdp__rail-btn:hover {
+  opacity: 0.9;
+}
+
+.pdp__rail-btn[aria-pressed='true'] {
+  background: #3a3a3a;
 }
 
 .pdp__save {
