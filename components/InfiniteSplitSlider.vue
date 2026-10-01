@@ -75,12 +75,33 @@
         {{ activeSlide.linkLabel || 'View Full Project' }}
       </a>
     </div>
+
+    <div v-if="activeSlide" class="split-slider__type split-slider__type--caption">
+      <a class="split-slider__caption-side" :href="activeSlide.left.link">
+        <p class="split-slider__caption-title">{{ activeSlide.left.title }}</p>
+        <p v-if="activeSlide.left.subtitle" class="split-slider__caption-subtitle">
+          {{ activeSlide.left.subtitle }}
+        </p>
+      </a>
+      <a class="split-slider__caption-side" :href="activeSlide.right.link">
+        <p class="split-slider__caption-title">{{ activeSlide.right.title }}</p>
+        <p v-if="activeSlide.right.subtitle" class="split-slider__caption-subtitle">
+          {{ activeSlide.right.subtitle }}
+        </p>
+      </a>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import gsap from 'gsap'
 import { SplitText } from 'gsap/SplitText'
+
+export type SplitSliderSide = {
+  title: string
+  subtitle: string
+  link: string
+}
 
 export type SplitSliderSlide = {
   title: string
@@ -89,13 +110,20 @@ export type SplitSliderSlide = {
   accent: string
   link: string
   linkLabel?: string
+  left: SplitSliderSide
+  right: SplitSliderSide
   leftImage: string
   rightImage: string
 }
 
-const props = defineProps<{
-  slides: SplitSliderSlide[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    slides: SplitSliderSlide[]
+    /** Keep the first-slide type hidden until the homepage intro finishes. */
+    holdEntrance?: boolean
+  }>(),
+  { holdEntrance: false },
+)
 
 /** Alignment progress ≥ this → title effect is fully sharp / opaque. */
 const TYPE_FULL_THRESHOLD = 0.9
@@ -156,6 +184,8 @@ let lastDataIndex = -1
 /** One-shot Showcase-style entrance on first paint. */
 let needsIntro = true
 let introPlaying = false
+let leaving = false
+let leavePromise: Promise<void> | null = null
 let introTween: gsap.core.Timeline | null = null
 
 type Side = 'left' | 'right'
@@ -443,12 +473,35 @@ const preloadActiveSlideImages = async () => {
   ])
 }
 
-const runEntranceSequence = async () => {
+const prepareSurface = async () => {
   await preloadActiveSlideImages()
   // One more layout pass so clip-paths settle before we fade in
   updateSlider()
   await nextTick()
+  if (!running) return
   surfaceReady.value = true
+}
+
+const playHeldType = async () => {
+  if (!running || !needsIntro) return
+  if (!surfaceReady.value) await prepareSurface()
+  await delay(TYPE_INTRO_DELAY_MS)
+  if (!running || !needsIntro) return
+
+  for (let i = 0; i < 24; i += 1) {
+    if (titleWords().length || !activeSlide.value?.title) break
+    await delay(50)
+  }
+  if (!running || !needsIntro) return
+
+  typeLayerVisible.value = true
+  needsIntro = false
+  playIntroType()
+}
+
+const runEntranceSequence = async () => {
+  await prepareSurface()
+  if (!running) return
 
   await delay(TYPE_INTRO_DELAY_MS)
   if (!running) return
@@ -463,6 +516,7 @@ const runEntranceSequence = async () => {
 }
 
 const syncTypeLayer = () => {
+  if (leaving) return
   const list = props.slides
   if (!list.length) {
     activeSlide.value = null
@@ -540,6 +594,7 @@ const updateSlider = () => {
 
 const onWheel = (event: WheelEvent) => {
   event.preventDefault()
+  if (leaving) return
   cancelIntro()
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
@@ -549,6 +604,7 @@ const onTouchStart = (event: TouchEvent) => {
 }
 
 const onTouchMove = (event: TouchEvent) => {
+  if (leaving) return
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
@@ -556,11 +612,67 @@ const onTouchMove = (event: TouchEvent) => {
 }
 
 const tick = () => {
-  if (!running) return
+  if (!running || leaving) return
   scrollPosition += (scrollTarget - scrollPosition) * settings.smoothness
   updateSlider()
   rafId = requestAnimationFrame(tick)
 }
+
+/** Gooey the active type out, and clip the columns off in opposite vertical directions. */
+const playLeave = () => {
+  if (leavePromise) return leavePromise
+  leavePromise = new Promise<void>((resolve) => {
+    leaving = true
+    introTween?.kill()
+    introPlaying = false
+    cancelAnimationFrame(rafId)
+
+    const words = [
+      ...titleWords(),
+      ...locationWords(),
+      ...linkWords(),
+    ]
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const duration = reduce ? 0 : 0.9
+    const tl = gsap.timeline({ onComplete: resolve })
+
+    if (words.length) {
+      tl.to(
+        words,
+        {
+          filter: `blur(${TITLE_BLUR_MAX}px)`,
+          opacity: 0,
+          duration,
+          ease: 'power2.in',
+        },
+        0,
+      )
+    }
+
+    if (leftEl.value) {
+      tl.fromTo(
+        leftEl.value,
+        { clipPath: 'inset(0% 0% 0% 0%)' },
+        { clipPath: 'inset(0% 0% 100% 0%)', duration, ease: 'power3.inOut' },
+        0,
+      )
+    }
+
+    if (rightEl.value) {
+      tl.fromTo(
+        rightEl.value,
+        { clipPath: 'inset(0% 0% 0% 0%)' },
+        { clipPath: 'inset(100% 0% 0% 0%)', duration, ease: 'power3.inOut' },
+        0,
+      )
+    }
+
+    if (!tl.duration()) resolve()
+  })
+  return leavePromise
+}
+
+defineExpose({ playLeave })
 
 onMounted(() => {
   ensurePlugins()
@@ -576,8 +688,16 @@ onMounted(() => {
 
   updateSlider()
   rafId = requestAnimationFrame(tick)
-  void runEntranceSequence()
+  if (props.holdEntrance) void prepareSurface()
+  else void runEntranceSequence()
 })
+
+watch(
+  () => props.holdEntrance,
+  (hold, wasHolding) => {
+    if (wasHolding && !hold) void playHeldType()
+  },
+)
 
 onBeforeUnmount(() => {
   running = false
@@ -609,11 +729,11 @@ watch(
 <style scoped>
 .split-slider {
   position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100svh;
+  inset: 10% 7%;
+  width: 86%;
+  height: 80svh;
   display: flex;
-  overflow: hidden;
+  overflow: visible;
   background: #000;
   z-index: 0;
   touch-action: none;
@@ -674,9 +794,61 @@ watch(
   font-family: var(--sans);
   opacity: 0;
 }
+.split-slider__type:not(.split-slider__type--caption) {
+ display:none;
+}
 
 .split-slider--type-on .split-slider__type {
   opacity: 1;
+}
+
+.split-slider__type--caption {
+  inset: auto;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  pointer-events: auto;
+  font-family: var(--mono);
+  font-size: clamp(8px, 1vw, 9.5px);
+  letter-spacing: 0.125em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--charcoal);
+}
+
+.split-slider__caption-side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 0;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  pointer-events: auto;
+}
+
+.split-slider__caption-title,
+.split-slider__caption-subtitle {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.split-slider__caption-title {
+  opacity: 1;
+}
+
+.split-slider__caption-subtitle {
+  color: var(--muted);
 }
 
 .split-slider__title {

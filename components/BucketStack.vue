@@ -92,6 +92,7 @@
                 preparingBoardId !== board.id,
             }"
             :aria-label="board.name"
+            :data-cursor="selectionPileCursor"
             @click="onPileClick(board.id)"
           >
             <span
@@ -1102,6 +1103,13 @@ const showCreateSlot = computed(() => showRail.value && !isMoodboard.value)
 
 /** Tips when more than one visible selection is on the rail. */
 const showSelectionTips = computed(() => railBoards.value.length > 1)
+
+/** Cursor chip while the cart is closed — opens this selection. */
+const selectionPileCursor = computed(() =>
+  !isOpen.value && !stagePresent.value && !isMoodboard.value
+    ? 'view-selection'
+    : undefined,
+)
 
 /**
  * Stable rail display order. Active is first at rest; only re-synced after
@@ -2806,12 +2814,14 @@ const onColumnPointerUp = async (event: PointerEvent) => {
     return
   }
 
-  // Return ghost to the thumb, then restore the source
+  // Return ghost to the thumb’s content box, then restore the source
   const thumbRect = drag.thumb.getBoundingClientRect()
+  const returnLeft = thumbRect.left + (thumbRect.width - drag.width) / 2
+  const returnTop = thumbRect.top + (thumbRect.height - drag.height) / 2
   await new Promise<void>((resolve) => {
     gsap.to(drag.ghost, {
-      left: thumbRect.left,
-      top: thumbRect.top,
+      left: returnLeft,
+      top: returnTop,
       duration: 0.28,
       ease: 'power3.out',
       onComplete: () => resolve(),
@@ -2878,16 +2888,35 @@ const disperseBoard = async (boardId: string) => {
     return
   }
 
+  // Wait for natural image sizes so auto-aspect thumbs measure correctly
+  await Promise.all(
+    thumbs.map(async (thumb) => {
+      const img = thumb.querySelector('img')
+      if (!img || (img.complete && img.naturalWidth)) return
+      await new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true })
+        img.addEventListener('error', () => resolve(), { once: true })
+      })
+    }),
+  )
+  await waitFrames(1)
+
   // Measure column slots before we pull thumbs into fixed flyers
   const dests = thumbs.map((thumb) => {
     const rect = thumb.getBoundingClientRect()
-    return { left: rect.left, top: rect.top }
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: Math.max(rect.width, 1),
+      height: Math.max(rect.height, 1),
+    }
   })
+  const spacerHeight = dests.reduce((sum, d) => sum + d.height, 0)
 
   // Hold scroll layout while thumbs are position:fixed (out of flow)
   const flightSpacer = document.createElement('div')
   flightSpacer.setAttribute('aria-hidden', 'true')
-  flightSpacer.style.cssText = `flex:0 0 ${size * thumbs.length}px;width:100%;pointer-events:none;`
+  flightSpacer.style.cssText = `flex:0 0 ${spacerHeight}px;width:100%;pointer-events:none;`
   const foot = scroll?.querySelector('.stack__column-foot')
   if (scroll && foot) scroll.insertBefore(flightSpacer, foot)
   else scroll?.appendChild(flightSpacer)
@@ -2901,6 +2930,9 @@ const disperseBoard = async (boardId: string) => {
       top: pileRect.top,
       rot: 0,
     }
+    const img = thumb.querySelector('img')
+    // Fill the morphing frame during flight so object-fit:contain letterboxes
+    if (img) gsap.set(img, { width: '100%', height: '100%' })
     // Top-of-pile (first in column) stays above during flight
     gsap.set(thumb, {
       position: 'fixed',
@@ -2928,13 +2960,17 @@ const disperseBoard = async (boardId: string) => {
     gsap.to(thumbs, {
       left: (i: number) => dests[i]!.left,
       top: (i: number) => dests[i]!.top,
-      width: size,
-      height: size,
+      width: (i: number) => dests[i]!.width,
+      height: (i: number) => dests[i]!.height,
       rotation: 0,
       duration: 0.6,
       ease: 'power3.inOut',
       stagger: 0,
       onComplete: () => {
+        thumbs.forEach((thumb) => {
+          const img = thumb.querySelector('img')
+          if (img) gsap.set(img, { clearProps: 'width,height' })
+        })
         gsap.set(thumbs, {
           clearProps:
             'position,left,top,width,height,zIndex,margin,boxSizing,opacity,visibility,transform,rotation',
@@ -2984,16 +3020,19 @@ const restackBoard = async (boardId: string) => {
 
     // Column order: top-of-pile first — keep that item highest z through the flight
     thumbs.forEach((thumb, i) => {
+      const img = thumb.querySelector('img')
+      if (img) gsap.set(img, { width: '100%', height: '100%' })
       gsap.set(thumb, {
         position: 'fixed',
         left: froms[i]!.left,
         top: froms[i]!.top,
-        width: size,
-        height: size,
+        width: froms[i]!.width,
+        height: froms[i]!.height,
         rotation: 0,
         transformOrigin: '50% 50%',
         zIndex: 450 + (thumbs.length - 1 - i),
         margin: 0,
+        boxSizing: 'border-box',
       })
     })
     await new Promise<void>((resolve) => {
@@ -3014,8 +3053,12 @@ const restackBoard = async (boardId: string) => {
     expandedBoardIds.value = expandedBoardIds.value.filter((id) => id !== boardId)
     await nextTick()
     pile.classList.remove('stack__pile--dispersing')
+    thumbs.forEach((thumb) => {
+      const img = thumb.querySelector('img')
+      if (img) gsap.set(img, { clearProps: 'width,height' })
+    })
     gsap.set(thumbs, {
-      clearProps: 'position,left,top,width,height,zIndex,margin,transform,rotation',
+      clearProps: 'position,left,top,width,height,zIndex,margin,transform,rotation,boxSizing',
     })
     pile.classList.remove('stack__pile--restacking')
   } else {
@@ -3854,7 +3897,7 @@ const openBoardFromBoardsCart = async (board: {
       pointerEvents: 'none',
       border: '1px solid currentColor',
       background: 'var(--cream, #F1EDE4)',
-      color: 'var(--charcoal, #1a1a1a)',
+      color: 'var(--charcoal, #111111)',
     })
     document.body.appendChild(flyer)
     // Hide selected cell under the flyer
@@ -3962,7 +4005,7 @@ const closeMoodboardToBoardsCart = async (opts: {
       pointerEvents: 'none',
       border: '1px solid currentColor',
       background: 'var(--cream, #F1EDE4)',
-      color: 'var(--charcoal, #1a1a1a)',
+      color: 'var(--charcoal, #111111)',
     })
     document.body.appendChild(flyer)
   }
@@ -5362,7 +5405,8 @@ onBeforeUnmount(() => {
 
 .stack__column-thumb {
   width: 100%;
-  aspect-ratio: 1;
+  height: auto;
+  aspect-ratio: auto;
   flex: 0 0 auto;
   overflow: hidden;
   background: transparent;
@@ -5370,6 +5414,7 @@ onBeforeUnmount(() => {
   cursor: -webkit-grab;
   touch-action: pan-y;
   user-select: none;
+  box-sizing: border-box;
 }
 
 .stack__column-thumb:hover {
@@ -5408,7 +5453,8 @@ onBeforeUnmount(() => {
 .stack__column-thumb img {
   display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: auto;
   object-fit: contain;
   padding: var(--stack-cell-pad, 17%);
   box-sizing: border-box;

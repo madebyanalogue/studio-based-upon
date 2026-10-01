@@ -556,15 +556,16 @@ watch(indexRailVisible, (visible) => {
     freezeIndexStripScroll(indexStripScrollTop.value)
     requestAnimationFrame(() => freezeIndexStripScroll(indexStripScrollTop.value))
   } else {
+    // Read the strip itself. animatedScroll can be 0 while the thumbnails
+    // are mid-list, and stop() used to clip overflow and drop scrollTop.
     const y =
-      indexLenis.animatedScroll ??
       indexStripRef.value?.scrollTop ??
+      indexLenis.animatedScroll ??
       indexStripScrollTop.value
-    // Lock before stop() — stop resets from actualScroll and can land on 0
-    // once the sliding rail triggers a dimension pass.
     freezeIndexStripScroll(y)
     indexLenis.stop()
     freezeIndexStripScroll(y)
+    requestAnimationFrame(() => freezeIndexStripScroll(y))
   }
 })
 
@@ -640,17 +641,6 @@ onBeforeUnmount(() => {
   if (!import.meta.client) return
   if (relatedRailVisible.value) return
   document.documentElement.classList.remove('pdp-related-rail-open')
-})
-
-watch(indexActiveSlug, async (active) => {
-  if (!import.meta.client || !active || !indexRailVisible.value) return
-  await nextTick()
-  const tile = indexTrackRef.value?.querySelector<HTMLElement>(
-    '.pdp-index__tile--active',
-  )
-  if (!tile || !indexLenis) return
-  const top = tile.offsetTop - (indexStripRef.value?.clientHeight || 0) / 2 + tile.offsetHeight / 2
-  indexLenis.scrollTo(Math.max(0, top), { immediate: true })
 })
 
 const onIndexClick = (item: IndexCard) => {
@@ -886,6 +876,7 @@ onMounted(() => {
 }
 
 .pdp-index__reveals--left {
+  display: none;
   left: calc(var(--pdp-index-rail-width) + 20px);
   align-items: flex-start;
 }
@@ -897,6 +888,7 @@ onMounted(() => {
 }
 
 .pdp-index__reveals--right {
+  display: none;
   right: calc(var(--pdp-related-rail-width) + 20px);
   align-items: flex-end;
 }
@@ -937,6 +929,14 @@ onMounted(() => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+/* Lenis sets overflow:clip on .lenis-stopped, which drops scrollTop and
+   jumps the thumbnails as the rail slides closed. Keep the strip scrollable. */
+.pdp-index__strip.lenis-stopped {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
 
 .pdp-index__strip-track {

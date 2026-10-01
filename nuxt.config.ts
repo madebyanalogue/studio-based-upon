@@ -70,7 +70,7 @@ export default defineNuxtConfig({
       // Apply stored theme / text case before CSS paints to avoid FOUC.
       script: [
         {
-          children: `(function(){try{var p=location.pathname;if(p==='/'||p==='/home'||p==='/curate'||p.indexOf('/curate/')===0){document.documentElement.classList.add('dark');}else if(p==='/pre-crafted'||p.indexOf('/pre-crafted/')===0){document.documentElement.classList.remove('dark');}else{var t=localStorage.getItem('basedupon:theme');if(t!=='light')document.documentElement.classList.add('dark');}var c=localStorage.getItem('sba-text-case');if(c==='uppercase')document.documentElement.classList.add('text-uppercase');document.documentElement.classList.remove('face-serif','serif-sans');}catch(e){}})();`,
+          children: `(function(){try{var p=location.pathname;var root=document.documentElement;if(p==='/'||p==='/home'||p==='/curate'||p.indexOf('/curate/')===0){root.classList.add('dark');}else if(p==='/pre-crafted'||p.indexOf('/pre-crafted/')===0){root.classList.remove('dark');}else{var t=localStorage.getItem('basedupon:theme');if(t==='light')root.classList.remove('dark');else root.classList.add('dark');}var c=localStorage.getItem('sba-text-case');if(c==='uppercase')root.classList.add('text-uppercase');root.classList.remove('face-serif','serif-sans');var home=p==='/'||p==='/home';if(home){var nav=performance.getEntriesByType&&performance.getEntriesByType('navigation')[0];var reload=nav&&nav.type==='reload';var entry=sessionStorage.getItem('sba-entry-path');var done=sessionStorage.getItem('sba-home-preloader-done');if(reload||!entry||((entry==='/'||entry==='/home')&&!done)){root.classList.add('homepage-intro');}}}catch(e){}})();`,
           tagPosition: 'head',
         },
       ],

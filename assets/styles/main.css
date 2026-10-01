@@ -4,7 +4,7 @@
   --warm-white: #faf7f2;
   --sand: #e8dfd2;
   --stone: #c4b8a8;
-  --charcoal: #1a1a1a;
+  --charcoal: #111111;
   --black: #000000;
   --slate: #414042;
   --white: #ffffff;
@@ -124,6 +124,26 @@ img {
   height: auto;
 }
 
+/* Custom cursor — hide the OS pointer while the 12px disc is tracking */
+@media (hover: hover) and (pointer: fine) {
+  html.custom-cursor-on,
+  html.custom-cursor-on * {
+    cursor: none !important;
+  }
+
+  html.custom-cursor-on input,
+  html.custom-cursor-on textarea,
+  html.custom-cursor-on select,
+  html.custom-cursor-on [contenteditable='true'] {
+    cursor: text !important;
+  }
+
+  html.custom-cursor-on [data-cursor='native'],
+  html.custom-cursor-on [data-cursor='native'] * {
+    cursor: auto !important;
+  }
+}
+
 #app {
   min-height: 100dvh;
   display: flex;
@@ -152,10 +172,9 @@ img {
 
 .grid-bg {
   background-color: var(--background-color);
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+  /* Grid dots are painted by the consumer (moodboard ::before):
+     2×2 squares at each 48px intersection, not crossing lines. */
+  background-image: none;
 }
 
 .sr-only {
@@ -255,6 +274,36 @@ html.stack-chrome-hidden .stack__boards-rail {
   left: calc(var(--selections-panel-width) + var(--boards-panel-width)) !important;
   right: 0 !important;
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Homepage intro — hide chrome until the opening pair has zoomed in. */
+html.homepage-intro body {
+  background: #000;
+}
+
+html.homepage-intro .header,
+html.homepage-intro .stack,
+html.homepage-intro .stack__boards-rail {
+  opacity: 0;
+  transition: opacity 1.05s ease;
+}
+
+html.homepage-intro.homepage-intro-reveal .header,
+html.homepage-intro.homepage-intro-reveal .stack,
+html.homepage-intro.homepage-intro-reveal .stack__boards-rail {
+  opacity: 1;
+}
+
+html.homepage-intro:not(.homepage-intro-reveal) .header,
+html.homepage-intro:not(.homepage-intro-reveal) .stack,
+html.homepage-intro:not(.homepage-intro-reveal) .stack *,
+html.homepage-intro:not(.homepage-intro-reveal) .stack__boards-rail,
+html.homepage-intro:not(.homepage-intro-reveal) .stack__boards-rail * {
+  pointer-events: none !important;
+}
+
+html.homepage-intro:not(.homepage-intro-type) .split-slider__type {
+  opacity: 0 !important;
 }
 
 .stack__rail,

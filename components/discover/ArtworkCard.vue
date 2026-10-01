@@ -9,6 +9,7 @@
         :is="hitTag"
         v-bind="hitProps"
         class="discover-card__hit"
+        data-cursor="plus"
         :aria-label="artwork.title"
         @click="onOpen"
       >
@@ -33,6 +34,25 @@
         @click.stop.prevent="onToggle"
       />
 
+      <button
+        v-if="projectImages.length > 1"
+        type="button"
+        class="discover-card__edge discover-card__edge--prev"
+        data-cursor="prev"
+        tabindex="-1"
+        :aria-label="`Previous image of ${artwork.title}`"
+        @click.stop.prevent="cycle(-1)"
+      />
+      <button
+        v-if="projectImages.length > 1"
+        type="button"
+        class="discover-card__edge discover-card__edge--next"
+        data-cursor="next"
+        tabindex="-1"
+        :aria-label="`Next image of ${artwork.title}`"
+        @click.stop.prevent="cycle(1)"
+      />
+
       <ImageCycleArrows
         v-if="projectImages.length > 1"
         class="discover-card__cycle"
@@ -40,12 +60,13 @@
         :count="projectImages.length"
         hide-count
         boxed
+        :show-cursor="false"
         @prev="cycle(-1)"
         @next="cycle(1)"
       />
     </div>
 
-    <div class="discover-card__meta">
+    <div class="discover-card__meta mono">
       <p class="discover-card__title">{{ artwork.title }}</p>
       <p v-if="subtitle" class="discover-card__subtitle">{{ subtitle }}</p>
     </div>
@@ -160,7 +181,6 @@ const onToggle = (event?: MouseEvent) => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
 }
 
 .discover-card__media {
@@ -213,12 +233,39 @@ div.discover-card__hit {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+.discover-card__edge {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 15%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.discover-card__edge--prev {
+  left: 0;
+}
+
+.discover-card__edge--next {
+  right: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .discover-card__edge {
+    pointer-events: auto;
+  }
+}
+
 .discover-card__cycle {
+  display: none;
   position: absolute;
   right: var(--thumb-ctrl-inset, 4px);
   left: unset;
   bottom: var(--thumb-ctrl-inset, 4px);
-  z-index: 2;
+  z-index: 3;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
@@ -249,20 +296,34 @@ div.discover-card__hit {
 }
 
 .discover-card__meta {
-  padding-right: 0.5rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 0;
+}
+
+.discover-card__title,
+.discover-card__subtitle {
+  font-size: clamp(8px, 1vw, 9.5px);
+  letter-spacing: 0.125em;
 }
 
 .discover-card__title {
   margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.35;
-  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
 }
 
 .discover-card__subtitle {
-  margin: 0.2rem 0 0;
-  font-size: var(--text-xs);
-  line-height: 1.35;
+  margin: 0;
+  line-height: 1.3;
   color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

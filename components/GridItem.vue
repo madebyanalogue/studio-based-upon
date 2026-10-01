@@ -8,6 +8,7 @@
       :is="linkTag"
       v-bind="linkProps"
       class="grid-item__media"
+      data-cursor="plus"
       :class="{ 'grid-item__media--image': Boolean(activeImage) }"
       :aria-label="item.title"
       @pointerenter="prefetchActiveHero"
@@ -31,6 +32,24 @@
         :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
         @click.stop.prevent="onToggle"
       />
+      <button
+        v-if="projectImages.length > 1"
+        type="button"
+        class="grid-item__edge grid-item__edge--prev"
+        data-cursor="prev"
+        tabindex="-1"
+        :aria-label="`Previous image of ${item.title}`"
+        @click.stop.prevent="cycle(-1)"
+      />
+      <button
+        v-if="projectImages.length > 1"
+        type="button"
+        class="grid-item__edge grid-item__edge--next"
+        data-cursor="next"
+        tabindex="-1"
+        :aria-label="`Next image of ${item.title}`"
+        @click.stop.prevent="cycle(1)"
+      />
       <ImageCycleArrows
         v-if="projectImages.length > 1"
         class="grid-item__cycle"
@@ -38,6 +57,7 @@
         :count="projectImages.length"
         hide-count
         boxed
+        :show-cursor="false"
         @prev="cycle(-1)"
         @next="cycle(1)"
       />
@@ -349,6 +369,32 @@ onMounted(() => {
   pointer-events: none;
 }
 
+.grid-item__edge {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 15%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.grid-item__edge--prev {
+  left: 0;
+}
+
+.grid-item__edge--next {
+  right: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .grid-item__edge {
+    pointer-events: auto;
+  }
+}
+
 .grid-item:hover .grid-item__add,
 .grid-item--saved .grid-item__add {
   opacity: 1;
@@ -357,10 +403,11 @@ onMounted(() => {
 }
 
 .grid-item__cycle {
+  display: none;
   position: absolute;
   left: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
-  z-index: 2;
+  z-index: 3;
   opacity: 0;
   transform: translateY(4px);
   transition: opacity 0.2s ease, transform 0.2s ease;

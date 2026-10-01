@@ -3,25 +3,28 @@
     v-if="count > 1"
     class="image-cycle"
     :class="{ 'image-cycle--boxed': boxed }"
+    :data-cursor="showCursor ? undefined : 'native'"
     @pointerdown.stop
     @click.stop
   >
     <div class="image-cycle__frame">
-      <button
-        type="button"
-        class="image-cycle__btn"
-        aria-label="Previous image"
-        @click="$emit('prev')"
-      >
-        <span class="image-cycle__arrow image-cycle__arrow--prev" aria-hidden="true" />
-      </button>
-      <span v-if="!hideCount" class="image-cycle__count">{{ index + 1 }}/{{ count }}</span>
-      <button
-        type="button"
-        class="image-cycle__btn"
-        aria-label="Next image"
-        @click="$emit('next')"
-      >
+    <button
+      type="button"
+      class="image-cycle__btn"
+      data-cursor="prev"
+      aria-label="Previous image"
+      @click="$emit('prev')"
+    >
+      <span class="image-cycle__arrow image-cycle__arrow--prev" aria-hidden="true" />
+    </button>
+    <span v-if="!hideCount" class="image-cycle__count">{{ index + 1 }}/{{ count }}</span>
+    <button
+      type="button"
+      class="image-cycle__btn"
+      data-cursor="next"
+      aria-label="Next image"
+      @click="$emit('next')"
+    >
         <span class="image-cycle__arrow image-cycle__arrow--next" aria-hidden="true" />
       </button>
     </div>
@@ -37,10 +40,13 @@ withDefaults(
     hideCount?: boolean
     /** Match AddButton chrome: bordered box, 2× add width. */
     boxed?: boolean
+    /** Custom prev/next cursor. Off when a parent edge zone owns the cursor. */
+    showCursor?: boolean
   }>(),
   {
     hideCount: false,
     boxed: false,
+    showCursor: true,
   },
 )
 

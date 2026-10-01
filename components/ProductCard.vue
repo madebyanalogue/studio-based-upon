@@ -5,6 +5,7 @@
         :is="linkTag"
         v-bind="linkProps"
         class="product-card__media"
+        data-cursor="plus"
         :class="{
           'product-card__media--image': Boolean(activeImage),
           'product-card__media--link': Boolean(href),
@@ -31,6 +32,27 @@
           :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
           @click.stop.prevent="onToggle"
         />
+
+        <button
+          v-if="canCycleImages"
+          type="button"
+          class="product-card__edge product-card__edge--prev"
+          data-cursor="prev"
+          tabindex="-1"
+          :aria-label="`Previous image of ${item.title}`"
+          @click.stop.prevent="cycle(-1)"
+          @pointerenter="prefetchOffsetHero(-1)"
+        />
+        <button
+          v-if="canCycleImages"
+          type="button"
+          class="product-card__edge product-card__edge--next"
+          data-cursor="next"
+          tabindex="-1"
+          :aria-label="`Next image of ${item.title}`"
+          @click.stop.prevent="cycle(1)"
+          @pointerenter="prefetchOffsetHero(1)"
+        />
       </component>
 
       <ImageCycleArrows
@@ -40,6 +62,7 @@
         :count="projectImages.length"
         hide-count
         boxed
+        :show-cursor="false"
         @prev="cycle(-1)"
         @next="cycle(1)"
       />
@@ -199,8 +222,19 @@ const activeHeroImage = computed(
   () => heroImages.value[imageIndex.value] || activeImage.value || '',
 )
 
+const canCycleImages = computed(
+  () => !isImageLocked.value && projectImages.value.length > 1,
+)
+
 const prefetchActiveHero = () => {
   if (activeHeroImage.value) void prefetchImage(activeHeroImage.value)
+}
+
+const prefetchOffsetHero = (direction: 1 | -1) => {
+  const count = heroImages.value.length
+  if (count < 2) return
+  const url = heroImages.value[(imageIndex.value + direction + count) % count]
+  if (url) void prefetchImage(url)
 }
 
 watch(
@@ -368,7 +402,34 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
+.product-card__edge {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  width: 15%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.product-card__edge--prev {
+  left: 0;
+}
+
+.product-card__edge--next {
+  right: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-card__edge {
+    pointer-events: auto;
+  }
+}
+
 .product-card__cycle {
+  display: none;
   position: absolute;
   right: var(--thumb-ctrl-inset);
   bottom: var(--thumb-ctrl-inset);
@@ -407,7 +468,7 @@ const onToggle = (event?: MouseEvent) => {
 }
 
 .product-card__meta * {
-  font-size: 9px;
+  font-size: clamp(8px, 1vw, 9.5px);
   letter-spacing: 0.125em;
 }
 
@@ -444,7 +505,7 @@ const onToggle = (event?: MouseEvent) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 4px;
 }
 
 .product-card__title {

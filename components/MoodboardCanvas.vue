@@ -983,7 +983,7 @@ const onTitleClick = () => {
 }
 
 type DrawTool = 'pen' | 'arrow' | 'tear'
-const ARROW_COLOR = '#1a1a1a'
+const ARROW_COLOR = '#111111'
 const ARROW_WIDTH = 3
 
 /** White paper tear-back looks wrong under alpha — skip for PNG sources. */
@@ -1019,7 +1019,7 @@ const tearCanvasPointsAttr = computed(() =>
     .join(' '),
 )
 const libraryOpen = ref(false)
-const penColour = ref('#1a1a1a')
+const penColour = ref('#111111')
 const penWidth = ref(4)
 const currentStroke = ref<{
   kind: 'freehand' | 'arrow'
@@ -2292,7 +2292,7 @@ const captureBoardPreviewFromItems = async (): Promise<{
       ctx.fillStyle =
         getComputedStyle(document.documentElement)
           .getPropertyValue('--charcoal')
-          .trim() || '#1a1a1a'
+          .trim() || '#111111'
       ctx.font = `${14 * itemScale}px sans-serif`
       ctx.fillText(item.text.slice(0, 80), x, y + 14 * itemScale)
     }
@@ -2570,10 +2570,38 @@ onUnmounted(() => {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 48px 48px;
+  /* 2×2 squares at each 48px intersection — stronger than --grid-line hairlines */
+  background-color: color-mix(in srgb, var(--charcoal) 22%, transparent);
+  -webkit-mask-image:
+    repeating-linear-gradient(
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    repeating-linear-gradient(
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    );
+  mask-composite: intersect;
   opacity: 1;
   transition: opacity 0.32s ease;
 }
@@ -3059,13 +3087,13 @@ onUnmounted(() => {
   inset: 0;
   z-index: 500;
   /* white halo then charcoal stroke so it reads on light and dark boards */
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%231a1a1a' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%23111111' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
       8 12,
     text;
 }
 
 html.dark .moodboard__place-layer {
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='%231a1a1a' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%23f5f0e8' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cg fill='none' stroke='%23111111' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3Cg fill='none' stroke='%23f5f0e8' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M3.5 2.5h9'/%3E%3Cpath d='M8 2.5v19'/%3E%3Cpath d='M3.5 21.5h9'/%3E%3C/g%3E%3C/svg%3E")
       8 12,
     text;
 }

@@ -10,6 +10,10 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  pageTransition: false,
+})
+
 const { buckets, page } = await useShowcaseCatalog()
 
 useHead(() => ({

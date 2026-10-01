@@ -18,11 +18,25 @@ export const INFINITE_SLIDER_PAGE_QUERY = `*[_type == "infiniteSliderPage"][0] {
     accent,
     linkLabel,
     link,
+    leftTitle,
+    leftSubtitle,
+    leftLink,
+    "leftProductSlug": leftProduct->slug.current,
+    rightTitle,
+    rightSubtitle,
+    rightLink,
+    "rightProductSlug": rightProduct->slug.current,
     leftImage { asset->{ _id, url } },
     rightImage { asset->{ _id, url } },
     "productSlug": product->slug.current
   }
 }`
+
+const demoSide = (
+  title: string,
+  subtitle: string,
+  link: string,
+): SplitSliderSlide['left'] => ({ title, subtitle, link })
 
 /** Demo slides when CMS content is empty. */
 export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
@@ -33,6 +47,8 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
     accent: '#a9d0f5',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
+    left: demoSide('Studioform', 'London, UK', '/materials-and-forms'),
+    right: demoSide('Nightbloom', 'Paris, FR', '/typology'),
     leftImage: '/infinite-slider/slide_img_left_1.jpg',
     rightImage: '/infinite-slider/slide_img_right_1.jpg',
   },
@@ -43,6 +59,8 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
     accent: '#f5a97a',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
+    left: demoSide('Stillpose', 'New York, US', '/materials-and-forms'),
+    right: demoSide('Matchawork', 'Tokyo, JP', '/about'),
     leftImage: '/infinite-slider/slide_img_left_2.jpg',
     rightImage: '/infinite-slider/slide_img_right_2.jpg',
   },
@@ -53,6 +71,8 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
     accent: '#b7e0a0',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
+    left: demoSide('Blurface', 'Milan, IT', '/typology'),
+    right: demoSide('Studioform', 'London, UK', '/materials-and-forms'),
     leftImage: '/infinite-slider/slide_img_left_3.jpg',
     rightImage: '/infinite-slider/slide_img_right_3.jpg',
   },
@@ -63,6 +83,8 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
     accent: '#c9a97a',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
+    left: demoSide('Matchawork', 'Tokyo, JP', '/about'),
+    right: demoSide('Stillpose', 'New York, US', '/typology'),
     leftImage: '/infinite-slider/slide_img_left_4.jpg',
     rightImage: '/infinite-slider/slide_img_right_4.jpg',
   },
@@ -73,6 +95,8 @@ export const demoInfiniteSliderSlides = (): SplitSliderSlide[] => [
     accent: '#e8e8e8',
     link: '/materials-and-forms',
     linkLabel: 'View Full Project',
+    left: demoSide('Nightbloom', 'Paris, FR', '/materials-and-forms'),
+    right: demoSide('Blurface', 'Milan, IT', '/about'),
     leftImage: '/infinite-slider/slide_img_left_5.jpg',
     rightImage: '/infinite-slider/slide_img_right_5.jpg',
   },
@@ -82,7 +106,7 @@ export const useInfiniteSlider = async () => {
   const { imageUrl } = useSanityImage()
 
   const { data, pending, error, refresh } = await useAsyncData(
-    'infiniteSliderPage-v2',
+    'infiniteSliderPage-v3',
     () =>
       $fetch('/api/sanity/query', {
         method: 'POST',
@@ -121,13 +145,32 @@ export const useInfiniteSlider = async () => {
           ? slide.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
           : []
 
+        const title = String(slide.title || 'Untitled')
+        const location = String(slide.location || '').trim()
+        const linkLabel = String(slide.linkLabel || 'View Full Project').trim() || 'View Full Project'
+        const sharedSubtitle = location || linkLabel
+
+        const side = (prefix: 'left' | 'right'): SplitSliderSlide['left'] => {
+          const sideProduct = String(slide[`${prefix}ProductSlug`] || '').trim()
+          const sideLink = String(slide[`${prefix}Link`] || '').trim()
+          return {
+            title: String(slide[`${prefix}Title`] || title).trim() || title,
+            subtitle: String(slide[`${prefix}Subtitle`] || sharedSubtitle).trim(),
+            link: sideProduct
+              ? `/materials-and-forms/${sideProduct}`
+              : sideLink || link,
+          }
+        }
+
         return {
-          title: String(slide.title || 'Untitled'),
+          title,
           tags,
-          location: String(slide.location || '').trim() || undefined,
+          location: location || undefined,
           accent: String(slide.accent || '#e8e8e8').trim() || '#e8e8e8',
           link,
-          linkLabel: String(slide.linkLabel || 'View Full Project').trim() || 'View Full Project',
+          linkLabel,
+          left: side('left'),
+          right: side('right'),
           leftImage: leftSrc,
           rightImage: rightSrc,
         } satisfies SplitSliderSlide

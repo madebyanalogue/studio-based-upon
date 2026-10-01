@@ -6,7 +6,8 @@
     />
   </ClientOnly>
 
-  <div v-if="preloaderReady || disablePreloader" id="app">
+  <div v-if="preloaderReady" id="app">
+    <HomepageIntro v-if="introActive" />
     <AppHeader />
     <main class="page-wrapper">
       <NuxtPage />
@@ -18,16 +19,18 @@
     <MoodboardPicker />
     <ProductOverlay />
     <EnquiryForm />
+    <ClientOnly>
+      <CustomCursor />
+    </ClientOnly>
   </div>
 </template>
 
 <script setup lang="ts">
-import { isHomepagePath } from '~/composables/useHomepagePreloader'
+import { isHomepagePath, useHomepageIntro } from '~/composables/useHomepagePreloader'
 
 const {
   seoTitle,
   seoDescription,
-  disablePreloader,
   title,
   phone,
   phoneTel,
@@ -41,6 +44,13 @@ const { initBucketUi, isV1, isV2 } = useBucketUi()
 const { initTextCase } = useTextCase()
 const { initStackChrome } = useStackChrome()
 const route = useRoute()
+const { phase: introPhase } = useHomepageIntro()
+const introActive = computed(
+  () =>
+    introPhase.value === 'cover' ||
+    introPhase.value === 'type' ||
+    introPhase.value === 'chrome',
+)
 
 onMounted(() => {
   initBucketUi()
@@ -64,20 +74,6 @@ const onPreloaderComplete = () => {
     document.body.classList.add('preloader-complete')
   }
 }
-
-watch(
-  disablePreloader,
-  (disabled) => {
-    if (disabled) {
-      preloaderReady.value = true
-      if (import.meta.client) {
-        document.body.classList.add('preloader-ready')
-        document.body.classList.add('preloader-complete')
-      }
-    }
-  },
-  { immediate: true },
-)
 
 const localBusinessJsonLd = computed(() => ({
   '@context': 'https://schema.org',
@@ -159,21 +155,9 @@ useHead(() => ({
           opacity: 1;
           transition: opacity 0.6s ease;
         }
-        body.homepage-intro-pending .header {
-          transform: translateY(-100%);
-        }
-        body.homepage-intro-pending .product-grid {
-          opacity: 0;
-        }
-        body.preloader-ready:not(.homepage-intro-pending) .header,
         body.preloader-ready .product-grid {
-          transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.9s ease;
-        }
-        body.preloader-ready:not(.homepage-intro-pending) .header {
-          transform: translateY(0);
-        }
-        body.preloader-ready:not(.homepage-intro-pending) .product-grid {
           opacity: 1;
+          transition: opacity 0.9s ease;
         }
       `,
       key: 'preloader-styles',

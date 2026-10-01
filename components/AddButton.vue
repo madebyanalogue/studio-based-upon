@@ -2,6 +2,7 @@
   <button
     type="button"
     class="add-btn"
+    data-cursor="default"
     :class="{
       'add-btn--active': active,
       [`add-btn--${variant}`]: true,

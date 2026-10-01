@@ -37,32 +37,9 @@
         role="group"
         aria-label="Filter by type or tag"
       >
-        <svg class="products__filters-svg" aria-hidden="true" focusable="false">
-          <defs>
-            <filter
-              :id="filtersGooId"
-              x="-50%"
-              y="-50%"
-              width="200%"
-              height="200%"
-              color-interpolation-filters="sRGB"
-            >
-              <!-- Gooey only on the sliding indicator as it morphs between chips. -->
-              <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
-              <feColorMatrix
-                in="blur"
-                mode="matrix"
-                values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"
-                result="goo"
-              />
-            </filter>
-          </defs>
-        </svg>
-
         <span
           ref="filterPillEl"
           class="products__filters-pill"
-          :style="filterPillStyle"
           aria-hidden="true"
         />
 
@@ -763,7 +740,6 @@ type FilterChipRect = { key: string; x: number; y: number; w: number; h: number 
 const filtersEl = ref<HTMLElement | null>(null)
 const filterPillEl = ref<HTMLElement | null>(null)
 const filterPillReady = ref(false)
-const filtersGooId = `maf-filters-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 let filterLiquidRaf = 0
 let filterResizeObserver: ResizeObserver | null = null
 
@@ -771,10 +747,6 @@ const activeChipKey = computed(() => {
   if (isSearchUiActive.value) return '__search__'
   return activeFilter.value || 'all'
 })
-
-const filterPillStyle = computed(() =>
-  prefersReducedMotion() ? undefined : { filter: `url(#${filtersGooId})` },
-)
 
 const measureFilterPillTarget = (): FilterChipRect | null => {
   const root = filtersEl.value
@@ -1698,14 +1670,6 @@ useHead(() => ({
   text-align: center;
 }
 
-.products__filters-svg {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 .products__filters-pill {
   position: absolute;
   top: 0;
@@ -1762,7 +1726,6 @@ useHead(() => ({
 @media (prefers-reduced-motion: reduce) {
   .products__filters-pill {
     transition: none;
-    filter: none !important;
   }
 }
 

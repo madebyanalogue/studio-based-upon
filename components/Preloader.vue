@@ -38,8 +38,10 @@
 
 <script setup lang="ts">
 import {
+  clearHomepageIntroLock,
   markHomepagePreloaderDone,
   shouldShowHomepagePreloader,
+  useHomepageIntro,
 } from '~/composables/useHomepagePreloader'
 
 const emit = defineEmits<{
@@ -47,7 +49,7 @@ const emit = defineEmits<{
   'preloader-complete': []
 }>()
 
-const { title, logo, disablePreloader } = useSiteSettings()
+const { title, logo } = useSiteSettings()
 
 const DEFAULT_STATEMENT =
   'Award-winning surfaces, collectible design and architectural features. From concept to completion.'
@@ -74,6 +76,8 @@ const visibleWords = ref(0)
 const WORD_INTERVAL = 140
 
 let started = false
+let introSettled = false
+let introFailTimer: ReturnType<typeof setTimeout> | null = null
 let timers: ReturnType<typeof setTimeout>[] = []
 let wordTimer: ReturnType<typeof setInterval> | null = null
 
@@ -114,12 +118,40 @@ function skipPreloader() {
   started = true
   active.value = false
   unlockScroll()
-  document.body.classList.remove('homepage-intro-pending')
+  clearHomepageIntroLock()
+  useHomepageIntro().phase.value = 'skipped'
   document.body.classList.add('preloader-ready')
   document.body.classList.add('preloader-complete')
   emit('preloader-ready')
   emit('preloader-complete')
   document.dispatchEvent(new CustomEvent('preloader-complete'))
+}
+
+function settleFromIntro() {
+  if (introSettled) return
+  introSettled = true
+  if (introFailTimer) {
+    clearTimeout(introFailTimer)
+    introFailTimer = null
+  }
+  clearHomepageIntroLock()
+  useHomepageIntro().phase.value = 'done'
+  markHomepagePreloaderDone()
+  unlockScroll()
+  document.body.classList.add('preloader-complete')
+  emit('preloader-complete')
+  document.dispatchEvent(new CustomEvent('preloader-complete'))
+}
+
+function beginHomepageIntro() {
+  started = true
+  active.value = false
+  useHomepageIntro().phase.value = 'cover'
+  document.body.classList.add('homepage-intro-pending')
+  document.documentElement.classList.add('homepage-intro')
+  revealSite()
+  document.addEventListener('homepage-intro-complete', settleFromIntro, { once: true })
+  introFailTimer = setTimeout(settleFromIntro, 20000)
 }
 
 function revealSite() {
@@ -187,32 +219,24 @@ function runSequence() {
 }
 
 function bootstrap() {
-  if (!import.meta.client) return
+  if (!import.meta.client || started) return
 
-  if (disablePreloader.value || !shouldShowHomepagePreloader()) {
+  if (!shouldShowHomepagePreloader()) {
     skipPreloader()
     return
   }
 
-  runSequence()
+  beginHomepageIntro()
 }
 
-watch(
-  disablePreloader,
-  (disabled) => {
-    if (disabled) skipPreloader()
-  },
-  { immediate: true },
-)
-
 onMounted(() => {
-  if (!disablePreloader.value) {
-    bootstrap()
-  }
+  bootstrap()
 })
 
 onUnmounted(() => {
   clearTimers()
+  if (introFailTimer) clearTimeout(introFailTimer)
+  document.removeEventListener('homepage-intro-complete', settleFromIntro)
   unlockScroll()
 })
 </script>

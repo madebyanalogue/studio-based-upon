@@ -30,6 +30,29 @@ export function markHomepagePreloaderDone() {
   sessionStorage.setItem(PRELOADER_DONE_KEY, '1')
 }
 
+export type HomepageIntroPhase = 'skipped' | 'cover' | 'type' | 'chrome' | 'done'
+
+export type HomepageIntroImages = {
+  leftImage: string
+  rightImage: string
+}
+
+export function useHomepageIntro() {
+  const phase = useState<HomepageIntroPhase>('homepage-intro-phase', () => 'skipped')
+  const slides = useState<HomepageIntroImages[] | null>('homepage-intro-slides', () => null)
+  return { phase, slides }
+}
+
+export function clearHomepageIntroLock() {
+  if (!import.meta.client) return
+  document.documentElement.classList.remove(
+    'homepage-intro',
+    'homepage-intro-reveal',
+    'homepage-intro-type',
+  )
+  document.body.classList.remove('homepage-intro-pending')
+}
+
 export function useHomepagePreloader() {
   return {
     isHomepagePath,

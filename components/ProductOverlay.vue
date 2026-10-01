@@ -21,6 +21,7 @@
         role="dialog"
         aria-modal="true"
         aria-label="Product detail"
+        :data-cursor="pendingFlip ? 'close' : 'default'"
         data-lenis-prevent
       >
         <div class="product-overlay__backdrop" @click="close" />

@@ -17,7 +17,7 @@
       'pdp--singularity': isSpiritOrOrigin,
     }"
   >
-    <aside class="pdp__col pdp__col--left">
+    <aside class="pdp__col pdp__col--left" data-cursor="default">
       <div class="pdp__toolbar">
         <button type="button" class="pdp__close interface" @click="onCloseClick">Close</button>
         <div
@@ -163,6 +163,8 @@
         ref="stageRef"
         class="pdp__stage pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
+        data-cursor="close"
+        @pointermove="onGalleryPointerMove"
         @click="onStageClick"
       >
         <div
@@ -207,7 +209,7 @@
                   preload="metadata"
                   draggable="false"
                   @loadedmetadata="onStripVideoMeta(i, $event)"
-                  @click.stop="selectImage(i)"
+                  @click.stop="onGalleryMediaClick"
                 />
                 <img
                   v-else
@@ -233,7 +235,7 @@
                   "
                   draggable="false"
                   @load="onStripImageLoad(i)"
-                  @click.stop="onStripImageClick(i)"
+                  @click.stop="onGalleryMediaClick"
                 />
                 <AddButton
                   class="pdp__frame-add"
@@ -685,6 +687,7 @@ watch(galleryEntries, (entries) => {
 
 watch(selectedIndex, () => {
   nextTick(syncStripVideos)
+  syncGalleryCursor()
 })
 
 const selectImage = (index: number) => {
@@ -702,10 +705,16 @@ const selectImage = (index: number) => {
   })
 }
 
-const cycleImage = (direction: 1 | -1) => {
+const canCycleImage = (direction: 1 | -1) => {
   const count = galleryEntries.value.length
-  if (count < 2) return
-  selectImage((selectedIndex.value + direction + count) % count)
+  if (count < 2) return false
+  if (direction === 1) return selectedIndex.value < count - 1
+  return selectedIndex.value > 0
+}
+
+const cycleImage = (direction: 1 | -1) => {
+  if (!canCycleImage(direction)) return
+  selectImage(selectedIndex.value + direction)
 }
 
 /** Strip padding clears the index / related rails — center in that open span. */
@@ -900,17 +909,61 @@ const collapseImage = () => {
   frameZoomHiRes.value = false
 }
 
-const onStripImageClick = (index: number) => {
-  if (index !== selectedIndex.value) selectImage(index)
+/** Fixed to the visible gallery: left and right 15% step, the centre closes.
+ *  An edge arrow drops once that direction has no further frame. */
+const galleryPointerZone = (clientX: number): 'prev' | 'next' | 'close' | 'default' => {
+  const stage = stageRef.value
+  if (!stage || galleryEntries.value.length < 2) return 'close'
+  const rect = stage.getBoundingClientRect()
+  const trackStyle = stripTrackRef.value ? getComputedStyle(stripTrackRef.value) : null
+  const padL = trackStyle ? Number.parseFloat(trackStyle.paddingLeft) || 0 : 0
+  const padR = trackStyle ? Number.parseFloat(trackStyle.paddingRight) || 0 : 0
+  const width = Math.max(0, rect.width - padL - padR)
+  if (width <= 0) return 'close'
+  const x = (clientX - rect.left - padL) / width
+  if (x < 0.15) return canCycleImage(-1) ? 'prev' : 'default'
+  if (x > 0.85) return canCycleImage(1) ? 'next' : 'default'
+  return 'close'
 }
 
-/** Close PDP when clicking empty stage chrome (not the image / thumbs / controls). */
+const { resolveFromPoint } = useCursor()
+let galleryPointerX: number | null = null
+let galleryPointerY: number | null = null
+
+const syncGalleryCursor = () => {
+  const stage = stageRef.value
+  if (!stage || galleryPointerX == null || galleryPointerY == null) return
+  const zone = galleryPointerZone(galleryPointerX)
+  if (stage.dataset.cursor !== zone) stage.dataset.cursor = zone
+  resolveFromPoint(galleryPointerX, galleryPointerY)
+}
+
+const onGalleryPointerMove = (event: PointerEvent) => {
+  galleryPointerX = event.clientX
+  galleryPointerY = event.clientY
+  syncGalleryCursor()
+}
+
+const onGalleryMediaClick = (event: MouseEvent) => {
+  const zone = galleryPointerZone(event.clientX)
+  if (zone === 'prev') {
+    cycleImage(-1)
+    return
+  }
+  if (zone === 'next') {
+    cycleImage(1)
+    return
+  }
+  if (zone === 'default') return
+  emit('close')
+}
+
+/** Letterbox uses the same fixed gallery zones. Controls keep their own clicks. */
 const onStageClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
-  // Dismiss on letterbox / stage chrome only — not the gallery strip, images, or controls
-  if (target.closest('.pdp__hero-image, .pdp__strip, .pdp__strip-item, button, a')) return
-  emit('close')
+  if (target.closest('button, a, .pdp__hero-image, .pdp__hero-video')) return
+  onGalleryMediaClick(event)
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
@@ -1595,6 +1648,7 @@ watch(
 .pdp__col--right {
   opacity: 0;
   transition: none;
+  pointer-events: none;
   /* Side columns are not dismiss targets — never inherit the stage close cursor */
   cursor: auto;
 }
@@ -1602,6 +1656,7 @@ watch(
 .pdp--sides .pdp__col--left,
 .pdp--sides .pdp__col--right {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .pdp--chrome-enter .pdp__col--left,
@@ -1611,8 +1666,8 @@ watch(
 
 .pdp__col--left {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 20px;
+  left: 20px;
   right: auto;
   bottom: unset;
   z-index: 120; /* above header logo (100) and index rail (110) */
@@ -1724,7 +1779,7 @@ watch(
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 1px;
+  gap: 4px;
   height: 100%;
   width: max-content;
   min-height: 100%;

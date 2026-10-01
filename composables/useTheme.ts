@@ -52,6 +52,7 @@ export const useTheme = () => {
   })
 
   const applyEffective = () => {
+    // Always set explicitly — clears a stale html.dark left from a forced-dark route
     applyDom(isDark.value ? 'dark' : 'light')
   }
 

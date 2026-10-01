@@ -1,7 +1,11 @@
 <template>
   <div class="home-page">
     <ClientOnly>
-      <InfiniteSplitSlider :slides="page.slides" />
+      <InfiniteSplitSlider
+        ref="sliderEl"
+        :slides="page.slides"
+        :hold-entrance="holdEntrance"
+      />
       <template #fallback>
         <div class="home-page__fallback" aria-hidden="true" />
       </template>
@@ -10,7 +14,29 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  pageTransition: false,
+})
+
 const { page } = await useInfiniteSlider()
+const { phase: introPhase, slides: introSlides } = useHomepageIntro()
+const holdEntrance = computed(() => introPhase.value === 'cover')
+const sliderEl = ref<{ playLeave: () => Promise<void> } | null>(null)
+
+onBeforeRouteLeave(async () => {
+  await sliderEl.value?.playLeave()
+})
+
+watch(
+  () => page.value.slides,
+  (next) => {
+    introSlides.value = next.map((slide) => ({
+      leftImage: slide.leftImage,
+      rightImage: slide.rightImage,
+    }))
+  },
+  { immediate: true },
+)
 
 useHead(() => ({
   title: page.value.seoTitle || 'Studio Based Upon',
