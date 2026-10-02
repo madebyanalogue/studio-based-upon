@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import type { DiscoverArtwork } from '~/composables/useCuratedDiscover'
+import type { PdpNextItem } from '~/composables/useProductOverlay'
 
 const props = withDefaults(
   defineProps<{
@@ -85,6 +86,8 @@ const props = withDefaults(
     /** Hearts and image controls. Off until the typology row is active. */
     controls?: boolean
     hitLabel?: string
+    /** Collection order for the PDP Next control. */
+    sequence?: PdpNextItem[]
   }>(),
   { trigger: false, controls: true, hitLabel: '' },
 )
@@ -183,6 +186,7 @@ const onOpen = (event: MouseEvent) => {
     source: source instanceof HTMLElement ? source : null,
     imageIndex: imageIndex.value,
     flipSrc: activeImage.value || null,
+    ...(props.sequence ? { sequence: props.sequence } : {}),
   })
 }
 

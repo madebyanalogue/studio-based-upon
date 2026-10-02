@@ -49,6 +49,7 @@
           :style="{ '--card-aspect': cardAspect(artwork.cardRatio) }"
           :trigger="!controlsReady"
           :controls="controlsReady"
+          :sequence="railSequence"
           :hit-label="index === 0 && !controlsReady ? `Show ${collection.title}` : ''"
           @pointerenter="index === 0 && !controlsReady && onTriggerPointerEnter()"
           @activate="onActivate(index)"
@@ -88,6 +89,17 @@ const cardAspect = (ratio?: string) => {
   if (ratio === '1/1') return '1'
   return '1.5'
 }
+
+/** Order the PDP Next control follows when a card in this row is opened. */
+const railSequence = computed(() =>
+  (props.collection?.artworks ?? [])
+    .filter((artwork) => artwork.slug)
+    .map((artwork) => ({
+      slug: artwork.slug as string,
+      title: artwork.title,
+      imageUrl: artwork.imageUrl,
+    })),
+)
 
 const rowHover = inject(typologyRowHoverKey, null)
 const myId = useId()
@@ -403,7 +415,7 @@ const handoffRailId = (target: EventTarget | null) => {
   return rail.dataset.typologyRail || null
 }
 
-/** Empty end caps. An open row closes only when one of these is clicked. */
+/** Empty end caps inside the open row. Clicking them also closes it. */
 const isDeadZone = (target: EventTarget | null) =>
   target instanceof Element &&
   !!target.closest('.collection-rail__lead, .collection-rail__tail') &&
@@ -421,7 +433,13 @@ const onDocPointerDown = (event: PointerEvent) => {
     deactivate()
     return
   }
-  if (!isDeadZone(target)) return
+  if (isDeadZone(target)) {
+    event.preventDefault()
+    event.stopPropagation()
+    deactivate()
+    return
+  }
+  if (target instanceof Element && railEl.value?.contains(target)) return
   event.preventDefault()
   event.stopPropagation()
   deactivate()

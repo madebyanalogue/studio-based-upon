@@ -75,22 +75,61 @@
             Our work moves freely between the intricate and the monumental. We create
             unfathomable surfaces and singular objects as well as large-scale integrated
             artworks, architectural interventions and monolithic forms, bringing the same
-            intensity of attention to every scale. Our practice is rooted in curiosity,
+            intensity of attention to every scale.</p>
+          <p class="mono-copy">Our practice is rooted in curiosity,
             experimentation and a deep knowledge of materials. Part atelier, part laboratory,
             the studio is a place where ideas are explored through making, where the hand
             meets the algorithm, and where traditional craft sits alongside advanced processes
             and emerging technologies.
           </p>
         </div>
+        <div v-if="section === 1" class="about-plan__materials">
+          <p class="mono-copy">
+            We have developed proprietary material innovations such as Tramazite™, inspired
+            by studying the ocean from the air, and have pioneered the artistic interpretation
+            of liquid metals.
+          </p>
+        </div>
+        <h2
+          v-if="section === 1"
+          class="about-plan__title about-plan__title--clients h3"
+          :class="{ 'about-plan__title--pending': !titlesReady }"
+          :style="titleFilterStyle"
+        >
+          Clients
+        </h2>
+        <div v-if="section === 1" class="about-plan__clients">
+          <p class="mono-copy">
+            The client is a critical element of our process. His or her involvement is vital
+            to the pursuit of this beauty. The client’s absolute satisfaction and emotional
+            fulfillment is the singular point of the pursuit.
+          </p>
+        </div>
+        <div v-if="section === 1" class="about-plan__clients-names">
+          <ul class="mono-copy">
+            <li>Armani</li>
+            <li>Dior</li>
+            <li>Donna Karan</li>
+            <li>Comme des Garçons</li>
+            <li>Chanel</li>
+            <li>Hermès</li>
+            <li>Louis Vuitton</li>
+            <li>Prada</li>
+            <li>Saint Laurent</li>
+            <li>Bottega Veneta</li>
+          </ul>
+        </div>
         <NuxtLink
           v-for="thumb in section === 1 ? planThumbs : []"
           :key="thumb.slug"
           class="about-plan__figure"
-          :class="thumb.place"
+          :class="[thumb.place, { 'about-plan__figure--lit': litFigures[thumb.slug] }]"
           :style="thumb.column ? { gridColumn: thumb.column, gridRow: thumb.row } : undefined"
           :to="thumb.href"
+          :data-slug="thumb.slug"
           @click.capture="onPlanThumbOpen($event, thumb)"
         >
+          <span class="about-plan__figure-veil" aria-hidden="true" />
           <img
             :src="thumb.src"
             :alt="thumb.title"
@@ -343,7 +382,7 @@ const planAreasFor = (rows: number) =>
   ).flat()
 
 const planAreas = planAreasFor(3)
-const planAreasTall = planAreasFor(9)
+const planAreasTall = planAreasFor(17)
 
 const query = `*[_type == "aboutPage"][0] {
   seoTitle,
@@ -440,8 +479,19 @@ const titleWords = () =>
 const planImages = () =>
   Array.from(planEl.value?.querySelectorAll<HTMLElement>('.about-plan__figure-img') || [])
 
+const figureVeil = (img: HTMLElement) =>
+  img.parentElement?.querySelector<HTMLElement>('.about-plan__figure-veil') ?? null
+
 const setImageClip = (el: HTMLElement, top: number) => {
-  el.style.clipPath = `inset(${top}% 0% 0% 0%)`
+  const clip = `inset(${top}% 0% 0% 0%)`
+  el.style.clipPath = clip
+  const veil = figureVeil(el)
+  if (veil) veil.style.clipPath = clip
+}
+
+const clearImageClip = (el: HTMLElement) => {
+  el.style.removeProperty('clip-path')
+  figureVeil(el)?.style.removeProperty('clip-path')
 }
 
 const clipTop = (el: HTMLElement) => {
@@ -495,7 +545,7 @@ const maskCopyLines = () => {
   revertSplits(copySplits)
   const blocks: CopyBlock[] = []
   planEl.value
-    ?.querySelectorAll<HTMLElement>('.about-plan__copy .mono-copy, .about-plan__lead .mono-copy')
+    ?.querySelectorAll<HTMLElement>('.about-plan__copy .mono-copy, .about-plan__lead .mono-copy, .about-plan__materials .mono-copy, .about-plan__clients .mono-copy, .about-plan__clients-names .mono-copy')
     .forEach((el) => {
       if (!el.textContent?.trim()) return
       const split = new SplitText(el, {
@@ -512,7 +562,7 @@ const maskCopyLines = () => {
         mask.appendChild(lineEl)
         lines.push(lineEl)
       })
-      const root = el.closest<HTMLElement>('.about-plan__copy, .about-plan__lead') || el
+      const root = el.closest<HTMLElement>('.about-plan__copy, .about-plan__lead, .about-plan__materials, .about-plan__clients, .about-plan__clients-names') || el
       blocks.push({ root, split, lines })
     })
   return blocks
@@ -610,7 +660,11 @@ const playImage = (img: HTMLElement) => {
       ease: 'power3.inOut',
       onUpdate: () => setImageClip(img, state.top),
       onComplete: () => {
-        if (!leavePromise && !planEntering.value) img.style.removeProperty('clip-path')
+        if (leavePromise || planEntering.value) return
+        clearImageClip(img)
+        const slug = img.parentElement?.getAttribute('data-slug')
+        if (!slug || litFigures.value[slug]) return
+        litFigures.value = { ...litFigures.value, [slug]: true }
       },
     }),
   )
@@ -619,11 +673,12 @@ const playImage = (img: HTMLElement) => {
 const bindReveal = (
   trigger: HTMLElement,
   onEnter: () => void,
+  start = 'top 90%',
 ) => {
   scrollTriggers.push(
     ScrollTrigger.create({
       trigger,
-      start: 'top 90%',
+      start,
       once: true,
       onEnter,
     }),
@@ -635,6 +690,12 @@ const playPlanEnter = async () => {
   if (prefersReducedMotion()) {
     planEntering.value = false
     titlesReady.value = true
+    const ready: Record<string, true> = {}
+    planEl.value.querySelectorAll<HTMLElement>('.about-plan__figure[data-slug]').forEach((el) => {
+      const slug = el.dataset.slug
+      if (slug) ready[slug] = true
+    })
+    litFigures.value = ready
     return
   }
 
@@ -665,7 +726,9 @@ const playPlanEnter = async () => {
 
   titles.forEach((block) => bindReveal(block.el, () => playTitle(block)))
   copies.forEach((block) => bindReveal(block.root, () => playCopy(titles, block)))
-  images.forEach((el) => bindReveal(el, () => playImage(el)))
+  images.forEach((el) => {
+    bindReveal(el, () => playImage(el), 'top bottom')
+  })
   ScrollTrigger.refresh()
   planEntering.value = false
 }
@@ -676,7 +739,7 @@ const visibleCopyOut = () => {
   if (!planEl.value) return { lines, labels }
 
   planEl.value
-    .querySelectorAll<HTMLElement>('.about-plan__copy .mono-copy, .about-plan__lead .mono-copy')
+    .querySelectorAll<HTMLElement>('.about-plan__copy .mono-copy, .about-plan__lead .mono-copy, .about-plan__materials .mono-copy, .about-plan__clients .mono-copy, .about-plan__clients-names .mono-copy')
     .forEach((el) => {
       if (!el.textContent?.trim()) return
       let lineEls = [...el.querySelectorAll<HTMLElement>('.about-plan__clip-line')]
@@ -700,7 +763,7 @@ const visibleCopyOut = () => {
       if (!shown.length) return
       lines.push(...shown)
       const label = el
-        .closest('.about-plan__copy, .about-plan__lead')
+        .closest('.about-plan__copy, .about-plan__lead, .about-plan__materials, .about-plan__clients, .about-plan__clients-names')
         ?.querySelector<HTMLElement>('.h6')
       if (label && Number(gsap.getProperty(label, 'opacity')) > 0.05) labels.push(label)
     })
@@ -807,8 +870,11 @@ const planThumbSlots: {
   place?: string
 }[] = [
   { slug: 'nilou-pearl', column: '1 / 3', row: '3 / 6' },
-  { slug: 'birth-of-tramazite-mother-rain', column: '3 / 5', row: '4 / 6', place: 'about-plan__figure--front about-plan__figure--square' },
-  { slug: 'diamond-coffee-table-blush', place: 'about-plan__figure--d6f1' },
+  { slug: 'crack-dark-dark', place: 'about-plan__figure--second' },
+  { slug: 'double-twist-table', place: 'about-plan__figure--after' },
+  { slug: 'birth-of-tramazite-mother-rain', place: 'about-plan__figure--third about-plan__figure--front' },
+  { slug: 'diamond-coffee-table-blush', place: 'about-plan__figure--fourth' },
+  { slug: 'deco-pit', place: 'about-plan__figure--fifth' },
 ]
 
 const planThumbs = computed(() =>
@@ -832,6 +898,8 @@ const planThumbs = computed(() =>
     }]
   }),
 )
+
+const litFigures = ref<Record<string, true>>({})
 
 const onPlanThumbOpen = (
   event: MouseEvent,
@@ -999,7 +1067,7 @@ useHead(() => ({
 }
 
 /* Each section is one grid. Place live items with grid-area: a1 … f3.
-   The first section is nine rows: a1 … f9. */
+   The first section is seventeen rows: a1 … f17. */
 .about-plan {
   container-type: inline-size;
   display: flex;
@@ -1022,7 +1090,7 @@ useHead(() => ({
 }
 
 .about-plan__section--tall {
-  grid-template-rows: repeat(9, calc((100cqi - 5 * var(--products-grid-gap)) / 6));
+  grid-template-rows: repeat(17, calc((100cqi - 5 * var(--products-grid-gap)) / 6));
   grid-template-areas:
     "a1 b1 c1 d1 e1 f1"
     "a2 b2 c2 d2 e2 f2"
@@ -1032,7 +1100,15 @@ useHead(() => ({
     "a6 b6 c6 d6 e6 f6"
     "a7 b7 c7 d7 e7 f7"
     "a8 b8 c8 d8 e8 f8"
-    "a9 b9 c9 d9 e9 f9";
+    "a9 b9 c9 d9 e9 f9"
+    "a10 b10 c10 d10 e10 f10"
+    "a11 b11 c11 d11 e11 f11"
+    "a12 b12 c12 d12 e12 f12"
+    "a13 b13 c13 d13 e13 f13"
+    "a14 b14 c14 d14 e14 f14"
+    "a15 b15 c15 d15 e15 f15"
+    "a16 b16 c16 d16 e16 f16"
+    "a17 b17 c17 d17 e17 f17";
 }
 
 @media (max-width: 1599px) {
@@ -1046,7 +1122,7 @@ useHead(() => ({
   }
 
   .about-plan__section--tall {
-    grid-template-rows: repeat(9, calc((100cqi - 3 * var(--products-grid-gap)) / 4));
+    grid-template-rows: repeat(17, calc((100cqi - 3 * var(--products-grid-gap)) / 4));
     grid-template-areas:
       "a1 b1 c1 d1"
       "a2 b2 c2 d2"
@@ -1056,7 +1132,15 @@ useHead(() => ({
       "a6 b6 c6 d6"
       "a7 b7 c7 d7"
       "a8 b8 c8 d8"
-      "a9 b9 c9 d9";
+      "a9 b9 c9 d9"
+      "a10 b10 c10 d10"
+      "a11 b11 c11 d11"
+      "a12 b12 c12 d12"
+      "a13 b13 c13 d13"
+      "a14 b14 c14 d14"
+      "a15 b15 c15 d15"
+      "a16 b16 c16 d16"
+      "a17 b17 c17 d17";
   }
 
   .about-plan__cell[data-area^="e"],
@@ -1074,7 +1158,7 @@ useHead(() => ({
   display: flex;
   align-items: flex-end;
   min-height: 0;
-  padding: 8px;
+  padding: 3px 3px;
   border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   font-family: var(--mono);
   font-size: 11px;
@@ -1110,6 +1194,10 @@ useHead(() => ({
   grid-row: 7;
 }
 
+.about-plan__title--clients {
+  grid-row: 11;
+}
+
 .about-plan__goo {
   position: absolute;
   width: 0;
@@ -1127,7 +1215,8 @@ useHead(() => ({
   will-change: filter, opacity;
 }
 
-.about-plan--enter .about-plan__figure-img {
+.about-plan--enter .about-plan__figure-img,
+.about-plan--enter .about-plan__figure-veil {
   clip-path: inset(100% 0% 0% 0%);
 }
 
@@ -1137,7 +1226,10 @@ useHead(() => ({
 }
 
 .about-plan--enter:not(.about-plan--motion) .about-plan__copy .mono-copy,
-.about-plan--enter:not(.about-plan--motion) .about-plan__lead .mono-copy {
+.about-plan--enter:not(.about-plan--motion) .about-plan__lead .mono-copy,
+.about-plan--enter:not(.about-plan--motion) .about-plan__materials .mono-copy,
+.about-plan--enter:not(.about-plan--motion) .about-plan__clients .mono-copy,
+.about-plan--enter:not(.about-plan--motion) .about-plan__clients-names .mono-copy {
   visibility: hidden;
 }
 
@@ -1151,12 +1243,16 @@ useHead(() => ({
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .about-plan--enter .about-plan__figure-img {
+  .about-plan--enter .about-plan__figure-img,
+  .about-plan--enter .about-plan__figure-veil {
     clip-path: none;
   }
 
   .about-plan--enter .about-plan__copy .mono-copy,
   .about-plan--enter .about-plan__lead .mono-copy,
+  .about-plan--enter .about-plan__materials .mono-copy,
+  .about-plan--enter .about-plan__clients .mono-copy,
+  .about-plan--enter .about-plan__clients-names .mono-copy,
   .about-plan__title--pending {
     visibility: visible;
   }
@@ -1174,6 +1270,43 @@ useHead(() => ({
   min-height: 0;
   margin: 0;
   padding: 0;
+}
+
+.about-plan__materials {
+  grid-column: 1;
+  grid-row: 7;
+  z-index: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.about-plan__clients {
+  grid-column: 2;
+  grid-row: 14 / 15;
+  z-index: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.about-plan__clients-names {
+  grid-column: 4 / -1;
+  grid-row: 12 / 15;
+  z-index: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.about-plan__clients-names ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.about-plan__clients-names .mono-copy {
+  min-width: 0;
 }
 
 .about-plan__copy {
@@ -1209,6 +1342,13 @@ useHead(() => ({
   text-decoration: none;
 }
 
+.about-plan__figure-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--background-color);
+  pointer-events: none;
+}
+
 .about-plan__figure--front {
   z-index: 2;
 }
@@ -1225,16 +1365,57 @@ useHead(() => ({
   aspect-ratio: 4 / 3;
 }
 
-/* Six columns: d8–f9. Below 1600 only column d exists, so it sits in d6. */
-.about-plan__figure--d6f1 {
-  grid-column: 4;
-  grid-row: 6;
+/* Four columns below 1600, so each span stops at the last column line. */
+.about-plan__figure--second {
+  grid-column: 3 / -1;
+  grid-row: 3 / 6;
+}
+
+.about-plan__figure--after {
+  grid-column: 3 / -1;
+  grid-row: 6 / 8;
+}
+
+.about-plan__figure--third {
+  grid-column: 4 / -1;
+  grid-row: 8 / 10;
+}
+
+.about-plan__figure--fourth {
+  grid-column: 4 / -1;
+  grid-row: 10 / 12;
+}
+
+.about-plan__figure--fifth {
+  grid-area: 10 / 1 / 13 / 4;
 }
 
 @media (min-width: 1600px) {
-  .about-plan__figure--d6f1 {
-    grid-column: 4 / 7;
-    grid-row: 8 / 10;
+  .about-plan__figure--second {
+    grid-column: 3 / 6;
+    grid-row: 4 / 6;
+  }
+
+  .about-plan__figure--after {
+    grid-column: 6 / 7;
+    grid-row: 5 / 6;
+  }
+
+  .about-plan__figure--third {
+    grid-area: 8 / 4 / 10 / 6;
+  }
+
+  .about-plan__figure--fourth {
+    grid-area: 14 / 4 / 16 / 7;
+  }
+
+  .about-plan__figure--fifth {
+    grid-area: 10 / 1 / 13 / 4;
+  }
+
+  .about-plan__clients-names {
+    grid-column: 5;
+    grid-row: 12 / 15;
   }
 }
 
@@ -1243,6 +1424,16 @@ useHead(() => ({
   width: 100%;
   height: 100%;
   object-fit: cover;
+  filter: grayscale(1);
+  opacity: 0.2;
+  transition:
+    filter 0.45s ease,
+    opacity 0.45s ease;
+}
+
+.about-plan__figure--lit .about-plan__figure-img {
+  filter: grayscale(0);
+  opacity: 1;
 }
 
 .about-plan__figure-meta {

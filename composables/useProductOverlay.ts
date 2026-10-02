@@ -15,6 +15,18 @@ export type ProductOverlayOpenOptions = {
   bucketItemId?: string | null
   /** Sanity / catalog product id of the Flip shell card */
   productId?: string | null
+  /**
+   * Ordered products for the PDP "Next" control.
+   * Set when opening from a collection rail; omitted opens keep the catalog order.
+   * In-overlay navigation does not pass this, so the rail order stays put.
+   */
+  sequence?: PdpNextItem[] | null
+}
+
+export type PdpNextItem = {
+  slug: string
+  title: string
+  imageUrl: string
 }
 
 export type ProductGridSwap = {
@@ -155,6 +167,17 @@ export const useProductOverlay = () => {
   /** Cream veil outlives the overlay — layers above it must hold their z-index. */
   const closeVeilActive = useState<boolean>('product-overlay-close-veil', () => false)
   const isOpen = computed(() => !!openSlug.value)
+  /** Rail order for PDP Next. Null uses the catalog sequence in getNextProduct. */
+  const nextSequence = useState<PdpNextItem[] | null>('product-overlay-next-sequence', () => null)
+
+  const applyNextSequence = (options: ProductOverlayOpenOptions, alreadyOpen: boolean) => {
+    if ('sequence' in options) {
+      const list = (options.sequence ?? []).filter((item) => item.slug)
+      nextSequence.value = list.length > 1 ? list : null
+      return
+    }
+    if (!alreadyOpen) nextSequence.value = null
+  }
 
   const setCloseVeilActive = (active: boolean) => {
     closeVeilActive.value = active
@@ -171,6 +194,7 @@ export const useProductOverlay = () => {
   const open = (slug: string, options: ProductOverlayOpenOptions = {}) => {
     const alreadyOpen = !!openSlug.value
     const { resetRelatedRail } = usePdpRelatedRail()
+    applyNextSequence(options, alreadyOpen)
 
     if (import.meta.client && !alreadyOpen) {
       clearCloseArtifacts()
@@ -295,6 +319,7 @@ export const useProductOverlay = () => {
     clearFlipOpenGate()
     backdropReady.value = false
     pendingGridSwap.value = null
+    nextSequence.value = null
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -366,6 +391,7 @@ export const useProductOverlay = () => {
     backdropReady.value = false
     returnUrl.value = null
     pendingGridSwap.value = null
+    nextSequence.value = null
     if (import.meta.client) {
       unlockPageScroll()
     }
@@ -396,6 +422,7 @@ export const useProductOverlay = () => {
     returnImage,
     setReturnImage,
     pendingGridSwap,
+    nextSequence,
     requestGridSwap,
     closeVeilActive,
     setCloseVeilActive,

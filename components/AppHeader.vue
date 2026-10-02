@@ -8,6 +8,15 @@
   >
     <div class="header__inner">
       <NuxtLink
+        v-if="logoStyle === 'text'"
+        to="/"
+        class="interface header__wordmark"
+        :aria-label="`${title} home`"
+      >
+        {{ title }}
+      </NuxtLink>
+      <NuxtLink
+        v-else
         to="/"
         class="header__logo"
         aria-label="Studio Based Upon home"
@@ -121,15 +130,15 @@
         :aria-hidden="isProductPage ? 'true' : undefined"
       >
         <div class="header__cta" role="group" aria-label="Contact">
-          <NuxtLink to="/enquire" class="header__enquire interface">
-            Enquire
-          </NuxtLink>
           <a
-            class="header__phone interface"
+            class="interface"
             :href="`tel:${phoneTel}`"
           >
             {{ phone }}
           </a>
+          <NuxtLink to="/enquire" class="header__enquire interface">
+            Enquire
+          </NuxtLink>
         </div>
       </div>
     </div>
@@ -139,7 +148,8 @@
 <script setup lang="ts">
 import type Lenis from 'lenis'
 
-const { headerMenu, phone, phoneTel } = useSiteSettings()
+const { headerMenu, phone, phoneTel, title, logoStyle } = useSiteSettings()
+const { isOpen: productOverlayOpen } = useProductOverlay()
 const {
   isOpen,
   panelTab,
@@ -153,9 +163,11 @@ const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 const { $lenis } = useNuxtApp()
 
-/** Hard-loaded PDP: keep the logo in place; hide the rest of the chrome. */
-const isProductPage = computed(() =>
-  /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
+/** Product page or overlay: hide the header, including the logo. */
+const isProductPage = computed(
+  () =>
+    productOverlayOpen.value ||
+    /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
 )
 
 /** Archive index only — fade nav out on scroll down, back in on scroll up. */
@@ -342,9 +354,18 @@ const onMyBoardsClick = () => {
 }
 
 .header--product-page .header__nav,
-.header--product-page .header__actions {
+.header--product-page .header__actions,
+.header--product-page .header__logo,
+.header--product-page .header__wordmark {
   visibility: hidden;
   pointer-events: none;
+}
+
+.header__wordmark {
+  justify-self: start;
+  align-self: center;
+  color: var(--charcoal);
+  text-decoration: none;
 }
 
 .header__inner {
@@ -401,12 +422,11 @@ const onMyBoardsClick = () => {
 
 .header__cta {
   display: flex;
-  align-items: stretch;
-  gap: 3px;
+  align-items: center;
+  gap: 20px;
 }
 
-.header__enquire,
-.header__phone {
+.header__enquire {
   display: inline-flex;
   align-items: center;
   margin: 0;
@@ -420,8 +440,7 @@ const onMyBoardsClick = () => {
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
-.header__enquire:hover,
-.header__phone:hover {
+.header__enquire:hover {
   opacity: 0.88;
 }
 

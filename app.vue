@@ -31,6 +31,8 @@ import { isHomepagePath, useHomepageIntro } from '~/composables/useHomepagePrelo
 const {
   seoTitle,
   seoDescription,
+  googleTagId,
+  facebookShareImage,
   title,
   phone,
   phoneTel,
@@ -90,6 +92,77 @@ const localBusinessJsonLd = computed(() => ({
   },
 }))
 
+const googleTagHead = computed(() => {
+  const id = googleTagId.value
+  if (!id) return { script: [], noscript: [] }
+
+  if (/^GTM-/i.test(id)) {
+    return {
+      script: [
+        {
+          key: 'google-tag-manager',
+          tagPosition: 'head' as const,
+          children: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${id}');`,
+        },
+      ],
+      noscript: [
+        {
+          key: 'google-tag-manager-noscript',
+          tagPosition: 'bodyOpen' as const,
+          children: `<iframe src="https://www.googletagmanager.com/ns.html?id=${id}" height="0" width="0" style="display:none;visibility:hidden"></iframe>`,
+        },
+      ],
+    }
+  }
+
+  return {
+    script: [
+      {
+        key: 'google-tag',
+        src: `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`,
+        async: true,
+        tagPosition: 'head' as const,
+      },
+      {
+        key: 'google-tag-config',
+        tagPosition: 'head' as const,
+        children: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('js',new Date());gtag('config','${id}');`,
+      },
+    ],
+    noscript: [],
+  }
+})
+
+watch(
+  () => route.fullPath,
+  (path) => {
+    if (!import.meta.client) return
+    const id = googleTagId.value
+    if (!id) return
+
+    const w = window as Window & {
+      gtag?: (...args: unknown[]) => void
+      dataLayer?: Record<string, unknown>[]
+    }
+
+    if (/^GTM-/i.test(id)) {
+      w.dataLayer = w.dataLayer || []
+      w.dataLayer.push({
+        event: 'page_view',
+        page_path: path,
+        page_location: window.location.href,
+      })
+      return
+    }
+
+    w.gtag?.('event', 'page_view', {
+      page_path: path,
+      page_location: window.location.href,
+      page_title: document.title,
+    })
+  },
+)
+
 useHead(() => ({
   title: seoTitle.value,
   meta: [
@@ -109,6 +182,23 @@ useHead(() => ({
           },
         ]
       : []),
+    ...(facebookShareImage.value
+      ? [
+          { property: 'og:type', content: 'website' },
+          { property: 'og:title', content: seoTitle.value },
+          ...(seoDescription.value
+            ? [{ property: 'og:description', content: seoDescription.value }]
+            : []),
+          { property: 'og:image', content: facebookShareImage.value.url },
+          { property: 'og:image:secure_url', content: facebookShareImage.value.url },
+          ...(facebookShareImage.value.width
+            ? [{ property: 'og:image:width', content: String(facebookShareImage.value.width) }]
+            : []),
+          ...(facebookShareImage.value.height
+            ? [{ property: 'og:image:height', content: String(facebookShareImage.value.height) }]
+            : []),
+        ]
+      : []),
   ],
   script: [
     {
@@ -116,7 +206,9 @@ useHead(() => ({
       children: JSON.stringify(localBusinessJsonLd.value),
       key: 'local-business-jsonld',
     },
+    ...googleTagHead.value.script,
   ],
+  noscript: googleTagHead.value.noscript,
   style: [
     {
       children: `

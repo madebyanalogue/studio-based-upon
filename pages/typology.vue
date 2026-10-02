@@ -72,6 +72,10 @@ const TITLE_GOOEY_OUT_DUR = 0.65
 const TITLE_GOOEY_IN_DUR = 2.4
 // The color matrix hides anything blurrier than this, so the in-tween starts here.
 const TITLE_GOOEY_IN_BLUR = 8
+/** Card travel from the open pose before the heading is fully melted. */
+const TITLE_GOOEY_SCROLL_VH = 1
+/** Fully gone this far before the first item overlaps the heading. */
+const TITLE_GOOEY_CLEARANCE = 28
 
 const { page } = await useCuratedDiscover()
 
@@ -103,6 +107,81 @@ const prefersReducedMotion = () =>
 const titleWords = () =>
   (titleEl.value?.querySelectorAll('.discover-page__title-word') ||
     []) as NodeListOf<Element> | never[]
+
+/** 1 = solid, 0 = melted. Matches the materials & forms scroll scrub. */
+const applyTitleGooey = (effect: number) => {
+  if (titleSwapLock) return
+  const t = Math.max(0, Math.min(1, effect))
+  const words = titleWords()
+  const target = words.length ? words : titleEl.value
+  if (!target) return
+  if (prefersReducedMotion() || !words.length) {
+    gsap.set(target, { opacity: t })
+    return
+  }
+  gsap.set(words, {
+    filter: `blur(${TITLE_BLUR_MAX * (1 - t)}px)`,
+    opacity: t,
+  })
+}
+
+let titleScrubRaf = 0
+let titleScrubEffect = 1
+/** Furthest the first item has sat from the heading this open — that pose stays solid. */
+let titleApproachSpan = 0
+
+/** How solid the heading should be as the open row's first item approaches it. */
+const titleApproachEffect = () => {
+  const title = titleEl.value
+  if (!title || !typologyRowsLocked.value) return 1
+  const card = pageEl.value?.querySelector<HTMLElement>(
+    '.collection-rail--hot .collection-rail__card--anchor .discover-card__media',
+  )
+  if (!card) return 1
+  const gap = card.getBoundingClientRect().left - title.getBoundingClientRect().right
+  const fromClear = gap - TITLE_GOOEY_CLEARANCE
+  titleApproachSpan = Math.max(titleApproachSpan, fromClear)
+  // Open pose stays solid. The melt then runs for a full viewport of
+  // card travel, so the blur eases off instead of dropping out at once.
+  const melt = Math.max(
+    titleApproachSpan,
+    240,
+    window.innerHeight * TITLE_GOOEY_SCROLL_VH,
+  )
+  const traveled = titleApproachSpan - fromClear
+  return Math.min(1, Math.max(0, 1 - traveled / melt))
+}
+
+const tickTitleScrub = () => {
+  titleScrubRaf = requestAnimationFrame(tickTitleScrub)
+  if (!typologyRowsLocked.value) return
+  const effect = titleApproachEffect()
+  if (titleSwapLock) {
+    // Wheel moved the first item into the heading while it was still melting in.
+    if (effect > 0.96) return
+    abortTitleSwapTween()
+    titleSwapGen += 1
+    titleSwapLock = false
+    titlePaintReady.value = true
+  }
+  if (Math.abs(effect - titleScrubEffect) < 0.002) return
+  titleScrubEffect = effect
+  applyTitleGooey(effect)
+}
+
+const startTitleScrub = () => {
+  if (titleScrubRaf) return
+  titleScrubEffect = -1
+  titleScrubRaf = requestAnimationFrame(tickTitleScrub)
+}
+
+const stopTitleScrub = () => {
+  if (titleScrubRaf) cancelAnimationFrame(titleScrubRaf)
+  titleScrubRaf = 0
+  titleScrubEffect = 1
+  titleApproachSpan = 0
+  if (!titleSwapLock) applyTitleGooey(1)
+}
 
 const abortTitleSwapTween = () => {
   const tween = titleSwapTween
@@ -432,7 +511,11 @@ const syncOutsideCloseCursor = (locked: boolean) => {
   else if (root.getAttribute('data-cursor') === 'close') root.removeAttribute('data-cursor')
 }
 
-watch(typologyRowsLocked, syncOutsideCloseCursor)
+watch(typologyRowsLocked, (locked) => {
+  syncOutsideCloseCursor(locked)
+  if (locked) startTitleScrub()
+  else stopTitleScrub()
+})
 
 const stopPausedPointer = (event: Event) => {
   event.preventDefault()
@@ -458,6 +541,7 @@ watch(typologyPointerPaused, syncPointerPause)
 onBeforeUnmount(() => {
   syncOutsideCloseCursor(false)
   syncPointerPause(false)
+  stopTitleScrub()
   enterTween?.kill()
   enterTween = null
   abortTitleSwapTween()
@@ -535,6 +619,23 @@ onBeforeUnmount(() => {
 .discover-page__content--row-hot
   :deep(.collection-rail:not(.collection-rail--hot)) {
   opacity: 0.1;
+  filter: grayscale(1);
+}
+
+/* An open row stays put. Hovering another row's trigger only lifts that cell. */
+.discover-page__content--row-locked
+  :deep(.collection-rail:not(.collection-rail--hot)) {
+  transition:
+    opacity 0.5s ease,
+    filter 0.5s ease,
+    --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.discover-page__content--row-locked
+  :deep(
+    .collection-rail:not(.collection-rail--hot):has(.collection-rail__card--trigger:hover)
+  ) {
+  opacity: 0.5;
   filter: grayscale(1);
 }
 

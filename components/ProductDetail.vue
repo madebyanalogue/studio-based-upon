@@ -324,6 +324,7 @@ const {
   setReturnImage,
   requestGridSwap,
   setCloseVeilActive,
+  nextSequence,
 } = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
 const { items: libraryItems } = await useLibraryCatalog()
@@ -733,10 +734,25 @@ const getStripRailPads = (strip: HTMLElement) => {
 }
 
 /**
- * Center the active frame in the clear span between rail paddings.
- * Wide frames that can't fit are pinned flush to the start of that span
- * so they never sit under the index rail.
+ * Scroll position that presents this frame the way the gallery rests:
+ * first frame flush after the left padding, later frames centered in the
+ * clear span. Wide frames pin to the left so they stay clear of the rails.
  */
+const restingScrollForItem = (item: HTMLElement, strip: HTMLElement) => {
+  const { left: padL, right: padR } = getStripRailPads(strip)
+  const visible = Math.max(0, strip.clientWidth - padL - padR)
+  const ideal = item.offsetLeft + item.offsetWidth / 2 - padL - visible / 2
+  const maxLeftClear = Math.max(0, item.offsetLeft - padL)
+  const minRightClear = Math.max(
+    0,
+    item.offsetLeft + item.offsetWidth - padL - visible,
+  )
+  return minRightClear > maxLeftClear
+    ? maxLeftClear
+    : Math.min(Math.max(ideal, minRightClear), maxLeftClear)
+}
+
+/** Center the active frame, using the same resting position as scroll sync. */
 const scrollSelectedIntoView = (smooth = false) => {
   const strip = stripRef.value
   if (!strip) return
@@ -744,21 +760,7 @@ const scrollSelectedIntoView = (smooth = false) => {
     `[data-strip-index="${selectedIndex.value}"]`,
   )
   if (!item) return
-  const { left: padL, right: padR } = getStripRailPads(strip)
-  const visible = Math.max(0, strip.clientWidth - padL - padR)
-  const ideal = item.offsetLeft + item.offsetWidth / 2 - padL - visible / 2
-  // Keep the frame's left edge at or past the index padding; right edge
-  // at or before the related padding when the frame fits.
-  const maxLeftClear = Math.max(0, item.offsetLeft - padL)
-  const minRightClear = Math.max(
-    0,
-    item.offsetLeft + item.offsetWidth - padL - visible,
-  )
-  const target =
-    minRightClear > maxLeftClear
-      ? maxLeftClear
-      : Math.min(Math.max(ideal, minRightClear), maxLeftClear)
-  setStripScroll(target, { immediate: !smooth })
+  setStripScroll(restingScrollForItem(item, strip), { immediate: !smooth })
 }
 
 /** First frame: flush after index padding. Later frames: center in the clear span.
@@ -782,17 +784,18 @@ const scrollGalleryInitial = () => {
 
 const syncSelectedFromScroll = () => {
   const strip = stripRef.value
+  // Don't retarget the open flyer. A narrow portrait at the left is closer
+  // to the next frame's centre than to the viewport centre, and that swap
+  // was sending Flip into the second image.
+  if (!contentReady.value || pendingFlip.value) return
   if (!strip || !galleryEntries.value.length) return
-  const { left: padL, right: padR } = getStripRailPads(strip)
-  const visible = Math.max(0, strip.clientWidth - padL - padR)
-  const focusX = getStripScroll() + padL + visible / 2
+  const scroll = getStripScroll()
   let best = 0
   let bestDist = Infinity
   strip.querySelectorAll<HTMLElement>('[data-strip-index]').forEach((el) => {
     const index = Number(el.dataset.stripIndex)
     if (!Number.isFinite(index)) return
-    const center = el.offsetLeft + el.offsetWidth / 2
-    const dist = Math.abs(center - focusX)
+    const dist = Math.abs(restingScrollForItem(el, strip) - scroll)
     if (dist < bestDist) {
       bestDist = dist
       best = index
@@ -1059,15 +1062,30 @@ watch([indexRailVisible, relatedRailVisible], async () => {
   window.setTimeout(() => resizeGalleryLenis(), 360)
 })
 
-const nextProduct = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
+/** Next artwork in the collection that opened this PDP, when one was passed. */
+const nextInSequence = computed(() => {
+  const list = nextSequence.value
+  const slug = product.value?.slug
+  if (!list || list.length < 2 || !slug) return null
+  const index = list.findIndex((item) => item.slug === slug)
+  if (index === -1) return null
+  return list[(index + 1) % list.length] ?? null
+})
+
+const catalogNext = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
+
+const nextProduct = computed(() => nextInSequence.value ?? catalogNext.value)
+
 const nextImageUrl = computed(() => {
-  if (!nextProduct.value) return ''
-  const cover = productCoverFrame(nextProduct.value)
+  if (nextInSequence.value?.imageUrl) return nextInSequence.value.imageUrl
+  if (!catalogNext.value) return ''
+  const cover = productCoverFrame(catalogNext.value)
   return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
 })
 
 const goToNext = () => {
-  if (nextProduct.value) emit('navigate', nextProduct.value.slug)
+  const slug = nextInSequence.value?.slug || catalogNext.value?.slug
+  if (slug) emit('navigate', slug)
 }
 
 const isFrameSaved = (index: number) =>

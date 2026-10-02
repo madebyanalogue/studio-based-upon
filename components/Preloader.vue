@@ -16,7 +16,7 @@
         class="preloader__logo  interface"
         :class="{ 'preloader__logo--visible': phase === 'logo-in' }"
       >
-        <span v-if="logo" class="preloader__logo-svg" v-html="logo" />
+        <span v-if="logoStyle !== 'text' && logo" class="preloader__logo-svg" v-html="logo" />
         <span v-else>{{ title }}</span>
       </div>
 
@@ -53,7 +53,7 @@ const emit = defineEmits<{
   'preloader-complete': []
 }>()
 
-const { title, logo } = useSiteSettings()
+const { title, logo, logoStyle } = useSiteSettings()
 
 const DEFAULT_STATEMENT =
   'Award-winning surfaces, collectible design and architectural features. From concept to completion.'

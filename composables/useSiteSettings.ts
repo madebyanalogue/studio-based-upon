@@ -4,8 +4,15 @@ export const useSiteSettings = () => {
   const query = `*[_type == "siteSettings"][0] {
     title,
     logo,
+    logoStyle,
     seoTitle,
     seoDescription,
+    googleTagId,
+    facebookShareImage {
+      "url": asset->url,
+      "width": asset->metadata.dimensions.width,
+      "height": asset->metadata.dimensions.height
+    },
     disablePreloader,
     enquiryEmail,
     phone,
@@ -47,7 +54,22 @@ export const useSiteSettings = () => {
   const title = computed(() => settings.value?.title || 'Studio Based Upon')
   const seoTitle = computed(() => settings.value?.seoTitle || 'Studio Based Upon')
   const seoDescription = computed(() => settings.value?.seoDescription || '')
+  const googleTagId = computed(() => {
+    const id = String(settings.value?.googleTagId || '').trim()
+    return /^(G|GT|AW|DC|GTM)-[A-Z0-9]+$/i.test(id) ? id : ''
+  })
+  const facebookShareImage = computed(() => {
+    const image = settings.value?.facebookShareImage
+    const url = typeof image?.url === 'string' ? image.url : ''
+    if (!url.startsWith('https://')) return null
+    return {
+      url,
+      width: Number(image?.width) || undefined,
+      height: Number(image?.height) || undefined,
+    }
+  })
   const logo = computed(() => settings.value?.logo || '')
+  const logoStyle = computed(() => (settings.value?.logoStyle === 'text' ? 'text' : 'svg'))
   const disablePreloader = computed(() => settings.value?.disablePreloader === true)
   const enquiryEmail = computed(() => settings.value?.enquiryEmail || 'enquiries@studiobasedupon.com')
   const phone = computed(() => settings.value?.phone || '+44 20 8320 2122')
@@ -181,7 +203,10 @@ export const useSiteSettings = () => {
     title,
     seoTitle,
     seoDescription,
+    googleTagId,
+    facebookShareImage,
     logo,
+    logoStyle,
     disablePreloader,
     enquiryEmail,
     phone,

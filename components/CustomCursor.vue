@@ -11,6 +11,7 @@
       }"
       aria-hidden="true"
     >
+      <canvas v-show="trailOn" ref="trailCanvas" class="site-cursor__line" />
       <div ref="orbRef" class="site-cursor__orb" />
       <div v-show="isMark" ref="markRef" class="site-cursor__mark">
         <svg
@@ -41,6 +42,13 @@
 
 <script setup lang="ts">
 const { preset, native, resolveFromPoint } = useCursor()
+const route = useRoute()
+
+const TRAIL_LIFE = 520
+const trailPoints: { x: number; y: number; t: number }[] = []
+const trailCanvas = ref<HTMLCanvasElement | null>(null)
+let trailRaf = 0
+const reduceMotion = ref(false)
 
 type MarkPose = { stem: number[]; chev: number[]; rotate: number }
 
@@ -149,6 +157,51 @@ let x = 0
 let y = 0
 
 const active = computed(() => fine.value && inside.value && !native.value)
+const trailOn = computed(
+  () => active.value && !reduceMotion.value && route.path === '/about',
+)
+
+const drawTrail = () => {
+  const canvas = trailCanvas.value
+  if (!canvas) return
+  const dpr = window.devicePixelRatio || 1
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const pixelWidth = Math.round(width * dpr)
+  const pixelHeight = Math.round(height * dpr)
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth
+    canvas.height = pixelHeight
+  }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+  ctx.lineWidth = 1 / dpr
+  ctx.lineCap = 'butt'
+  ctx.lineJoin = 'miter'
+  const now = performance.now()
+  for (let i = 1; i < trailPoints.length; i++) {
+    const from = trailPoints[i - 1]!
+    const to = trailPoints[i]!
+    const alpha = 1 - (now - to.t) / TRAIL_LIFE
+    if (alpha <= 0) continue
+    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`
+    ctx.beginPath()
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(to.x, to.y)
+    ctx.stroke()
+  }
+}
+
+const stepTrail = () => {
+  trailRaf = 0
+  if (!trailOn.value) return
+  const now = performance.now()
+  while (trailPoints.length && now - trailPoints[0]!.t > TRAIL_LIFE) trailPoints.shift()
+  drawTrail()
+  trailRaf = requestAnimationFrame(stepTrail)
+}
 
 const readFine = () => {
   if (typeof window === 'undefined') return false
@@ -173,6 +226,12 @@ const onPointerMove = (event: PointerEvent) => {
   x = event.clientX
   y = event.clientY
   inside.value = true
+  if (route.path === '/about' && !reduceMotion.value) {
+    const last = trailPoints[trailPoints.length - 1]
+    if (!last || Math.hypot(x - last.x, y - last.y) >= 1) {
+      trailPoints.push({ x, y, t: performance.now() })
+    }
+  }
   place()
   resolveFromPoint(x, y)
 }
@@ -193,6 +252,7 @@ const onMedia = () => {
 
 onMounted(() => {
   fine.value = readFine()
+  reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   media = window.matchMedia('(hover: hover) and (pointer: fine)')
   media.addEventListener('change', onMedia)
   window.addEventListener('pointermove', onPointerMove, { passive: true })
@@ -202,6 +262,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.cancelAnimationFrame(markRaf)
+  window.cancelAnimationFrame(trailRaf)
   media?.removeEventListener('change', onMedia)
   window.removeEventListener('pointermove', onPointerMove)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
@@ -220,6 +281,16 @@ watch(
 watch([preset, active], () => {
   if (active.value) nextTick(place)
 })
+
+watch(trailOn, (on) => {
+  if (!on) {
+    window.cancelAnimationFrame(trailRaf)
+    trailRaf = 0
+    return
+  }
+  trailPoints.length = 0
+  if (!trailRaf) trailRaf = requestAnimationFrame(stepTrail)
+})
 </script>
 
 <style scoped>
@@ -232,6 +303,16 @@ watch([preset, active], () => {
   width: 0;
   height: 0;
   overflow: visible;
+}
+
+.site-cursor__line {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  mix-blend-mode: difference;
 }
 
 .site-cursor__orb {
