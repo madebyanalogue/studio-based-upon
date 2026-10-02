@@ -5,6 +5,7 @@
     :class="{
       'split-slider--ready': surfaceReady,
       'split-slider--type-on': typeLayerVisible,
+      'split-slider--opening': openingProduct,
     }"
     aria-label="Infinite split slider"
   >
@@ -77,13 +78,21 @@
     </div>
 
     <div v-if="activeSlide" class="split-slider__type split-slider__type--caption">
-      <a class="split-slider__caption-side" :href="activeSlide.left.link">
+      <a
+        class="split-slider__caption-side"
+        :href="activeSlide.left.link"
+        @click="onCaptionClick('left', $event)"
+      >
         <p class="split-slider__caption-title">{{ activeSlide.left.title }}</p>
         <p v-if="activeSlide.left.subtitle" class="split-slider__caption-subtitle">
           {{ activeSlide.left.subtitle }}
         </p>
       </a>
-      <a class="split-slider__caption-side" :href="activeSlide.right.link">
+      <a
+        class="split-slider__caption-side"
+        :href="activeSlide.right.link"
+        @click="onCaptionClick('right', $event)"
+      >
         <p class="split-slider__caption-title">{{ activeSlide.right.title }}</p>
         <p v-if="activeSlide.right.subtitle" class="split-slider__caption-subtitle">
           {{ activeSlide.right.subtitle }}
@@ -101,6 +110,11 @@ export type SplitSliderSide = {
   title: string
   subtitle: string
   link: string
+  /** Materials & Forms slug — click completes the reveal and flips this frame. */
+  productSlug?: string
+  productId?: string
+  /** Index of the chosen frame in the product gallery. */
+  imageIndex?: number
 }
 
 export type SplitSliderSlide = {
@@ -186,6 +200,8 @@ let needsIntro = true
 let introPlaying = false
 let leaving = false
 let leavePromise: Promise<void> | null = null
+/** Product open in progress — wheel stays locked until the overlay closes. */
+const openingProduct = ref(false)
 let introTween: gsap.core.Timeline | null = null
 
 type Side = 'left' | 'right'
@@ -594,7 +610,7 @@ const updateSlider = () => {
 
 const onWheel = (event: WheelEvent) => {
   event.preventDefault()
-  if (leaving) return
+  if (leaving || openingProduct.value) return
   cancelIntro()
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
@@ -604,7 +620,7 @@ const onTouchStart = (event: TouchEvent) => {
 }
 
 const onTouchMove = (event: TouchEvent) => {
-  if (leaving) return
+  if (leaving || openingProduct.value) return
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
@@ -617,6 +633,156 @@ const tick = () => {
   updateSlider()
   rafId = requestAnimationFrame(tick)
 }
+
+const { open: openProduct, isOpen: productOpen } = useProductOverlay()
+
+const slideIndexFor = (side: Side, el: HTMLElement) => {
+  for (const [index, slide] of columns[side].visibleSlides) {
+    if (slide === el) return index
+  }
+  return null
+}
+
+const sideDataFor = (side: Side, slideIndex: number) => {
+  const list = props.slides
+  if (!list.length) return null
+  const dataIndex = ((slideIndex % list.length) + list.length) % list.length
+  const slide = list[dataIndex]
+  if (!slide) return null
+  return { slide, side: slide[side], slideIndex }
+}
+
+/** Ease the clicked frame to a full reveal using the slider’s own motion. */
+const completeReveal = (slideIndex: number) =>
+  new Promise<void>((resolve) => {
+    const aligned = slideIndex + 1
+    if (Math.abs(scrollPosition - aligned) < 0.012) {
+      scrollPosition = aligned
+      scrollTarget = aligned
+      updateSlider()
+      resolve()
+      return
+    }
+    const previous = settings.smoothness
+    settings.smoothness = 0.14
+    scrollTarget = aligned
+    const started = performance.now()
+    const step = () => {
+      const done =
+        Math.abs(scrollPosition - aligned) < 0.012 ||
+        performance.now() - started > 2200
+      if (done) {
+        scrollPosition = aligned
+        scrollTarget = aligned
+        settings.smoothness = previous
+        updateSlider()
+        resolve()
+        return
+      }
+      requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  })
+
+const restoreAfterProduct = () => {
+  openingProduct.value = false
+  for (const el of [leftEl.value, rightEl.value]) {
+    if (!el) continue
+    gsap.killTweensOf(el)
+    el.style.transition = 'none'
+    gsap.to(el, {
+      opacity: 1,
+      duration: 0.35,
+      ease: 'power2.out',
+      onComplete: () => {
+        el.style.removeProperty('transition')
+      },
+    })
+  }
+  rootEl.value
+    ?.querySelectorAll<HTMLElement>('.split-slider__caption-side')
+    .forEach((el) => {
+      gsap.killTweensOf(el)
+      gsap.to(el, { opacity: 1, duration: 0.35, ease: 'power2.out' })
+    })
+}
+
+/**
+ * Finish the reveal so the chosen half is fully open, fade the other half,
+ * and Flip that gallery frame up into the product page.
+ */
+const openSide = async (side: Side, slideIndex: number) => {
+  if (openingProduct.value || leaving) return
+  const picked = sideDataFor(side, slideIndex)
+  if (!picked) return
+
+  if (!picked.side.productSlug) {
+    const href = picked.side.link
+    if (!href) return
+    if (href.startsWith('/')) await navigateTo(href)
+    else window.location.assign(href)
+    return
+  }
+
+  openingProduct.value = true
+  cancelIntro()
+  await completeReveal(picked.slideIndex)
+
+  const otherEl = side === 'left' ? rightEl.value : leftEl.value
+  if (otherEl) {
+    otherEl.style.transition = 'none'
+    gsap.to(otherEl, { opacity: 0, duration: 0.5, ease: 'power2.inOut' })
+  }
+  const captions = rootEl.value?.querySelectorAll<HTMLElement>(
+    '.split-slider__caption-side',
+  )
+  const otherCaption = captions?.[side === 'left' ? 1 : 0]
+  if (otherCaption) {
+    gsap.to(otherCaption, { opacity: 0, duration: 0.35, ease: 'power2.inOut' })
+  }
+
+  const clicked = columns[side].visibleSlides.get(picked.slideIndex) || null
+  // Flip measures this box. object-fit makes the flyer crop like the slide image.
+  if (clicked) clicked.style.objectFit = 'cover'
+  const flipSrc = side === 'left' ? picked.slide.leftImage : picked.slide.rightImage
+  if (flipSrc) void prefetchImage(flipSrc)
+  openProduct(picked.side.productSlug, {
+    source: clicked,
+    imageIndex: picked.side.imageIndex ?? 0,
+    flipSrc: flipSrc || null,
+    productId: picked.side.productId || null,
+  })
+}
+
+const onLeftColumnClick = (event: MouseEvent) => onColumnClick('left', event)
+const onRightColumnClick = (event: MouseEvent) => onColumnClick('right', event)
+
+const onColumnClick = (side: Side, event: MouseEvent) => {
+  if (openingProduct.value || leaving) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+  const slideEl = (event.target as HTMLElement | null)?.closest(
+    '.split-slider__slide',
+  )
+  if (!(slideEl instanceof HTMLElement)) return
+  const slideIndex = slideIndexFor(side, slideEl)
+  if (slideIndex == null) return
+  void openSide(side, slideIndex)
+}
+
+const onCaptionClick = (side: Side, event: MouseEvent) => {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+    return
+  }
+  const activeIndex = Math.round(scrollPosition - 1)
+  const picked = sideDataFor(side, activeIndex)
+  if (!picked?.side.productSlug) return
+  event.preventDefault()
+  void openSide(side, activeIndex)
+}
+
+watch(productOpen, (openNow, wasOpen) => {
+  if (wasOpen && !openNow) restoreAfterProduct()
+})
 
 /** Gooey the active type out, and clip the columns off in opposite vertical directions. */
 const playLeave = () => {
@@ -685,6 +851,8 @@ onMounted(() => {
   root?.addEventListener('wheel', onWheel, { passive: false })
   root?.addEventListener('touchstart', onTouchStart, { passive: true })
   root?.addEventListener('touchmove', onTouchMove, { passive: true })
+  leftEl.value?.addEventListener('click', onLeftColumnClick)
+  rightEl.value?.addEventListener('click', onRightColumnClick)
 
   updateSlider()
   rafId = requestAnimationFrame(tick)
@@ -710,6 +878,8 @@ onBeforeUnmount(() => {
   root?.removeEventListener('wheel', onWheel)
   root?.removeEventListener('touchstart', onTouchStart)
   root?.removeEventListener('touchmove', onTouchMove)
+  leftEl.value?.removeEventListener('click', onLeftColumnClick)
+  rightEl.value?.removeEventListener('click', onRightColumnClick)
 
   for (const side of ['left', 'right'] as const) {
     for (const el of columns[side].visibleSlides.values()) el.remove()
@@ -754,7 +924,12 @@ watch(
   overflow: hidden;
   z-index: 1;
   opacity: 0;
+  cursor: pointer;
   transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.split-slider--opening .split-slider__column {
+  cursor: default;
 }
 
 .split-slider--ready .split-slider__column {

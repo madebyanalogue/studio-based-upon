@@ -7,8 +7,11 @@
 
 <script setup lang="ts">
 // Soft product swaps — don't fade/remount the page (index rail must stay put).
+// A stable key stops Nuxt from rebuilding the page on every slug, which was
+// resetting the index rail and then scrolling the new item to the centre.
 definePageMeta({
   pageTransition: false,
+  key: 'materials-product',
 })
 
 const route = useRoute()

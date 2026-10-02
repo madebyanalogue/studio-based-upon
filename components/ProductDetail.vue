@@ -59,9 +59,13 @@
               @click="showSpecs = !showSpecs"
             >
               <span class="serif-italic">Specifications</span>
-              <span class="pdp__disclosure-mark" aria-hidden="true">{{
-                showSpecs ? '−' : '+'
-              }}</span>
+              <svg
+                class="pdp__disclosure-mark"
+                viewBox="0 0 14 12"
+                aria-hidden="true"
+              >
+                <path d="M1 3 L7 9 L13 3" />
+              </svg>
             </button>
             <div v-if="showSpecs" class="pdp__spec-panel">
               <div class="pdp__spec">
@@ -137,6 +141,7 @@
           <button
             type="button"
             class="pdp__rail-btn"
+            hidden
             :aria-pressed="indexRailVisible"
             :aria-label="indexRailVisible ? 'Hide product index' : 'Show product index'"
             @click="toggleIndexRail"
@@ -1339,7 +1344,7 @@ const runFlipClose = async () => {
   }
 
   // Prep return thumb while chrome is exiting (under the solid backdrop)
-  setReturnImage(closingProductId, selectedIndex.value)
+  setReturnImage(closingProductId, selectedIndex.value, hero.currentSrc || hero.src)
   await nextTick()
   await nextTick()
   if (source instanceof HTMLImageElement) {
@@ -1666,8 +1671,8 @@ watch(
 
 .pdp__col--left {
   position: absolute;
-  top: 20px;
-  left: 20px;
+  top: var(--pdp-gallery-padding);
+  left: var(--pdp-gallery-padding);
   right: auto;
   bottom: unset;
   z-index: 120; /* above header logo (100) and index rail (110) */
@@ -1710,7 +1715,10 @@ watch(
 }
 
 .pdp__col--center {
-  /* Full-bleed gallery — floating aside sits over it */
+  /* Full-bleed gallery — floating aside sits over it.
+     Above the fixed header logo (100), below the index rail (110)
+     and the info card (120). */
+  position: relative;
   grid-column: 1 / -1;
   grid-row: 1;
   display: flex;
@@ -1720,7 +1728,7 @@ watch(
   align-self: stretch;
   height: 100%;
   min-height: 0;
-  z-index: 1;
+  z-index: 105;
 }
 
 .pdp:not(.pdp--no-related) .pdp__col--right {
@@ -1779,16 +1787,16 @@ watch(
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--pdp-gallery-gap);
   height: 100%;
   width: max-content;
   min-height: 100%;
   box-sizing: border-box;
-  /* Insets follow html @property tokens — same values that slide the rails */
-  padding-left: var(--pdp-index-rail-width);
-  padding-right: var(--pdp-related-rail-width);
-  padding-top: 0;
-  padding-bottom: 0;
+  /* Gallery inset on every side. The related rail covers the right of the
+     viewport, so the track needs that width as well — otherwise the last
+     frame ends underneath it instead of gallery-padding clear of the rail. */
+  padding: var(--pdp-gallery-padding);
+  padding-right: calc(var(--pdp-related-rail-width) + var(--pdp-gallery-padding));
 }
 
 /* Spirit / Origin — center frames in the clear gallery span when they fit */
@@ -2012,6 +2020,7 @@ watch(
   transition:
     background var(--theme-ms) var(--theme-ease),
     border-color var(--theme-ms) var(--theme-ease);
+    display:none;
 }
 
 .pdp__close {
@@ -2087,10 +2096,6 @@ watch(
   /* border-top: 1px solid var(--grid-line); */
 }
 
-.pdp__spec:last-child {
-  border-bottom: 1px solid var(--grid-line);
-}
-
 .pdp__spec--toggle {
   display: block;
   padding: 0 var(--gutter);
@@ -2146,10 +2151,35 @@ watch(
 }
 
 .pdp__disclosure-mark {
+  display: block;
+  width: 11px;
+  height: 9px;
   flex-shrink: 0;
+  align-self: center;
+  overflow: visible;
   color: var(--muted);
-  font-size: var(--text-sm);
-  line-height: 1;
+}
+
+.pdp__disclosure-mark path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  /* Ends stay put. Only the middle vertex moves, so the chevron
+     folds from down to up instead of rotating. */
+  d: path("M1 3 L7 9 L13 3");
+  transition: d 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark path {
+  d: path("M1 3 L7 1 L13 3");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdp__disclosure-mark path {
+    transition: none;
+  }
 }
 
 .pdp__options {
@@ -2195,10 +2225,10 @@ watch(
 .pdp__actions {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0;
   margin-top: 0;
   margin-bottom: 0;
-  padding:10px;
+  padding: 0;
 }
 
 .pdp__inquire {
@@ -2216,6 +2246,10 @@ watch(
 
 .pdp__inquire:hover {
   opacity: 0.9;
+}
+
+.pdp__rail-btn[hidden] {
+  display: none;
 }
 
 .pdp__rail-btn {

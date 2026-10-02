@@ -46,17 +46,22 @@ type MarkPose = { stem: number[]; chev: number[]; rotate: number }
 
 const PLUS_STEM = [15, 24, 33, 24]
 const PLUS_CHEV = [24, 15, 24, 24, 24, 33]
+/** Matches half the vertical stroke, so the corner at the tip is 90°. */
+const ARROW_TIP = 9
+/** Shaft behind the cursor. Stem length is this plus the run out to the tip. */
+const ARROW_TAIL = 13.5
 
 /** Same two strokes. Close is the plus, turned 45° into an X. */
 const MARKS: Record<string, MarkPose> = {
   'arrow-next': {
-    stem: [2, 24, 40, 24],
-    chev: [31, 15, 40, 24, 31, 33],
+    stem: [24 - ARROW_TAIL, 24, 24 + ARROW_TIP, 24],
+    // (a) and (c) stay on the cursor axis; the tip meets the end of the stem.
+    chev: [24, 15, 24 + ARROW_TIP, 24, 24, 33],
     rotate: 0,
   },
   'arrow-prev': {
-    stem: [46, 24, 8, 24],
-    chev: [17, 15, 8, 24, 17, 33],
+    stem: [24 - ARROW_TIP, 24, 24 + ARROW_TAIL, 24],
+    chev: [24, 15, 24 - ARROW_TIP, 24, 24, 33],
     rotate: 0,
   },
   plus: {

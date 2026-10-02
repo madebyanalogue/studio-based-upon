@@ -28,7 +28,7 @@ export type FormalItem = {
   /** First frame is the cover / thumbnail */
   gallery: { asset: { url: string } }[]
   /** Materials & Forms grid tile crop */
-  gridRatio?: 'portrait' | 'square' | 'landscape'
+  gridRatio?: 'portrait' | 'square' | 'landscape' | 'wide'
   /** Materials & Forms grid tile width */
   gridSize?: 'small' | 'medium' | 'large' | 'full'
   linkType?: string

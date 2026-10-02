@@ -21,7 +21,7 @@
       </svg>
       <h4
         ref="titleEl"
-        class="page-title products__title"
+        class="h1 products__title"
         :class="{ 'products__title--pending': !titlePaintReady }"
         :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
       >
@@ -960,13 +960,24 @@ let filterTransitionGen = 0
 const { $lenis } = useNuxtApp()
 
 const scrollPageToTop = () => {
+  if (!import.meta.client) return
+  // Don't let the browser put us back where a reload or filter left off.
+  history.scrollRestoration = 'manual'
   const lenis = $lenis as Lenis | undefined
-  if (lenis) lenis.scrollTo(0, { immediate: true })
-  else window.scrollTo(0, 0)
+  if (lenis) lenis.scrollTo(0, { immediate: true, force: true })
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
   // Lenis immediate scroll can lag ScrollTrigger by a frame — force sync.
   ScrollTrigger.update()
   titleGooeyTrigger?.refresh()
   ScrollTrigger.update()
+}
+
+if (import.meta.client) {
+  history.scrollRestoration = 'manual'
+  scrollPageToTop()
+  requestAnimationFrame(() => scrollPageToTop())
 }
 
 type CardClipPrep = {
@@ -1273,6 +1284,9 @@ const runPageIntro = async () => {
   if (!import.meta.client || introRan || pageOutroRan) return
   introRan = true
 
+  // Title scrub is measured from the top — land there before it boots.
+  scrollPageToTop()
+
   gridAnimating.value = true
   titleSwapLock = true
 
@@ -1340,8 +1354,12 @@ const startPageIntro = () => {
   void runPageIntro()
 }
 
+const onPageShow = () => scrollPageToTop()
+
 onMounted(() => {
   seedVisibility()
+  scrollPageToTop()
+  window.addEventListener('pageshow', onPageShow)
 
   if (document.body.classList.contains('preloader-complete')) {
     startPageIntro()
@@ -1351,6 +1369,8 @@ onMounted(() => {
   document.addEventListener(
     'basedupon:scroll-system-ready',
     () => {
+      // Lenis can adopt a restored scroll when it starts — put it back at 0.
+      scrollPageToTop()
       titleGooeyTrigger?.refresh()
     },
     { once: true },
@@ -1375,6 +1395,8 @@ onBeforeRouteLeave(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('pageshow', onPageShow)
+  history.scrollRestoration = 'auto'
   introRan = false
   pageOutroRan = false
   filterTransitionGen += 1
@@ -1860,7 +1882,7 @@ useHead(() => ({
 .products__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--products-grid-gap);
   align-items: end;
   margin: 0 var(--gutter);
   opacity: 0;

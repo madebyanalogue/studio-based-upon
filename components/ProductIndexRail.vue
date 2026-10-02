@@ -476,12 +476,11 @@ const indexActiveSlug = computed(() => {
   return props.slug
 })
 
-/** Related ids for the *current* product — includes the active item. */
+/** Related ids for the open product. The open product stays out of this set. */
 const computeRelatedIdsForActive = () => {
   const ids = new Set<string>()
   const product = activeProduct.value
   if (!product) return ids
-  ids.add(product._id)
 
   const manual = (product.related || []).filter((item) => item?._id && item.slug)
   if (manual.length) {
@@ -519,17 +518,17 @@ const computeRelatedIdsForActive = () => {
   return ids
 }
 
-const canFilter = computed(() => computeRelatedIdsForActive().size > 1)
+const canFilter = computed(() => computeRelatedIdsForActive().size > 0)
 
 const relatedItems = computed((): IndexCard[] => {
   const ids = frozenRelatedIdList.value
     ? new Set(frozenRelatedIdList.value)
     : computeRelatedIdsForActive()
   if (!ids.size) return []
-  // Omit the open product — it already fills the gallery.
-  return indexItems.value.filter(
-    (item) => ids.has(item._id) && item.slug !== props.slug,
-  )
+  // Keep the clicked product in the rail. The frozen set is the list from when
+  // More like this opened, so selecting one does not remove it or insert the
+  // product that was open before.
+  return indexItems.value.filter((item) => ids.has(item._id))
 })
 
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
@@ -689,8 +688,7 @@ onMounted(() => {
   --index-rail-width: var(--pdp-rail-open-width);
   --index-motion: var(--pdp-rail-motion);
   --index-chrome-motion: 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  --rail-padding: 35px;
-  --rail-padding: 30px;
+  --rail-padding: 15px;
 
   position: absolute;
   inset: 0;
@@ -967,6 +965,11 @@ onMounted(() => {
 
 .pdp-index__tile--active {
   opacity: 0.2;
+}
+
+/* The product you open from More like this stays fully visible in that rail. */
+.pdp-index__rail--right .pdp-index__tile--active {
+  opacity: 1;
 }
 
 .pdp-index__tile-media {

@@ -50,6 +50,13 @@
   initial-value: 0px;
 }
 
+/* Typology row open amount. 0 at rest, 1 when the row is open. */
+@property --rail-open {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 html.selections-panel-hidden {
   --selections-panel-width: 0px;
 }

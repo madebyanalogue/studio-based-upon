@@ -27,6 +27,8 @@ export type ProductGridSwap = {
 export type ProductReturnImage = {
   productId: string
   index: number
+  /** Gallery frame that flew home — cards match this when indexes differ */
+  src?: string
   /** When set, cart UI updates this selection entry on close */
   bucketItemId?: string
 }
@@ -261,10 +263,11 @@ export const useProductOverlay = () => {
     backdropReady.value = ready
   }
 
-  const setReturnImage = (productId: string, index: number) => {
+  const setReturnImage = (productId: string, index: number, src?: string | null) => {
     returnImage.value = {
       productId,
       index,
+      ...(src ? { src } : {}),
       ...(flipBucketItemId ? { bucketItemId: flipBucketItemId } : {}),
     }
   }

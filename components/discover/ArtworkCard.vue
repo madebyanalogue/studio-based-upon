@@ -9,8 +9,8 @@
         :is="hitTag"
         v-bind="hitProps"
         class="discover-card__hit"
-        data-cursor="plus"
-        :aria-label="artwork.title"
+        :data-cursor="'plus'"
+        :aria-label="hitLabel || artwork.title"
         @click="onOpen"
       >
         <img
@@ -24,6 +24,7 @@
       </component>
 
       <AddButton
+        v-if="controls"
         class="discover-card__add"
         :active="saved"
         :label="
@@ -35,7 +36,7 @@
       />
 
       <button
-        v-if="projectImages.length > 1"
+        v-if="controls && projectImages.length > 1"
         type="button"
         class="discover-card__edge discover-card__edge--prev"
         data-cursor="prev"
@@ -44,7 +45,7 @@
         @click.stop.prevent="cycle(-1)"
       />
       <button
-        v-if="projectImages.length > 1"
+        v-if="controls && projectImages.length > 1"
         type="button"
         class="discover-card__edge discover-card__edge--next"
         data-cursor="next"
@@ -54,7 +55,7 @@
       />
 
       <ImageCycleArrows
-        v-if="projectImages.length > 1"
+        v-if="controls && projectImages.length > 1"
         class="discover-card__cycle"
         :index="imageIndex"
         :count="projectImages.length"
@@ -76,18 +77,31 @@
 <script setup lang="ts">
 import type { DiscoverArtwork } from '~/composables/useCuratedDiscover'
 
-const props = defineProps<{
-  artwork: DiscoverArtwork
+const props = withDefaults(
+  defineProps<{
+    artwork: DiscoverArtwork
+    /** First cell of a typology row — click activates the row instead of the product. */
+    trigger?: boolean
+    /** Hearts and image controls. Off until the typology row is active. */
+    controls?: boolean
+    hitLabel?: string
+  }>(),
+  { trigger: false, controls: true, hitLabel: '' },
+)
+
+const emit = defineEmits<{
+  activate: []
 }>()
 
 const cardRatioCss = computed(() => {
   const ratio = props.artwork.cardRatio
+  if (ratio === 'wide') return '1.75'
   if (ratio === '2/3') return '2 / 3'
   if (ratio === '1/1') return '1 / 1'
   return '3 / 2'
 })
 
-const { open } = useProductOverlay()
+const { open, returnImage } = useProductOverlay()
 const { requestSave, isSaved } = useBucket()
 
 const imageIndex = ref(0)
@@ -120,14 +134,31 @@ watch(projectImages, (urls) => {
   if (imageIndex.value >= urls.length) imageIndex.value = 0
 })
 
+/** After close, stay on the gallery frame that flipped back into this thumb. */
+watch(returnImage, (value) => {
+  if (!value || value.productId !== props.artwork.id) return
+  const urls = projectImages.value
+  if (!urls.length) return
+  if (value.src) {
+    const key = imageAssetKey(value.src)
+    const match = urls.findIndex((url) => imageAssetKey(url) === key)
+    if (match >= 0) {
+      imageIndex.value = match
+      return
+    }
+  }
+  imageIndex.value = Math.min(value.index, urls.length - 1)
+})
+
 const subtitle = computed(() => {
   const parts = [props.artwork.artist, props.artwork.year].filter(Boolean)
   return parts.length ? parts.join(' · ') : ''
 })
 
-const hitTag = computed(() => (props.artwork.slug ? 'button' : 'div'))
+const interactive = computed(() => props.trigger || !!props.artwork.slug)
+const hitTag = computed(() => (interactive.value ? 'button' : 'div'))
 const hitProps = computed(() =>
-  props.artwork.slug ? { type: 'button' as const } : {},
+  interactive.value ? { type: 'button' as const } : {},
 )
 
 const cycle = (direction: 1 | -1) => {
@@ -137,6 +168,11 @@ const cycle = (direction: 1 | -1) => {
 }
 
 const onOpen = (event: MouseEvent) => {
+  if (props.trigger) {
+    event.preventDefault()
+    emit('activate')
+    return
+  }
   if (!props.artwork.slug) return
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
   event.preventDefault()

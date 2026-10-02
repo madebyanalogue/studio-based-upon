@@ -41,6 +41,9 @@
   --rail-aspect: 5/4;
   --rail-aspect: 5/4;
 
+  --pdp-gallery-padding:80px;
+  --pdp-gallery-gap: 8px;
+  --products-grid-gap: 6px;
 
 
   --card-pad: 0;
@@ -317,3 +320,26 @@ html.homepage-intro:not(.homepage-intro-type) .split-slider__type {
     opacity 0.35s ease;
 }
 
+
+
+.flex {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+
+.flex-col {
+  flex-direction: column;
+}
+
+.flex-row {
+  flex-direction: row;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.gap-2 {
+  gap: 20px;
+}

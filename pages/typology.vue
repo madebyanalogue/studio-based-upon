@@ -1,5 +1,9 @@
 <template>
-  <div ref="pageEl" class="discover-page">
+  <div
+    ref="pageEl"
+    class="discover-page"
+    :class="{ 'discover-page--enter': pageEntering }"
+  >
     <svg
       class="discover-page__title-filter"
       viewBox="0 0 0 0"
@@ -26,7 +30,7 @@
 
     <h2
       ref="titleEl"
-      class="page-title discover-page__row-title"
+      class="h3 discover-page__row-title"
       :class="{ 'discover-page__row-title--pending': !titlePaintReady }"
       :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
       aria-live="polite"
@@ -34,7 +38,7 @@
       {{ titleText }}
     </h2>
 
-    <div class="discover-page__content">
+    <div class="discover-page__content" @pointerleave="onColumnPointerLeave">
       <template v-for="block in page.content" :key="block._key">
         <DiscoverCollectionRail
           v-if="block._type === 'collectionBlock' && block.collection"
@@ -53,15 +57,21 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { SplitText } from 'gsap/SplitText'
-import { typologyRowHoverKey } from '~/composables/useTypologyRowHover'
+import {
+  typologyPointerPaused,
+  typologyRowHoverKey,
+  typologyRowsLocked,
+} from '~/composables/useTypologyRowHover'
 
 definePageMeta({
   layout: 'curated-discover',
 })
 
 const TITLE_BLUR_MAX = 75
-const TITLE_GOOEY_OUT_DUR = 0.28
-const TITLE_GOOEY_IN_DUR = 0.72
+const TITLE_GOOEY_OUT_DUR = 0.65
+const TITLE_GOOEY_IN_DUR = 2.4
+// The color matrix hides anything blurrier than this, so the in-tween starts here.
+const TITLE_GOOEY_IN_BLUR = 8
 
 const { page } = await useCuratedDiscover()
 
@@ -83,7 +93,7 @@ let titleSwapLock = false
 let titleSwapGen = 0
 let titleSwapTween: gsap.core.Tween | null = null
 let titleSwapAbort: (() => void) | null = null
-let leaveHideTimer: ReturnType<typeof setTimeout> | null = null
+let titleIncoming: string | null = null
 let pluginsRegistered = false
 
 const prefersReducedMotion = () =>
@@ -101,6 +111,14 @@ const abortTitleSwapTween = () => {
   titleSwapAbort = null
   tween?.kill()
   abort?.()
+}
+
+const power3Out = (t: number) => 1 - Math.pow(1 - t, 3)
+
+/** Skip the fully hidden part of the 75px melt and keep the same pace once it shows. */
+const gooeyInWindow = () => {
+  const hidden = 1 - Math.cbrt(TITLE_GOOEY_IN_BLUR / TITLE_BLUR_MAX)
+  return { from: hidden, duration: TITLE_GOOEY_IN_DUR * (1 - hidden) }
 }
 
 const gooeyTween = (targets: gsap.TweenTarget, vars: gsap.TweenVars) =>
@@ -137,7 +155,7 @@ const ensurePlugins = () => {
   pluginsRegistered = true
 }
 
-const titleGooeyOut = async () => {
+const titleGooeyOut = async (ownGen = true) => {
   if (!import.meta.client || !titleEl.value) return
   if (!titlePaintReady.value && !titleText.value) return
 
@@ -147,8 +165,8 @@ const titleGooeyOut = async () => {
     return
   }
 
-  const gen = ++titleSwapGen
-  abortTitleSwapTween()
+  const gen = ownGen ? ++titleSwapGen : titleSwapGen
+  if (ownGen) abortTitleSwapTween()
   titleSwapLock = true
 
   const outWords = Array.from(titleWords())
@@ -162,7 +180,7 @@ const titleGooeyOut = async () => {
   })
 
   if (gen !== titleSwapGen) return
-  titlePaintReady.value = false
+  if (ownGen) titlePaintReady.value = false
   titleSwapLock = false
 }
 
@@ -176,41 +194,54 @@ const titleGooeyIn = async (next: string) => {
   const gen = titleSwapGen
   titleSwapLock = true
 
+  // Hide before the split is reverted, or the new title paints sharp for a frame.
+  titlePaintReady.value = false
+  titleEl.value.style.visibility = 'hidden'
   titleSplitInstance?.revert()
   titleSplitInstance = null
-  gsap.set(titleEl.value, { clearProps: 'opacity' })
+  gsap.set(titleEl.value, { clearProps: 'opacity,visibility' })
+  titleEl.value.style.visibility = 'hidden'
   titleText.value = next
   await nextTick()
   if (!titleEl.value || gen !== titleSwapGen) return
 
-  try {
-    await document.fonts?.ready
-  } catch {
-    /* ignore */
+  if (document.fonts?.status !== 'loaded' && document.fonts?.ready) {
+    await document.fonts.ready
   }
+  if (!titleEl.value || gen !== titleSwapGen) return
 
   resplitTitleWords()
   const inWords = Array.from(titleWords())
   const inTarget = inWords.length ? inWords : titleEl.value
 
   if (prefersReducedMotion()) {
+    titleEl.value.style.removeProperty('visibility')
     titleSwapLock = false
     titlePaintReady.value = true
     gsap.set(inTarget, { filter: 'none', opacity: 1 })
     return
   }
 
-  gsap.set(inTarget, {
-    filter: inWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
-    opacity: 0,
-  })
+  const { from, duration } = gooeyInWindow()
+  const applyIn = (t: number) => {
+    const progress = power3Out(t)
+    gsap.set(inTarget, {
+      filter: `blur(${TITLE_BLUR_MAX * (1 - progress)}px)`,
+      opacity: progress,
+    })
+  }
+  applyIn(from)
+  titleEl.value.style.removeProperty('visibility')
   titlePaintReady.value = true
+  await nextTick()
+  if (!titleEl.value || gen !== titleSwapGen) return
 
-  await gooeyTween(inTarget, {
-    filter: inWords.length ? 'blur(0px)' : undefined,
-    opacity: 1,
-    duration: TITLE_GOOEY_IN_DUR,
-    ease: 'power3.out',
+  const clock = { t: from }
+  await gooeyTween(clock, {
+    t: 1,
+    duration,
+    ease: 'none',
+    onUpdate: () => applyIn(clock.t),
   })
 
   if (gen !== titleSwapGen) return
@@ -219,37 +250,118 @@ const titleGooeyIn = async (next: string) => {
 
 const swapTitleGooey = async (next: string) => {
   if (!next) return
+  if (next === titleIncoming) return
   if (next === titleText.value && titlePaintReady.value && !titleSwapLock) return
-  await titleGooeyOut()
-  await titleGooeyIn(next)
+  titleIncoming = next
+  const gen = ++titleSwapGen
+  abortTitleSwapTween()
+  try {
+    const showing =
+      titlePaintReady.value && !!titleText.value && titleText.value !== next
+    if (showing) {
+      await titleGooeyOut(false)
+      if (gen !== titleSwapGen) return
+    }
+    if (gen !== titleSwapGen) return
+    await titleGooeyIn(next)
+  } finally {
+    if (titleIncoming === next) titleIncoming = null
+  }
 }
 
 const hideTitleGooey = async () => {
+  const genAtStart = titleSwapGen
   await titleGooeyOut()
+  // A trigger entered while this was leaving. Leave that title alone.
+  if (titleIncoming || titleSwapGen !== genAtStart + 1) return
   titleText.value = ''
   titleSplitInstance?.revert()
   titleSplitInstance = null
 }
 
 const setHoveredTitle = (title: string | null) => {
-  if (leaveHideTimer) {
-    clearTimeout(leaveHideTimer)
-    leaveHideTimer = null
-  }
   if (title) {
     void swapTitleGooey(title)
     return
   }
-  leaveHideTimer = setTimeout(() => {
-    leaveHideTimer = null
-    void hideTitleGooey()
-  }, 50)
+  void hideTitleGooey()
+}
+
+const onColumnPointerLeave = () => {
+  if (typologyActiveRailId.value) return
+  setHoveredTitle(null)
 }
 
 provide(typologyRowHoverKey, { setHoveredTitle })
 
 const pageEl = ref<HTMLElement | null>(null)
+const pageEntering = ref(true)
+const CLIP_IN_S = 1.6
+const FADE_IN_S = 2
+const FADE_STAGGER = 0.3
 let centerPadObserver: ResizeObserver | null = null
+let enterTween: gsap.core.Timeline | null = null
+
+const setRowClip = (el: HTMLElement, top: number) => {
+  el.style.clipPath = `inset(${top}% 0% 0% 0%)`
+}
+
+const playPageEnter = () => {
+  if (!import.meta.client || !pageEl.value) return
+  const rows = [
+    ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
+  ]
+  const first = rows[0]
+  const rest = rows.slice(1)
+
+  if (prefersReducedMotion() || !first) {
+    pageEntering.value = false
+    return
+  }
+
+  setRowClip(first, 100)
+  rest.forEach((el) => {
+    el.style.transition = 'none'
+    el.style.opacity = '0'
+    el.style.pointerEvents = 'none'
+  })
+  pageEntering.value = false
+
+  enterTween = gsap.timeline({
+    onComplete: () => {
+      enterTween = null
+      first.style.removeProperty('clip-path')
+      rest.forEach((el) => {
+        el.style.removeProperty('opacity')
+        el.style.removeProperty('pointer-events')
+        el.style.removeProperty('transition')
+      })
+    },
+  })
+  const clip = { top: 100 }
+  enterTween.to(
+    clip,
+    {
+      top: 0,
+      duration: CLIP_IN_S,
+      ease: 'power3.inOut',
+      onUpdate: () => setRowClip(first, clip.top),
+    },
+    0,
+  )
+  if (rest.length) {
+    enterTween.to(
+      rest,
+      {
+        opacity: 1,
+        duration: FADE_IN_S,
+        ease: 'power2.out',
+        stagger: FADE_STAGGER,
+      },
+      CLIP_IN_S,
+    )
+  }
+}
 
 /** Pad top/bottom so first & last thumbnails’ centers sit on the viewport midline. */
 const syncCenterPad = () => {
@@ -306,14 +418,48 @@ const observeCenterPad = () => {
 onMounted(() => {
   nextTick(() => {
     observeCenterPad()
+    playPageEnter()
     // Images may settle aspect after decode
     window.setTimeout(observeCenterPad, 300)
   })
   window.addEventListener('resize', syncCenterPad)
 })
 
+const syncOutsideCloseCursor = (locked: boolean) => {
+  if (!import.meta.client) return
+  const root = document.documentElement
+  if (locked) root.setAttribute('data-cursor', 'close')
+  else if (root.getAttribute('data-cursor') === 'close') root.removeAttribute('data-cursor')
+}
+
+watch(typologyRowsLocked, syncOutsideCloseCursor)
+
+const stopPausedPointer = (event: Event) => {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+const pausedPointerEvents = ['pointerdown', 'pointerup', 'click', 'wheel', 'touchstart', 'touchmove'] as const
+
+const syncPointerPause = (paused: boolean) => {
+  if (!import.meta.client) return
+  document.documentElement.classList.toggle('typology-pointer-paused', paused)
+  for (const name of pausedPointerEvents) {
+    if (paused) {
+      document.addEventListener(name, stopPausedPointer, { capture: true, passive: false })
+    } else {
+      document.removeEventListener(name, stopPausedPointer, { capture: true })
+    }
+  }
+}
+
+watch(typologyPointerPaused, syncPointerPause)
+
 onBeforeUnmount(() => {
-  if (leaveHideTimer) clearTimeout(leaveHideTimer)
+  syncOutsideCloseCursor(false)
+  syncPointerPause(false)
+  enterTween?.kill()
+  enterTween = null
   abortTitleSwapTween()
   titleSplitInstance?.revert()
   titleSplitInstance = null
@@ -333,6 +479,15 @@ onBeforeUnmount(() => {
   padding-bottom: var(--rail-center-pad-bottom);
 }
 
+.discover-page--enter .discover-page__content > :first-child {
+  clip-path: inset(100% 0% 0% 0%);
+}
+
+.discover-page--enter .discover-page__content > :not(:first-child) {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .discover-page__title-filter {
   position: absolute;
   width: 0;
@@ -348,7 +503,6 @@ onBeforeUnmount(() => {
   z-index: 30;
   margin: 0;
   max-width: min(36vw, 18rem);
-  font-size: clamp(2.5rem, 6vw, 5.5rem);
   transform: translateY(-50%) translateX(0);
   pointer-events: none;
   will-change: filter, opacity;
@@ -372,21 +526,38 @@ onBeforeUnmount(() => {
 
 .discover-page__content :deep(.collection-rail) {
   transition:
-    opacity 0.4s ease,
-    filter 0.4s ease;
+    opacity 0.15s ease,
+    filter 0.15s ease,
+    --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Hovering a row fades / grays every other row */
+/* Hovering or activating a row fades / grays every other row */
 .discover-page__content--row-hot
   :deep(.collection-rail:not(.collection-rail--hot)) {
   opacity: 0.1;
   filter: grayscale(1);
-  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .discover-page__content :deep(.collection-rail) {
     transition: none;
   }
+
+  .discover-page--enter .discover-page__content > :first-child {
+    clip-path: none;
+  }
+
+  .discover-page--enter .discover-page__content > :not(:first-child) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+</style>
+
+<style>
+/* Holds every hit target until a row handoff has finished opening. */
+html.typology-pointer-paused,
+html.typology-pointer-paused * {
+  pointer-events: none !important;
 }
 </style>

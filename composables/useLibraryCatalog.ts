@@ -78,9 +78,10 @@ const GRID_RATIO_PRESETS = [
   { key: 'portrait' as const, ar: 3 / 4 },
   { key: 'square' as const, ar: 1 },
   { key: 'landscape' as const, ar: 4 / 3 },
+  { key: 'wide' as const, ar: 1.75 },
 ]
 
-/** Closest of portrait (3:4), square (1:1), landscape (4:3). */
+/** Closest of portrait (3:4), square (1:1), landscape (4:3), wide (1.75). */
 export const closestGridRatio = (
   aspectRatio: number,
 ): NonNullable<FormalItem['gridRatio']> => {
@@ -105,6 +106,7 @@ export const GRID_RATIO_AR: Record<
   portrait: 3 / 4,
   square: 1,
   landscape: 4 / 3,
+  wide: 1.75,
 }
 
 const assetAspect = (asset?: LibraryImageAsset | null) => {
@@ -168,7 +170,10 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
   const aspectRatio = assetAspect(cover?.asset) ?? fallbackAspect(id || 'item')
   const rawRatio = String(item.gridRatio || '').toLowerCase()
   const gridRatio =
-    rawRatio === 'portrait' || rawRatio === 'square' || rawRatio === 'landscape'
+    rawRatio === 'portrait' ||
+    rawRatio === 'square' ||
+    rawRatio === 'landscape' ||
+    rawRatio === 'wide'
       ? (rawRatio as FormalItem['gridRatio'])
       : closestGridRatio(aspectRatio)
   const rawSize = String(item.gridSize || '').toLowerCase()

@@ -383,15 +383,13 @@ const onMyBoardsClick = () => {
   white-space: nowrap;
 }
 
-.header__nav:hover .header__nav-link,
-.header__nav:hover .header__version,
-.header__nav:hover .header__icon-btn {
+.header__nav:has(:is(.header__nav-link, .header__version, .header__icon-btn):hover)
+  :is(.header__nav-link, .header__version, .header__icon-btn) {
   opacity: 0.35;
 }
 
-.header__nav:hover .header__nav-link:hover,
-.header__nav:hover .header__version:hover,
-.header__nav:hover .header__icon-btn:hover {
+.header__nav:has(:is(.header__nav-link, .header__version, .header__icon-btn):hover)
+  :is(.header__nav-link, .header__version, .header__icon-btn):hover {
   opacity: 1;
 }
 

@@ -1,4 +1,5 @@
 import type { SplitSliderSlide } from '~/components/InfiniteSplitSlider.vue'
+import { productGalleryFrames } from '~/composables/productImages'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 export type InfiniteSliderPageData = {
@@ -21,11 +22,23 @@ export const INFINITE_SLIDER_PAGE_QUERY = `*[_type == "infiniteSliderPage"][0] {
     leftTitle,
     leftSubtitle,
     leftLink,
-    "leftProductSlug": leftProduct->slug.current,
+    leftProduct->{
+      _id,
+      title,
+      "slug": slug.current,
+      image { asset->{ _id, url } },
+      gallery[] { asset->{ _id, url } }
+    },
     rightTitle,
     rightSubtitle,
     rightLink,
-    "rightProductSlug": rightProduct->slug.current,
+    rightProduct->{
+      _id,
+      title,
+      "slug": slug.current,
+      image { asset->{ _id, url } },
+      gallery[] { asset->{ _id, url } }
+    },
     leftImage { asset->{ _id, url } },
     rightImage { asset->{ _id, url } },
     "productSlug": product->slug.current
@@ -106,7 +119,7 @@ export const useInfiniteSlider = async () => {
   const { imageUrl } = useSanityImage()
 
   const { data, pending, error, refresh } = await useAsyncData(
-    'infiniteSliderPage-v3',
+    'infiniteSliderPage-v4',
     () =>
       $fetch('/api/sanity/query', {
         method: 'POST',
@@ -127,14 +140,6 @@ export const useInfiniteSlider = async () => {
     const slidesRaw = Array.isArray(raw.slides) ? raw.slides : []
     const slides: SplitSliderSlide[] = slidesRaw
       .map((slide: Record<string, unknown>) => {
-        const left = slide.leftImage as { asset?: { _id?: string; url?: string } } | undefined
-        const right = slide.rightImage as
-          | { asset?: { _id?: string; url?: string } }
-          | undefined
-        const leftSrc = imageUrl(left || null, IMAGE_WIDTH.splitSlider, 90)
-        const rightSrc = imageUrl(right || null, IMAGE_WIDTH.splitSlider, 90)
-        if (!leftSrc || !rightSrc) return null
-
         const productSlug = String(slide.productSlug || '').trim()
         const linkFromCms = String(slide.link || '').trim()
         const link = productSlug
@@ -150,17 +155,50 @@ export const useInfiniteSlider = async () => {
         const linkLabel = String(slide.linkLabel || 'View Full Project').trim() || 'View Full Project'
         const sharedSubtitle = location || linkLabel
 
-        const side = (prefix: 'left' | 'right'): SplitSliderSlide['left'] => {
-          const sideProduct = String(slide[`${prefix}ProductSlug`] || '').trim()
+        const side = (prefix: 'left' | 'right') => {
+          const product = slide[`${prefix}Product`] as
+            | {
+                _id?: string
+                title?: string
+                slug?: string
+                image?: { asset?: { _id?: string; url?: string } }
+                gallery?: { asset?: { _id?: string; url?: string } }[]
+              }
+            | null
+            | undefined
+          const picked = slide[`${prefix}Image`] as
+            | { asset?: { _id?: string; url?: string } }
+            | undefined
+          const frames = product ? productGalleryFrames(product) : []
+          const pickedId = String(picked?.asset?._id || '')
+          const match = pickedId
+            ? frames.findIndex((frame) => frame.asset?._id === pickedId)
+            : -1
+          const frame =
+            match >= 0 ? frames[match] : picked?.asset ? picked : frames[0]
+          const src = imageUrl(frame || null, IMAGE_WIDTH.splitSlider, 90)
+          const sideProduct = String(product?.slug || '').trim()
           const sideLink = String(slide[`${prefix}Link`] || '').trim()
+          const sideTitle =
+            String(slide[`${prefix}Title`] || product?.title || title).trim() || title
           return {
-            title: String(slide[`${prefix}Title`] || title).trim() || title,
-            subtitle: String(slide[`${prefix}Subtitle`] || sharedSubtitle).trim(),
-            link: sideProduct
-              ? `/materials-and-forms/${sideProduct}`
-              : sideLink || link,
+            src,
+            data: {
+              title: sideTitle,
+              subtitle: String(slide[`${prefix}Subtitle`] || sharedSubtitle).trim(),
+              link: sideProduct
+                ? `/materials-and-forms/${sideProduct}`
+                : sideLink || link,
+              productSlug: sideProduct || undefined,
+              productId: product?._id || undefined,
+              imageIndex: match >= 0 ? match : 0,
+            } satisfies SplitSliderSlide['left'],
           }
         }
+
+        const left = side('left')
+        const right = side('right')
+        if (!left.src || !right.src) return null
 
         return {
           title,
@@ -169,10 +207,10 @@ export const useInfiniteSlider = async () => {
           accent: String(slide.accent || '#e8e8e8').trim() || '#e8e8e8',
           link,
           linkLabel,
-          left: side('left'),
-          right: side('right'),
-          leftImage: leftSrc,
-          rightImage: rightSrc,
+          left: left.data,
+          right: right.data,
+          leftImage: left.src,
+          rightImage: right.src,
         } satisfies SplitSliderSlide
       })
       .filter(Boolean) as SplitSliderSlide[]

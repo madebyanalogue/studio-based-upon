@@ -1,7 +1,7 @@
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 export type DiscoverDisplayMode = 'gallery' | 'editorial' | 'feature'
-export type DiscoverCardRatio = '3/2' | '2/3' | '1/1'
+export type DiscoverCardRatio = '3/2' | 'wide' | '2/3' | '1/1'
 export type DiscoverBreakerType = 'statement' | 'image' | 'imageText'
 
 export type DiscoverArtwork = {
@@ -221,7 +221,7 @@ export const demoDiscoverPage = (): DiscoverPageData => ({
 })
 
 const normalizeCardRatio = (value: unknown): DiscoverCardRatio => {
-  if (value === '2/3' || value === '1/1') return value
+  if (value === 'wide' || value === '2/3' || value === '1/1') return value
   return '3/2'
 }
 

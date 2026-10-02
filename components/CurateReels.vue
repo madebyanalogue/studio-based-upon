@@ -4,13 +4,13 @@
     class="showcase"
     :class="{
       'showcase--arrived': arrived,
+      'showcase--page-clip': pageClipping,
       'showcase--restructuring': columnMotion,
       'showcase--surrendering': surrendering,
     }"
     :style="{
       '--showcase-slots': Math.max(columnCount, 1),
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
-      '--showcase-arrive-duration': `${ARRIVE_DURATION}s`,
     }"
     aria-label="Curate"
   >
@@ -24,8 +24,9 @@
           'showcase__column-shell--quiet': quietColumns[column.instanceId],
         }"
         :data-column-id="column.instanceId"
-        @pointerenter="clearColumnLeaving"
-        @pointerleave="markColumnLeaving"
+        @pointerenter="onColumnPointerEnter"
+        @pointermove="syncColumnHot"
+        @pointerleave="onColumnPointerLeave"
       >
         <div class="showcase__slot" aria-hidden="true" />
         <div
@@ -369,11 +370,11 @@ type ShowcaseColumn = {
 
 const MAX_COLUMNS = SHOWCASE_MAX_COLUMNS
 const DEFAULT_COLUMNS = SHOWCASE_DEFAULT_COLUMNS
-const SNAP_IDLE_MS = 150
-const SNAP_DURATION = 0.55
+const SNAP_IDLE_MS = 40
+const SNAP_DURATION = 0.32
 const SURRENDER_DURATION = 1.15
-/** Don't snap while still coasting from a flick. */
-const VELOCITY_SNAP_THRESHOLD = 0.35
+/** Don't snap while a flick is still carrying the column. */
+const VELOCITY_SNAP_THRESHOLD = 0.8
 /** Must match `--showcase-aspect` (width / height). */
 const ASPECT = 0.8
 /** Colour wash control — hidden for now. */
@@ -385,12 +386,15 @@ const LOOP_MIDDLE = 1
 const SHOWCASE_BOTTOM_INSET_PX = 60
 const CTRL_SIZE_PX = 44
 
-/** power3.inOut — used for snap + Surrender. */
+/** power3.inOut — Surrender. Snap uses power3.out so it grabs immediately. */
 const power3InOut = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+const power3Out = (t: number) => 1 - Math.pow(1 - t, 3)
 const surrenderEasing = power3InOut
-/** Fade the showcase in once each column is already on its opening image. */
-const ARRIVE_DURATION = 1.35
+/** Page enter/leave: wipe each column open, then shut, before the route changes. */
+const PAGE_CLIP_IN_S = 0.95
+const PAGE_CLIP_OUT_S = 0.85
+const PAGE_CLIP_STAGGER_S = 0.08
 /** Column add/remove: clip the cell, then the width ease that redistributes the row. */
 const COLUMN_CLIP_S = 0.6
 const COLUMN_WIDTH_S = 0.52
@@ -463,6 +467,7 @@ const { addItem } = useBucket()
 const columns = ref<ShowcaseColumn[]>([])
 /** False until the opening layout is in place and the showcase can fade in. */
 const arrived = ref(false)
+const pageClipping = ref(false)
 /** True while a column is fading and its width is easing open or closed. */
 const columnMotion = ref(false)
 /** First paint of a new column: width 0 and content hidden, before GSAP takes over. */
@@ -547,7 +552,7 @@ const lenisHostEls: (HTMLElement | null)[] = Array.from(
 )
 /** Base floor for “near scroll end” — ends often miss true centre by more than a few px. */
 const END_SNAP_PX = 48
-const SETTLE_LOCK_MS = 700
+const SETTLE_LOCK_MS = 320
 /** Scroll without recent intent on this column is treated as layout noise. */
 const USER_INTENT_MS = 650
 /** Only skip the snap animation when already on the target (not the wide end-pin tolerance). */
@@ -1418,6 +1423,23 @@ const surrenderColumns = async () => {
 
 const columnLeaveTimers = new WeakMap<HTMLElement, number>()
 
+/** Reel is 100dvh, so shell :hover stays true above and below the cell. */
+const pointerInsideCell = (shell: HTMLElement, event: PointerEvent) => {
+  const rect = shell.getBoundingClientRect()
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  )
+}
+
+const syncColumnHot = (event: PointerEvent) => {
+  const shell = event.currentTarget
+  if (!(shell instanceof HTMLElement)) return
+  shell.classList.toggle('showcase__column-shell--hot', pointerInsideCell(shell, event))
+}
+
 const markColumnLeaving = (event: PointerEvent) => {
   const shell = event.currentTarget
   if (!(shell instanceof HTMLElement)) return
@@ -1440,6 +1462,17 @@ const clearColumnLeaving = (event: PointerEvent) => {
   if (previous) window.clearTimeout(previous)
   columnLeaveTimers.delete(shell)
   shell.classList.remove('showcase__column-shell--leaving')
+}
+
+const onColumnPointerEnter = (event: PointerEvent) => {
+  clearColumnLeaving(event)
+  syncColumnHot(event)
+}
+
+const onColumnPointerLeave = (event: PointerEvent) => {
+  const shell = event.currentTarget
+  if (shell instanceof HTMLElement) shell.classList.remove('showcase__column-shell--hot')
+  markColumnLeaving(event)
 }
 
 const toggleColumnLock = (slotIndex: number) => {
@@ -1492,7 +1525,7 @@ const toggleColumnLock = (slotIndex: number) => {
   const step = (now: number) => {
     if (!lockSnapPending[slotIndex]) return
     const t = Math.min(1, (now - started) / durationMs)
-    el.scrollTop = from + (targetScroll - from) * power3InOut(t)
+    el.scrollTop = from + (targetScroll - from) * power3Out(t)
     if (t < 1) {
       requestAnimationFrame(step)
       return
@@ -1643,7 +1676,7 @@ const snapToCenter = (slotIndex: number, onDone?: () => void) => {
   if (lenis) {
     lenis.scrollTo(target, {
       duration: SNAP_DURATION,
-      easing: power3InOut,
+      easing: power3Out,
       onComplete: () => {
         // Settle before releasing the snap lock so residual scroll can't undim ends.
         withScrollSuppressed(() => {
@@ -2154,17 +2187,97 @@ const revealAllImages = () => {
 }
 
 let arrivalTries = 0
+let pageLeaving = false
+let releasePageClip: (() => void) | null = null
+let leavePromise: Promise<void> | null = null
 
-/** Open on a random settled image per column, then fade the showcase in. */
+const pageClipTargets = () => {
+  const root = showcaseEl.value
+  if (!root) return [] as HTMLElement[]
+  const shells = Array.from(
+    root.querySelectorAll<HTMLElement>('.showcase__column-shell'),
+  )
+  const extras = [
+    root.querySelector<HTMLElement>('.showcase__adder'),
+    root.querySelector<HTMLElement>('.showcase__surrender'),
+  ].filter((el): el is HTMLElement => Boolean(el))
+  return [...shells, ...extras]
+}
+
+const clipInset = (el: HTMLElement, fallback: number) => {
+  const match = el.style.clipPath.match(/inset\(\s*([0-9.]+)%/)
+  return match ? Number(match[1]) : fallback
+}
+
+/** Same bottom-up wipe as a column add/remove, staggered across the row. */
+const runPageClip = (
+  targets: HTMLElement[],
+  to: number,
+  from: 'start' | 'end',
+  duration: number,
+) =>
+  new Promise<void>((resolve) => {
+    if (!targets.length) {
+      resolve()
+      return
+    }
+    let settled = false
+    let raf = 0
+    const started = performance.now()
+    const durationMs = duration * 1000
+    const staggerMs = PAGE_CLIP_STAGGER_S * 1000
+    const origins = targets.map((el) => clipInset(el, to === 0 ? 100 : 0))
+    const finish = () => {
+      if (settled) return
+      settled = true
+      cancelAnimationFrame(raf)
+      releasePageClip = null
+      resolve()
+    }
+    releasePageClip = finish
+    const step = (now: number) => {
+      if (settled) return
+      let done = true
+      targets.forEach((el, index) => {
+        const staggerIndex = from === 'end' ? targets.length - 1 - index : index
+        const t = Math.min(
+          1,
+          Math.max(0, (now - started - staggerIndex * staggerMs) / durationMs),
+        )
+        const inset = origins[index] + (to - origins[index]) * power3InOut(t)
+        el.style.clipPath = `inset(${inset}% 0% 0% 0%)`
+        if (t < 1) done = false
+      })
+      if (!done) {
+        raf = requestAnimationFrame(step)
+        return
+      }
+      targets.forEach((el) => {
+        el.style.clipPath = `inset(${to}% 0% 0% 0%)`
+      })
+      finish()
+    }
+    raf = requestAnimationFrame(step)
+  })
+
+/** Open on a random settled image per column, then wipe the columns open. */
 const playArrival = async () => {
-  if (arrivalPlayed) return
+  if (arrivalPlayed || pageLeaving) return
   arrivalPlayed = true
   arrivalAnimating = true
   window.clearTimeout(layoutRealignTimer)
   layoutRealignTimer = 0
 
   await waitForStableColumnLayout()
+  if (pageLeaving) {
+    arrivalAnimating = false
+    return
+  }
   await refreshColumnMetrics()
+  if (pageLeaving) {
+    arrivalAnimating = false
+    return
+  }
 
   const laidOut = columns.value.every(
     (_, slotIndex) => loopPeriodHeight(slotIndex) > 80,
@@ -2179,15 +2292,63 @@ const playArrival = async () => {
     return
   }
 
+  pageClipping.value = true
   revealAllImages()
   columns.value.forEach((column, slotIndex) => {
     if (!column.images.length) return
     const imageIndex = Math.floor(Math.random() * column.images.length)
     settleColumnInstant(slotIndex, imageIndex)
   })
-  arrivalAnimating = false
+
+  const reduced = prefersReducedColumnMotion()
+  const targets = pageClipTargets()
+  if (!reduced) {
+    targets.forEach((el) => {
+      el.style.clipPath = CLIP_HIDDEN
+    })
+  }
   arrived.value = true
+  await nextTick()
+  if (pageLeaving) {
+    arrivalAnimating = false
+    return
+  }
+  if (reduced || !targets.length) {
+    pageClipping.value = false
+    arrivalAnimating = false
+    return
+  }
+
+  await runPageClip(targets, 0, 'start', PAGE_CLIP_IN_S)
+  if (pageLeaving) {
+    arrivalAnimating = false
+    return
+  }
+  targets.forEach((el) => {
+    el.style.removeProperty('clip-path')
+  })
+  pageClipping.value = false
+  arrivalAnimating = false
 }
+
+/** Wipe the columns shut. Route leave waits on this. */
+const playLeave = () => {
+  if (leavePromise) return leavePromise
+  leavePromise = (async () => {
+    pageLeaving = true
+    releasePageClip?.()
+    const targets = pageClipTargets()
+    if (!targets.length || prefersReducedColumnMotion() || !arrived.value) return
+    for (const el of targets) {
+      if (!el.style.clipPath) el.style.clipPath = CLIP_VISIBLE
+    }
+    pageClipping.value = true
+    await runPageClip(targets, 100, 'end', PAGE_CLIP_OUT_S)
+  })()
+  return leavePromise
+}
+
+defineExpose({ playLeave })
 
 const onSelect = (column: ShowcaseColumn, imageIndex: number) => {
   const image = column.images[imageIndex]
@@ -2702,10 +2863,11 @@ onBeforeUnmount(() => {
   for (let i = 0; i < MAX_COLUMNS; i += 1) clearSnapTimer(i)
   destroyLenis()
   stopRaf()
+  releasePageClip?.()
   if (showcaseEl.value) {
     gsap.killTweensOf(
       showcaseEl.value.querySelectorAll(
-        '.showcase__column-shell, .showcase__column, .showcase__remove-zone',
+        '.showcase__column-shell, .showcase__column, .showcase__remove-zone, .showcase__adder',
       ),
     )
   }
@@ -2719,7 +2881,14 @@ onBeforeUnmount(() => {
 
 .showcase--arrived {
   opacity: 1;
-  transition: opacity var(--showcase-arrive-duration) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.showcase--page-clip {
+  pointer-events: none;
+}
+
+.showcase--page-clip .showcase__img {
+  transition: none;
 }
 
 .showcase {
@@ -2919,7 +3088,7 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 20px;
+  bottom: clamp(20px, 2vw, 40px);
   z-index: 5;
   display: flex;
   align-items: center;
@@ -2954,31 +3123,31 @@ onBeforeUnmount(() => {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .showcase__column-shell:hover:not(:has(.showcase__column--locked)) {
+  .showcase__column-shell--hot:not(:has(.showcase__column--locked)) {
     overflow: visible;
     z-index: 3;
   }
 
   .showcase--surrendering .showcase__column-shell,
-  .showcase--surrendering .showcase__column-shell:hover:not(:has(.showcase__column--locked)) {
+  .showcase--surrendering .showcase__column-shell--hot:not(:has(.showcase__column--locked)) {
     overflow: hidden;
   }
 
-  .showcase__column-shell:hover .showcase__column--settled:not(.showcase__column--locked) .showcase__cell {
+  .showcase__column-shell--hot .showcase__column--settled:not(.showcase__column--locked) .showcase__cell {
     opacity: 1;
     filter: grayscale(0);
     transition-delay: 0s;
-    transition-duration: var(--showcase-dim-duration);
+    transition-duration: 0.2s;
   }
 
-  .showcase__column-shell:hover .showcase__remove,
-  .showcase__column-shell:hover .showcase__fork:not(:disabled),
-  .showcase__column-shell:hover .showcase__lock {
+  .showcase__column-shell--hot .showcase__remove,
+  .showcase__column-shell--hot .showcase__fork:not(:disabled),
+  .showcase__column-shell--hot .showcase__lock {
     opacity: 1;
     pointer-events: auto;
   }
 
-  .showcase__column-shell:hover .showcase__fork:disabled {
+  .showcase__column-shell--hot .showcase__fork:disabled {
     opacity: 0.35;
     pointer-events: none;
   }
