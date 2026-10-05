@@ -6,7 +6,6 @@
       class="site-cursor"
       :class="{
         'site-cursor--mark': isMark,
-        'site-cursor--tip': Boolean(preset?.tooltip),
         'site-cursor--tip-left': tipLeft,
       }"
       aria-hidden="true"
@@ -29,13 +28,19 @@
           <path :d="chevD" />
         </svg>
       </div>
-      <div
-        v-if="preset?.tooltip"
-        ref="tipRef"
-        class="site-cursor__tip interface"
+      <p
+        v-show="labelMounted"
+        ref="labelRef"
+        class="site-cursor__hint interface"
+        :class="{ 'is-removing': labelRemoving }"
       >
-        {{ preset.tooltip }}
-      </div>
+        <span
+          v-for="(char, index) in labelChars"
+          :key="`${shownLabel}-${index}`"
+          class="site-cursor__hint-char"
+          :class="{ 'is-in': index < labelCount }"
+        >{{ char === ' ' ? '\u00a0' : char }}</span>
+      </p>
     </div>
   </Teleport>
 </template>
@@ -148,7 +153,115 @@ if (import.meta.client) {
 const rootRef = ref<HTMLElement | null>(null)
 const orbRef = ref<HTMLElement | null>(null)
 const markRef = ref<HTMLElement | null>(null)
-const tipRef = ref<HTMLElement | null>(null)
+const labelRef = ref<HTMLElement | null>(null)
+
+const SCROLL_HINT = 'Scroll to explore'
+const homeScrollHint = useHomeScrollHint()
+const cursorLabel = computed(() =>
+  homeScrollHint.value ? SCROLL_HINT : preset.value?.tooltip || '',
+)
+
+const labelChars = ref<string[]>([])
+const labelMounted = ref(false)
+const labelRemoving = ref(false)
+const labelCount = ref(0)
+const shownLabel = ref('')
+let labelTimer = 0
+let labelGeneration = 0
+
+const clearLabelTimer = () => {
+  window.clearInterval(labelTimer)
+  labelTimer = 0
+}
+
+const typeLabelOn = (text: string, generation: number) => {
+  clearLabelTimer()
+  shownLabel.value = text
+  labelChars.value = [...text]
+  labelMounted.value = true
+  labelRemoving.value = false
+  if (reduceMotion.value) {
+    labelCount.value = text.length
+    return
+  }
+  labelCount.value = 0
+  labelTimer = window.setInterval(() => {
+    if (generation !== labelGeneration) return
+    labelCount.value += 1
+    if (labelCount.value >= text.length) clearLabelTimer()
+  }, 46)
+}
+
+const typeLabelOff = (generation: number, done: () => void) => {
+  clearLabelTimer()
+  if (!labelMounted.value || reduceMotion.value || labelCount.value <= 0) {
+    labelMounted.value = false
+    labelRemoving.value = false
+    labelCount.value = 0
+    shownLabel.value = ''
+    labelChars.value = []
+    done()
+    return
+  }
+  labelRemoving.value = true
+  labelTimer = window.setInterval(() => {
+    if (generation !== labelGeneration) return
+    labelCount.value -= 1
+    if (labelCount.value <= 0) {
+      clearLabelTimer()
+      labelMounted.value = false
+      labelRemoving.value = false
+      labelCount.value = 0
+      shownLabel.value = ''
+      labelChars.value = []
+      done()
+    }
+  }, 46)
+}
+
+const resumeLabel = (text: string) => {
+  labelGeneration += 1
+  const generation = labelGeneration
+  labelRemoving.value = false
+  clearLabelTimer()
+  if (reduceMotion.value) {
+    labelCount.value = text.length
+    return
+  }
+  labelTimer = window.setInterval(() => {
+    if (generation !== labelGeneration) return
+    labelCount.value += 1
+    if (labelCount.value >= text.length) clearLabelTimer()
+  }, 46)
+}
+
+const syncLabel = (text: string) => {
+  if (text === shownLabel.value && labelMounted.value) {
+    if (labelRemoving.value) resumeLabel(text)
+    return
+  }
+  labelGeneration += 1
+  const generation = labelGeneration
+  const start = () => {
+    if (generation !== labelGeneration || !text) return
+    typeLabelOn(text, generation)
+  }
+  if (labelMounted.value && shownLabel.value && shownLabel.value !== text) {
+    typeLabelOff(generation, start)
+    return
+  }
+  if (!text) {
+    typeLabelOff(generation, () => {})
+    return
+  }
+  typeLabelOn(text, generation)
+}
+
+if (import.meta.client) {
+  watch(cursorLabel, (text) => {
+    syncLabel(text)
+  })
+}
 
 const fine = ref(false)
 const inside = ref(false)
@@ -214,9 +327,9 @@ const place = () => {
   if (markRef.value) markRef.value.style.transform = shift
   const flip = x > window.innerWidth - 220
   if (tipLeft.value !== flip) tipLeft.value = flip
-  const tip = tipRef.value
-  if (tip) {
-    tip.style.transform = `translate3d(${x}px, ${y}px, 0)`
+  const label = labelRef.value
+  if (label) {
+    label.style.transform = `translate3d(${x}px, ${y}px, 0)`
   }
 }
 
@@ -263,6 +376,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.cancelAnimationFrame(markRaf)
   window.cancelAnimationFrame(trailRaf)
+  clearLabelTimer()
   media?.removeEventListener('change', onMedia)
   window.removeEventListener('pointermove', onPointerMove)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
@@ -278,7 +392,7 @@ watch(
   { immediate: true },
 )
 
-watch([preset, active], () => {
+watch([preset, active, labelMounted], () => {
   if (active.value) nextTick(place)
 })
 
@@ -363,37 +477,48 @@ watch(trailOn, (on) => {
   transform-origin: center;
 }
 
-.site-cursor__tip {
+.site-cursor__hint {
   position: absolute;
   top: 0;
   left: 0;
   margin: 0;
-  padding: 0.35rem 0.55rem;
-  border-radius: 6px;
-  background: var(--text-color);
-  color: var(--background-color);
-  font-size: var(--text-xs);
-  line-height: 1.2;
+  color: #fff;
+  mix-blend-mode: difference;
   white-space: nowrap;
   pointer-events: none;
-  translate: 14px -50%;
+  translate: 18px -50%;
   transform: translate3d(-100px, -100px, 0);
-  will-change: transform;
 }
 
-:global(html.dark) .site-cursor__tip {
-  background: color-mix(in srgb, var(--background-color) 88%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  color: var(--text-color);
+.site-cursor--mark .site-cursor__hint {
+  translate: 30px -50%;
 }
 
-.site-cursor--tip-left .site-cursor__tip {
-  translate: calc(-100% - 14px) -50%;
+.site-cursor--tip-left .site-cursor__hint {
+  translate: calc(-100% - 18px) -50%;
+}
+
+.site-cursor--mark.site-cursor--tip-left .site-cursor__hint {
+  translate: calc(-100% - 30px) -50%;
+}
+
+.site-cursor__hint.is-removing .site-cursor__hint-char {
+  transition: none;
+}
+
+.site-cursor__hint-char {
+  opacity: 0;
+}
+
+.site-cursor__hint-char.is-in {
+  opacity: 1;
+  transition: opacity 0.22s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .site-cursor__orb {
+  .site-cursor__orb,
+  .site-cursor__hint,
+  .site-cursor__hint-char.is-in {
     transition: none;
   }
 }

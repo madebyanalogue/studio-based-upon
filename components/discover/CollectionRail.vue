@@ -13,6 +13,7 @@
     :aria-label="collection.title"
     :data-typology-rail="myId"
     :data-cursor="isActive || isClosing ? 'default' : undefined"
+    :data-cursor-label="otherRailLabel || undefined"
     @pointerleave="onRailPointerLeave"
   >
     <header class="collection-rail__header" aria-hidden="true">
@@ -51,6 +52,7 @@
           :controls="controlsReady"
           :sequence="railSequence"
           :hit-label="index === 0 && !controlsReady ? `Show ${collection.title}` : ''"
+          :cursor-label="cardCursorLabel(index, artwork.title)"
           @pointerenter="index === 0 && !controlsReady && onTriggerPointerEnter()"
           @activate="onActivate(index)"
         />
@@ -115,6 +117,23 @@ const isActive = ref(false)
 const controlsReady = ref(false)
 /** Close animation is running. Other rows stay inert until it finishes. */
 const isClosing = ref(false)
+/** Name shown on the cursor when another row is open. */
+const otherRailLabel = computed(() =>
+  typologyRowsLocked.value && !isActive.value && !isClosing.value
+    ? props.collection?.title?.trim() || ''
+    : '',
+)
+
+/** True after the user scrolls an open row. Thumbnails then use product titles. */
+const railScrolled = ref(false)
+
+/** Trigger cell asks to view the collection; scrolled thumbnails use the product title. */
+const cardCursorLabel = (index: number, title: string) => {
+  if (otherRailLabel.value) return otherRailLabel.value
+  if (index === 0 && !controlsReady.value) return 'Explore'
+  if (controlsReady.value && railScrolled.value) return title.trim()
+  return ''
+}
 
 let railLenis: Lenis | null = null
 let railLenisRaf = 0
@@ -135,6 +154,37 @@ const MOTION_MS = 700
 const ALIGN_SCROLL_MS = 1400
 let alignFrom = 0
 let alignStartedAt = 0
+const homeScrollHint = useHomeScrollHint()
+let scrollHintActive = false
+let unbindScrollHint: (() => void) | null = null
+
+const dismissRailScrollHint = () => {
+  if (!scrollHintActive) return
+  scrollHintActive = false
+  unbindScrollHint?.()
+  unbindScrollHint = null
+  homeScrollHint.value = false
+}
+
+const showRailScrollHint = () => {
+  scrollHintActive = true
+  homeScrollHint.value = true
+}
+
+/** Ignore the open-align scroll. Clear the hint once the user moves the row. */
+const armRailScrollHint = () => {
+  const scroller = scrollerEl.value
+  if (!scroller) return
+  unbindScrollHint?.()
+  const origin = scroller.scrollLeft
+  const onScroll = () => {
+    if (Math.abs(scroller.scrollLeft - origin) < 2) return
+    railScrolled.value = true
+    dismissRailScrollHint()
+  }
+  scroller.addEventListener('scroll', onScroll, { passive: true })
+  unbindScrollHint = () => scroller.removeEventListener('scroll', onScroll)
+}
 
 const destroyRailLenis = () => {
   railResizeObserver?.disconnect()
@@ -382,6 +432,8 @@ const deactivate = () => {
   controlsReady.value = false
   isActive.value = false
   isPreview.value = false
+  railScrolled.value = false
+  dismissRailScrollHint()
   typologyRowsLocked.value = true
   if (wheelBound) {
     wheelBound = false
@@ -483,6 +535,8 @@ const onActiveWheel = (event: WheelEvent) => {
   }
   const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy
   if (!delta) return
+  railScrolled.value = true
+  dismissRailScrollHint()
   const next = railLenis.targetScroll + delta
   if (prefersReducedMotion()) {
     applyRailScroll(next)
@@ -563,6 +617,7 @@ const onActivate = async (cardIndex = 0) => {
   if (typologyRowsLocked.value && typologyActiveRailId.value !== myId) return
   engaged = true
   alignIndex = cardIndex
+  showRailScrollHint()
   typologyPointerPaused.value = true
   const gen = ++activateGen
   restScroll = scrollerEl.value?.scrollLeft ?? 0
@@ -606,6 +661,7 @@ const onActivate = async (cardIndex = 0) => {
     wheelBound = true
     document.addEventListener('wheel', onActiveWheel, { capture: true, passive: false })
   }
+  if (scrollHintActive) armRailScrollHint()
   syncPageChrome()
 }
 
@@ -665,6 +721,7 @@ onBeforeUnmount(() => {
     if (typologyHandoffRailId.value) typologyHandoffRailId.value = null
   }
   unbindActiveInput()
+  dismissRailScrollHint()
   void nextTick(syncPageChrome)
   destroyRailLenis()
 })

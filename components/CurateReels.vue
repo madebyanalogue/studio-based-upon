@@ -124,6 +124,9 @@
                 <path d="M8 11V8a4 4 0 0 1 7.5-2" />
               </svg>
             </span>
+            <span class="showcase__tooltip showcase__tooltip--above interface" aria-hidden="true">
+              {{ column.locked ? 'Unlock column' : 'Lock column' }}
+            </span>
           </button>
           <button
             type="button"
@@ -134,22 +137,7 @@
             <span class="showcase__remove-circle" aria-hidden="true">
               <span class="showcase__remove-minus" />
             </span>
-          </button>
-          <button
-            type="button"
-            class="showcase__fork"
-            :disabled="!canAddColumn"
-            :aria-label="
-              canAddColumn
-                ? `Add ${column.title} images as a new column to the right`
-                : 'Column limit reached'
-            "
-            @click.stop="forkColumnBeside(slotIndex)"
-          >
-            <span class="showcase__fork-circle" aria-hidden="true">
-              <span class="showcase__fork-plus showcase__fork-plus--h" />
-              <span class="showcase__fork-plus showcase__fork-plus--v" />
-            </span>
+            <span class="showcase__tooltip showcase__tooltip--above interface" aria-hidden="true">Remove column</span>
           </button>
         </div>
       </div>
@@ -833,20 +821,6 @@ const createUploadColumn = (file: File, src: string): ShowcaseColumn => {
     ],
     single: true,
     objectUrl: src,
-  }
-}
-
-/** Copy a column's product images into a fresh column instance (no shared revoke). */
-const cloneColumn = (source: ShowcaseColumn): ShowcaseColumn => {
-  instanceSeq += 1
-  return {
-    instanceId: `fork-${instanceSeq}-${source.productId}`,
-    productId: source.productId,
-    bucketId: source.bucketId,
-    title: source.title,
-    slug: source.slug,
-    single: source.single,
-    images: source.images.map((image) => ({ ...image })),
   }
 }
 
@@ -2040,6 +2014,7 @@ const initLenisForSlot = (slotIndex: number) => {
         event.stopPropagation()
         return
       }
+      if (event.deltaX || event.deltaY) dismissScrollHint()
       onUserIntent(slotIndex)
     },
     {
@@ -2068,6 +2043,18 @@ const initLenisForSlot = (slotIndex: number) => {
     passive: true,
     signal: abort.signal,
   })
+  wrapper.addEventListener(
+    'touchmove',
+    () => {
+      if (
+        columns.value[slotIndex]?.locked ||
+        columns.value[slotIndex]?.single ||
+        lockSnapPending[slotIndex]
+      ) return
+      dismissScrollHint()
+    },
+    { passive: true, signal: abort.signal },
+  )
   lenisBySlot[slotIndex] = lenis
   lenisHostEls[slotIndex] = wrapper
   if (columns.value[slotIndex]?.locked || columns.value[slotIndex]?.single) lenis.stop()
@@ -2190,6 +2177,18 @@ let arrivalTries = 0
 let pageLeaving = false
 let releasePageClip: (() => void) | null = null
 let leavePromise: Promise<void> | null = null
+const homeScrollHint = useHomeScrollHint()
+let scrollHintDismissed = false
+
+const dismissScrollHint = () => {
+  scrollHintDismissed = true
+  homeScrollHint.value = false
+}
+
+const showScrollHint = () => {
+  if (scrollHintDismissed || pageLeaving) return
+  homeScrollHint.value = true
+}
 
 const pageClipTargets = () => {
   const root = showcaseEl.value
@@ -2316,6 +2315,7 @@ const playArrival = async () => {
   if (reduced || !targets.length) {
     pageClipping.value = false
     arrivalAnimating = false
+    showScrollHint()
     return
   }
 
@@ -2329,6 +2329,7 @@ const playArrival = async () => {
   })
   pageClipping.value = false
   arrivalAnimating = false
+  showScrollHint()
 }
 
 /** Wipe the columns shut. Route leave waits on this. */
@@ -2336,6 +2337,7 @@ const playLeave = () => {
   if (leavePromise) return leavePromise
   leavePromise = (async () => {
     pageLeaving = true
+    dismissScrollHint()
     releasePageClip?.()
     const targets = pageClipTargets()
     if (!targets.length || prefersReducedColumnMotion() || !arrived.value) return
@@ -2721,23 +2723,6 @@ const addColumn = () => {
   )
 }
 
-/** Insert a copy of this column's images immediately to its right. */
-const forkColumnBeside = (slotIndex: number) => {
-  if (columnMotion.value || !canAddColumn.value) return
-  const source = columns.value[slotIndex]
-  if (!source?.images.length) return
-
-  const clone = cloneColumn(source)
-  const preserved = captureActiveImageIds()
-  const sourceActive =
-    preserved[slotIndex] ?? clone.images[0]?.id ?? null
-  preserved.splice(slotIndex + 1, 0, sourceActive)
-
-  const next = columns.value.slice()
-  next.splice(slotIndex + 1, 0, clone)
-  void replaceColumnsAnimated(next, preserved, clone.instanceId)
-}
-
 const onUploadChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -2850,6 +2835,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  dismissScrollHint()
   if (COLOUR_WASH_ENABLED) {
     document.removeEventListener('pointerdown', onColourDocPointerDown)
     window.removeEventListener('pointermove', onSpectrumPointerMove)
@@ -3099,7 +3085,6 @@ onBeforeUnmount(() => {
 }
 
 .showcase__remove,
-.showcase__fork,
 .showcase__lock {
   position: relative;
   display: grid;
@@ -3115,11 +3100,6 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
-}
-
-.showcase__fork:disabled {
-  cursor: not-allowed;
-  opacity: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -3141,15 +3121,9 @@ onBeforeUnmount(() => {
   }
 
   .showcase__column-shell--hot .showcase__remove,
-  .showcase__column-shell--hot .showcase__fork:not(:disabled),
   .showcase__column-shell--hot .showcase__lock {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .showcase__column-shell--hot .showcase__fork:disabled {
-    opacity: 0.35;
-    pointer-events: none;
   }
 }
 
@@ -3159,7 +3133,6 @@ onBeforeUnmount(() => {
 }
 
 .showcase__remove-circle,
-.showcase__fork-circle,
 .showcase__lock-circle {
   position: relative;
   box-sizing: border-box;
@@ -3177,8 +3150,6 @@ onBeforeUnmount(() => {
 
 .showcase__remove:hover .showcase__remove-circle,
 .showcase__remove:focus-visible .showcase__remove-circle,
-.showcase__fork:hover:not(:disabled) .showcase__fork-circle,
-.showcase__fork:focus-visible:not(:disabled) .showcase__fork-circle,
 .showcase__lock:hover .showcase__lock-circle,
 .showcase__lock:focus-visible .showcase__lock-circle {
   background: color-mix(in srgb, var(--charcoal) 6%, transparent);
@@ -3190,24 +3161,14 @@ onBeforeUnmount(() => {
   border-color: var(--charcoal);
 }
 
-.showcase__remove-minus,
-.showcase__fork-plus {
+.showcase__remove-minus {
   position: absolute;
   top: 50%;
   left: 50%;
-  background: currentColor;
-  transform: translate(-50%, -50%);
-}
-
-.showcase__remove-minus,
-.showcase__fork-plus--h {
   width: calc(var(--showcase-ctrl-size) * 0.4);
   height: 1px;
-}
-
-.showcase__fork-plus--v {
-  width: 1px;
-  height: calc(var(--showcase-ctrl-size) * 0.4);
+  background: currentColor;
+  transform: translate(-50%, -50%);
 }
 
 .showcase__adder {
@@ -3360,14 +3321,33 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+.showcase__tooltip--above {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+}
+
 .showcase__add:hover .showcase__tooltip,
 .showcase__add:focus-visible .showcase__tooltip,
 .showcase__upload:hover .showcase__tooltip,
 .showcase__upload:focus-within .showcase__tooltip,
 .showcase__ctrl:hover .showcase__tooltip,
-.showcase__ctrl:focus-visible .showcase__tooltip {
+.showcase__ctrl:focus-visible .showcase__tooltip,
+.showcase__lock:hover .showcase__tooltip,
+.showcase__lock:focus-visible .showcase__tooltip,
+.showcase__remove:hover .showcase__tooltip,
+.showcase__remove:focus-visible .showcase__tooltip {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
+}
+
+.showcase__lock:hover .showcase__tooltip--above,
+.showcase__lock:focus-visible .showcase__tooltip--above,
+.showcase__remove:hover .showcase__tooltip--above,
+.showcase__remove:focus-visible .showcase__tooltip--above {
+  transform: translateX(-50%) translateY(0);
 }
 
 .showcase__colour-tool {

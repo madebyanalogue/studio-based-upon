@@ -143,6 +143,28 @@ const clearFlipSource = () => {
   flipSourceProductId = null
 }
 
+/**
+ * finishClose() calls history.back() to drop the product URL. Vue Router hears
+ * that popstate and would run page outros. The flag stays set through that turn.
+ */
+let overlayHistoryRestore = false
+
+export const isOverlayHistoryRestore = () => overlayHistoryRestore
+
+const beginOverlayHistoryRestore = () => {
+  overlayHistoryRestore = true
+}
+
+const endOverlayHistoryRestore = () => {
+  if (!import.meta.client) {
+    overlayHistoryRestore = false
+    return
+  }
+  window.setTimeout(() => {
+    overlayHistoryRestore = false
+  }, 0)
+}
+
 export const useProductOverlay = () => {
   const openSlug = useState<string | null>('product-overlay-slug', () => null)
   const returnUrl = useState<string | null>('product-overlay-return', () => null)
@@ -328,7 +350,9 @@ export const useProductOverlay = () => {
       unlockPageScroll()
 
       if (window.history.state?.productOverlay) {
+        beginOverlayHistoryRestore()
         window.history.back()
+        endOverlayHistoryRestore()
       } else if (window.location.pathname.startsWith('/materials-and-forms/')) {
         window.history.replaceState({}, '', target)
       }

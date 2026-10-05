@@ -1,6 +1,40 @@
 <template>
-  <article class="section enquire">
-    <h1 class="page-title">{{ page?.heroTitle || 'Enquire' }}</h1>
+  <article class="enquire">
+    <header class="enquire__header">
+      <svg class="enquire__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
+        <defs>
+          <filter
+            :id="titleFilterId"
+            x="-40%"
+            y="-40%"
+            width="180%"
+            height="180%"
+            color-interpolation-filters="sRGB"
+          >
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 255 -140"
+            />
+          </filter>
+        </defs>
+      </svg>
+      <h1
+        ref="titleEl"
+        class="h1 enquire__title"
+        :class="{ 'enquire__title--pending': !titlePaintReady }"
+        :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
+      >
+        {{ page?.heroTitle || 'Enquire' }}
+      </h1>
+    </header>
+
+    <div
+      class="enquire__stage"
+      :class="{ 'enquire__stage--in': stageVisible }"
+      :inert="!stageVisible"
+    >
+      <div class="enquire__panel">
     <p class="enquire__intro  interface">
       {{ page?.heroSubtitle || 'Tell us about your project, or request a call back below.' }}
     </p>
@@ -8,7 +42,7 @@
     <div v-if="isSuccess" class="enquire__success">
       <p class="enquire__success-title  interface">Thank you</p>
       <p>Your enquiry has been sent. We will be in touch shortly.</p>
-      <button type="button" class="btn btn--filled" @click="resetForm">Send another enquiry</button>
+      <button type="button" class="btn btn--filled enquire__send" @click="resetForm">Send another enquiry</button>
     </div>
 
     <form v-else class="enquire__form" @submit.prevent="submit">
@@ -19,7 +53,11 @@
           You have no saved selections yet. Heart pieces across the site to build one.
         </p>
 
-        <ul v-else class="enquire__board-list">
+        <ul
+          v-else
+          class="enquire__board-list"
+          :class="{ 'enquire__board-list--single': selectableMoodboards.length === 1 }"
+        >
           <li v-for="board in selectableMoodboards" :key="board.id">
             <label class="enquire__board" :class="{ 'enquire__board--active': selectedIds.includes(board.id) }">
               <input
@@ -119,11 +157,25 @@
       </div>
     </form>
 
-    <p v-if="page?.address" class="enquire__address">{{ page.address }}</p>
+        <p v-if="page?.address" class="enquire__address">{{ page.address }}</p>
+      </div>
+    </div>
   </article>
 </template>
 
 <script setup lang="ts">
+import gsap from 'gsap'
+import { SplitText } from 'gsap/SplitText'
+
+definePageMeta({
+  pageTransition: false,
+})
+
+/** Match the materials & forms / typology title melt. */
+const TITLE_BLUR_MAX = 75
+const TITLE_GOOEY_IN_DUR = 1.85
+const TITLE_GOOEY_IN_BLUR = 8
+
 type LocalAttachment = {
   id: string
   file: File
@@ -287,6 +339,104 @@ const submit = async () => {
   }
 }
 
+const titleEl = ref<HTMLElement | null>(null)
+const titlePaintReady = ref(false)
+const stageVisible = ref(false)
+const titleFilterId = `enquire-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
+
+let titleSplit: InstanceType<typeof SplitText> | null = null
+let titleTween: gsap.core.Tween | null = null
+
+const prefersReducedMotion = () =>
+  import.meta.client &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const titleWords = () =>
+  titleEl.value?.querySelectorAll('.enquire__title-word') ?? []
+
+const power3Out = (t: number) => 1 - Math.pow(1 - t, 3)
+
+/** Skip the fully hidden part of the 75px melt and keep the same pace once it shows. */
+const gooeyInWindow = () => {
+  const hidden = 1 - Math.cbrt(TITLE_GOOEY_IN_BLUR / TITLE_BLUR_MAX)
+  return { from: hidden, duration: TITLE_GOOEY_IN_DUR * (1 - hidden) }
+}
+
+const revealStage = () => {
+  stageVisible.value = true
+}
+
+const playTitleGooeyIn = async () => {
+  if (!import.meta.client || !titleEl.value) {
+    titlePaintReady.value = true
+    revealStage()
+    return
+  }
+
+  gsap.registerPlugin(SplitText)
+
+  try {
+    await document.fonts?.ready
+  } catch {
+    /* ignore */
+  }
+
+  await nextTick()
+  if (!titleEl.value) return
+
+  if (prefersReducedMotion()) {
+    titlePaintReady.value = true
+    revealStage()
+    return
+  }
+
+  titleSplit?.revert()
+  titleSplit = new SplitText(titleEl.value, {
+    type: 'words',
+    wordsClass: 'enquire__title-word',
+  })
+
+  const words = Array.from(titleWords())
+  const target = words.length ? words : titleEl.value
+  const { from, duration } = gooeyInWindow()
+  const applyIn = (t: number) => {
+    const progress = power3Out(t)
+    gsap.set(target, {
+      filter: `blur(${TITLE_BLUR_MAX * (1 - progress)}px)`,
+      opacity: progress,
+    })
+  }
+
+  applyIn(from)
+  titlePaintReady.value = true
+  await nextTick()
+  if (!titleEl.value) return
+
+  await new Promise<void>((resolve) => {
+    const clock = { t: from }
+    titleTween = gsap.to(clock, {
+      t: 1,
+      duration,
+      ease: 'none',
+      onUpdate: () => applyIn(clock.t),
+      onComplete: () => resolve(),
+    })
+  })
+
+  revealStage()
+}
+
+onMounted(() => {
+  void playTitleGooeyIn()
+})
+
+onUnmounted(() => {
+  titleTween?.kill()
+  titleSplit?.revert()
+  titleSplit = null
+})
+
 useHead(() => ({
   title: page.value?.seoTitle || 'Enquire — Studio Based Upon',
 }))
@@ -294,12 +444,65 @@ useHead(() => ({
 
 <style scoped>
 .enquire {
-  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: none;
+}
+
+.enquire__header {
+  position: relative;
+  max-width: none;
+  padding: calc(var(--header-height) + 4rem) var(--gutter) 0;
+}
+
+.enquire__title-filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.enquire__title {
+  width: max-content;
+  max-width: 100%;
+  pointer-events: none;
+  will-change: filter, opacity;
+}
+
+.enquire__title--pending {
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+.enquire__title :deep(.enquire__title-word) {
+  display: inline-block;
+  will-change: filter, opacity;
+}
+
+.enquire__stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  padding: 1.75rem var(--gutter) 4rem;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+.enquire__stage--in {
+  opacity: 1;
+}
+
+.enquire__panel {
+  width: min(720px, 100%);
 }
 
 .enquire__intro {
   max-width: 40rem;
-  margin: 0.75rem 0 2.5rem;
+  margin: 0 0 2rem;
   font-size: var(--text-lg);
   color: var(--muted);
 }
@@ -348,12 +551,20 @@ useHead(() => ({
   font: inherit;
   color: var(--charcoal);
   resize: vertical;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.enquire__field input:hover,
+.enquire__field textarea:hover {
+  border-color: color-mix(in srgb, var(--charcoal) 45%, transparent);
+  background: var(--warm-white);
 }
 
 .enquire__field input:focus,
 .enquire__field textarea:focus {
   outline: none;
   border-color: var(--charcoal);
+  background: var(--warm-white);
 }
 
 .enquire__upload {
@@ -444,6 +655,10 @@ useHead(() => ({
   gap: 0.75rem;
 }
 
+.enquire__board-list--single {
+  grid-template-columns: minmax(0, 280px);
+}
+
 .enquire__board {
   display: flex;
   align-items: center;
@@ -505,23 +720,36 @@ useHead(() => ({
   color: var(--muted);
 }
 
+.enquire__board:not(.enquire__board--active) {
+  background: transparent;
+  border-color: var(--grid-line);
+}
+
 .enquire__board-check {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.15rem;
+  height: 1.15rem;
   flex: none;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  font-size: 0.8rem;
-  color: var(--warm-white);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-border-radius);
+  font-size: 0.75rem;
+  line-height: 1;
+  color: transparent;
   background: transparent;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.enquire__board:not(.enquire__board--active) .enquire__board-check {
+  background: transparent;
+  border-color: var(--ui-border-color);
+  color: transparent;
 }
 
 .enquire__board--active .enquire__board-check {
   background: var(--charcoal);
   border-color: var(--charcoal);
+  color: var(--warm-white);
 }
 
 .enquire__error {
@@ -532,9 +760,24 @@ useHead(() => ({
 
 .enquire__actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem 1.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.enquire__send {
+  width: 100%;
+  border: none;
+  border-radius: var(--ui-border-radius);
+  background: var(--red);
+  color: var(--white);
+}
+
+.enquire__send:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--white);
+  opacity: 0.88;
 }
 
 .enquire__send:disabled {
@@ -544,6 +787,7 @@ useHead(() => ({
 
 .enquire__or {
   margin: 0;
+  text-align: center;
   font-size: var(--text-sm);
   color: var(--muted);
 }
@@ -581,6 +825,12 @@ useHead(() => ({
 @media (max-width: 640px) {
   .enquire__fields {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enquire__stage {
+    transition: none;
   }
 }
 </style>

@@ -32,9 +32,18 @@ export const CURSOR_LIBRARY: Record<string, CursorPreset> = {
     id: 'close',
     icon: 'close',
   },
+  /** Wordmark used outside an open typology row — no X glyph. */
+  'close-label': {
+    id: 'close-label',
+    tooltip: 'Close',
+  },
   'view-selection': {
     id: 'view-selection',
     tooltip: 'View My Selection',
+  },
+  'drag-composition': {
+    id: 'drag-composition',
+    tooltip: 'Drag into composition',
   },
 }
 

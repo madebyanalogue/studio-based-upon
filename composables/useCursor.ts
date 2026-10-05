@@ -38,7 +38,7 @@ export const useCursor = () => {
         preset.value = null
         return
       }
-      const host = node.closest('[data-cursor]')
+      const host = node.closest('[data-cursor], [data-cursor-label]')
       if (host instanceof HTMLElement) {
         const id = host.getAttribute('data-cursor')
         if (id === CURSOR_NATIVE_ID) {
@@ -46,9 +46,19 @@ export const useCursor = () => {
           preset.value = null
           return
         }
-        native.value = false
-        preset.value = resolveCursorPreset(id)
-        return
+        if (id) {
+          native.value = false
+          const next = resolveCursorPreset(id)
+          if (preset.value !== next) preset.value = next
+          return
+        }
+        const label = host.getAttribute('data-cursor-label')?.trim() || ''
+        if (label) {
+          native.value = false
+          if (preset.value?.id === 'cursor-label' && preset.value.tooltip === label) return
+          preset.value = { id: 'cursor-label', tooltip: label }
+          return
+        }
       }
     }
 

@@ -364,7 +364,13 @@ definePageMeta({
 })
 
 let runPlanLeave = () => Promise.resolve()
-onBeforeRouteLeave(() => runPlanLeave())
+const { open: openProduct } = useProductOverlay()
+onBeforeRouteLeave((to, from) => {
+  // Closing a product calls history.back() onto this same page. That popstate
+  // must not play the about outro.
+  if (isOverlayHistoryRestore() || to.path === from.path) return
+  return runPlanLeave()
+})
 
 type SheetCell = {
   item: LibraryItem
@@ -401,7 +407,6 @@ const { data: page } = await useAsyncData('aboutPage-v2', () =>
 
 const { items: libraryItems } = await useLibraryCatalog()
 const { imageUrl, getImageSrc, prefetchImage } = useSanityImage()
-const { open: openProduct } = useProductOverlay()
 
 const guideVisible = ref(true)
 const planEl = ref<HTMLElement | null>(null)
@@ -482,8 +487,12 @@ const planImages = () =>
 const figureVeil = (img: HTMLElement) =>
   img.parentElement?.querySelector<HTMLElement>('.about-plan__figure-veil') ?? null
 
-const setImageClip = (el: HTMLElement, top: number) => {
-  const clip = `inset(${top}% 0% 0% 0%)`
+/** Bottom inset reveals downward from the top. Top inset hides downward off the bottom. */
+const setImageClip = (el: HTMLElement, amount: number, edge: 'bottom' | 'top' = 'bottom') => {
+  const clip =
+    edge === 'top'
+      ? `inset(${amount}% 0% 0% 0%)`
+      : `inset(0% 0% ${amount}% 0%)`
   el.style.clipPath = clip
   const veil = figureVeil(el)
   if (veil) veil.style.clipPath = clip
@@ -495,11 +504,18 @@ const clearImageClip = (el: HTMLElement) => {
 }
 
 const clipTop = (el: HTMLElement) => {
-  const match = (el.style.clipPath || '').match(/inset\(\s*([0-9.]+)%/)
+  const match = (el.style.clipPath || '').match(
+    /inset\(\s*[0-9.]+%\s+[0-9.]+%\s+([0-9.]+)%/,
+  )
   return match ? Number(match[1]) : 0
 }
 
-const tweenImageClip = (els: HTMLElement[], to: number, duration: number) =>
+const tweenImageClip = (
+  els: HTMLElement[],
+  to: number,
+  duration: number,
+  edge: 'bottom' | 'top' = 'bottom',
+) =>
   new Promise<void>((resolve) => {
     if (!els.length) {
       resolve()
@@ -507,15 +523,15 @@ const tweenImageClip = (els: HTMLElement[], to: number, duration: number) =>
     }
     const tl = gsap.timeline({ onComplete: resolve })
     els.forEach((el, index) => {
-      const state = { top: clipTop(el) }
-      setImageClip(el, state.top)
+      const state = { amount: edge === 'top' ? 0 : clipTop(el) }
+      setImageClip(el, state.amount, edge)
       tl.to(
         state,
         {
-          top: to,
+          amount: to,
           duration,
           ease: 'power3.inOut',
-          onUpdate: () => setImageClip(el, state.top),
+          onUpdate: () => setImageClip(el, state.amount, edge),
         },
         index * 0.08,
       )
@@ -612,7 +628,8 @@ const playCopy = (titles: TitleBlock[], block: CopyBlock) => {
       ])
     : Promise.resolve()
   void gate.then(() => {
-    if (leavePromise || !block.lines.length) return
+    if (leavePromise || !block.lines.length || block.root.dataset.copyPlayed === '1') return
+    block.root.dataset.copyPlayed = '1'
     const label = block.root.querySelector<HTMLElement>('.h6')
     if (label) {
       trackTween(gsap.to(label, { opacity: 1, y: 0, duration: 0.65, ease: 'power3.out' }))
@@ -642,6 +659,7 @@ const playCopy = (titles: TitleBlock[], block: CopyBlock) => {
 }
 
 const playImage = (img: HTMLElement) => {
+  if (clipTop(img) < 99) return
   const now = performance.now()
   if (now - imageBurstAt > 80) imageBurst = 0
   imageBurstAt = now
@@ -649,9 +667,6 @@ const playImage = (img: HTMLElement) => {
   imageBurst += 1
   const state = { top: 100 }
   const meta = img.parentElement?.querySelector<HTMLElement>('.about-plan__figure-meta')
-  if (meta) {
-    trackTween(gsap.to(meta, { opacity: 1, duration: 0.45, delay, ease: 'power2.out' }))
-  }
   trackTween(
     gsap.to(state, {
       top: 0,
@@ -662,6 +677,9 @@ const playImage = (img: HTMLElement) => {
       onComplete: () => {
         if (leavePromise || planEntering.value) return
         clearImageClip(img)
+        if (meta) {
+          trackTween(gsap.to(meta, { opacity: 1, duration: 0.45, ease: 'power2.out' }))
+        }
         const slug = img.parentElement?.getAttribute('data-slug')
         if (!slug || litFigures.value[slug]) return
         litFigures.value = { ...litFigures.value, [slug]: true }
@@ -830,7 +848,7 @@ const playPlanLeave = () => {
             })
           })
         : Promise.resolve(),
-      tweenImageClip(images, 100, CLIP_OUT_S),
+      tweenImageClip(images, 100, CLIP_OUT_S, 'top'),
     ])
   })()
   return leavePromise
@@ -1217,7 +1235,7 @@ useHead(() => ({
 
 .about-plan--enter .about-plan__figure-img,
 .about-plan--enter .about-plan__figure-veil {
-  clip-path: inset(100% 0% 0% 0%);
+  clip-path: inset(0% 0% 100% 0%);
 }
 
 .about-plan--enter .about-plan__figure-meta,
@@ -1345,6 +1363,7 @@ useHead(() => ({
 .about-plan__figure-veil {
   position: absolute;
   inset: 0;
+  z-index: -1;
   background: var(--background-color);
   pointer-events: none;
 }
@@ -1420,20 +1439,12 @@ useHead(() => ({
 }
 
 .about-plan__figure-img {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: grayscale(1);
-  opacity: 0.2;
-  transition:
-    filter 0.45s ease,
-    opacity 0.45s ease;
-}
-
-.about-plan__figure--lit .about-plan__figure-img {
-  filter: grayscale(0);
-  opacity: 1;
 }
 
 .about-plan__figure-meta {

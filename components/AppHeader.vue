@@ -38,16 +38,13 @@
         >
           {{ item.text }}
         </NuxtLink>
+      </nav>
 
+      <div
+        class="header__actions"
+        :aria-hidden="isProductPage ? 'true' : undefined"
+      >
         <div class="header__tools" role="group" aria-label="Site tools">
-          <NuxtLink
-            to="/discovery"
-            class="header__version interface"
-            :class="{ 'header__version--active': isActive('/discovery') }"
-          >
-            Discovery
-          </NuxtLink>
-
           <button
             type="button"
             class="header__icon-btn"
@@ -123,12 +120,7 @@
             My Boards
           </button>
         </div>
-      </nav>
 
-      <div
-        class="header__actions"
-        :aria-hidden="isProductPage ? 'true' : undefined"
-      >
         <div class="header__cta" role="group" aria-label="Contact">
           <a
             class="interface"
@@ -345,7 +337,6 @@ const onMyBoardsClick = () => {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin-left: 0.5rem;
 }
 
 .header--scroll-hidden .header__nav {
@@ -418,6 +409,7 @@ const onMyBoardsClick = () => {
   justify-self: end;
   display: flex;
   align-items: center;
+  gap: 20px;
 }
 
 .header__cta {
@@ -448,7 +440,7 @@ const onMyBoardsClick = () => {
   margin-right: 0.15rem;
   padding: 0.2rem 0.4rem;
   font-size: var(--text-xs);
-  color: var(--muted);
+  color: var(--charcoal);
   border: 1px solid var(--grid-line);
   border-radius: 4px;
   background: transparent;
@@ -563,7 +555,7 @@ const onMyBoardsClick = () => {
   place-items: center;
   width: 2rem;
   height: 2rem;
-  color: var(--muted);
+  color: var(--charcoal);
   opacity: 1;
   transition: color 0.2s ease, opacity 0.45s ease;
 }

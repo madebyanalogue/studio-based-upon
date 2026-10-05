@@ -147,6 +147,7 @@
                 class="stack__column-thumb"
                 :class="{ 'stack__column-thumb--returning': columnReturningId === item.id }"
                 :data-column-id="item.id"
+                data-cursor="drag-composition"
                 @pointerdown="onColumnThumbPointerDown($event, item, board.id)"
               >
                 <img
@@ -154,6 +155,13 @@
                   :src="item.imageUrl"
                   :alt="item.title"
                   draggable="false"
+                />
+                <AddButton
+                  class="stack__column-ctrl stack__column-ctrl--clone"
+                  variant="clone"
+                  :label="`Clone ${item.title}`"
+                  @pointerdown.stop
+                  @click.stop="cloneItem(item.id)"
                 />
               </div>
               <!-- Reserve the pile footprint so the last thumb sits on its top edge -->
@@ -2351,15 +2359,33 @@ const destroyColumnGhost = () => {
   document.documentElement.classList.remove('stack-column-dragging')
 }
 
+/** Painted image box inside a column thumb (padding excluded). */
+const columnThumbVisibleBox = (thumb: HTMLElement) => {
+  const img = thumb.querySelector('img')
+  const rect = (img || thumb).getBoundingClientRect()
+  if (!img) {
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+  }
+  const style = getComputedStyle(img)
+  const padLeft = Number.parseFloat(style.paddingLeft) || 0
+  const padRight = Number.parseFloat(style.paddingRight) || 0
+  const padTop = Number.parseFloat(style.paddingTop) || 0
+  const padBottom = Number.parseFloat(style.paddingBottom) || 0
+  return {
+    left: rect.left + padLeft,
+    top: rect.top + padTop,
+    width: Math.max(1, rect.width - padLeft - padRight),
+    height: Math.max(1, rect.height - padTop - padBottom),
+  }
+}
+
 const startColumnDrag = (pending: ColumnPending, event: PointerEvent) => {
-  const rect = pending.thumb.getBoundingClientRect()
   const img = pending.thumb.querySelector('img')
-  const natW = img?.naturalWidth || 1
-  const natH = img?.naturalHeight || 1
-  const fitted = fitStackContentSize(natW, natH, rect.width)
-  // Center the natural-ratio ghost on the square thumb’s content
-  const left = rect.left + (rect.width - fitted.width) / 2
-  const top = rect.top + (rect.height - fitted.height) / 2
+  // Match the on-screen image. Column thumbs are natural ratio now, so a
+  // square fit shrinks portraits down to the column width.
+  const visible = columnThumbVisibleBox(pending.thumb)
+  const left = visible.left
+  const top = visible.top
 
   const ghost = document.createElement('div')
   ghost.className = 'stack__column-ghost'
@@ -2372,8 +2398,8 @@ const startColumnDrag = (pending: ColumnPending, event: PointerEvent) => {
     'position:fixed',
     `left:${left}px`,
     `top:${top}px`,
-    `width:${fitted.width}px`,
-    `height:${fitted.height}px`,
+    `width:${visible.width}px`,
+    `height:${visible.height}px`,
     'margin:0',
     'z-index:500',
     'pointer-events:none',
@@ -2391,8 +2417,8 @@ const startColumnDrag = (pending: ColumnPending, event: PointerEvent) => {
     ghost,
     offsetX: event.clientX - left,
     offsetY: event.clientY - top,
-    width: fitted.width,
-    height: fitted.height,
+    width: visible.width,
+    height: visible.height,
   }
   columnPending = null
   document.documentElement.classList.add('stack-column-dragging')
@@ -2407,7 +2433,7 @@ const onColumnThumbPointerDown = (
 ) => {
   if (!import.meta.client || event.button !== 0) return
   // Don't start a board-drag from the close control
-  if ((event.target as HTMLElement | null)?.closest?.('.stack__column-close')) return
+  if ((event.target as HTMLElement | null)?.closest?.('.stack__column-close, .stack__column-ctrl')) return
   const thumb = event.currentTarget as HTMLElement
   columnPending = {
     item,
@@ -5404,6 +5430,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__column-thumb {
+  position: relative;
   width: 100%;
   height: auto;
   aspect-ratio: auto;
@@ -5448,6 +5475,24 @@ onBeforeUnmount(() => {
   cursor: -webkit-grabbing;
   box-shadow: none;
   background: transparent;
+}
+
+.stack__column-ctrl {
+  position: absolute;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.stack__column-thumb:hover .stack__column-ctrl {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.stack__column-ctrl--clone {
+  top: var(--thumb-ctrl-inset, 4px);
+  left: var(--thumb-ctrl-inset, 4px);
 }
 
 .stack__column-thumb img {
@@ -6252,12 +6297,13 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   z-index: 420;
+  --stack-toolbar-pad: var(--gutter);
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 0.75rem;
   min-height: var(--header-height);
-  padding: 0 var(--gutter);
+  padding: 0 var(--stack-toolbar-pad);
   box-sizing: border-box;
   background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
   backdrop-filter: blur(16px);
@@ -6385,20 +6431,27 @@ onBeforeUnmount(() => {
 }
 
 .stack__toolbar-create {
-  justify-self: end;
-  padding: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: -1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 50px;
   border: 0;
-  background: transparent;
+  background: var(--blue);
   font-size: var(--text-xs);
-  color: var(--charcoal);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: #fff;
+  text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .stack__toolbar-create:hover:not(:disabled) {
-  color: var(--accent, var(--charcoal));
+  background: color-mix(in srgb, var(--blue) 88%, #000);
+  color: #fff;
 }
 
 .stack__toolbar-create:disabled {
@@ -6609,8 +6662,8 @@ onBeforeUnmount(() => {
   }
 
   .stack__toolbar {
+    --stack-toolbar-pad: calc(var(--gutter) * 0.75);
     gap: 0.5rem;
-    padding: 0 calc(var(--gutter) * 0.75);
   }
 
   .stack__toolbar-center {

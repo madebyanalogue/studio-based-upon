@@ -3,7 +3,8 @@
     v-if="count > 1"
     class="image-cycle"
     :class="{ 'image-cycle--boxed': boxed }"
-    :data-cursor="showCursor ? undefined : 'native'"
+    :data-cursor="cursorLabel ? undefined : showCursor ? undefined : 'native'"
+    :data-cursor-label="cursorLabel || undefined"
     @pointerdown.stop
     @click.stop
   >
@@ -11,7 +12,8 @@
     <button
       type="button"
       class="image-cycle__btn"
-      data-cursor="prev"
+      :data-cursor="cursorLabel ? undefined : 'prev'"
+      :data-cursor-label="cursorLabel || undefined"
       aria-label="Previous image"
       @click="$emit('prev')"
     >
@@ -21,7 +23,8 @@
     <button
       type="button"
       class="image-cycle__btn"
-      data-cursor="next"
+      :data-cursor="cursorLabel ? undefined : 'next'"
+      :data-cursor-label="cursorLabel || undefined"
       aria-label="Next image"
       @click="$emit('next')"
     >
@@ -42,11 +45,14 @@ withDefaults(
     boxed?: boolean
     /** Custom prev/next cursor. Off when a parent edge zone owns the cursor. */
     showCursor?: boolean
+    /** Replaces the arrow cursors with this label. */
+    cursorLabel?: string
   }>(),
   {
     hideCount: false,
     boxed: false,
     showCursor: true,
+    cursorLabel: '',
   },
 )
 

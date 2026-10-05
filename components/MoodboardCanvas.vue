@@ -212,6 +212,18 @@
               :style="item.clipPath ? { clipPath: item.clipPath } : undefined"
               draggable="false"
             />
+            <div
+              v-if="!item.tearRestore"
+              class="moodboard__clone"
+              :style="{ transform: `scale(${1 / item.scale})` }"
+              @pointerdown.stop
+              @click.stop="cloneItem(item.id)"
+            >
+              <AddButton
+                variant="clone"
+                :label="`Clone ${item.title}`"
+              />
+            </div>
             <ImageCycleArrows
               v-if="!item.clipPath && (item.imageUrls?.length || 0) > 1"
               class="moodboard__cycle"
@@ -335,15 +347,25 @@
       </div>
       </div>
 
-      <!-- Save and close — top left -->
-      <button
-        type="button"
-        class="moodboard__save-close interface"
-        aria-label="Save and close board"
-        @click="onSaveAndClose"
-      >
-        Save and close
-      </button>
+      <!-- Save and discard — top left -->
+      <div class="moodboard__exit-bar">
+        <button
+          type="button"
+          class="moodboard__exit-btn interface"
+          aria-label="Save and close board"
+          @click="onSaveAndClose"
+        >
+          Save and close
+        </button>
+        <button
+          type="button"
+          class="moodboard__exit-btn interface"
+          aria-label="Discard changes"
+          @click="onCancelEdits"
+        >
+          Discard Changes
+        </button>
+      </div>
 
       <!-- Board title — top centre -->
       <div ref="switcherRef" class="moodboard__titlebar">
@@ -788,6 +810,7 @@ const {
   updateColour,
   addImage,
   cycleItemImage,
+  cloneItem,
   addStroke,
   updateStrokePoints,
   removeStroke,
@@ -1232,10 +1255,12 @@ const exitMoodboard = async (opts?: {
   confirmingDelete.value = false
   pendingDeleteId.value = null
 
+  const closingBoardsPanel = !opts?.keepBoardsPanel && boardsPanelOpen.value
   if (opts?.keepBoardsPanel) openBoardsPanel()
   else closeBoardsPanel()
 
-  await waitMs(MOODBOARD_PAUSE_MS)
+  // Let the My Boards rail finish its width slide before the composer lifts.
+  await waitMs(closingBoardsPanel ? 380 : MOODBOARD_PAUSE_MS)
 
   // Collapse dispersed columns back into piles before the composer lifts.
   await requestMoodboardRestack()
@@ -1287,7 +1312,6 @@ const onSaveAndClose = async () => {
     shot?.aspect,
   )
   await exitMoodboard({
-    keepBoardsPanel: true,
     savedBoardId: boardId,
   })
 }
@@ -2353,11 +2377,14 @@ const captureBoardPreview = async (): Promise<{
           node.classList.contains('moodboard__chip') ||
           node.classList.contains('moodboard__restore') ||
           node.classList.contains('moodboard__remove') ||
+          node.classList.contains('moodboard__clone') ||
           node.classList.contains('moodboard__handle') ||
           node.classList.contains('moodboard__cycle') ||
           node.classList.contains('moodboard__tear-line') ||
           node.classList.contains('moodboard__actions') ||
           node.classList.contains('moodboard__save-close') ||
+          node.classList.contains('moodboard__exit-bar') ||
+          node.classList.contains('moodboard__exit-btn') ||
           node.classList.contains('moodboard__titlebar') ||
           node.classList.contains('moodboard__footer') ||
           node.classList.contains('moodboard__pen-bar') ||
@@ -2629,6 +2656,7 @@ onUnmounted(() => {
 .moodboard--capturing .moodboard__chip,
 .moodboard--capturing .moodboard__restore,
 .moodboard--capturing .moodboard__remove,
+.moodboard--capturing .moodboard__clone,
 .moodboard--capturing .moodboard__handle,
 .moodboard--capturing .moodboard__cycle,
 .moodboard--capturing .moodboard__tear-line,
@@ -2637,6 +2665,7 @@ onUnmounted(() => {
 .moodboard--capturing .moodboard__history,
 .moodboard--capturing .moodboard__footer,
 .moodboard--capturing .moodboard__enquiry,
+.moodboard--capturing .moodboard__exit-bar,
 .moodboard--capturing .moodboard__save-close,
 .moodboard--capturing .moodboard__titlebar,
 .moodboard--capturing .moodboard__actions {
@@ -2649,6 +2678,7 @@ onUnmounted(() => {
 .moodboard__pen-bar,
 .moodboard__footer,
 .moodboard__enquiry,
+.moodboard__exit-bar,
 .moodboard__save-close,
 .moodboard__titlebar {
   opacity: 0;
@@ -2663,6 +2693,7 @@ onUnmounted(() => {
   transform: translateX(calc(-100% - var(--gutter) - 1rem));
 }
 
+.moodboard__exit-bar,
 .moodboard__save-close {
   transform: translateY(calc(-100% - var(--gutter)));
 }
@@ -2681,6 +2712,7 @@ onUnmounted(() => {
 
 .moodboard--panel-ready .moodboard__actions,
 .moodboard--panel-ready .moodboard__pen-bar,
+.moodboard--panel-ready .moodboard__exit-bar,
 .moodboard--panel-ready .moodboard__save-close {
   opacity: 1;
   pointer-events: auto;
@@ -2721,6 +2753,7 @@ onUnmounted(() => {
   transform: translateX(calc(-100% - var(--gutter) - 1rem));
 }
 
+.moodboard--chrome-out .moodboard__exit-bar,
 .moodboard--chrome-out .moodboard__save-close {
   opacity: 0;
   pointer-events: none;
@@ -2749,6 +2782,7 @@ onUnmounted(() => {
 .moodboard--items-out .moodboard__pen-bar,
 .moodboard--items-out .moodboard__footer,
 .moodboard--items-out .moodboard__enquiry,
+.moodboard--items-out .moodboard__exit-bar,
 .moodboard--items-out .moodboard__save-close,
 .moodboard--items-out .moodboard__titlebar {
   opacity: 0;
@@ -2867,11 +2901,18 @@ onUnmounted(() => {
   background: var(--grid-line);
 }
 
-.moodboard__save-close {
+.moodboard__exit-bar {
   position: absolute;
   top: var(--gutter);
   left: var(--gutter);
   z-index: 400;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.moodboard__exit-btn,
+.moodboard__save-close {
   padding: 0.45rem 0.75rem;
   border: 1px solid var(--grid-line);
   background: var(--elevated-bg, var(--warm-white));
@@ -2882,6 +2923,7 @@ onUnmounted(() => {
   transition: border-color 0.15s ease, color 0.15s ease;
 }
 
+.moodboard__exit-btn:hover,
 .moodboard__save-close:hover {
   border-color: var(--charcoal);
   color: var(--charcoal);
@@ -3445,6 +3487,19 @@ html.dark .moodboard__place-layer {
   background: currentColor;
 }
 
+/* Match cart cell clone control — top-left inset */
+.moodboard__clone {
+  position: absolute;
+  top: var(--thumb-ctrl-inset, 4px);
+  left: var(--thumb-ctrl-inset, 4px);
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  transform-origin: top left;
+  cursor: pointer;
+}
+
 /* Match cart cell remove control position (images / swatches) */
 .moodboard__remove {
   position: absolute;
@@ -3460,10 +3515,12 @@ html.dark .moodboard__place-layer {
 
 .moodboard__item:hover .moodboard__chip,
 .moodboard__item:hover .moodboard__restore,
+.moodboard__item:hover .moodboard__clone,
 .moodboard__item:hover .moodboard__remove,
 .moodboard__item:hover .moodboard__cycle,
 .moodboard__item--primary .moodboard__chip,
 .moodboard__item--primary .moodboard__restore,
+.moodboard__item--primary .moodboard__clone,
 .moodboard__item--primary .moodboard__remove,
 .moodboard__item--primary .moodboard__cycle {
   opacity: 1;

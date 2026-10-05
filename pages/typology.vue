@@ -65,6 +65,7 @@ import {
 
 definePageMeta({
   layout: 'curated-discover',
+  pageTransition: false,
 })
 
 const TITLE_BLUR_MAX = 75
@@ -175,12 +176,12 @@ const startTitleScrub = () => {
   titleScrubRaf = requestAnimationFrame(tickTitleScrub)
 }
 
-const stopTitleScrub = () => {
+const stopTitleScrub = (restore = true) => {
   if (titleScrubRaf) cancelAnimationFrame(titleScrubRaf)
   titleScrubRaf = 0
   titleScrubEffect = 1
   titleApproachSpan = 0
-  if (!titleSwapLock) applyTitleGooey(1)
+  if (restore && !titleSwapLock) applyTitleGooey(1)
 }
 
 const abortTitleSwapTween = () => {
@@ -375,14 +376,51 @@ provide(typologyRowHoverKey, { setHoveredTitle })
 
 const pageEl = ref<HTMLElement | null>(null)
 const pageEntering = ref(true)
-const CLIP_IN_S = 1.6
-const FADE_IN_S = 2
-const FADE_STAGGER = 0.3
+const FIRST_WIPE_S = 1.6
+const REST_WIPE_S = 0.35
+const WIPE_DELAY_S = 0.1
+/** Each next item starts this far through the one before it. */
+const WIPE_OVERLAP = 0.7 / FIRST_WIPE_S
+const LEAVE_WIPE_S = 0.4
 let centerPadObserver: ResizeObserver | null = null
 let enterTween: gsap.core.Timeline | null = null
+let leaveTween: gsap.core.Timeline | null = null
+let leavePromise: Promise<void> | null = null
 
-const setRowClip = (el: HTMLElement, top: number) => {
-  el.style.clipPath = `inset(${top}% 0% 0% 0%)`
+/** The one picture that is on screen for a row before it opens. */
+const rowWipeTarget = (row: HTMLElement) =>
+  row.querySelector<HTMLElement>(
+    '.collection-rail__card--trigger .discover-card__media, .story-break__media',
+  ) || row
+
+/** Reveal grows downward: the top edge stays open, the bottom inset closes. */
+const setTopWipe = (el: HTMLElement, bottom: number) => {
+  el.style.clipPath = `inset(0% 0% ${bottom}% 0%)`
+}
+
+const clearTopWipe = (el: HTMLElement) => {
+  el.style.removeProperty('clip-path')
+}
+
+const clipBottom = (el: HTMLElement) => {
+  const match = (el.style.clipPath || '').match(
+    /inset\(\s*[0-9.]+%\s+[0-9.]+%\s+([0-9.]+)%/,
+  )
+  return match ? Number(match[1]) : 0
+}
+
+/** Pictures that are actually on screen, including an open row. */
+const columnWipeTargets = () => {
+  if (!pageEl.value) return []
+  return [
+    ...pageEl.value.querySelectorAll<HTMLElement>(
+      '.discover-card__media, .story-break__media',
+    ),
+  ].filter((el) => {
+    const card = el.closest<HTMLElement>('.collection-rail__card')
+    if (!card) return true
+    return Number(getComputedStyle(card).opacity) > 0.05
+  })
 }
 
 const playPageEnter = () => {
@@ -390,57 +428,117 @@ const playPageEnter = () => {
   const rows = [
     ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
   ]
-  const first = rows[0]
-  const rest = rows.slice(1)
+  const items = rows.map((row) => ({ row, target: rowWipeTarget(row) }))
 
-  if (prefersReducedMotion() || !first) {
+  if (prefersReducedMotion() || !items.length) {
+    items.forEach(({ row, target }) => {
+      clearTopWipe(target)
+      row.style.removeProperty('pointer-events')
+    })
     pageEntering.value = false
     return
   }
 
-  setRowClip(first, 100)
-  rest.forEach((el) => {
-    el.style.transition = 'none'
-    el.style.opacity = '0'
-    el.style.pointerEvents = 'none'
+  items.forEach(({ row, target }) => {
+    setTopWipe(target, 100)
+    row.style.pointerEvents = 'none'
   })
   pageEntering.value = false
 
   enterTween = gsap.timeline({
+    delay: WIPE_DELAY_S,
     onComplete: () => {
       enterTween = null
-      first.style.removeProperty('clip-path')
-      rest.forEach((el) => {
-        el.style.removeProperty('opacity')
-        el.style.removeProperty('pointer-events')
-        el.style.removeProperty('transition')
-      })
     },
   })
-  const clip = { top: 100 }
-  enterTween.to(
-    clip,
-    {
-      top: 0,
-      duration: CLIP_IN_S,
-      ease: 'power3.inOut',
-      onUpdate: () => setRowClip(first, clip.top),
-    },
-    0,
-  )
-  if (rest.length) {
-    enterTween.to(
-      rest,
+
+  const starts: number[] = []
+  items.forEach((_, index) => {
+    if (index === 0) {
+      starts.push(0)
+      return
+    }
+    const previousDuration = index === 1 ? FIRST_WIPE_S : REST_WIPE_S
+    starts.push(starts[index - 1]! + previousDuration * WIPE_OVERLAP)
+  })
+
+  items.forEach(({ row, target }, index) => {
+    const first = index === 0
+    const clip = { bottom: 100 }
+    enterTween!.to(
+      clip,
       {
-        opacity: 1,
-        duration: FADE_IN_S,
-        ease: 'power2.out',
-        stagger: FADE_STAGGER,
+        bottom: 0,
+        duration: first ? FIRST_WIPE_S : REST_WIPE_S,
+        ease: first ? 'power3.out' : 'none',
+        onUpdate: () => setTopWipe(target, clip.bottom),
+        onComplete: () => {
+          clearTopWipe(target)
+          row.style.removeProperty('pointer-events')
+        },
       },
-      CLIP_IN_S,
+      starts[index],
     )
-  }
+  })
 }
+
+const playPageLeave = () => {
+  if (leavePromise) return leavePromise
+  leavePromise = (async () => {
+    enterTween?.kill()
+    enterTween = null
+    stopTitleScrub(false)
+
+    const targets = columnWipeTargets()
+    const titleShowing = Boolean(titleText.value)
+
+    if (prefersReducedMotion()) {
+      targets.forEach((el) => setTopWipe(el, 100))
+      if (titleShowing) {
+        titlePaintReady.value = false
+        titleText.value = ''
+      }
+      return
+    }
+
+    const wipe = new Promise<void>((resolve) => {
+      if (!targets.length) {
+        resolve()
+        return
+      }
+      leaveTween = gsap.timeline({
+        onComplete: () => {
+          leaveTween = null
+          resolve()
+        },
+      })
+      targets.forEach((el) => {
+        const clip = { bottom: clipBottom(el) }
+        leaveTween!.to(
+          clip,
+          {
+            bottom: 100,
+            duration: LEAVE_WIPE_S,
+            ease: 'power3.out',
+            onUpdate: () => setTopWipe(el, clip.bottom),
+          },
+          0,
+        )
+      })
+    })
+
+    await Promise.all([
+      wipe,
+      titleShowing ? titleGooeyOut() : Promise.resolve(),
+    ])
+  })()
+  return leavePromise
+}
+
+onBeforeRouteLeave((to, from) => {
+  if (isOverlayHistoryRestore() || to.path === from.path) return
+  return playPageLeave()
+})
 
 /** Pad top/bottom so first & last thumbnails’ centers sit on the viewport midline. */
 const syncCenterPad = () => {
@@ -507,8 +605,8 @@ onMounted(() => {
 const syncOutsideCloseCursor = (locked: boolean) => {
   if (!import.meta.client) return
   const root = document.documentElement
-  if (locked) root.setAttribute('data-cursor', 'close')
-  else if (root.getAttribute('data-cursor') === 'close') root.removeAttribute('data-cursor')
+  if (locked) root.setAttribute('data-cursor', 'close-label')
+  else if (root.getAttribute('data-cursor') === 'close-label') root.removeAttribute('data-cursor')
 }
 
 watch(typologyRowsLocked, (locked) => {
@@ -541,9 +639,11 @@ watch(typologyPointerPaused, syncPointerPause)
 onBeforeUnmount(() => {
   syncOutsideCloseCursor(false)
   syncPointerPause(false)
-  stopTitleScrub()
+  stopTitleScrub(false)
   enterTween?.kill()
   enterTween = null
+  leaveTween?.kill()
+  leaveTween = null
   abortTitleSwapTween()
   titleSplitInstance?.revert()
   titleSplitInstance = null
@@ -563,13 +663,9 @@ onBeforeUnmount(() => {
   padding-bottom: var(--rail-center-pad-bottom);
 }
 
-.discover-page--enter .discover-page__content > :first-child {
-  clip-path: inset(100% 0% 0% 0%);
-}
-
-.discover-page--enter .discover-page__content > :not(:first-child) {
-  opacity: 0;
-  pointer-events: none;
+.discover-page--enter .discover-page__content > * :deep(.discover-card__media),
+.discover-page--enter .discover-page__content > * :deep(.story-break__media) {
+  clip-path: inset(0% 0% 100% 0%);
 }
 
 .discover-page__title-filter {
@@ -644,13 +740,9 @@ onBeforeUnmount(() => {
     transition: none;
   }
 
-  .discover-page--enter .discover-page__content > :first-child {
+  .discover-page--enter .discover-page__content > * :deep(.discover-card__media),
+  .discover-page--enter .discover-page__content > * :deep(.story-break__media) {
     clip-path: none;
-  }
-
-  .discover-page--enter .discover-page__content > :not(:first-child) {
-    opacity: 1;
-    pointer-events: auto;
   }
 }
 </style>

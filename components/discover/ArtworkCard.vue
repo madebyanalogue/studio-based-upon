@@ -9,7 +9,8 @@
         :is="hitTag"
         v-bind="hitProps"
         class="discover-card__hit"
-        :data-cursor="'plus'"
+        :data-cursor="cursorLabel ? undefined : 'plus'"
+        :data-cursor-label="cursorLabel || undefined"
         :aria-label="hitLabel || artwork.title"
         @click="onOpen"
       >
@@ -39,7 +40,8 @@
         v-if="controls && projectImages.length > 1"
         type="button"
         class="discover-card__edge discover-card__edge--prev"
-        data-cursor="prev"
+        :data-cursor="cursorLabel ? undefined : 'prev'"
+        :data-cursor-label="cursorLabel || undefined"
         tabindex="-1"
         :aria-label="`Previous image of ${artwork.title}`"
         @click.stop.prevent="cycle(-1)"
@@ -48,7 +50,8 @@
         v-if="controls && projectImages.length > 1"
         type="button"
         class="discover-card__edge discover-card__edge--next"
-        data-cursor="next"
+        :data-cursor="cursorLabel ? undefined : 'next'"
+        :data-cursor-label="cursorLabel || undefined"
         tabindex="-1"
         :aria-label="`Next image of ${artwork.title}`"
         @click.stop.prevent="cycle(1)"
@@ -62,6 +65,7 @@
         hide-count
         boxed
         :show-cursor="false"
+        :cursor-label="cursorLabel"
         @prev="cycle(-1)"
         @next="cycle(1)"
       />
@@ -86,10 +90,12 @@ const props = withDefaults(
     /** Hearts and image controls. Off until the typology row is active. */
     controls?: boolean
     hitLabel?: string
+    /** Replaces the plus cursor with this label, for a locked typology row. */
+    cursorLabel?: string
     /** Collection order for the PDP Next control. */
     sequence?: PdpNextItem[]
   }>(),
-  { trigger: false, controls: true, hitLabel: '' },
+  { trigger: false, controls: true, hitLabel: '', cursorLabel: '' },
 )
 
 const emit = defineEmits<{

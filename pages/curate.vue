@@ -17,7 +17,8 @@ definePageMeta({
 const { buckets, page } = await useShowcaseCatalog()
 const reelsEl = ref<{ playLeave: () => Promise<void> } | null>(null)
 
-onBeforeRouteLeave(async () => {
+onBeforeRouteLeave(async (to, from) => {
+  if (isOverlayHistoryRestore() || to.path === from.path) return
   await reelsEl.value?.playLeave()
 })
 
@@ -26,9 +27,6 @@ useHead(() => ({
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
-  htmlAttrs: {
-    class: 'dark',
-  },
 }))
 </script>
 

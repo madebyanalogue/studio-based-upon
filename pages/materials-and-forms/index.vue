@@ -1390,7 +1390,8 @@ onMounted(() => {
 
 const onFilterWindowResize = () => scheduleFilterLiquidSync(true)
 
-onBeforeRouteLeave(async () => {
+onBeforeRouteLeave(async (to, from) => {
+  if (isOverlayHistoryRestore() || to.path === from.path) return
   await runPageOutro()
 })
 

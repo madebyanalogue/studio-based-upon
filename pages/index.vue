@@ -23,7 +23,8 @@ const { phase: introPhase, slides: introSlides } = useHomepageIntro()
 const holdEntrance = computed(() => introPhase.value === 'cover')
 const sliderEl = ref<{ playLeave: () => Promise<void> } | null>(null)
 
-onBeforeRouteLeave(async () => {
+onBeforeRouteLeave(async (to, from) => {
+  if (isOverlayHistoryRestore() || to.path === from.path) return
   await sliderEl.value?.playLeave()
 })
 
@@ -43,9 +44,6 @@ useHead(() => ({
   meta: page.value.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
-  htmlAttrs: {
-    class: 'dark',
-  },
   bodyAttrs: {
     class: 'infinite-slider-active',
   },

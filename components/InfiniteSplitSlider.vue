@@ -2,6 +2,9 @@
   <section
     ref="rootEl"
     class="split-slider"
+        @pointerenter="onSliderPointerEnter"
+    @pointermove="onSliderPointerMove"
+    @pointerleave="onSliderPointerLeave"
     :class="{
       'split-slider--ready': surfaceReady,
       'split-slider--type-on': typeLayerVisible,
@@ -81,6 +84,7 @@
       <a
         class="split-slider__caption-side"
         :href="activeSlide.left.link"
+        :data-cursor-label="activeSlide.left.title || activeSlide.title"
         @click="onCaptionClick('left', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.left.title }}</p>
@@ -91,6 +95,7 @@
       <a
         class="split-slider__caption-side"
         :href="activeSlide.right.link"
+        :data-cursor-label="activeSlide.right.title || activeSlide.title"
         @click="onCaptionClick('right', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.right.title }}</p>
@@ -153,8 +158,14 @@ const LINK_IN_FULL = .85
 const LINK_OUT_START = 1.14
 const LINK_OUT_END = 2
 const LINK_INTRO_DELAY = 0
-/** Hold type until the surface has started fading in. */
-const TYPE_INTRO_DELAY_MS = 380
+/** Arrival wipe — ease in and out so the open doesn’t lurch off the intro. */
+const WIPE_IN_DURATION = 1.6
+const WIPE_OUT_DURATION = 0.9
+const TEXT_FADE_DURATION = 0.55
+const CLIP_OPEN = 'inset(0% 0% 0% 0%)'
+/** Left column closes upward; right column closes downward. */
+const CLIP_LEFT_SHUT = 'inset(0% 0% 100% 0%)'
+const CLIP_RIGHT_SHUT = 'inset(100% 0% 0% 0%)'
 
 const settings = {
   scrollSensitivity: 1200,
@@ -200,6 +211,51 @@ let needsIntro = true
 let introPlaying = false
 let leaving = false
 let leavePromise: Promise<void> | null = null
+let entranceStarted = false
+let userScrolled = false
+let pointerOverSlider = false
+let hoverX = 0
+let hoverY = 0
+let lastCursorScroll = -1
+let scrollHintReady = false
+let captionSwapGen = 0
+const homeScrollHint = useHomeScrollHint()
+const { resolveFromPoint } = useCursor()
+
+const syncScrollHint = () => {
+  const show =
+    scrollHintReady && pointerOverSlider && !userScrolled && !leaving && running
+  if (homeScrollHint.value !== show) homeScrollHint.value = show
+}
+
+const dismissScrollHint = () => {
+  userScrolled = true
+  homeScrollHint.value = false
+}
+
+const showScrollHint = () => {
+  scrollHintReady = true
+  pointerOverSlider = rootEl.value?.matches(':hover') ?? false
+  syncScrollHint()
+}
+
+const onSliderPointerEnter = (event: PointerEvent) => {
+  pointerOverSlider = true
+  hoverX = event.clientX
+  hoverY = event.clientY
+  syncScrollHint()
+}
+
+const onSliderPointerMove = (event: PointerEvent) => {
+  hoverX = event.clientX
+  hoverY = event.clientY
+}
+
+const onSliderPointerLeave = () => {
+  pointerOverSlider = false
+  syncScrollHint()
+}
+let columnWipe: gsap.core.Timeline | null = null
 /** Product open in progress — wheel stays locked until the overlay closes. */
 const openingProduct = ref(false)
 let introTween: gsap.core.Timeline | null = null
@@ -232,6 +288,8 @@ const createSlide = (side: Side, index: number) => {
   el.style.zIndex = String(index)
   // Clip immediately so buffer slides never flash full-bleed before updateSlider
   el.style.clipPath = getRevealShape(side, scrollPosition - index)
+  const projectName = (data[side].title || data.title || '').trim()
+  if (projectName) el.dataset.cursorLabel = projectName
 
   const img = document.createElement('img')
   img.src = side === 'left' ? data.leftImage : data.rightImage
@@ -489,46 +547,201 @@ const preloadActiveSlideImages = async () => {
   ])
 }
 
-const prepareSurface = async () => {
-  await preloadActiveSlideImages()
-  // One more layout pass so clip-paths settle before we fade in
-  updateSlider()
-  await nextTick()
-  if (!running) return
-  surfaceReady.value = true
+let surfacePromise: Promise<void> | null = null
+
+/** Decode the opening pair once, while the intro is still covering the slider. */
+const prepareSurface = () => {
+  if (!props.slides.length) {
+    return (async () => {
+      await preloadActiveSlideImages()
+      updateSlider()
+      await nextTick()
+    })()
+  }
+  if (!surfacePromise) {
+    surfacePromise = (async () => {
+      await preloadActiveSlideImages()
+      updateSlider()
+      await nextTick()
+    })()
+  }
+  return surfacePromise
 }
 
-const playHeldType = async () => {
-  if (!running || !needsIntro) return
-  if (!surfaceReady.value) await prepareSurface()
-  await delay(TYPE_INTRO_DELAY_MS)
-  if (!running || !needsIntro) return
+const motionDuration = (seconds: number) =>
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : seconds
+
+const captionNodes = () =>
+  [
+    ...(rootEl.value?.querySelectorAll<HTMLElement>('.split-slider__caption-side') ??
+      []),
+  ]
+
+const clipFrom = (el: HTMLElement | null, fallback: string) => {
+  const inline = el?.style.clipPath
+  if (inline && inline !== 'none') return inline
+  return fallback
+}
+
+/** Opposite vertical wipes. In opens from shut; out closes from the current pose. */
+const wipeColumns = (direction: 'in' | 'out') =>
+  new Promise<void>((resolve) => {
+    const left = leftEl.value
+    const right = rightEl.value
+    const opening = direction === 'in'
+    const duration = motionDuration(opening ? WIPE_IN_DURATION : WIPE_OUT_DURATION)
+    const ease = opening ? 'power2.inOut' : 'power3.inOut'
+    const previous = columnWipe
+    columnWipe = null
+    previous?.kill()
+
+    let settled = false
+    let tl!: gsap.core.Timeline
+    const finish = (interrupted: boolean) => {
+      if (settled) return
+      settled = true
+      if (columnWipe === tl) columnWipe = null
+      if (opening && !interrupted) {
+        for (const el of [left, right]) {
+          if (!el) continue
+          el.style.transition = 'none'
+          el.style.clipPath = 'none'
+          el.style.removeProperty('will-change')
+          gsap.set(el, { clearProps: 'opacity' })
+          el.style.removeProperty('transition')
+        }
+      }
+      resolve()
+    }
+
+    for (const el of [left, right]) {
+      if (!el) continue
+      el.style.transition = 'none'
+      if (opening) el.style.willChange = 'clip-path'
+    }
+    if (opening) {
+      if (left) gsap.set(left, { opacity: 1, clipPath: CLIP_LEFT_SHUT })
+      if (right) gsap.set(right, { opacity: 1, clipPath: CLIP_RIGHT_SHUT })
+      surfaceReady.value = true
+      document.dispatchEvent(new CustomEvent('homepage-columns-opening'))
+    }
+
+    tl = gsap.timeline({
+      onComplete: () => finish(false),
+      onInterrupt: () => finish(true),
+    })
+    columnWipe = tl
+    if (left) {
+      tl.fromTo(
+        left,
+        { clipPath: opening ? CLIP_LEFT_SHUT : clipFrom(left, CLIP_OPEN) },
+        {
+          clipPath: opening ? CLIP_OPEN : CLIP_LEFT_SHUT,
+          duration,
+          ease,
+        },
+        0,
+      )
+    }
+    if (right) {
+      tl.fromTo(
+        right,
+        { clipPath: opening ? CLIP_RIGHT_SHUT : clipFrom(right, CLIP_OPEN) },
+        {
+          clipPath: opening ? CLIP_OPEN : CLIP_RIGHT_SHUT,
+          duration,
+          ease,
+        },
+        0,
+      )
+    }
+    if (!left && !right) finish(false)
+  })
+
+const fadeCaptions = (opacity: number, seconds = TEXT_FADE_DURATION) =>
+  new Promise<void>((resolve) => {
+    const nodes = captionNodes()
+    if (!nodes.length) {
+      resolve()
+      return
+    }
+    gsap.to(nodes, {
+      opacity,
+      duration: motionDuration(seconds),
+      ease: opacity > 0 ? 'power2.out' : 'power2.inOut',
+      overwrite: 'auto',
+      onComplete: resolve,
+    })
+  })
+
+/** Wipe the columns open, then bring the slide captions in. */
+const playEntrance = async () => {
+  if (entranceStarted || leaving) return
+  entranceStarted = true
+  await prepareSurface()
+  if (!running || leaving) return
+  await wipeColumns('in')
+  if (!running || leaving) return
+
+  const captions = captionNodes()
+  if (captions.length) gsap.set(captions, { opacity: 0 })
+  typeLayerVisible.value = true
+  await nextTick()
+  if (!running || leaving) return
+  await fadeCaptions(1)
+
+  if (!running || leaving) return
+  showScrollHint()
+  if (!needsIntro) {
+    applyTypeEffect(typeEffect.value, linkEffect.value)
+    return
+  }
 
   for (let i = 0; i < 24; i += 1) {
     if (titleWords().length || !activeSlide.value?.title) break
     await delay(50)
   }
-  if (!running || !needsIntro) return
-
-  typeLayerVisible.value = true
+  if (!running || leaving || !needsIntro) return
   needsIntro = false
   playIntroType()
 }
 
-const runEntranceSequence = async () => {
-  await prepareSurface()
-  if (!running) return
-
-  await delay(TYPE_INTRO_DELAY_MS)
-  if (!running) return
-
-  typeLayerVisible.value = true
-  if (needsIntro) {
-    needsIntro = false
-    playIntroType()
-  } else {
-    applyTypeEffect(typeEffect.value, linkEffect.value)
+/** Fade the captions out, swap the slide, then fade the next titles in. */
+const crossfadeCaptions = async (slide: SplitSliderSlide) => {
+  const gen = ++captionSwapGen
+  const nodes = captionNodes()
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!nodes.length || reduce) {
+    activeSlide.value = slide
+    void splitActiveType()
+    return
   }
+  await new Promise<void>((resolve) => {
+    gsap.to(nodes, {
+      opacity: 0,
+      duration: 0.15,
+      ease: 'power2.in',
+      overwrite: 'auto',
+      onComplete: resolve,
+    })
+  })
+  if (gen !== captionSwapGen || !running || leaving) return
+  activeSlide.value = slide
+  await nextTick()
+  if (gen !== captionSwapGen || !running || leaving) return
+  void splitActiveType()
+  const next = captionNodes()
+  if (!next.length) return
+  gsap.fromTo(
+    next,
+    { opacity: 0 },
+    {
+      opacity: 1,
+      duration: 0.2,
+      ease: 'power2.out',
+      overwrite: 'auto',
+    },
+  )
 }
 
 const syncTypeLayer = () => {
@@ -559,10 +772,15 @@ const syncTypeLayer = () => {
   linkEffect.value = linkFx
 
   if (dataIndex !== lastDataIndex || key !== activeKey.value) {
+    const slideChanged = dataIndex !== lastDataIndex && lastDataIndex !== -1
     lastDataIndex = dataIndex
     activeKey.value = key
-    activeSlide.value = slide
-    void splitActiveType()
+    if (slideChanged && typeLayerVisible.value) {
+      void crossfadeCaptions(slide)
+    } else {
+      activeSlide.value = slide
+      void splitActiveType()
+    }
   } else if (!introPlaying) {
     if (needsIntro || !typeLayerVisible.value) {
       applyTypeEffect(0, 0)
@@ -605,11 +823,17 @@ const updateSlider = () => {
     }
   }
 
+  if (pointerOverSlider && scrollPosition !== lastCursorScroll) {
+    lastCursorScroll = scrollPosition
+    resolveFromPoint(hoverX, hoverY)
+  }
+
   syncTypeLayer()
 }
 
 const onWheel = (event: WheelEvent) => {
   event.preventDefault()
+  if (event.deltaX || event.deltaY) dismissScrollHint()
   if (leaving || openingProduct.value) return
   cancelIntro()
   scrollTarget += event.deltaY / settings.scrollSensitivity
@@ -623,6 +847,7 @@ const onTouchMove = (event: TouchEvent) => {
   if (leaving || openingProduct.value) return
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
+  if (y !== lastTouchY) dismissScrollHint()
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
   lastTouchY = y
 }
@@ -784,56 +1009,25 @@ watch(productOpen, (openNow, wasOpen) => {
   if (wasOpen && !openNow) restoreAfterProduct()
 })
 
-/** Gooey the active type out, and clip the columns off in opposite vertical directions. */
+/** Clip the columns shut while the slide titles fade out from the first frame. */
 const playLeave = () => {
   if (leavePromise) return leavePromise
   leavePromise = new Promise<void>((resolve) => {
     leaving = true
+    homeScrollHint.value = false
     introTween?.kill()
     introPlaying = false
     cancelAnimationFrame(rafId)
+    columnWipe?.kill()
 
-    const words = [
-      ...titleWords(),
-      ...locationWords(),
-      ...linkWords(),
-    ]
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const duration = reduce ? 0 : 0.9
-    const tl = gsap.timeline({ onComplete: resolve })
-
-    if (words.length) {
-      tl.to(
-        words,
-        {
-          filter: `blur(${TITLE_BLUR_MAX}px)`,
-          opacity: 0,
-          duration,
-          ease: 'power2.in',
-        },
-        0,
-      )
-    }
-
-    if (leftEl.value) {
-      tl.fromTo(
-        leftEl.value,
-        { clipPath: 'inset(0% 0% 0% 0%)' },
-        { clipPath: 'inset(0% 0% 100% 0%)', duration, ease: 'power3.inOut' },
-        0,
-      )
-    }
-
-    if (rightEl.value) {
-      tl.fromTo(
-        rightEl.value,
-        { clipPath: 'inset(0% 0% 0% 0%)' },
-        { clipPath: 'inset(100% 0% 0% 0%)', duration, ease: 'power3.inOut' },
-        0,
-      )
-    }
-
-    if (!tl.duration()) resolve()
+    void (async () => {
+      const fade = typeLayerVisible.value
+        ? fadeCaptions(0, WIPE_OUT_DURATION)
+        : Promise.resolve()
+      const wipe = surfaceReady.value ? wipeColumns('out') : Promise.resolve()
+      await Promise.all([fade, wipe])
+      resolve()
+    })()
   })
   return leavePromise
 }
@@ -857,18 +1051,19 @@ onMounted(() => {
   updateSlider()
   rafId = requestAnimationFrame(tick)
   if (props.holdEntrance) void prepareSurface()
-  else void runEntranceSequence()
+  else void playEntrance()
 })
 
 watch(
   () => props.holdEntrance,
   (hold, wasHolding) => {
-    if (wasHolding && !hold) void playHeldType()
+    if (wasHolding && !hold) void playEntrance()
   },
 )
 
 onBeforeUnmount(() => {
   running = false
+  homeScrollHint.value = false
   cancelAnimationFrame(rafId)
   cancelIntro()
   unlockPageScroll()
@@ -892,6 +1087,7 @@ watch(
   () => {
     lastDataIndex = -1
     activeKey.value = ''
+    if (!entranceStarted) surfacePromise = null
   },
 )
 </script>
@@ -926,6 +1122,14 @@ watch(
   opacity: 0;
   cursor: pointer;
   transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.split-slider:not(.split-slider--ready) .split-slider__column--left {
+  clip-path: inset(0% 0% 100% 0%);
+}
+
+.split-slider:not(.split-slider--ready) .split-slider__column--right {
+  clip-path: inset(100% 0% 0% 0%);
 }
 
 .split-slider--opening .split-slider__column {
