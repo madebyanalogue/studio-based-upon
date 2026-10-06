@@ -18,12 +18,17 @@
       <div
         v-for="(column, slotIndex) in columns"
         :key="column.instanceId"
+        class="showcase__column-wrap"
+        :class="{ 'showcase__column-wrap--pending': pendingColumns[column.instanceId] }"
+      >
+      <div
         class="showcase__column-shell"
         :class="{
           'showcase__column-shell--pending': pendingColumns[column.instanceId],
           'showcase__column-shell--quiet': quietColumns[column.instanceId],
         }"
         :data-column-id="column.instanceId"
+        :data-cursor-label="column.single || column.images.length < 2 ? undefined : 'Scroll'"
         @pointerenter="onColumnPointerEnter"
         @pointermove="syncColumnHot"
         @pointerleave="onColumnPointerLeave"
@@ -59,6 +64,7 @@
               :data-logical-index="cell.logicalIndex"
               :data-loop-copy="cell.copyIndex"
               :aria-label="`${column.title} — image ${cell.logicalIndex + 1}`"
+              :data-cursor-label="cell.image.productTitle || undefined"
               @click="onSelect(column, cell.logicalIndex)"
             >
               <img
@@ -141,8 +147,19 @@
           </button>
         </div>
       </div>
+      <div
+        class="showcase__column-meta"
+        :class="{ 'showcase__column-meta--out': leavingColumns[column.instanceId] }"
+      >
+        <p class="showcase__column-title interface">{{ column.title }}</p>
+        <p
+          v-if="settledProductName(slotIndex)"
+          class="showcase__column-product interface"
+        >{{ settledProductName(slotIndex) }}</p>
+      </div>
+      </div>
 
-      <div class="showcase__adder">
+      <div class="showcase__adder" data-cursor="default">
         <button
           v-if="canAddColumn"
           type="button"
@@ -320,6 +337,7 @@
     <button
       type="button"
       class="showcase__surrender interface"
+      data-cursor="default"
       :disabled="!columnCount"
       @click="surrenderColumns"
     >
@@ -460,6 +478,8 @@ const pageClipping = ref(false)
 const columnMotion = ref(false)
 /** First paint of a new column: width 0 and content hidden, before GSAP takes over. */
 const pendingColumns = ref<Record<string, true>>({})
+/** Columns whose title and product name are fading out on remove. */
+const leavingColumns = ref<Record<string, true>>({})
 /** Hold image fades off until the column itself fades in. */
 const quietColumns = ref<Record<string, true>>({})
 const showcaseEl = ref<HTMLElement | null>(null)
@@ -477,6 +497,12 @@ const instantDim = ref<boolean[]>(Array.from({ length: MAX_COLUMNS }, () => fals
 const surrenderDim = ref<boolean[]>(Array.from({ length: MAX_COLUMNS }, () => false))
 /** Clips every reel to its slot while Surrender is scrolling. */
 const surrendering = ref(false)
+const settledProductName = (slotIndex: number) => {
+  const column = columns.value[slotIndex]
+  const index = settledIndexes.value[slotIndex]
+  if (!column || index == null) return ''
+  return column.images[index]?.productTitle || ''
+}
 let surrenderMotion = 0
 
 const finishSurrenderClip = () => {
@@ -817,6 +843,7 @@ const createUploadColumn = (file: File, src: string): ShowcaseColumn => {
         id: `upload-img-${instanceSeq}`,
         src,
         title: name,
+        productTitle: name,
       },
     ],
     single: true,
@@ -1374,6 +1401,68 @@ const scrollColumnToImageIndex = (
   }
 }
 
+const shownImageIndex = (slotIndex: number) => {
+  const column = columns.value[slotIndex]
+  if (!column?.images.length) return 0
+  const settled = settledIndexes.value[slotIndex]
+  if (settled != null && settled >= 0 && settled < column.images.length) return settled
+  const fromKey = imageIndexForKey(slotIndex, activeKeys.value[slotIndex])
+  return fromKey != null ? fromKey : 0
+}
+
+/** Uniform pick among every image except the one centred now. */
+const surrenderImageIndex = (slotIndex: number) => {
+  const count = columns.value[slotIndex]?.images.length ?? 0
+  if (count <= 1) return 0
+  const current = shownImageIndex(slotIndex)
+  const offset = 1 + Math.floor(Math.random() * (count - 1))
+  return (current + offset) % count
+}
+
+/**
+ * A one-image column cannot scroll to a different frame.
+ * Swap in another bucket so Surrender still changes it.
+ */
+const retargetSingleColumn = (slotIndex: number) => {
+  const column = columns.value[slotIndex]
+  if (!column || column.images.length > 1) return false
+  const currentSrc = column.images[0]?.src
+  const pool = bucketPool.value.filter((bucket) =>
+    bucket.images?.some((image) => image.src && image.src !== currentSrc),
+  )
+  if (!pool.length) return false
+  const bucket = pool[Math.floor(Math.random() * pool.length)]!
+  const images = shuffleImages(
+    bucket.images.filter((image) => image.src && image.src !== currentSrc),
+  )
+  if (!images.length) return false
+
+  const objectUrl = column.objectUrl
+  const next = columns.value.slice()
+  next[slotIndex] = {
+    ...column,
+    productId: bucket.productId || bucket.id || column.productId,
+    bucketId: bucket.id,
+    title: bucket.title || column.title,
+    slug: bucket.slug,
+    images,
+    single: images.length < 2,
+    objectUrl: undefined,
+  }
+  columns.value = next
+
+  const nextSettled = settledIndexes.value.slice()
+  nextSettled[slotIndex] = 0
+  settledIndexes.value = nextSettled
+  const nextActive = activeKeys.value.slice()
+  nextActive[slotIndex] = cellKey(slotIndex, images[0]!.id)
+  activeKeys.value = nextActive
+
+  if (objectUrl) nextTick(() => URL.revokeObjectURL(objectUrl))
+  if (images.length > 1) lenisBySlot[slotIndex]?.start()
+  return true
+}
+
 const surrenderColumns = async () => {
   // Column add/remove changes widths; wait for spacers + Lenis limits before targeting.
   await refreshColumnMetrics()
@@ -1383,15 +1472,27 @@ const surrenderColumns = async () => {
   )
   if (!targets.length) return
 
+  let reshaped = false
+  for (const slotIndex of targets) {
+    if (retargetSingleColumn(slotIndex)) reshaped = true
+  }
+  if (reshaped) {
+    await nextTick()
+    await refreshColumnMetrics()
+  }
+
   surrenderMotion = targets.length
   surrendering.value = true
   showcaseEl.value?.classList.add('showcase--surrendering')
 
   targets.forEach((slotIndex) => {
     const column = columns.value[slotIndex]
-    if (!column) return
-    const imageIndex = Math.floor(Math.random() * column.images.length)
-    scrollColumnToImageIndex(slotIndex, imageIndex)
+    if (!column?.images.length) {
+      finishSurrenderClip()
+      return
+    }
+    if (!column.single) lenisBySlot[slotIndex]?.start()
+    scrollColumnToImageIndex(slotIndex, surrenderImageIndex(slotIndex))
   })
 }
 
@@ -1445,7 +1546,9 @@ const onColumnPointerEnter = (event: PointerEvent) => {
 
 const onColumnPointerLeave = (event: PointerEvent) => {
   const shell = event.currentTarget
-  if (shell instanceof HTMLElement) shell.classList.remove('showcase__column-shell--hot')
+  if (shell instanceof HTMLElement) {
+    shell.classList.remove('showcase__column-shell--hot')
+  }
   markColumnLeaving(event)
 }
 
@@ -2186,8 +2289,7 @@ const dismissScrollHint = () => {
 }
 
 const showScrollHint = () => {
-  if (scrollHintDismissed || pageLeaving) return
-  homeScrollHint.value = true
+  homeScrollHint.value = false
 }
 
 const pageClipTargets = () => {
@@ -2332,12 +2434,32 @@ const playArrival = async () => {
   showScrollHint()
 }
 
+/** Titles sit outside the column clip, so they fade on their own from the first frame. */
+const fadeColumnMetaOut = () => {
+  const metas = showcaseEl.value?.querySelectorAll<HTMLElement>('.showcase__column-meta')
+  if (!metas?.length) return
+  metas.forEach((el) => {
+    el.style.transition = 'none'
+  })
+  if (prefersReducedColumnMotion()) {
+    gsap.set(metas, { opacity: 0 })
+    return
+  }
+  gsap.to(metas, {
+    opacity: 0,
+    duration: 0.45,
+    ease: 'power2.out',
+    overwrite: true,
+  })
+}
+
 /** Wipe the columns shut. Route leave waits on this. */
 const playLeave = () => {
   if (leavePromise) return leavePromise
   leavePromise = (async () => {
     pageLeaving = true
     dismissScrollHint()
+    fadeColumnMetaOut()
     releasePageClip?.()
     const targets = pageClipTargets()
     if (!targets.length || prefersReducedColumnMotion() || !arrived.value) return
@@ -2748,6 +2870,8 @@ const removeColumn = async (slotIndex: number) => {
   if (!column) return
 
   const preserved = captureActiveImageIds().filter((_, index) => index !== slotIndex)
+  leavingColumns.value = { ...leavingColumns.value, [column.instanceId]: true }
+  await nextTick()
   columnMotion.value = true
   structuralLayoutDepth += 1
   window.clearTimeout(layoutRealignTimer)
@@ -2915,10 +3039,58 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.showcase__column-shell {
+.showcase__column-wrap {
   position: relative;
   flex: 1 1 0;
-  width: auto;
+  min-width: 0;
+}
+
+.showcase__column-wrap--pending {
+  flex-grow: 0;
+  flex-basis: 0;
+  overflow: hidden;
+}
+
+.showcase__column-meta {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 12px 0 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 1.15s ease;
+}
+
+.showcase--surrendering .showcase__column-meta,
+.showcase__column-meta--out {
+  opacity: 0;
+  transition-duration: 0.28s;
+}
+
+.showcase__column-title,
+.showcase__column-product {
+  margin: 0;
+  font-size: clamp(8px, 1vw, 9.5px);
+  letter-spacing: 0.125em;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.showcase__column-title {
+  color: var(--charcoal);
+}
+
+.showcase__column-product {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.showcase__column-shell {
+  position: relative;
+  width: 100%;
   min-width: 0;
   height: auto;
   max-height: 100%;
@@ -2932,8 +3104,6 @@ onBeforeUnmount(() => {
 }
 
 .showcase__column-shell--pending {
-  flex-grow: 0;
-  flex-basis: 0;
   overflow: hidden;
 }
 
@@ -3074,7 +3244,11 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: clamp(20px, 2vw, 40px);
+  /* Stay near the cell bottom, but never below the viewport. */
+  bottom: max(
+    clamp(20px, 2vw, 40px),
+    calc((100% - 100dvh) / 2 + clamp(20px, 2vw, 40px))
+  );
   z-index: 5;
   display: flex;
   align-items: center;

@@ -9,7 +9,7 @@
         :is="hitTag"
         v-bind="hitProps"
         class="discover-card__hit"
-        :data-cursor="cursorLabel ? undefined : 'plus'"
+        :data-cursor="hitCursor"
         :data-cursor-label="cursorLabel || undefined"
         :aria-label="hitLabel || artwork.title"
         @click="onOpen"
@@ -30,14 +30,14 @@
         :active="saved"
         :label="
           saved
-            ? `Remove ${artwork.title} from selection`
+            ? `Remove ${artwork.title} from Stack`
             : `Add ${artwork.title} to selection`
         "
         @click.stop.prevent="onToggle"
       />
 
       <button
-        v-if="controls && projectImages.length > 1"
+        v-if="showImageCycle"
         type="button"
         class="discover-card__edge discover-card__edge--prev"
         :data-cursor="cursorLabel ? undefined : 'prev'"
@@ -47,7 +47,7 @@
         @click.stop.prevent="cycle(-1)"
       />
       <button
-        v-if="controls && projectImages.length > 1"
+        v-if="showImageCycle"
         type="button"
         class="discover-card__edge discover-card__edge--next"
         :data-cursor="cursorLabel ? undefined : 'next'"
@@ -58,7 +58,7 @@
       />
 
       <ImageCycleArrows
-        v-if="controls && projectImages.length > 1"
+        v-if="showImageCycle"
         class="discover-card__cycle"
         :index="imageIndex"
         :count="projectImages.length"
@@ -92,10 +92,12 @@ const props = withDefaults(
     hitLabel?: string
     /** Replaces the plus cursor with this label, for a locked typology row. */
     cursorLabel?: string
+    /** Circle only. No plus, and no image-cycle arrows. */
+    circleCursor?: boolean
     /** Collection order for the PDP Next control. */
     sequence?: PdpNextItem[]
   }>(),
-  { trigger: false, controls: true, hitLabel: '', cursorLabel: '' },
+  { trigger: false, controls: true, hitLabel: '', cursorLabel: '', circleCursor: false },
 )
 
 const emit = defineEmits<{
@@ -162,6 +164,15 @@ watch(returnImage, (value) => {
 const subtitle = computed(() => {
   const parts = [props.artwork.artist, props.artwork.year].filter(Boolean)
   return parts.length ? parts.join(' · ') : ''
+})
+
+const showImageCycle = computed(
+  () => props.controls && !props.circleCursor && projectImages.value.length > 1,
+)
+
+const hitCursor = computed(() => {
+  if (props.cursorLabel) return undefined
+  return props.circleCursor ? 'default' : 'plus'
 })
 
 const interactive = computed(() => props.trigger || !!props.artwork.slug)

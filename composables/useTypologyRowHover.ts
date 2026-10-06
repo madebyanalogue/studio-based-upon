@@ -13,5 +13,8 @@ export const typologyRowsLocked = ref(false)
 /** Blocks every pointer event while a row is closing and the next one is opening. */
 export const typologyPointerPaused = ref(false)
 
+/** After Close is clicked, keep that cursor word from coming back while it types out. */
+export const typologyCloseLabelHeld = ref(false)
+
 /** Row to open once the current one has finished closing. */
 export const typologyHandoffRailId = ref<string | null>(null)

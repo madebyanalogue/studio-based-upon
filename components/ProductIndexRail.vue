@@ -55,7 +55,7 @@
                 :active="isItemSaved(item)"
                 :label="
                   isItemSaved(item)
-                    ? `Remove ${item.title} from selection`
+                    ? `Remove ${item.title} from Stack`
                     : `Add ${item.title} to selection`
                 "
                 @click.stop="onToggleSave(item, $event)"
@@ -177,7 +177,7 @@
               :active="isItemSaved(item)"
               :label="
                 isItemSaved(item)
-                  ? `Remove ${item.title} from selection`
+                  ? `Remove ${item.title} from Stack`
                   : `Add ${item.title} to selection`
               "
               @click.stop="onToggleSave(item, $event)"

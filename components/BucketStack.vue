@@ -15,6 +15,7 @@
         'stack--boards-cart': stagePresent && panelTab === 'boards',
         'stack--above-pdp':
           (productOverlayOpen || pdpCloseVeilActive) && !pdpOpenedFromCart,
+        'stack--enquiry-parked': enquiryParked,
       }"
       :style="stackCssVars"
       :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
@@ -222,7 +223,7 @@
         :aria-hidden="isMoodboard ? 'true' : undefined"
         :aria-label="panelTab === 'boards' ? 'Boards' : 'My selection'"
       >
-        <div class="stack__backdrop" @click="requestClose" />
+        <div class="stack__backdrop" data-cursor="close-label" @click="requestClose" />
 
         <!-- Cell shells always stay in flow (squares). Only .stack__cell-media Flips. -->
         <div
@@ -233,7 +234,9 @@
             'stack__grid--lines': gridLinesVisible,
             'stack__grid--pdp-focus': !!pdpFocusItemId,
           }"
+          data-cursor="close-label"
           data-lenis-prevent
+          @click="onCartDeadClick"
         >
           <div
             ref="gridTrackRef"
@@ -255,6 +258,7 @@
                 <button
                   type="button"
                   class="stack__undo interface"
+                  data-cursor="default"
                   @click="onUndoClick(entry.key, entry.item)"
                 >
                   Undo
@@ -268,7 +272,7 @@
               :data-flip-id="flipSurface === 'cells' ? entry.item.id : undefined"
             >
               <div class="stack__cell-frame">
-                <div class="stack__cell-figure">
+                <div class="stack__cell-figure" data-cursor="default">
                   <button
                     type="button"
                     class="stack__cell-hit"
@@ -318,7 +322,9 @@
           ref="gridRef"
           class="stack__grid stack__grid--boards"
           :class="{ 'stack__grid--lines': gridLinesVisible }"
+          data-cursor="close-label"
           data-lenis-prevent
+          @click="onCartDeadClick"
         >
           <div
             ref="gridTrackRef"
@@ -350,6 +356,7 @@
                 <button
                   type="button"
                   class="stack__undo interface"
+                  data-cursor="default"
                   @click="onUndoBoardClick(entry.key, entry.board)"
                 >
                   Undo
@@ -369,6 +376,7 @@
               <div class="stack__cell-frame stack__cell-frame--board">
                 <div
                   class="stack__cell-figure stack__cell-figure--board"
+                  data-cursor="default"
                   :class="{
                     'stack__cell-figure--board-empty':
                       !entry.board.placements.length &&
@@ -594,7 +602,7 @@
         <button
           type="button"
           class="stack__enquiry interface"
-          :class="{ 'stack__enquiry--visible': enquiryVisible }"
+          :class="{ 'stack__enquiry--visible': enquiryVisible && !enquiryFormOpen }"
           :disabled="!items.length"
           @click="sendEnquiry"
         >
@@ -772,7 +780,7 @@ const {
   setActiveBoard,
   activeBoardId,
 } = useBoards()
-const { openFromBucket, openFromMoodboard } = useEnquiryForm()
+const { openFromBucket, openFromMoodboard, isOpen: enquiryFormOpen } = useEnquiryForm()
 const {
   open,
   returnImage,
@@ -833,6 +841,8 @@ const gridLinesVisible = ref(false)
 const controlsVisible = ref(false)
 /** Selection enquiry bar — rises after items finish dispersing into the grid. */
 const enquiryVisible = ref(false)
+/** Stack thumbs hidden while their clones fly into / out of the enquiry form. */
+const enquiryParked = ref(false)
 /** Which surface currently owns data-flip-id (never both). */
 const flipSurface = ref<'pile' | 'cells'>('pile')
 /** Keep pile mounted during open Flip so cards can fly free (not clipped by cells). */
@@ -3436,9 +3446,56 @@ const onSelectionMenuPointerDown = (event: PointerEvent) => {
   }
 }
 
+const measureStackFlyRects = () => {
+  const root = gridRef.value
+  if (!root) return []
+  const rects: Array<{
+    id: string
+    src: string
+    left: number
+    top: number
+    width: number
+    height: number
+  }> = []
+  for (const item of items.value) {
+    if (!item.imageUrl) continue
+    const img = root.querySelector<HTMLImageElement>(
+      `[data-stack-id="${CSS.escape(item.id)}"] img`,
+    )
+    if (!img) continue
+    const rect = img.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) continue
+    rects.push({
+      id: item.id,
+      src: item.imageUrl,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    })
+  }
+  return rects
+}
+
 const sendEnquiry = () => {
   if (!items.value.length) return
-  openFromBucket(items.value)
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const measured = !reduceMotion && showSelectionGrid.value ? measureStackFlyRects() : []
+  if (!measured.length) {
+    openFromBucket(items.value)
+    return
+  }
+  enquiryParked.value = true
+  mountEnquiryFlyers(measured)
+  openFromBucket(items.value, {
+    origins: measured.map(({ id, left, top, width, height }) => ({
+      id,
+      left,
+      top,
+      width,
+      height,
+    })),
+  })
 }
 
 /** Drop cart stage instantly (moodboard cream already covering). */
@@ -4334,6 +4391,20 @@ const requestClose = () => {
   void closeToPile()
 }
 
+/** Empty cart surface — not a product, board, or its controls. */
+const onCartDeadClick = (event: MouseEvent) => {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (
+    target.closest(
+      '.stack__cell-figure, .stack__undo, .stack__cell-ctrl, .stack__board-action, button, a',
+    )
+  ) {
+    return
+  }
+  requestClose()
+}
+
 const onCartKeydown = (event: KeyboardEvent) => {
   if (event.key !== 'Escape') return
   if (confirmingDelete.value) {
@@ -4889,6 +4960,19 @@ onMounted(() => {
     window.addEventListener('resize', onWinResize)
     document.addEventListener('pointerdown', onSelectionMenuPointerDown)
     document.addEventListener('keydown', onCartKeydown)
+    registerEnquiryFlyBridge({
+      measure: () =>
+        measureStackFlyRects().map(({ id, left, top, width, height }) => ({
+          id,
+          left,
+          top,
+          width,
+          height,
+        })),
+      setParked: (parked) => {
+        enquiryParked.value = parked
+      },
+    })
     nextTick(() => {
       parkInactiveRailBelow()
     })
@@ -4915,6 +4999,8 @@ onBeforeUnmount(() => {
     document.removeEventListener('keydown', onCartKeydown)
     document.documentElement.classList.remove('bucket-stack-open')
     document.documentElement.classList.remove('stack-column-dragging')
+    registerEnquiryFlyBridge(null)
+    enquiryParked.value = false
     if (stagePresent.value) unlockPageScroll()
     // Board lock is owned by closeMoodboard — only unlock here if the
     // composer was left open while this component tears down.
@@ -6111,6 +6197,11 @@ onBeforeUnmount(() => {
   height: fit-content;
   line-height: 0;
   transform-origin: center center;
+}
+
+.stack--enquiry-parked .stack__cell-figure {
+  opacity: 0 !important;
+  transition: none !important;
 }
 
 .stack__cell-figure.stack__cell-figure--board {

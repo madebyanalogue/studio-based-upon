@@ -42,7 +42,7 @@
             :active="isFrameSaved(selectedIndex)"
             :label="
               isFrameSaved(selectedIndex)
-                ? `Remove ${product.title} from selection`
+                ? `Remove ${product.title} from Stack`
                 : `Add ${product.title} to selection`
             "
             @click="onAddFrame(selectedIndex)"
@@ -67,7 +67,8 @@
                 <path d="M1 3 L7 9 L13 3" />
               </svg>
             </button>
-            <div v-if="showSpecs" class="pdp__spec-panel">
+            <div class="pdp__spec-panel" :class="{ 'is-open': showSpecs }">
+              <div class="pdp__spec-panel-clip" :inert="!showSpecs">
               <div class="pdp__spec">
                 <dt class="serif-italic">Year</dt>
                 <dd>{{ product.year || '2024' }}</dd>
@@ -121,6 +122,7 @@
               <ul v-if="product.finishes?.length" class="pdp__finishes">
                 <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
               </ul>
+              </div>
             </div>
           </div>
         </dl>
@@ -168,8 +170,10 @@
         ref="stageRef"
         class="pdp__stage pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
-        data-cursor="close"
+        :data-cursor-label="galleryCursorLabel"
         @pointermove="onGalleryPointerMove"
+        @wheel="onGalleryWheel"
+        @touchmove="onGalleryTouchMove"
         @click="onStageClick"
       >
         <div
@@ -247,7 +251,7 @@
                   :active="isFrameSaved(i)"
                   :label="
                     isFrameSaved(i)
-                      ? `Remove ${product.title} image ${i + 1} from selection`
+                      ? `Remove ${product.title} image ${i + 1} from Stack`
                       : `Add ${product.title} image ${i + 1} to selection`
                   "
                   @click.stop="onAddFrame(i)"
@@ -693,7 +697,6 @@ watch(galleryEntries, (entries) => {
 
 watch(selectedIndex, () => {
   nextTick(syncStripVideos)
-  syncGalleryCursor()
 })
 
 const selectImage = (index: number) => {
@@ -917,61 +920,83 @@ const collapseImage = () => {
   frameZoomHiRes.value = false
 }
 
-/** Fixed to the visible gallery: left and right 15% step, the centre closes.
- *  An edge arrow drops once that direction has no further frame. */
-const galleryPointerZone = (clientX: number): 'prev' | 'next' | 'close' | 'default' => {
-  const stage = stageRef.value
-  if (!stage || galleryEntries.value.length < 2) return 'close'
-  const rect = stage.getBoundingClientRect()
-  const trackStyle = stripTrackRef.value ? getComputedStyle(stripTrackRef.value) : null
-  const padL = trackStyle ? Number.parseFloat(trackStyle.paddingLeft) || 0 : 0
-  const padR = trackStyle ? Number.parseFloat(trackStyle.paddingRight) || 0 : 0
-  const width = Math.max(0, rect.width - padL - padR)
-  if (width <= 0) return 'close'
-  const x = (clientX - rect.left - padL) / width
-  if (x < 0.15) return canCycleImage(-1) ? 'prev' : 'default'
-  if (x > 0.85) return canCycleImage(1) ? 'next' : 'default'
-  return 'close'
+/** Scroll hint, then Close once the gallery moves or the hint has been up for 2s. */
+const SCROLL_HINT_MS = 2000
+const galleryScrolled = ref(false)
+const galleryCursorLabel = computed(() => {
+  if (galleryEntries.value.length < 2) return undefined
+  return galleryScrolled.value ? 'Close' : 'Scroll'
+})
+let scrollHintTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearScrollHintTimer = () => {
+  if (!scrollHintTimer) return
+  clearTimeout(scrollHintTimer)
+  scrollHintTimer = null
 }
 
+const armScrollHint = () => {
+  clearScrollHintTimer()
+  if (galleryEntries.value.length < 2 || galleryScrolled.value) return
+  scrollHintTimer = setTimeout(() => {
+    scrollHintTimer = null
+    markGalleryScrolled()
+  }, SCROLL_HINT_MS)
+}
+const homeScrollHint = useHomeScrollHint()
 const { resolveFromPoint } = useCursor()
 let galleryPointerX: number | null = null
 let galleryPointerY: number | null = null
 
-const syncGalleryCursor = () => {
-  const stage = stageRef.value
-  if (!stage || galleryPointerX == null || galleryPointerY == null) return
-  const zone = galleryPointerZone(galleryPointerX)
-  if (stage.dataset.cursor !== zone) stage.dataset.cursor = zone
-  resolveFromPoint(galleryPointerX, galleryPointerY)
+const rememberGalleryPointer = (event: { clientX: number; clientY: number }) => {
+  galleryPointerX = event.clientX
+  galleryPointerY = event.clientY
 }
 
 const onGalleryPointerMove = (event: PointerEvent) => {
-  galleryPointerX = event.clientX
-  galleryPointerY = event.clientY
-  syncGalleryCursor()
+  rememberGalleryPointer(event)
 }
 
-const onGalleryMediaClick = (event: MouseEvent) => {
-  const zone = galleryPointerZone(event.clientX)
-  if (zone === 'prev') {
-    cycleImage(-1)
-    return
-  }
-  if (zone === 'next') {
-    cycleImage(1)
-    return
-  }
-  if (zone === 'default') return
+const markGalleryScrolled = () => {
+  if (galleryScrolled.value) return
+  clearScrollHintTimer()
+  galleryScrolled.value = true
+}
+
+watch(
+  () => [galleryEntries.value.length, galleryScrolled.value] as const,
+  () => armScrollHint(),
+  { immediate: true },
+)
+
+watch(galleryScrolled, async (scrolled) => {
+  if (!scrolled || galleryPointerX == null || galleryPointerY == null) return
+  await nextTick()
+  resolveFromPoint(galleryPointerX, galleryPointerY)
+})
+
+const onGalleryWheel = (event: WheelEvent) => {
+  if (!event.deltaX && !event.deltaY) return
+  rememberGalleryPointer(event)
+  markGalleryScrolled()
+}
+
+const onGalleryTouchMove = (event: TouchEvent) => {
+  const touch = event.touches[0]
+  if (touch) rememberGalleryPointer(touch)
+  markGalleryScrolled()
+}
+
+const onGalleryMediaClick = () => {
   emit('close')
 }
 
-/** Letterbox uses the same fixed gallery zones. Controls keep their own clicks. */
+/** Letterbox and the image both close. Controls keep their own clicks. */
 const onStageClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
   if (target.closest('button, a, .pdp__hero-image, .pdp__hero-video')) return
-  onGalleryMediaClick(event)
+  onGalleryMediaClick()
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
@@ -995,6 +1020,7 @@ const onGalleryKeydown = (event: KeyboardEvent) => {
 }
 
 onMounted(() => {
+  homeScrollHint.value = false
   nextTick(() => {
     initGalleryLenis()
     scrollGalleryInitial()
@@ -1007,6 +1033,7 @@ onMounted(() => {
 onUnmounted(() => {
   destroyGalleryLenis()
   window.removeEventListener('keydown', onGalleryKeydown)
+  clearScrollHintTimer()
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
 })
@@ -1542,6 +1569,7 @@ watch(
     if (!slug || slug === prevSlug) return
 
     showSpecs.value = false
+    galleryScrolled.value = false
     collapseImage()
 
     const token = ++slugSwapToken
@@ -2132,11 +2160,36 @@ watch(
 }
 
 .pdp__spec-panel {
+  display: grid;
+  grid-template-rows: 0fr;
   padding-bottom: 0;
+  transition: grid-template-rows 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.pdp__spec-panel > .pdp__spec {
+.pdp__spec-panel.is-open {
+  grid-template-rows: 1fr;
+}
+
+.pdp__spec-panel-clip {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.4s ease 0.05s;
+}
+
+.pdp__spec-panel.is-open .pdp__spec-panel-clip {
+  opacity: 1;
+}
+
+.pdp__spec-panel-clip > .pdp__spec {
   border-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdp__spec-panel,
+  .pdp__spec-panel-clip {
+    transition: none;
+  }
 }
 
 .pdp__spec dt {

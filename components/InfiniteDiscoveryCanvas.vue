@@ -11,6 +11,22 @@
       <div class="infinite-discover__loader-bar" :style="{ width: `${textureProgress}%` }" />
     </div>
 
+    <div
+      v-show="hover"
+      ref="heartEl"
+      class="infinite-discover__heart"
+      data-discovery-heart
+      @pointerdown.stop
+    >
+      <AddButton
+        v-if="hover"
+        variant="add"
+        :active="hover.saved"
+        :label="hover.saved ? `Remove ${hover.title}` : `Save ${hover.title}`"
+        @click.stop="onHeart"
+      />
+    </div>
+
     <div class="infinite-discover__controls infinite-discover__controls--left">
       <button type="button" class="infinite-discover__pill" @click="onSurrender">
         Surrender
@@ -56,6 +72,28 @@ const props = defineProps<{
 
 const { imageUrl, getImageSrc } = useSanityImage()
 const { open, isOpen } = useProductOverlay()
+const { requestSave, isSaved } = useBucket()
+
+type HoverHeart = {
+  slug: string
+  title: string
+  productId: string
+  url: string
+  saved: boolean
+}
+
+type ScreenRect = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+const HEART_INSET = 8
+
+const hover = ref<HoverHeart | null>(null)
+const heartEl = ref<HTMLElement | null>(null)
+let hoverRect: ScreenRect | null = null
 
 const containerEl = ref<HTMLElement | null>(null)
 const textureProgress = ref(0)
@@ -92,10 +130,11 @@ const createFlipGhost = (payload: InfiniteCanvasSelectPayload) => {
     height: `${screenRect.height}px`,
     margin: '0',
     objectFit: 'cover',
-    // Invisible stand-in for Flip metrics only — ProductDetail's flyer is what you see.
-    opacity: '0',
-    visibility: 'hidden',
-    zIndex: '40',
+    // Above the product overlay (320) and under the Flip flyer (330), so the
+    // picture stays put until the flyer is covering it.
+    opacity: '1',
+    visibility: 'visible',
+    zIndex: '325',
     pointerEvents: 'none',
     borderRadius: '0px',
   } as Partial<CSSStyleDeclaration>)
@@ -176,7 +215,99 @@ const readThemeColors = () => {
   return { background: cream, fog: cream }
 }
 
+const placeHeart = (rect: ScreenRect | null) => {
+  hoverRect = rect
+  const el = heartEl.value
+  if (!el || !rect) return
+  const x = rect.left + rect.width - HEART_INSET
+  const y = rect.top + HEART_INSET
+  el.style.transform = `translate3d(${x}px, ${y}px, 0) translateX(-100%)`
+}
+
+const onCanvasHover = (payload: InfiniteCanvasSelectPayload | null) => {
+  if (!payload) {
+    hover.value = null
+    return
+  }
+  placeHeart(payload.screenRect)
+  hover.value = {
+    slug: payload.slug,
+    title: payload.title,
+    productId: payload.productId,
+    url: payload.url,
+    saved: isSaved(payload.productId),
+  }
+}
+
+const createSaveGhost = (url: string, rect: ScreenRect) => {
+  const ghost = document.createElement('img')
+  ghost.src = url
+  ghost.alt = ''
+  ghost.setAttribute('aria-hidden', 'true')
+  Object.assign(ghost.style, {
+    position: 'fixed',
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: '0',
+    objectFit: 'cover',
+    zIndex: '400',
+    pointerEvents: 'none',
+  } as Partial<CSSStyleDeclaration>)
+  document.body.appendChild(ghost)
+  return ghost
+}
+
+/** Drop the stand-in once the cart fly has faded the original back in. */
+const releaseSaveGhost = (ghost: HTMLImageElement) => {
+  let done = false
+  const finish = () => {
+    if (done) return
+    done = true
+    ghost.removeEventListener('transitionend', onEnd)
+    handle?.releaseHeldPlane()
+    ghost.remove()
+  }
+  const onEnd = (event: TransitionEvent) => {
+    if (event.propertyName !== 'opacity') return
+    if (Number(getComputedStyle(ghost).opacity) < 0.99) return
+    finish()
+  }
+  ghost.addEventListener('transitionend', onEnd)
+  window.setTimeout(finish, 7000)
+}
+
+const onHeart = () => {
+  const current = hover.value
+  if (!current) return
+  const adding = !isSaved(current.productId)
+  let ghost: HTMLImageElement | null = null
+  if (adding && hoverRect && hoverRect.width > 2 && hoverRect.height > 2) {
+    handle?.holdHoveredPlane()
+    ghost = createSaveGhost(current.url, hoverRect)
+  }
+  requestSave(
+    {
+      id: current.productId,
+      title: current.title,
+      imageUrl: current.url,
+      itemType: 'product',
+      link: `/materials-and-forms/${current.slug}`,
+    },
+    { source: ghost },
+  )
+  if (ghost?.hasAttribute('data-bucket-fly')) {
+    releaseSaveGhost(ghost)
+  } else {
+    handle?.releaseHeldPlane()
+    ghost?.remove()
+  }
+  hover.value = { ...current, saved: isSaved(current.productId) }
+}
+
 const openProduct = async (payload: InfiniteCanvasSelectPayload) => {
+  hover.value = null
   const source = createFlipGhost(payload)
   if (source && !source.complete) {
     await new Promise<void>((resolve) => {
@@ -184,7 +315,18 @@ const openProduct = async (payload: InfiniteCanvasSelectPayload) => {
       source.addEventListener('error', () => resolve(), { once: true })
     })
   }
-  open(payload.slug, { source: source || undefined, imageIndex: 0 })
+  // Paint the stand-in, then drop the WebGL plane so only one image is showing.
+  if (source && source.naturalWidth > 0) {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+    handle?.concealSelectedPlane()
+  }
+  open(payload.slug, {
+    source: source || undefined,
+    imageIndex: 0,
+    productId: payload.productId,
+  })
 }
 
 const mountCanvas = () => {
@@ -207,6 +349,8 @@ const mountCanvas = () => {
     backgroundColor: colors.background,
     fogColor: colors.fog,
     onSelect: openProduct,
+    onHover: onCanvasHover,
+    onHoverFrame: placeHeart,
     onTextureProgress: (progress) => {
       textureProgress.value = Math.max(textureProgress.value, progress)
       if (progress >= 40) scheduleLoaderHide()
@@ -273,14 +417,18 @@ watch(mediaItems, (media, prev) => {
 
 // Keep the ghost until close Flip finishes (finishClose clears isOpen).
 watch(isOpen, (openNow) => {
-  if (!openNow) {
-    clearFlipGhost()
-    handle?.restoreHiddenPlanes()
-  }
+  if (openNow) return
+  handle?.restoreHiddenPlanes()
+  clearFlipGhost()
+  window.setTimeout(() => {
+    if (isOpen.value) return
+    handle?.setMotionPaused(false)
+  }, PRODUCT_OVERLAY_BACKDROP_CLOSE_MS)
 })
 
 onBeforeUnmount(() => {
   window.clearTimeout(loaderHideTimer)
+  handle?.releaseHeldPlane()
   clearFlipGhost()
   themeObserver?.disconnect()
   themeObserver = null
@@ -301,6 +449,15 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   touch-action: none;
+}
+
+.infinite-discover__heart {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  width: max-content;
+  will-change: transform;
 }
 
 .infinite-discover__loader {

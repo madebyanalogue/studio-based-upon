@@ -1670,7 +1670,7 @@ useHead(() => ({
 .products__filter-tool {
   position: fixed;
   right: 20px;
-  top: 90px;
+  top: 130px;
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -1713,10 +1713,11 @@ useHead(() => ({
   position: relative;
   z-index: 1;
   display: flex;
+  flex-direction: column;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: end;
   justify-content: end;
-  gap: 3px;
+  gap: 0;
 }
 
 .type-chip {
@@ -1728,10 +1729,9 @@ useHead(() => ({
     color 0.25s ease,
     background 0.25s ease,
     border-radius 1.6s cubic-bezier(0.22, 1, 0.36, 1);
-  padding: 12px 20px;
+  padding: 10px 15px;
   border: none;
   border-radius: var(--ui-border-radius);
-  background: color-mix(in srgb, var(--text-color) 10%, transparent);
   cursor: pointer;
 }
 
@@ -1776,7 +1776,7 @@ useHead(() => ({
 }
 
 .products__search:has(.products__search-clear) {
-  padding-right: calc(20px + 1.25rem);
+  padding-right: calc(15px + 1.25rem);
 }
 
 .products__search-icon {
@@ -1836,7 +1836,7 @@ useHead(() => ({
 .products__search-clear {
   position: absolute;
   top: 50%;
-  right: 20px;
+  right: 15px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1902,7 +1902,7 @@ useHead(() => ({
 }
 @media (min-width: 1400px) {
   .products__grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 @media (min-width: 2080px) {

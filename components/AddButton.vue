@@ -2,7 +2,7 @@
   <button
     type="button"
     class="add-btn"
-    data-cursor="default"
+    :data-cursor="heartCursor"
     :class="{
       'add-btn--active': active,
       [`add-btn--${variant}`]: true,
@@ -16,6 +16,18 @@
       </template>
       <template v-else-if="variant === 'remove'">
         <span class="add-btn__h" />
+      </template>
+      <template v-else-if="variant === 'plus'">
+        <svg
+          class="add-btn__plus"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
       </template>
       <svg
         v-else
@@ -36,17 +48,22 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** Accessible name for the control. */
     label: string
     /** Saved / selected visual state. */
     active?: boolean
     /** Visual glyph: heart (add), minus, or duplicate squares. */
-    variant?: 'add' | 'remove' | 'clone'
+    variant?: 'add' | 'remove' | 'clone' | 'plus'
   }>(),
   { variant: 'add' },
 )
+
+const heartCursor = computed(() => {
+  if (props.variant !== 'add') return 'default'
+  return props.active ? 'remove-selection' : 'add-selection'
+})
 </script>
 
 <style scoped>
@@ -82,7 +99,8 @@ withDefaults(
   background: var(--thumb-ctrl-bg, var(--cream));
 }
 
-.add-btn__heart {
+.add-btn__heart,
+.add-btn__plus {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -90,6 +108,7 @@ withDefaults(
   height: calc(var(--_face) * 13 / 21);
   transform: translate(-50%, -50%);
   display: block;
+  transition: opacity 0.2s ease;
 }
 
 .add-btn--active .add-btn__heart {

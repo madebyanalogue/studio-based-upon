@@ -78,7 +78,7 @@ const TITLE_GOOEY_SCROLL_VH = 1
 /** Fully gone this far before the first item overlaps the heading. */
 const TITLE_GOOEY_CLEARANCE = 28
 
-const { page } = await useCuratedDiscover()
+const { page } = useCuratedDiscover()
 
 useHead(() => ({
   title: page.value.seoTitle || 'Typology — Studio Based Upon',
@@ -376,11 +376,10 @@ provide(typologyRowHoverKey, { setHoveredTitle })
 
 const pageEl = ref<HTMLElement | null>(null)
 const pageEntering = ref(true)
-const FIRST_WIPE_S = 1.6
-const REST_WIPE_S = 0.35
+const FIRST_WIPE_S = 2
+const REST_FADE_S = 1.2
+const REST_STAGGER_S = 0.4
 const WIPE_DELAY_S = 0.1
-/** Each next item starts this far through the one before it. */
-const WIPE_OVERLAP = 0.7 / FIRST_WIPE_S
 const LEAVE_WIPE_S = 0.4
 let centerPadObserver: ResizeObserver | null = null
 let enterTween: gsap.core.Timeline | null = null
@@ -396,6 +395,11 @@ const rowWipeTarget = (row: HTMLElement) =>
 /** Reveal grows downward: the top edge stays open, the bottom inset closes. */
 const setTopWipe = (el: HTMLElement, bottom: number) => {
   el.style.clipPath = `inset(0% 0% ${bottom}% 0%)`
+}
+
+/** Reveal grows upward: the bottom edge stays open, the top inset closes. */
+const setWipeUp = (el: HTMLElement, top: number) => {
+  el.style.clipPath = `inset(${top}% 0% 0% 0%)`
 }
 
 const clearTopWipe = (el: HTMLElement) => {
@@ -423,25 +427,74 @@ const columnWipeTargets = () => {
   })
 }
 
-const playPageEnter = () => {
-  if (!import.meta.client || !pageEl.value) return
-  const rows = [
-    ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
-  ]
-  const items = rows.map((row) => ({ row, target: rowWipeTarget(row) }))
+const mediaImage = (el: HTMLElement) =>
+  el instanceof HTMLImageElement ? el : el.querySelector('img')
 
-  if (prefersReducedMotion() || !items.length) {
+/** Hard loads paint before images decode. Hold the clip until they can wipe. */
+const waitForEnterImages = (targets: HTMLElement[]) =>
+  Promise.race([
+    Promise.all(
+      targets.map((target) => {
+        const img = mediaImage(target)
+        if (!img || (img.complete && img.naturalWidth > 0)) return Promise.resolve()
+        return new Promise<void>((resolve) => {
+          const done = () => resolve()
+          img.addEventListener('load', done, { once: true })
+          img.addEventListener('error', done, { once: true })
+        })
+      }),
+    ),
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 2200)
+    }),
+  ])
+
+let enterStarted = false
+let enterCancelled = false
+
+const playPageEnter = async () => {
+  if (!import.meta.client || !pageEl.value || enterStarted || enterCancelled) return
+  let items = [
+    ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
+  ].map((row) => ({ row, target: rowWipeTarget(row) }))
+
+  if (!items.length) return
+
+  if (prefersReducedMotion()) {
     items.forEach(({ row, target }) => {
       clearTopWipe(target)
       row.style.removeProperty('pointer-events')
+      row.style.removeProperty('opacity')
+      row.style.removeProperty('transition')
     })
     pageEntering.value = false
     return
   }
 
-  items.forEach(({ row, target }) => {
-    setTopWipe(target, 100)
+  enterStarted = true
+  await waitForEnterImages(items.map(({ target }) => target))
+  if (!pageEl.value || enterCancelled) {
+    enterStarted = false
+    return
+  }
+
+  items = [
+    ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
+  ].map((row) => ({ row, target: rowWipeTarget(row) }))
+  if (!items.length) {
+    enterStarted = false
+    return
+  }
+
+  items.forEach(({ row, target }, index) => {
     row.style.pointerEvents = 'none'
+    row.style.transition = 'none'
+    if (index === 0) {
+      setWipeUp(target, 100)
+      return
+    }
+    clearTopWipe(target)
+    row.style.opacity = '0'
   })
   pageEntering.value = false
 
@@ -449,35 +502,48 @@ const playPageEnter = () => {
     delay: WIPE_DELAY_S,
     onComplete: () => {
       enterTween = null
+      items.forEach(({ row, target }) => {
+        clearTopWipe(target)
+        row.style.removeProperty('pointer-events')
+        row.style.removeProperty('opacity')
+        row.style.removeProperty('transition')
+      })
     },
   })
 
-  const starts: number[] = []
-  items.forEach((_, index) => {
-    if (index === 0) {
-      starts.push(0)
-      return
-    }
-    const previousDuration = index === 1 ? FIRST_WIPE_S : REST_WIPE_S
-    starts.push(starts[index - 1]! + previousDuration * WIPE_OVERLAP)
-  })
-
-  items.forEach(({ row, target }, index) => {
-    const first = index === 0
-    const clip = { bottom: 100 }
-    enterTween!.to(
+  const first = items[0]
+  if (first) {
+    const clip = { top: 100 }
+    enterTween.to(
       clip,
       {
-        bottom: 0,
-        duration: first ? FIRST_WIPE_S : REST_WIPE_S,
-        ease: first ? 'power3.out' : 'none',
-        onUpdate: () => setTopWipe(target, clip.bottom),
+        top: 0,
+        duration: FIRST_WIPE_S,
+        ease: 'power3.out',
+        onUpdate: () => setWipeUp(first.target, clip.top),
         onComplete: () => {
-          clearTopWipe(target)
-          row.style.removeProperty('pointer-events')
+          clearTopWipe(first.target)
+          first.row.style.removeProperty('pointer-events')
+          first.row.style.removeProperty('transition')
         },
       },
-      starts[index],
+      0,
+    )
+  }
+
+  items.slice(1).forEach(({ row }, index) => {
+    enterTween!.to(
+      row,
+      {
+        opacity: 1,
+        duration: REST_FADE_S,
+        ease: 'power2.out',
+        onComplete: () => {
+          row.style.removeProperty('pointer-events')
+          row.style.removeProperty('transition')
+        },
+      },
+      FIRST_WIPE_S + index * REST_STAGGER_S,
     )
   })
 }
@@ -602,6 +668,14 @@ onMounted(() => {
   window.addEventListener('resize', syncCenterPad)
 })
 
+watch(
+  () => page.value.content.length,
+  (length) => {
+    if (!import.meta.client || !length || enterStarted) return
+    nextTick(() => playPageEnter())
+  },
+)
+
 const syncOutsideCloseCursor = (locked: boolean) => {
   if (!import.meta.client) return
   const root = document.documentElement
@@ -637,6 +711,7 @@ const syncPointerPause = (paused: boolean) => {
 watch(typologyPointerPaused, syncPointerPause)
 
 onBeforeUnmount(() => {
+  enterCancelled = true
   syncOutsideCloseCursor(false)
   syncPointerPause(false)
   stopTitleScrub(false)
@@ -665,7 +740,7 @@ onBeforeUnmount(() => {
 
 .discover-page--enter .discover-page__content > * :deep(.discover-card__media),
 .discover-page--enter .discover-page__content > * :deep(.story-break__media) {
-  clip-path: inset(0% 0% 100% 0%);
+  clip-path: inset(100% 0% 0% 0%);
 }
 
 .discover-page__title-filter {
@@ -718,13 +793,19 @@ onBeforeUnmount(() => {
   filter: grayscale(1);
 }
 
-/* An open row stays put. Hovering another row's trigger only lifts that cell. */
+/* An open row stays put. Only another row's trigger cell can be opened. */
 .discover-page__content--row-locked
   :deep(.collection-rail:not(.collection-rail--hot)) {
+  pointer-events: none;
   transition:
     opacity 0.5s ease,
     filter 0.5s ease,
     --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.discover-page__content--row-locked
+  :deep(.collection-rail:not(.collection-rail--hot) .collection-rail__card--trigger) {
+  pointer-events: auto;
 }
 
 .discover-page__content--row-locked

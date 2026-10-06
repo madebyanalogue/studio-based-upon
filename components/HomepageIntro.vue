@@ -3,7 +3,9 @@
     ref="rootEl"
     class="homepage-intro"
     :class="{ 'is-motion': motionOn }"
-    aria-hidden="true"
+    :data-frame="frameIndex"
+    role="dialog"
+    aria-label="Introduction"
   >
     <svg class="homepage-intro__goo" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
       <defs>
@@ -23,6 +25,16 @@
         </filter>
       </defs>
     </svg>
+
+    <div class="homepage-intro__bar">
+      <div ref="logoEl" class="homepage-intro__logo">
+        <BasedUponLogoSansSerif />
+      </div>
+      <button type="button" class="homepage-intro__skip interface" @click="onSkip">
+        <span class="homepage-intro__skip-chev" aria-hidden="true" />
+        Skip intro
+      </button>
+    </div>
 
     <div class="homepage-intro__stage" :class="{ 'is-guide': guideVisible }">
       <div class="homepage-intro__board">
@@ -44,12 +56,21 @@
             alt=""
             draggable="false"
           />
-          <p
-            v-else
-            class="homepage-intro__type"
-            :class="`is-${piece.role}`"
-            :style="titleFilterStyle"
-          >{{ piece.text }}</p>
+          <template v-else>
+            <p
+              v-for="(line, lineIndex) in piece.lines"
+              :key="line"
+              class="homepage-intro__type"
+              :class="`is-${piece.role}`"
+              :data-line="lineIndex"
+              :style="titleFilterStyle"
+            >{{ line }}</p>
+            <p
+              v-if="piece.cta"
+              class="homepage-intro__type is-meta"
+              :style="titleFilterStyle"
+            >{{ piece.cta }}</p>
+          </template>
         </div>
       </div>
 
@@ -73,13 +94,10 @@ import {
   useHomepageIntro,
 } from '~/composables/useHomepagePreloader'
 
-const COLS = 12
-const ROWS = 12
-const COL_NAMES = 'abcdefghijkl'
+const COLS = 16
+const ROWS = 8
+const COL_NAMES = 'abcdefghijklmnop'
 const TITLE_BLUR_MAX = 60
-const STAGGER = 0.2
-const CLIP_HIDDEN = 'inset(100% 0% 0% 0%)'
-const CLIP_VISIBLE = 'inset(0% 0% 0% 0%)'
 
 type Role = 'display' | 'copy' | 'meta'
 type Align = 'start' | 'center' | 'end'
@@ -96,69 +114,59 @@ type Slot = {
 
 type Piece = Slot & {
   key: string
+  frame: number
   src?: string
-  text?: string
+  lines?: string[]
+  cta?: string
+  /** Stays in place while the following frame's images enter. */
+  carry?: boolean
 }
 
-const DISPLAY = [
-  'Studio Based Upon',
-  'Beautiful contradictions',
-  'Materials and forms',
-  'Collectible design',
-  'Architectural features',
-]
-
-const COPY = [
-  'Award-winning surfaces, collectible design and architectural features.',
-  'Part atelier, part laboratory, where the hand meets the algorithm.',
-  'From concept to completion.',
-  'Surfaces, objects and architectural interventions at every scale.',
-]
-
-const META = [
-  'London  /  Est. 2004',
-  'Studio Based Upon',
-  '01  —  Opening',
-  'Surfaces',
-]
+type Frame = {
+  lines: string[]
+  cta?: string
+  layout: Slot[]
+  /** Where this frame starts in the homepage image pool. */
+  imageAt: number
+  /** Leave this frame's type in place while the next frame enters. */
+  holdType?: boolean
+}
 
 const FALLBACK_IMAGES = Array.from({ length: 8 }, (_, index) =>
   `https://picsum.photos/seed/sba-intro-${index + 1}/1400/1800`,
 )
 
-/** Authored frames. Each load picks one and fills it with shuffled images and lines. */
+/** Slide 01 stays sparse: one statement, one image. */
+const CLEAN: Slot[] = [
+  { kind: 'type', col: 2, row: 2, cols: 7, rows: 5, role: 'display', align: 'start' },
+  { kind: 'image', col: 10, row: 2, cols: 5, rows: 5 },
+]
+
+/** Later frames. One large image (7×5 or 4×8) and two small images (2×3 or 2×4). */
 const LAYOUTS: Slot[][] = [
   [
-    { kind: 'image', col: 8, row: 1, cols: 5, rows: 5 },
-    { kind: 'type', col: 1, row: 2, cols: 6, rows: 3, role: 'display', align: 'end' },
-    { kind: 'image', col: 1, row: 6, cols: 4, rows: 5 },
-    { kind: 'type', col: 5, row: 7, cols: 3, rows: 2, role: 'meta', align: 'end' },
-    { kind: 'image', col: 9, row: 7, cols: 4, rows: 6 },
-    { kind: 'type', col: 5, row: 9, cols: 4, rows: 3, role: 'copy', align: 'start' },
+    { kind: 'type', col: 1, row: 1, cols: 8, rows: 6, role: 'display', align: 'start' },
+    { kind: 'image', col: 10, row: 1, cols: 7, rows: 5 },
+    { kind: 'image', col: 10, row: 6, cols: 2, rows: 3 },
+    { kind: 'image', col: 13, row: 6, cols: 2, rows: 3 },
   ],
   [
-    { kind: 'type', col: 7, row: 2, cols: 6, rows: 3, role: 'display', align: 'end' },
-    { kind: 'image', col: 1, row: 1, cols: 5, rows: 8 },
-    { kind: 'type', col: 7, row: 5, cols: 4, rows: 2, role: 'meta', align: 'start' },
-    { kind: 'image', col: 7, row: 7, cols: 6, rows: 4 },
-    { kind: 'type', col: 1, row: 10, cols: 6, rows: 3, role: 'copy', align: 'start' },
-    { kind: 'image', col: 8, row: 11, cols: 5, rows: 2 },
+    { kind: 'image', col: 1, row: 1, cols: 4, rows: 8 },
+    { kind: 'type', col: 6, row: 1, cols: 10, rows: 5, role: 'display', align: 'start' },
+    { kind: 'image', col: 13, row: 6, cols: 2, rows: 3 },
+    { kind: 'image', col: 15, row: 6, cols: 2, rows: 3 },
   ],
   [
-    { kind: 'image', col: 9, row: 1, cols: 4, rows: 6 },
-    { kind: 'type', col: 1, row: 1, cols: 7, rows: 3, role: 'display', align: 'end' },
-    { kind: 'type', col: 6, row: 5, cols: 3, rows: 4, role: 'copy', align: 'start' },
-    { kind: 'image', col: 1, row: 5, cols: 5, rows: 5 },
-    { kind: 'type', col: 1, row: 11, cols: 4, rows: 2, role: 'meta', align: 'end' },
-    { kind: 'image', col: 6, row: 9, cols: 7, rows: 4 },
+    { kind: 'image', col: 1, row: 1, cols: 7, rows: 5 },
+    { kind: 'type', col: 9, row: 1, cols: 8, rows: 6, role: 'display', align: 'start' },
+    { kind: 'image', col: 1, row: 6, cols: 2, rows: 3 },
+    { kind: 'image', col: 4, row: 6, cols: 2, rows: 3 },
   ],
   [
-    { kind: 'type', col: 5, row: 2, cols: 8, rows: 3, role: 'display', align: 'center' },
-    { kind: 'image', col: 1, row: 1, cols: 4, rows: 6 },
-    { kind: 'image', col: 6, row: 5, cols: 5, rows: 5 },
-    { kind: 'type', col: 11, row: 6, cols: 2, rows: 3, role: 'meta', align: 'center' },
-    { kind: 'image', col: 1, row: 8, cols: 5, rows: 5 },
-    { kind: 'type', col: 7, row: 10, cols: 6, rows: 3, role: 'copy', align: 'start' },
+    { kind: 'image', col: 1, row: 1, cols: 2, rows: 4 },
+    { kind: 'type', col: 4, row: 1, cols: 8, rows: 8, role: 'display', align: 'start' },
+    { kind: 'image', col: 1, row: 5, cols: 2, rows: 4 },
+    { kind: 'image', col: 13, row: 1, cols: 4, rows: 8 },
   ],
 ]
 
@@ -172,39 +180,64 @@ const cells = Array.from({ length: ROWS * COLS }, (_, index) => {
   }
 })
 
-const shuffle = <T,>(list: T[]) => {
-  const next = [...list]
-  for (let i = next.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const swap = next[i]!
-    next[i] = next[j]!
-    next[j] = swap
-  }
-  return next
-}
+/** Finished work, installed work, origin, starting points, experiment. */
+const FRAMES: Frame[] = [
+  {
+    lines: ['Studio Based Upon', 'creates with you.'],
+    layout: CLEAN,
+    imageAt: 0,
+  },
+  {
+    lines: ['Two decades of making', 'for extraordinary spaces', 'around the world.'],
+    layout: LAYOUTS[0]!,
+    imageAt: 2,
+  },
+  {
+    lines: ['Everything starts', 'somewhere.'],
+    layout: LAYOUTS[1]!,
+    imageAt: 4,
+    holdType: true,
+  },
+  {
+    lines: ['An idea.', 'A material.', 'A place.', 'A story.'],
+    layout: LAYOUTS[2]!,
+    imageAt: 6,
+  },
+  {
+    lines: ['Explore what', 'it could become.'],
+    cta: 'Enter the studio →',
+    layout: LAYOUTS[3]!,
+    imageAt: 3,
+  },
+]
 
-const compose = (images: string[]): Piece[] => {
-  const layout = LAYOUTS[Math.floor(Math.random() * LAYOUTS.length)]!
-  const pics = shuffle(images)
-  const lines: Record<Role, string[]> = {
-    display: shuffle(DISPLAY),
-    copy: shuffle(COPY),
-    meta: shuffle(META),
-  }
-  const used: Record<Role, number> = { display: 0, copy: 0, meta: 0 }
-  let imageIndex = 0
-
-  return layout.map((slot, index) => {
+const composeFrame = (frameIndex: number, pool: string[]): Piece[] => {
+  const frame = FRAMES[frameIndex]
+  if (!frame) return []
+  const previousHolds = !!FRAMES[frameIndex - 1]?.holdType
+  let imageIndex = frame.imageAt
+  const framePieces: Piece[] = []
+  frame.layout.forEach((slot, slotIndex) => {
+    if (slot.kind === 'type' && previousHolds) return
+    const key = `f${frameIndex}-${slotIndex}`
     if (slot.kind === 'image') {
-      const src = pics[imageIndex % pics.length]
+      const src = pool[imageIndex % pool.length]!
       imageIndex += 1
-      return { ...slot, key: String(index), src }
+      framePieces.push({ ...slot, key, frame: frameIndex, src })
+      return
     }
-    const role = slot.role || 'copy'
-    const text = lines[role][used[role] % lines[role].length]
-    used[role] += 1
-    return { ...slot, key: String(index), role, text, align: slot.align || 'start' }
+    framePieces.push({
+      ...slot,
+      key,
+      frame: frameIndex,
+      role: slot.role || 'display',
+      lines: frame.lines,
+      cta: frame.cta,
+      align: slot.align || 'start',
+      carry: !!frame.holdType,
+    })
   })
+  return framePieces
 }
 
 const place = (piece: Piece) => ({
@@ -219,6 +252,7 @@ const titleFilterStyle = {
 }
 
 const { phase, slides } = useHomepageIntro()
+const homeScrollHint = useHomeScrollHint()
 const route = useRoute()
 
 watch(
@@ -229,17 +263,17 @@ watch(
 )
 
 const rootEl = ref<HTMLElement | null>(null)
+const logoEl = ref<HTMLElement | null>(null)
+let logoShown = false
 const guideVisible = ref(true)
 const motionOn = ref(false)
+const frameIndex = ref(0)
 const pieces = ref<Piece[]>([])
 
 const imagePool = computed(() => {
   const urls = (slides.value || []).flatMap((slide) => [slide.leftImage, slide.rightImage])
   return [...new Set(urls.filter(Boolean))]
 })
-
-const HOLD_AFTER_IN = 0.85
-const OUT_STAGGER = 0.09
 
 let built = false
 let started = false
@@ -251,14 +285,24 @@ let releaseTimer = 0
 let veilTimer = 0
 let fadeVeil: (() => void) | null = null
 let stopPieces: (() => void) | null = null
-let timeline: gsap.core.Timeline | null = null
 let splits: InstanceType<typeof SplitText>[] = []
 let wordsByKey = new Map<string, HTMLElement[]>()
+let imageByKey = new Map<string, HTMLElement>()
+let stopPath: (() => void) | null = null
+let pathRaf = 0
+let pathTarget = 0
+let pathCurrent = 0
+/** Scroll distance that plays the whole path out and enters the studio. */
+const PATH_END = FRAMES.length + 0.05
+const WHEEL_PER_STAGE = 720
 
 const ensureComposition = (images: string[]) => {
   if (built || !images.length) return
   built = true
-  pieces.value = compose(images)
+  frameIndex.value = 0
+  pieces.value = FRAMES.flatMap((_, index) =>
+    composeFrame(index, images.length ? images : FALLBACK_IMAGES),
+  )
 }
 
 watch(imagePool, (images) => ensureComposition(images), { immediate: true })
@@ -278,6 +322,8 @@ const preloadImage = (src: string) =>
 const finishSite = (immediate = false) => {
   if (finished) return
   finished = true
+  homeScrollHint.value = false
+  stopPath?.()
   window.clearTimeout(failTimer)
   window.clearTimeout(fallbackTimer)
   window.clearTimeout(releaseTimer)
@@ -331,17 +377,166 @@ const ensurePlugins = () => {
   pluginsReady = true
 }
 
-const onGuideKey = (event: KeyboardEvent) => {
-  if (event.key !== 'g' && event.key !== 'G') return
-  if (event.metaKey || event.ctrlKey || event.altKey) return
+const typingTarget = (event: KeyboardEvent) => {
   const target = event.target
-  if (
+  return (
     target instanceof HTMLElement &&
-    (target.isContentEditable || target.closest('input, textarea, select'))
-  ) {
+    (target.isContentEditable || !!target.closest('input, textarea, select'))
+  )
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+
+const smoothstep = (value: number) => {
+  const t = clamp01(value)
+  return t * t * (3 - 2 * t)
+}
+
+const along = (t: number, start: number, end: number) => smoothstep((t - start) / (end - start))
+
+/** 0 while a piece is off the path, 1 while its stage is fully present. */
+const pieceAmount = (piece: Piece, t: number) => {
+  const i = piece.frame
+  const enter = along(t, i === 0 ? 0.04 : i - 0.22, i === 0 ? 0.52 : i + 0.28)
+  const exitStart = piece.carry ? i + 1.55 : i + 0.62
+  const exitEnd = piece.carry ? i + 2.05 : i + 1.02
+  return enter * (1 - along(t, exitStart, exitEnd))
+}
+
+const bindPieces = () => {
+  const root = rootEl.value
+  if (!root) return
+  ensurePlugins()
+  imageByKey = new Map()
+  wordsByKey = new Map()
+  for (const split of splits) {
+    try {
+      split.revert()
+    } catch {
+      /* already reverted */
+    }
+  }
+  splits = []
+  root.querySelectorAll<HTMLElement>('[data-kind="image"]').forEach((el) => {
+    const key = el.dataset.key
+    if (key) imageByKey.set(key, el)
+  })
+  root.querySelectorAll<HTMLElement>('.homepage-intro__type').forEach((el) => {
+    const split = new SplitText(el, { type: 'words', wordsClass: 'homepage-intro__word' })
+    splits.push(split)
+    const key = el.closest<HTMLElement>('[data-key]')?.dataset.key
+    if (!key) return
+    const words = wordsByKey.get(key) ?? []
+    words.push(...(split.words as HTMLElement[]))
+    wordsByKey.set(key, words)
+  })
+  motionOn.value = true
+}
+
+const paint = (t: number) => {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const stage = Math.min(FRAMES.length - 1, Math.max(0, Math.floor(t + 0.08)))
+  frameIndex.value = stage
+  for (const piece of pieces.value) {
+    let amount = pieceAmount(piece, t)
+    if (reduced) {
+      amount = piece.carry
+        ? stage === piece.frame || stage === piece.frame + 1
+          ? 1
+          : 0
+        : stage === piece.frame
+          ? 1
+          : 0
+    }
+    if (piece.kind === 'image') {
+      const el = imageByKey.get(piece.key)
+      if (!el) continue
+      el.style.opacity = amount > 0.01 ? '1' : '0'
+      el.style.clipPath = `inset(${(1 - amount) * 100}% 0% 0% 0%)`
+      continue
+    }
+    const words = wordsByKey.get(piece.key)
+    if (!words) continue
+    const blur = reduced ? 0 : (1 - amount) * TITLE_BLUR_MAX
+    for (const word of words) {
+      word.style.opacity = String(amount)
+      word.style.filter = `blur(${blur}px)`
+    }
+  }
+}
+
+const tick = () => {
+  if (finished) return
+  pathCurrent += (pathTarget - pathCurrent) * 0.14
+  if (Math.abs(pathTarget - pathCurrent) < 0.0008) pathCurrent = pathTarget
+  paint(pathCurrent)
+  if (pathCurrent >= PATH_END - 0.08) {
+    finishSite()
     return
   }
-  guideVisible.value = !guideVisible.value
+  pathRaf = requestAnimationFrame(tick)
+}
+
+const nudge = (delta: number) => {
+  if (!started || finished) return
+  pathTarget = Math.min(PATH_END, Math.max(0, pathTarget + delta))
+}
+
+const onWheel = (event: WheelEvent) => {
+  if (!started || finished) return
+  event.preventDefault()
+  event.stopPropagation()
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  nudge(delta / WHEEL_PER_STAGE)
+}
+
+let touchY = 0
+
+const onTouchStart = (event: TouchEvent) => {
+  touchY = event.touches[0]?.clientY ?? touchY
+}
+
+const onTouchMove = (event: TouchEvent) => {
+  if (!started || finished) return
+  const y = event.touches[0]?.clientY
+  if (y == null) return
+  event.preventDefault()
+  nudge((touchY - y) / WHEEL_PER_STAGE)
+  touchY = y
+}
+
+const onSkip = () => {
+  if (finished) return
+  finishSite()
+}
+
+const onGuideKey = (event: KeyboardEvent) => {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+  if (typingTarget(event)) return
+
+  if (event.key === 'g' || event.key === 'G') {
+    guideVisible.value = !guideVisible.value
+    return
+  }
+
+  if (finished || !started) return
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    nudge(0.34)
+    return
+  }
+
+  if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+    event.preventDefault()
+    nudge(-0.34)
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === 'Escape') {
+    event.preventDefault()
+    onSkip()
+  }
 }
 
 const play = async () => {
@@ -349,109 +544,52 @@ const play = async () => {
   started = true
   window.clearTimeout(failTimer)
   window.clearTimeout(fallbackTimer)
+  document.dispatchEvent(new CustomEvent('homepage-intro-hold'))
 
-  const urls = [...new Set(pieces.value.map((piece) => piece.src).filter(Boolean))] as string[]
-  await Promise.race([
-    Promise.all(urls.map(preloadImage)),
-    delay(4000),
-  ])
+  const pool = imagePool.value.length ? imagePool.value : FALLBACK_IMAGES
+  await Promise.race([Promise.all(pool.map(preloadImage)), delay(4000)])
   if (finished || !rootEl.value) return
 
   if (document.fonts?.ready) await document.fonts.ready
   await nextTick()
   if (finished || !rootEl.value) return
 
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const root = rootEl.value
-  const imageEls = [...root.querySelectorAll<HTMLElement>('[data-kind="image"]')]
+  await fadeLogo()
+  if (finished || !rootEl.value) return
+  guideVisible.value = false
+  await nextTick()
+  bindPieces()
+  paint(0)
+  homeScrollHint.value = true
 
-  if (reduced) {
-    gsap.set(imageEls, { opacity: 1, clipPath: CLIP_VISIBLE })
-    motionOn.value = true
-    finishSite(true)
-    return
+  const arm = () => {
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    window.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    pathRaf = requestAnimationFrame(tick)
   }
-
-  ensurePlugins()
-  const typeEls = [...root.querySelectorAll<HTMLElement>('.homepage-intro__type')]
-  wordsByKey = new Map()
-  typeEls.forEach((el) => {
-    const split = new SplitText(el, { type: 'words', wordsClass: 'homepage-intro__word' })
-    splits.push(split)
-    const key = el.closest<HTMLElement>('[data-key]')?.dataset.key
-    if (key) wordsByKey.set(key, split.words as HTMLElement[])
-  })
-
-  const words = [...wordsByKey.values()].flat()
-  gsap.set(words, { filter: `blur(${TITLE_BLUR_MAX}px)`, opacity: 0 })
-  gsap.set(imageEls, { opacity: 1, clipPath: CLIP_HIDDEN })
-  motionOn.value = true
-
-  const tl = gsap.timeline({ delay: 0.15 })
-  pieces.value.forEach((piece, index) => {
-    const at = index * STAGGER
-    if (piece.kind === 'image') {
-      const el = root.querySelector<HTMLElement>(`[data-key="${piece.key}"]`)
-      if (!el) return
-      tl.to(el, { clipPath: CLIP_VISIBLE, duration: 1.45, ease: 'power3.inOut' }, at)
-      return
-    }
-    const block = wordsByKey.get(piece.key)
-    if (!block?.length) return
-    tl.to(
-      block,
-      { filter: 'blur(0px)', opacity: 1, duration: 2.2, ease: 'power3.out' },
-      at,
-    )
-  })
-  timeline = tl
-  await tl
-  if (finished || !rootEl.value) return
-
-  await delay(HOLD_AFTER_IN * 1000)
-  if (finished || !rootEl.value) return
-  await playOut()
-  if (finished) return
-  finishSite()
+  stopPath = () => {
+    window.cancelAnimationFrame(pathRaf)
+    window.removeEventListener('wheel', onWheel, true)
+    window.removeEventListener('touchstart', onTouchStart)
+    window.removeEventListener('touchmove', onTouchMove)
+    stopPath = null
+  }
+  arm()
 }
 
-const playOut = () =>
-  new Promise<void>((resolve) => {
-    const root = rootEl.value
-    if (!root) {
-      resolve()
-      return
-    }
-    guideVisible.value = false
-    const count = pieces.value.length
-    const tl = gsap.timeline({
-      onComplete: resolve,
-      onInterrupt: resolve,
-    })
-    pieces.value.forEach((piece, index) => {
-      const at = (count - 1 - index) * OUT_STAGGER
-      if (piece.kind === 'image') {
-        const el = root.querySelector<HTMLElement>(`[data-key="${piece.key}"]`)
-        if (!el) return
-        tl.to(el, { clipPath: CLIP_HIDDEN, duration: 1.05, ease: 'power3.inOut' }, at)
-        return
-      }
-      const block = wordsByKey.get(piece.key)
-      if (!block?.length) return
-      tl.to(
-        block,
-        {
-          filter: `blur(${TITLE_BLUR_MAX}px)`,
-          opacity: 0,
-          duration: 0.7,
-          ease: 'power2.in',
-        },
-        at,
-      )
-    })
-    timeline = tl
-    if (!tl.duration()) resolve()
-  })
+const fadeLogo = async () => {
+  const logo = logoEl.value
+  if (!logo || logoShown) return
+  logoShown = true
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduced) {
+    gsap.set(logo, { opacity: 1 })
+    return
+  }
+  await gsap.fromTo(logo, { opacity: 0 }, { opacity: 1, duration: 0.85, ease: 'power2.out' })
+  await delay(420)
+}
 
 onMounted(() => {
   window.addEventListener('keydown', onGuideKey)
@@ -472,13 +610,13 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  stopPath?.()
   window.removeEventListener('keydown', onGuideKey)
   if (fadeVeil) document.removeEventListener('homepage-columns-opening', fadeVeil)
   window.clearTimeout(veilTimer)
   window.clearTimeout(failTimer)
   window.clearTimeout(fallbackTimer)
   stopPieces?.()
-  timeline?.kill()
   for (const split of splits) {
     try {
       split.revert()
@@ -501,6 +639,8 @@ onUnmounted(() => {
   overflow: hidden;
   background: #000;
   color: #f1ede4;
+  --intro-inset: clamp(20px, 5vw, 130px);
+  --intro-logo-h: calc(min(168px, 28vw) * 1142 / 2972.52);
   pointer-events: auto;
 }
 
@@ -512,12 +652,57 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+.homepage-intro__bar {
+  position: absolute;
+  top: var(--intro-inset);
+  left: 5vw;
+  right: 5vw;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  pointer-events: none;
+}
+
+.homepage-intro__logo {
+  grid-column: 2;
+  justify-self: center;
+  width: min(168px, 28vw);
+  color: #f1ede4;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.homepage-intro__skip {
+  grid-column: 3;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.homepage-intro__skip-chev {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border-right: 1.75px solid currentColor;
+  border-bottom: 1.75px solid currentColor;
+  transform: rotate(-45deg);
+}
+
 .homepage-intro__stage {
-  --intro-inset: clamp(18px, 2.6vw, 42px);
   --intro-line: color-mix(in srgb, currentColor 38%, transparent);
   --intro-label: color-mix(in srgb, currentColor 72%, transparent);
   position: absolute;
   inset: var(--intro-inset);
+  top: calc(var(--intro-inset) + var(--intro-logo-h) + 1rem);
 }
 
 .homepage-intro__board,
@@ -525,9 +710,10 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  grid-template-rows: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
   gap: 0;
+  pointer-events: none;
 }
 
 .homepage-intro__guide {
@@ -556,11 +742,11 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.homepage-intro__cell:nth-child(12n) {
+.homepage-intro__cell:nth-child(16n) {
   border-right: none;
 }
 
-.homepage-intro__cell:nth-child(n + 133) {
+.homepage-intro__cell:nth-child(n + 113) {
   border-bottom: none;
 }
 
@@ -589,20 +775,26 @@ onUnmounted(() => {
 }
 
 .homepage-intro__piece--type {
+  z-index: 2;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.35em;
   padding: 0.55rem 0.7rem;
 }
 
 .homepage-intro__piece--type.is-start {
-  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .homepage-intro__piece--type.is-center {
   align-items: center;
+  justify-content: center;
 }
 
 .homepage-intro__piece--type.is-end {
-  align-items: flex-end;
+  justify-content: flex-end;
 }
 
 .homepage-intro__type {
@@ -617,8 +809,8 @@ onUnmounted(() => {
 }
 
 .homepage-intro__type.is-display {
-  font-family: var(--serif);
-  font-size: clamp(1.85rem, 3.5vw, 4.4rem);
+  font-family: var(--mono);
+  font-size: clamp(1.48rem, 2.5vw, 1.6rem);
   font-weight: 400;
   line-height: 0.92;
   letter-spacing: -0.02em;
@@ -633,11 +825,13 @@ onUnmounted(() => {
 }
 
 .homepage-intro__type.is-meta {
+  margin-top: 1.35rem;
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   line-height: 1.35;
   text-transform: uppercase;
+  pointer-events: none;
 }
 
 .homepage-intro :deep(.homepage-intro__word) {

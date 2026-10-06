@@ -1,3 +1,18 @@
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
+const readDevReadToken = () => {
+  if (!import.meta.dev) return ''
+  try {
+    const raw = readFileSync(join(homedir(), '.config/sanity/config.json'), 'utf8')
+    const token = JSON.parse(raw)?.authToken
+    return typeof token === 'string' ? token : ''
+  } catch {
+    return ''
+  }
+}
+
 export default defineEventHandler(async (event) => {
   let body: Record<string, unknown>
   try {
@@ -33,10 +48,16 @@ export default defineEventHandler(async (event) => {
     baseUrl += `?perspective=${encodeURIComponent(perspective)}`
   }
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (perspective && perspective !== 'published') {
+    const token = config.sanityReadToken || readDevReadToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
   try {
     return await $fetch(baseUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, params }),
       timeout: 30000,
     })

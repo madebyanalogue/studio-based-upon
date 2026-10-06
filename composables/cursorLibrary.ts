@@ -5,7 +5,7 @@
  * `native` is reserved to restore the OS cursor (inputs, drag handles).
  */
 
-export type CursorIconId = 'arrow-next' | 'arrow-prev' | 'plus' | 'close'
+export type CursorIconId = 'arrow-next' | 'arrow-prev' | 'plus' | 'close' | 'heart'
 
 export type CursorPreset = {
   id: string
@@ -26,7 +26,7 @@ export const CURSOR_LIBRARY: Record<string, CursorPreset> = {
   },
   plus: {
     id: 'plus',
-    icon: 'plus',
+    tooltip: 'View',
   },
   close: {
     id: 'close',
@@ -37,6 +37,17 @@ export const CURSOR_LIBRARY: Record<string, CursorPreset> = {
     id: 'close-label',
     tooltip: 'Close',
   },
+  /** Heart replaces the disc on a thumbnail save control. */
+  'add-selection': {
+    id: 'add-selection',
+    tooltip: 'Gather',
+    icon: 'heart',
+  },
+  'remove-selection': {
+    id: 'remove-selection',
+    tooltip: 'Remove from Stack',
+    icon: 'heart',
+  },
   'view-selection': {
     id: 'view-selection',
     tooltip: 'View My Selection',
@@ -44,6 +55,10 @@ export const CURSOR_LIBRARY: Record<string, CursorPreset> = {
   'drag-composition': {
     id: 'drag-composition',
     tooltip: 'Drag into composition',
+  },
+  gathered: {
+    id: 'gathered',
+    tooltip: 'Gathered',
   },
 }
 

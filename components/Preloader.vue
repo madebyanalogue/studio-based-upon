@@ -30,6 +30,7 @@ const settle = (fromFail = false) => {
   settled = true
   window.clearTimeout(failTimer)
   document.removeEventListener('homepage-intro-complete', onIntroComplete)
+  document.removeEventListener('homepage-intro-hold', onIntroHold)
 
   const intro = useHomepageIntro()
   const phase = intro.phase.value
@@ -46,6 +47,10 @@ const settle = (fromFail = false) => {
 }
 
 const onIntroComplete = () => settle(false)
+
+const onIntroHold = () => {
+  window.clearTimeout(failTimer)
+}
 
 const skip = () => {
   if (started) return
@@ -70,6 +75,7 @@ const begin = () => {
   document.body.classList.add('preloader-ready')
   emit('preloader-ready')
   document.addEventListener('homepage-intro-complete', onIntroComplete, { once: true })
+  document.addEventListener('homepage-intro-hold', onIntroHold)
   failTimer = window.setTimeout(() => settle(true), 20000)
 }
 
@@ -81,6 +87,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.clearTimeout(failTimer)
   document.removeEventListener('homepage-intro-complete', onIntroComplete)
+  document.removeEventListener('homepage-intro-hold', onIntroHold)
   releaseScroll()
 })
 </script>

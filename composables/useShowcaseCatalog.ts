@@ -4,6 +4,8 @@ export type ShowcaseBucketImage = {
   id: string
   src: string
   title?: string
+  /** Linked product title, or the entry label when no product is set. */
+  productTitle?: string
   productId?: string
   slug?: string
 }
@@ -20,7 +22,7 @@ export type ShowcaseBucket = {
 
 export const SHOWCASE_SLOT_COUNT = 6
 /** Soft cap for user-added columns. */
-export const SHOWCASE_MAX_COLUMNS = 8
+export const SHOWCASE_MAX_COLUMNS = 6
 /** Columns shown on first load. */
 export const SHOWCASE_DEFAULT_COLUMNS = 4
 /** @deprecated Prefer SHOWCASE_DEFAULT_COLUMNS — kept for older imports. */
@@ -39,11 +41,21 @@ export const CURATE_PAGE_QUERY = `coalesce(
     entries[] {
       title,
       image { asset->{ _id, url } },
-      "product": product->{
-        _id,
-        title,
-        "slug": slug.current
-      }
+      "product": coalesce(
+        product->{
+          _id,
+          title,
+          "slug": slug.current
+        },
+        *[_type == "gridItem" && (
+          ^.image.asset._ref in gallery[].asset._ref ||
+          image.asset._ref == ^.image.asset._ref
+        )][0]{
+          _id,
+          title,
+          "slug": slug.current
+        }
+      )
     }
   }
 }`
@@ -69,6 +81,7 @@ const demoBucket = (column: number): ShowcaseBucket => {
       id: `${seed}`,
       src: `https://picsum.photos/seed/${seed}/${aspect.width}/${aspect.height}`,
       title: `Study ${column}.${i + 1}`,
+      productTitle: `Study ${column}.${i + 1}`,
     } satisfies ShowcaseBucketImage
   })
   return {
@@ -92,7 +105,7 @@ export const demoShowcaseBuckets = (count = SHOWCASE_MAX_COLUMNS): ShowcaseBucke
 export const useShowcaseCatalog = async () => {
   const { imageUrl, getImageSrc } = useSanityImage()
 
-  const { data, pending, error, refresh } = await useAsyncData('curatePage', () =>
+  const { data, pending, error, refresh } = await useAsyncData('curateBuckets', () =>
     $fetch('/api/sanity/query', { method: 'POST', body: { query: CURATE_PAGE_QUERY } })
       .then((r: { result?: unknown }) => r?.result ?? null)
       .catch(() => null),
@@ -127,10 +140,12 @@ export const useShowcaseCatalog = async () => {
           .map((entry, entryIndex) => {
             const src = resolveSrc(entry.image?.asset)
             if (!src) return null
+            const productTitle = entry.title || entry.product?.title || undefined
             return {
               id: entry.image?.asset?._id || `${bucket._id || 'bucket'}-${entryIndex}`,
               src,
               title: entry.title || entry.product?.title,
+              productTitle,
               productId: entry.product?._id,
               slug: entry.product?.slug || undefined,
             } satisfies ShowcaseBucketImage

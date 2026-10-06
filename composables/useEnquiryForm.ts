@@ -12,6 +12,28 @@ export type EnquiryPreviewItem = {
 
 export type EnquirySource = 'bucket' | 'moodboard' | 'product' | 'enquire-page'
 
+/** Viewport rect of a stack cell at the moment Send as enquiry is clicked. */
+export type EnquiryFlyRect = {
+  id: string
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+type EnquiryFlyBridge = {
+  measure: () => EnquiryFlyRect[]
+  setParked: (parked: boolean) => void
+}
+
+let enquiryFlyBridge: EnquiryFlyBridge | null = null
+
+export const registerEnquiryFlyBridge = (bridge: EnquiryFlyBridge | null) => {
+  enquiryFlyBridge = bridge
+}
+
+export const getEnquiryFlyBridge = () => enquiryFlyBridge
+
 export type EnquiryAttachment = {
   id: string
   file: File
@@ -77,13 +99,16 @@ export const useEnquiryForm = () => {
     error.value = null
   }
 
+  const flyOrigins = useState<EnquiryFlyRect[] | null>('enquiry-fly-origins', () => null)
+
   const openFromBucket = (
     items: BucketItem[],
-    options?: { colour?: string | null },
+    options?: { colour?: string | null; origins?: EnquiryFlyRect[] | null },
   ) => {
     reset()
     source.value = 'bucket'
     compositionImage.value = null
+    flyOrigins.value = options?.origins?.length ? options.origins : null
     const preview: EnquiryPreviewItem[] = items.map((item) => ({
       id: item.id,
       title: item.title,
@@ -111,6 +136,7 @@ export const useEnquiryForm = () => {
   ) => {
     reset()
     source.value = 'moodboard'
+    flyOrigins.value = null
     compositionImage.value = screenshot
     previewItems.value = placements.map((item) => ({
       id: item.id,
@@ -132,6 +158,7 @@ export const useEnquiryForm = () => {
   }) => {
     reset()
     source.value = 'product'
+    flyOrigins.value = null
     compositionImage.value = null
     previewItems.value = [
       {
@@ -155,6 +182,7 @@ export const useEnquiryForm = () => {
     previewItems.value = []
     compositionImage.value = null
     source.value = null
+    flyOrigins.value = null
     if (wasOpen) unlockPageScroll()
   }
 
@@ -246,6 +274,7 @@ export const useEnquiryForm = () => {
   return {
     isOpen,
     source,
+    flyOrigins,
     previewItems,
     compositionImage,
     attachments,

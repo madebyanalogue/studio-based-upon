@@ -3,12 +3,16 @@
     <div
       v-if="isOpen"
       class="enquiry"
+      :class="{
+        'enquiry--concealed': !formShown,
+        'enquiry--fly-cover': gridCover,
+      }"
       role="dialog"
       aria-modal="true"
       aria-label="Send enquiry"
       data-lenis-prevent
     >
-      <div class="enquiry__backdrop" @click="close" />
+            <div class="enquiry__backdrop" @click="formShown && close()" />
 
       <div class="enquiry__panel">
         <header class="enquiry__header">
@@ -45,6 +49,7 @@
                 v-for="item in previewItems"
                 :key="item.id"
                 class="enquiry__grid-item"
+                :data-enquiry-id="item.id"
                 :title="item.title"
               >
                 <img
@@ -141,7 +146,7 @@
 
             <p v-if="error" class="enquiry__error" role="alert">{{ error }}</p>
 
-            <button type="submit" class="btn btn--filled enquiry__send" :disabled="isSubmitting">
+            <button type="submit" class="enquiry__send interface" :disabled="isSubmitting">
               {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
             </button>
           </div>
@@ -152,9 +157,17 @@
 </template>
 
 <script setup lang="ts">
+import gsap from 'gsap'
+import type { EnquiryFlyRect } from '~/composables/useEnquiryForm'
+
+const GATHER_S = 0.85
+const SPREAD_S = 0.72
+const FORM_FADE_MS = 420
+
 const {
   isOpen,
   source,
+  flyOrigins,
   previewItems,
   compositionImage,
   attachments,
@@ -164,9 +177,178 @@ const {
   error,
   addAttachments,
   removeAttachment,
-  close,
+  close: closeEnquiry,
   submit,
 } = useEnquiryForm()
+
+const formShown = ref(true)
+const gridCover = ref(false)
+const closing = ref(false)
+let runId = 0
+type FlyPhase = 'idle' | 'gather' | 'covered' | 'spread' | 'settled'
+let phase: FlyPhase = 'idle'
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+const frames = (count = 2) =>
+  new Promise<void>((resolve) => {
+    const step = (left: number) => {
+      if (left <= 0) resolve()
+      else requestAnimationFrame(() => step(left - 1))
+    }
+    step(count)
+  })
+
+const measureGrid = () => {
+  const map = new Map<string, { left: number; top: number; width: number; height: number }>()
+  for (const el of document.querySelectorAll<HTMLElement>('[data-enquiry-id]')) {
+    const id = el.dataset.enquiryId || ''
+    const rect = el.getBoundingClientRect()
+    if (!id || rect.width < 2 || rect.height < 2) continue
+    map.set(id, {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    })
+  }
+  return map
+}
+
+const boxesFor = (ids: string[], map: Map<string, { left: number; top: number; width: number; height: number }>) =>
+  ids.map((id) => map.get(id))
+
+const showFlyers = (visible: boolean) => {
+  for (const img of enquiryFlyImages()) img.style.opacity = visible ? '1' : '0'
+}
+
+const flyHome = async (id: number) => {
+  const bridge = getEnquiryFlyBridge()
+  const homes = bridge?.measure() ?? []
+  const byId = new Map(homes.map((rect) => [rect.id, rect]))
+  const ids = enquiryFlyImages().map((img) => img.dataset.flyId || '')
+  if (ids.length && homes.length) {
+    await tweenEnquiryFlyers(
+      boxesFor(ids, byId),
+      GATHER_S,
+    )
+  }
+  if (id !== runId) return
+  bridge?.setParked(false)
+  await nextTick()
+  if (id !== runId) return
+  clearEnquiryFlyers()
+}
+
+const returnToStack = async (id: number) => {
+  const leavingGrid = phase === 'spread' || phase === 'settled'
+  if (leavingGrid) {
+    showFlyers(true)
+    setEnquiryFlyFront(true)
+    gridCover.value = true
+    await nextTick()
+    if (id !== runId) return
+    const ids = enquiryFlyImages().map((img) => img.dataset.flyId || '')
+    const sample = measureGrid().values().next().value
+    const size = sample?.width || 120
+    await tweenEnquiryFlyers(pileBoxes(ids.length, size), SPREAD_S)
+    if (id !== runId) return
+  }
+
+  if (formShown.value || phase === 'covered' || leavingGrid) {
+    // Leaving the grid: keep the pile in front so it stays visible while the
+    // form fades. Still behind the form (covered): fade the form off the pile.
+    if (!leavingGrid) setEnquiryFlyFront(false)
+    formShown.value = false
+    await wait(FORM_FADE_MS)
+    if (id !== runId) return
+  }
+
+  await flyHome(id)
+}
+
+const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
+  phase = 'gather'
+  await frames(2)
+  if (id !== runId) return
+  if (!enquiryFlyImages().length) {
+    formShown.value = true
+    gridCover.value = false
+    getEnquiryFlyBridge()?.setParked(false)
+    phase = 'idle'
+    return
+  }
+
+  const ids = origins.map((origin) => origin.id)
+  const grid = measureGrid()
+  const sample = grid.values().next().value
+  const size = sample?.width || 120
+
+  await tweenEnquiryFlyers(pileBoxes(ids.length, size), GATHER_S)
+  if (id !== runId) return
+
+  phase = 'covered'
+  formShown.value = true
+  await wait(FORM_FADE_MS)
+  if (id !== runId) return
+
+  phase = 'spread'
+  setEnquiryFlyFront(true)
+  await tweenEnquiryFlyers(boxesFor(ids, measureGrid()), SPREAD_S)
+  if (id !== runId) return
+
+  gridCover.value = false
+  await nextTick()
+  await frames(1)
+  if (id !== runId) return
+  showFlyers(false)
+  setEnquiryFlyFront(false)
+  phase = 'settled'
+}
+
+const close = async () => {
+  if (!isOpen.value || closing.value) return
+  const flying = phase !== 'idle' || enquiryFlyImages().length > 0
+  if (!flying) {
+    closeEnquiry()
+    return
+  }
+
+  closing.value = true
+  const id = ++runId
+  gsap.killTweensOf(enquiryFlyImages())
+  try {
+    await returnToStack(id)
+  } finally {
+    if (id === runId) {
+      getEnquiryFlyBridge()?.setParked(false)
+      clearEnquiryFlyers()
+      phase = 'idle'
+      gridCover.value = false
+      closing.value = false
+      closeEnquiry()
+      formShown.value = true
+    }
+  }
+}
+
+watch(isOpen, async (open) => {
+  if (!import.meta.client || !open) return
+  const origins = flyOrigins.value
+  if (!origins?.length) {
+    formShown.value = true
+    gridCover.value = false
+    phase = 'idle'
+    return
+  }
+  const id = ++runId
+  formShown.value = false
+  gridCover.value = true
+  phase = 'gather'
+  await nextTick()
+  if (id !== runId) return
+  await gatherIntoGrid(id, origins)
+})
 
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -192,6 +374,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  runId += 1
+  clearEnquiryFlyers()
+  getEnquiryFlyBridge()?.setParked(false)
 })
 </script>
 
@@ -199,11 +384,27 @@ onUnmounted(() => {
 .enquiry {
   position: fixed;
   inset: 0;
-  z-index: 400;
+  /* Above the open-stack toolbar and enquiry bar (420 / 430) */
+  z-index: 460;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--gutter);
+}
+
+.enquiry__backdrop,
+.enquiry__panel {
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.enquiry--concealed .enquiry__backdrop,
+.enquiry--concealed .enquiry__panel {
+  opacity: 0;
+}
+
+.enquiry--fly-cover .enquiry__grid-item > * {
+  opacity: 0;
 }
 
 .enquiry__backdrop {
@@ -283,16 +484,15 @@ onUnmounted(() => {
 }
 
 .enquiry__grid {
+  --bucket-thumb-width: 120px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--bucket-thumb-width), 1fr));
-  gap: 0.5rem;
+  gap: 20px;
 }
 
 .enquiry__grid-item {
   aspect-ratio: 1;
   overflow: hidden;
-  border: 1px solid var(--grid-line);
-  background: var(--warm-white);
 }
 
 .enquiry__grid-item img {
@@ -437,7 +637,20 @@ onUnmounted(() => {
 
 .enquiry__send {
   width: 100%;
+  min-height: 3.25rem;
   margin-top: 0.25rem;
+  padding: 0.9rem 1.25rem;
+  border: 0;
+  border-radius: var(--ui-border-radius);
+  background: var(--red);
+  color: #fff;
+  cursor: pointer;
+}
+
+.enquiry__send:hover:not(:disabled) {
+  background: var(--red);
+  color: #fff;
+  filter: brightness(0.95);
 }
 
 .enquiry__send:disabled {

@@ -84,7 +84,9 @@
       <a
         class="split-slider__caption-side"
         :href="activeSlide.left.link"
-        :data-cursor-label="activeSlide.left.title || activeSlide.title"
+        :data-cursor-label="
+          userScrolled ? activeSlide.left.title || activeSlide.title : undefined
+        "
         @click="onCaptionClick('left', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.left.title }}</p>
@@ -95,7 +97,9 @@
       <a
         class="split-slider__caption-side"
         :href="activeSlide.right.link"
-        :data-cursor-label="activeSlide.right.title || activeSlide.title"
+        :data-cursor-label="
+          userScrolled ? activeSlide.right.title || activeSlide.title : undefined
+        "
         @click="onCaptionClick('right', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.right.title }}</p>
@@ -212,7 +216,7 @@ let introPlaying = false
 let leaving = false
 let leavePromise: Promise<void> | null = null
 let entranceStarted = false
-let userScrolled = false
+const userScrolled = ref(false)
 let pointerOverSlider = false
 let hoverX = 0
 let hoverY = 0
@@ -224,13 +228,21 @@ const { resolveFromPoint } = useCursor()
 
 const syncScrollHint = () => {
   const show =
-    scrollHintReady && pointerOverSlider && !userScrolled && !leaving && running
+    scrollHintReady && pointerOverSlider && !userScrolled.value && !leaving && running
   if (homeScrollHint.value !== show) homeScrollHint.value = show
 }
 
 const dismissScrollHint = () => {
-  userScrolled = true
+  if (userScrolled.value) return
+  userScrolled.value = true
   homeScrollHint.value = false
+  for (const side of ['left', 'right'] as const) {
+    for (const el of columns[side].visibleSlides.values()) {
+      const name = el.dataset.projectName
+      if (name) el.dataset.cursorLabel = name
+    }
+  }
+  if (pointerOverSlider) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
 const showScrollHint = () => {
@@ -247,8 +259,10 @@ const onSliderPointerEnter = (event: PointerEvent) => {
 }
 
 const onSliderPointerMove = (event: PointerEvent) => {
+  pointerOverSlider = true
   hoverX = event.clientX
   hoverY = event.clientY
+  syncScrollHint()
 }
 
 const onSliderPointerLeave = () => {
@@ -289,7 +303,10 @@ const createSlide = (side: Side, index: number) => {
   // Clip immediately so buffer slides never flash full-bleed before updateSlider
   el.style.clipPath = getRevealShape(side, scrollPosition - index)
   const projectName = (data[side].title || data.title || '').trim()
-  if (projectName) el.dataset.cursorLabel = projectName
+  if (projectName) {
+    el.dataset.projectName = projectName
+    if (userScrolled.value) el.dataset.cursorLabel = projectName
+  }
 
   const img = document.createElement('img')
   img.src = side === 'left' ? data.leftImage : data.rightImage
@@ -1051,13 +1068,19 @@ onMounted(() => {
   updateSlider()
   rafId = requestAnimationFrame(tick)
   if (props.holdEntrance) void prepareSurface()
-  else void playEntrance()
+  else {
+    showScrollHint()
+    void playEntrance()
+  }
 })
 
 watch(
   () => props.holdEntrance,
   (hold, wasHolding) => {
-    if (wasHolding && !hold) void playEntrance()
+    if (wasHolding && !hold) {
+      showScrollHint()
+      void playEntrance()
+    }
   },
 )
 

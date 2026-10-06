@@ -55,7 +55,7 @@ export type DiscoverPageData = {
   content: DiscoverContentBlock[]
 }
 
-export const DISCOVER_PAGE_QUERY = `*[_type == "discoverPage"][0] {
+export const DISCOVER_PAGE_QUERY = `*[_id == "discoverPage"][0] {
   seoTitle,
   seoDescription,
   heroEyebrow,
@@ -159,6 +159,13 @@ const demoCollection = (
   }),
 })
 
+/** Shown while the page request is still in flight, so the route can render without suspending. */
+const pendingDiscoverPage = (): DiscoverPageData => ({
+  heroEyebrow: 'Typology',
+  heroTitle: '',
+  content: [],
+})
+
 /** Editorial demo page when CMS content is empty. */
 export const demoDiscoverPage = (): DiscoverPageData => ({
   heroEyebrow: 'Typology',
@@ -225,7 +232,7 @@ const normalizeCardRatio = (value: unknown): DiscoverCardRatio => {
   return '3/2'
 }
 
-export const useCuratedDiscover = async () => {
+export const useCuratedDiscover = () => {
   const { imageUrl, getImageSrc } = useSanityImage()
 
   const resolveSrc = (asset?: { _id?: string; url?: string } | null) => {
@@ -233,15 +240,33 @@ export const useCuratedDiscover = async () => {
     return imageUrl({ asset }, IMAGE_WIDTH.thumb) || getImageSrc(asset) || ''
   }
 
-  const { data, pending, error, refresh } = await useAsyncData('discoverPage-v6', () =>
-    $fetch('/api/sanity/query', { method: 'POST', body: { query: DISCOVER_PAGE_QUERY } })
-      .then((r: { result?: unknown }) => r?.result ?? null)
-      .catch(() => null),
+  // Keep this synchronous. Awaiting it makes the page async, and Nuxt's
+  // Suspense then patches RouterView before the page element exists.
+  const { data, pending, error, refresh } = useAsyncData(
+    'discoverPage-v8',
+    () =>
+      $fetch('/api/sanity/query', {
+        method: 'POST',
+        // Live API. In dev, overlay unpublished Studio drafts so the page matches the editor.
+        body: {
+          query: DISCOVER_PAGE_QUERY,
+          useCdn: false,
+          ...(import.meta.dev ? { perspective: 'previewDrafts' } : {}),
+        },
+      })
+        .then((r: { result?: unknown }) => r?.result ?? null)
+        .catch(() => null),
+    {
+      // A hard load must hydrate the server render. Returning nothing here
+      // drops the payload, swaps in the demo page, and skips the enter wipe.
+      getCachedData: (key, nuxtApp) =>
+        nuxtApp.isHydrating ? nuxtApp.payload.data[key] : undefined,
+    },
   )
 
   const page = computed<DiscoverPageData>(() => {
     const raw = data.value as Record<string, unknown> | null
-    if (!raw) return demoDiscoverPage()
+    if (!raw) return pending.value ? pendingDiscoverPage() : demoDiscoverPage()
 
     const contentRaw = Array.isArray(raw.content) ? raw.content : []
     const content: DiscoverContentBlock[] = contentRaw

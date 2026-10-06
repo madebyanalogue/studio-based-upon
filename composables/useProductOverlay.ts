@@ -3,6 +3,7 @@ import {
   PDP_RELATED_RAIL_MS,
   usePdpRelatedRail,
 } from '~/composables/usePdpRelatedRail'
+import { typologyCloseLabelHeld } from '~/composables/useTypologyRowHover'
 
 export type ProductOverlayOpenOptions = {
   /** Clicked thumbnail — Flip animates from / back to this element */
@@ -327,8 +328,23 @@ export const useProductOverlay = () => {
     pendingGridSwap.value = { shellId, closingId }
   }
 
+  /** Let the cursor's Close word type out instead of vanishing with the overlay. */
+  const dismissCloseCursorLabel = () => {
+    if (!import.meta.client) return
+    typologyCloseLabelHeld.value = true
+  }
+
+  const releaseCloseCursorLabel = () => {
+    if (!import.meta.client) return
+    const { preset } = useCursor()
+    if (preset.value?.tooltip === 'Close') preset.value = null
+    typologyCloseLabelHeld.value = false
+  }
+
   const finishClose = () => {
     if (!openSlug.value && !closingFlip.value) return
+
+    releaseCloseCursorLabel()
 
     const { closeRelatedRail } = usePdpRelatedRail()
     closeRelatedRail()
@@ -375,6 +391,8 @@ export const useProductOverlay = () => {
    */
   const close = () => {
     if (!openSlug.value || closingFlip.value) return
+
+    dismissCloseCursorLabel()
 
     const { relatedRailVisible, closeRelatedRail } = usePdpRelatedRail()
     const hadRelated = relatedRailVisible.value

@@ -13,7 +13,6 @@
     :aria-label="collection.title"
     :data-typology-rail="myId"
     :data-cursor="isActive || isClosing ? 'default' : undefined"
-    :data-cursor-label="otherRailLabel || undefined"
     @pointerleave="onRailPointerLeave"
   >
     <header class="collection-rail__header" aria-hidden="true">
@@ -30,11 +29,11 @@
       <div
         ref="trackEl"
         class="collection-rail__track"
-        :data-cursor="isActive ? 'close' : undefined"
+        :data-cursor="isActive ? 'close-label' : undefined"
       >
         <div
           class="collection-rail__lead"
-          data-cursor="close"
+          data-cursor="close-label"
           aria-hidden="true"
           @pointerenter="onLeadPointerEnter"
         />
@@ -50,13 +49,14 @@
           :style="{ '--card-aspect': cardAspect(artwork.cardRatio) }"
           :trigger="!controlsReady"
           :controls="controlsReady"
+          circle-cursor
           :sequence="railSequence"
           :hit-label="index === 0 && !controlsReady ? `Show ${collection.title}` : ''"
           :cursor-label="cardCursorLabel(index, artwork.title)"
           @pointerenter="index === 0 && !controlsReady && onTriggerPointerEnter()"
           @activate="onActivate(index)"
         />
-        <div class="collection-rail__tail" data-cursor="close" aria-hidden="true" />
+        <div class="collection-rail__tail" data-cursor="close-label" aria-hidden="true" />
       </div>
     </div>
   </section>
@@ -70,6 +70,7 @@ import type {
 } from '~/composables/useCuratedDiscover'
 import {
   typologyActiveRailId,
+  typologyCloseLabelHeld,
   typologyHandoffRailId,
   typologyPointerPaused,
   typologyRowHoverKey,
@@ -117,19 +118,13 @@ const isActive = ref(false)
 const controlsReady = ref(false)
 /** Close animation is running. Other rows stay inert until it finishes. */
 const isClosing = ref(false)
-/** Name shown on the cursor when another row is open. */
-const otherRailLabel = computed(() =>
-  typologyRowsLocked.value && !isActive.value && !isClosing.value
-    ? props.collection?.title?.trim() || ''
-    : '',
-)
-
 /** True after the user scrolls an open row. Thumbnails then use product titles. */
 const railScrolled = ref(false)
 
-/** Trigger cell asks to view the collection; scrolled thumbnails use the product title. */
+/** Every closed trigger says Explore. Scrolled thumbnails use the product title. */
 const cardCursorLabel = (index: number, title: string) => {
-  if (otherRailLabel.value) return otherRailLabel.value
+  const otherRowOpen = typologyRowsLocked.value && !isActive.value && !isClosing.value
+  if (otherRowOpen) return index === 0 ? 'Explore' : ''
   if (index === 0 && !controlsReady.value) return 'Explore'
   if (controlsReady.value && railScrolled.value) return title.trim()
   return ''
@@ -155,6 +150,7 @@ const ALIGN_SCROLL_MS = 1400
 let alignFrom = 0
 let alignStartedAt = 0
 const homeScrollHint = useHomeScrollHint()
+const { preset: cursorPreset } = useCursor()
 let scrollHintActive = false
 let unbindScrollHint: (() => void) | null = null
 
@@ -164,6 +160,11 @@ const dismissRailScrollHint = () => {
   unbindScrollHint?.()
   unbindScrollHint = null
   homeScrollHint.value = false
+}
+
+const releaseCloseLabel = () => {
+  if (cursorPreset.value?.tooltip === 'Close') cursorPreset.value = null
+  typologyCloseLabelHeld.value = false
 }
 
 const showRailScrollHint = () => {
@@ -417,6 +418,7 @@ const finishClose = async (gen: number) => {
     typologyRowsLocked.value = false
     typologyPointerPaused.value = false
   }
+  releaseCloseLabel()
   await nextTick()
   syncPageChrome()
 }
@@ -434,6 +436,7 @@ const deactivate = () => {
   isPreview.value = false
   railScrolled.value = false
   dismissRailScrollHint()
+  typologyCloseLabelHeld.value = true
   typologyRowsLocked.value = true
   if (wheelBound) {
     wheelBound = false
@@ -722,6 +725,7 @@ onBeforeUnmount(() => {
   }
   unbindActiveInput()
   dismissRailScrollHint()
+  releaseCloseLabel()
   void nextTick(syncPageChrome)
   destroyRailLenis()
 })

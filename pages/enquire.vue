@@ -173,8 +173,9 @@ definePageMeta({
 
 /** Match the materials & forms / typology title melt. */
 const TITLE_BLUR_MAX = 75
-const TITLE_GOOEY_IN_DUR = 1.85
-const TITLE_GOOEY_IN_BLUR = 8
+const TITLE_GOOEY_IN_DUR = 2.6
+const TITLE_GOOEY_OUT_DUR = 0.85
+const STAGE_FADE_MS = 700
 
 type LocalAttachment = {
   id: string
@@ -347,6 +348,8 @@ const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
 
 let titleSplit: InstanceType<typeof SplitText> | null = null
 let titleTween: gsap.core.Tween | null = null
+let titleGen = 0
+let pageOutroRan = false
 
 const prefersReducedMotion = () =>
   import.meta.client &&
@@ -357,17 +360,18 @@ const titleWords = () =>
 
 const power3Out = (t: number) => 1 - Math.pow(1 - t, 3)
 
-/** Skip the fully hidden part of the 75px melt and keep the same pace once it shows. */
-const gooeyInWindow = () => {
-  const hidden = 1 - Math.cbrt(TITLE_GOOEY_IN_BLUR / TITLE_BLUR_MAX)
-  return { from: hidden, duration: TITLE_GOOEY_IN_DUR * (1 - hidden) }
-}
+const waitMs = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
 
 const revealStage = () => {
+  if (pageOutroRan) return
   stageVisible.value = true
 }
 
 const playTitleGooeyIn = async () => {
+  const gen = ++titleGen
   if (!import.meta.client || !titleEl.value) {
     titlePaintReady.value = true
     revealStage()
@@ -383,7 +387,7 @@ const playTitleGooeyIn = async () => {
   }
 
   await nextTick()
-  if (!titleEl.value) return
+  if (gen !== titleGen || !titleEl.value) return
 
   if (prefersReducedMotion()) {
     titlePaintReady.value = true
@@ -399,7 +403,6 @@ const playTitleGooeyIn = async () => {
 
   const words = Array.from(titleWords())
   const target = words.length ? words : titleEl.value
-  const { from, duration } = gooeyInWindow()
   const applyIn = (t: number) => {
     const progress = power3Out(t)
     gsap.set(target, {
@@ -408,30 +411,80 @@ const playTitleGooeyIn = async () => {
     })
   }
 
-  applyIn(from)
+  applyIn(0)
   titlePaintReady.value = true
   await nextTick()
-  if (!titleEl.value) return
+  if (gen !== titleGen || !titleEl.value) return
 
   await new Promise<void>((resolve) => {
-    const clock = { t: from }
+    const clock = { t: 0 }
     titleTween = gsap.to(clock, {
       t: 1,
-      duration,
+      duration: TITLE_GOOEY_IN_DUR,
       ease: 'none',
-      onUpdate: () => applyIn(clock.t),
+      onUpdate: () => {
+        if (gen !== titleGen) return
+        applyIn(clock.t)
+      },
       onComplete: () => resolve(),
     })
   })
 
+  if (gen !== titleGen) return
   revealStage()
+}
+
+const playTitleGooeyOut = () =>
+  new Promise<void>((resolve) => {
+    titleTween?.kill()
+    titleTween = null
+    if (
+      prefersReducedMotion() ||
+      !titleEl.value ||
+      !titlePaintReady.value
+    ) {
+      titlePaintReady.value = false
+      resolve()
+      return
+    }
+
+    const words = Array.from(titleWords())
+    const target = words.length ? words : titleEl.value
+    titleTween = gsap.to(target, {
+      filter: `blur(${TITLE_BLUR_MAX}px)`,
+      opacity: 0,
+      duration: TITLE_GOOEY_OUT_DUR,
+      ease: 'power2.in',
+      onComplete: () => {
+        titlePaintReady.value = false
+        resolve()
+      },
+    })
+  })
+
+const playPageOut = async () => {
+  if (pageOutroRan) return
+  pageOutroRan = true
+  titleGen += 1
+  const stageWasIn = stageVisible.value
+  stageVisible.value = false
+  await Promise.all([
+    playTitleGooeyOut(),
+    stageWasIn ? waitMs(STAGE_FADE_MS) : Promise.resolve(),
+  ])
 }
 
 onMounted(() => {
   void playTitleGooeyIn()
 })
 
+onBeforeRouteLeave((to, from) => {
+  if (to.path === from.path) return
+  return playPageOut()
+})
+
 onUnmounted(() => {
+  titleGen += 1
   titleTween?.kill()
   titleSplit?.revert()
   titleSplit = null

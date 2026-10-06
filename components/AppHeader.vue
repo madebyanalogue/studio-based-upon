@@ -328,7 +328,7 @@ const onMyBoardsClick = () => {
   justify-content: center;
   justify-self: center;
   flex-wrap: wrap;
-  gap: 0.75rem 1.75rem;
+  gap: 0.65rem 2rem;
   opacity: 1;
   transition: opacity 0.55s ease;
 }
@@ -416,6 +416,7 @@ const onMyBoardsClick = () => {
   display: flex;
   align-items: center;
   gap: 20px;
+  white-space: nowrap;
 }
 
 .header__enquire {

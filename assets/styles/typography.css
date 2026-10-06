@@ -62,6 +62,7 @@ html.text-uppercase .page-title,
 html.text-uppercase .h1,
 html.text-uppercase .h2,
 html.text-uppercase .h3,
+html.text-uppercase .h4,
 html.text-uppercase .h6,
 html.text-uppercase .serif,
 html.text-uppercase .serif-italic,
@@ -118,6 +119,15 @@ h1, h2, h3 {
 .h3 {
   font-size: clamp(2.5rem, 7vw, 6.5rem);
   line-height: .935;
+  letter-spacing: -0.005em;
+}
+
+.h4 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  margin: 0;
+  font-size: clamp(1.75rem, 4.6vw, 3.75rem);
+  line-height: 0.95;
   letter-spacing: -0.005em;
 }
 

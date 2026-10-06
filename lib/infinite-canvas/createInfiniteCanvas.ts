@@ -45,6 +45,7 @@ type ControllerState = {
   drift: { x: number; y: number }
   mouse: { x: number; y: number }
   lastMouse: { x: number; y: number }
+  pointerClient: { x: number; y: number } | null
   scrollAccum: number
   isDragging: boolean
   pointerDown: { x: number; y: number } | null
@@ -81,6 +82,9 @@ export type CreateInfiniteCanvasOptions = {
   fogFar?: number
   layoutSeed?: number
   onSelect?: (payload: InfiniteCanvasSelectPayload) => void
+  onHover?: (payload: InfiniteCanvasSelectPayload | null) => void
+  /** Screen rect of the hovered plane, every frame, so the heart can track it. */
+  onHoverFrame?: (rect: InfiniteCanvasSelectPayload['screenRect'] | null) => void
   onTextureProgress?: (progress: number) => void
 }
 
@@ -92,6 +96,13 @@ export type InfiniteCanvasHandle = {
   resetView: () => void
   /** Show planes that were hidden for Flip open. */
   restoreHiddenPlanes: () => void
+  /** Hide the plane that was just opened, once the flyer covers it. */
+  concealSelectedPlane: () => void
+  /** Freeze camera motion while a product Flip is in flight. */
+  setMotionPaused: (paused: boolean) => void
+  /** Hide the hovered plane while its image flies into the cart. */
+  holdHoveredPlane: () => boolean
+  releaseHeldPlane: () => void
   getDebugStats: () => {
     media: number
     planes: number
@@ -120,6 +131,7 @@ const createInitialState = (camZ: number): ControllerState => ({
   drift: { x: 0, y: 0 },
   mouse: { x: 0, y: 0 },
   lastMouse: { x: 0, y: 0 },
+  pointerClient: null,
   scrollAccum: 0,
   isDragging: false,
   pointerDown: null,
@@ -146,6 +158,8 @@ export const createInfiniteCanvas = (
     fogNear = 120,
     fogFar = 320,
     onSelect,
+    onHover,
+    onHoverFrame,
     onTextureProgress,
   } = options
 
@@ -420,9 +434,10 @@ export const createInfiniteCanvas = (
     }
   }
 
-  const trySelect = (clientX: number, clientY: number) => {
-    if (!onSelect || !media.length) return
+  const hitAt = (clientX: number, clientY: number) => {
+    if (!media.length) return null
     const rect = renderer.domElement.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
     pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1
     pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1
     raycaster.setFromCamera(pointerNdc, camera)
@@ -430,22 +445,12 @@ export const createInfiniteCanvas = (
     const meshes = Array.from(planesByMesh.keys()).filter((m) => m.visible)
     const hits = raycaster.intersectObjects(meshes, false)
     const hit = hits[0]
-    if (!hit?.object || !(hit.object instanceof THREE.Mesh)) return
+    if (!hit?.object || !(hit.object instanceof THREE.Mesh)) return null
 
     const { slug, title, productId, url } = hit.object.userData
-    if (!slug) return
+    if (!slug) return null
 
-    // Hide the clicked plane immediately so Flip doesn’t leave a twin on the canvas.
-    hiddenMeshes.add(hit.object)
-    hit.object.visible = false
-    const runtime = planesByMesh.get(hit.object)
-    if (runtime) {
-      runtime.opacity = 0
-      runtime.material.opacity = 0
-      runtime.material.depthWrite = false
-    }
-
-    onSelect({
+    const payload: InfiniteCanvasSelectPayload = {
       slug: String(slug),
       title: String(title || ''),
       productId: String(productId || ''),
@@ -453,10 +458,122 @@ export const createInfiniteCanvas = (
       clientX,
       clientY,
       screenRect: getMeshScreenRect(hit.object),
-    })
+    }
+    return { payload, mesh: hit.object }
+  }
+
+  let hoverMesh: THREE.Mesh | null = null
+  let heldMesh: THREE.Mesh | null = null
+  let selectedMesh: THREE.Mesh | null = null
+  let motionPaused = false
+  let lastHoverProduct = ''
+  let hoverAt = 0
+  let hoverMisses = 0
+
+  const publishHoverIdentity = (payload: InfiniteCanvasSelectPayload | null) => {
+    const productId = payload?.productId ?? ''
+    if (productId === lastHoverProduct) return
+    lastHoverProduct = productId
+    onHover?.(payload)
+  }
+
+  const sampleHover = (clientX: number, clientY: number) => {
+    const now = performance.now()
+    if (now - hoverAt < 32) return
+    hoverAt = now
+    const hit = hitAt(clientX, clientY)
+    if (hit) {
+      hoverMisses = 0
+      hoverMesh = hit.mesh
+      publishHoverIdentity(hit.payload)
+      return
+    }
+    // The plane is hidden while it flies into the cart — keep tracking it.
+    if (heldMesh && hoverMesh === heldMesh) return
+    hoverMisses += 1
+    if (hoverMisses < 4) return
+    hoverMesh = null
+    publishHoverIdentity(null)
+  }
+
+  const projectHover = () => {
+    if (!onHoverFrame || !hoverMesh) return
+    onHoverFrame(getMeshScreenRect(hoverMesh))
+  }
+
+  const clearHover = () => {
+    hoverMesh = null
+    hoverMisses = 0
+    publishHoverIdentity(null)
+  }
+
+  const holdHoveredPlane = () => {
+    if (!hoverMesh) return false
+    heldMesh = hoverMesh
+    hiddenMeshes.add(heldMesh)
+    return true
+  }
+
+  const releaseHeldPlane = () => {
+    const mesh = heldMesh
+    heldMesh = null
+    if (!mesh) return
+    hiddenMeshes.delete(mesh)
+    const runtime = planesByMesh.get(mesh)
+    if (!runtime) return
+    runtime.opacity = 1
+    runtime.material.opacity = 1
+    runtime.material.depthWrite = true
+    runtime.mesh.visible = true
+  }
+
+  const setMotionPaused = (paused: boolean) => {
+    motionPaused = paused
+    if (!paused) return
+    state.velocity.x = 0
+    state.velocity.y = 0
+    state.velocity.z = 0
+    state.targetVel.x = 0
+    state.targetVel.y = 0
+    state.targetVel.z = 0
+    state.scrollAccum = 0
+  }
+
+  const concealMesh = (mesh: THREE.Mesh | null) => {
+    if (!mesh) return
+    hiddenMeshes.add(mesh)
+    mesh.visible = false
+    const runtime = planesByMesh.get(mesh)
+    if (!runtime) return
+    runtime.opacity = 0
+    runtime.material.opacity = 0
+    runtime.material.depthWrite = false
+  }
+
+  const revealMesh = (mesh: THREE.Mesh) => {
+    hiddenMeshes.delete(mesh)
+    const runtime = planesByMesh.get(mesh)
+    if (!runtime) return
+    runtime.opacity = 1
+    runtime.material.opacity = 1
+    runtime.material.depthWrite = true
+    runtime.mesh.visible = true
+  }
+
+  const trySelect = (clientX: number, clientY: number) => {
+    if (!onSelect) return
+    const hit = hitAt(clientX, clientY)
+    if (!hit) return
+
+    // Freeze before the overlay mounts so the captured rect stays under the flyer.
+    setMotionPaused(true)
+    selectedMesh = hit.mesh
+    clearHover()
+    onSelect(hit.payload)
   }
 
   const onMouseDown = (e: MouseEvent) => {
+    clearHover()
     state.isDragging = true
     state.pointerDown = { x: e.clientX, y: e.clientY }
     state.dragDistance = 0
@@ -473,20 +590,31 @@ export const createInfiniteCanvas = (
     if (wasClick) trySelect(e.clientX, e.clientY)
   }
 
-  const onMouseLeave = () => {
+  const onMouseLeave = (e: MouseEvent) => {
+    if (
+      e.relatedTarget instanceof Element &&
+      e.relatedTarget.closest('[data-discovery-heart]')
+    ) {
+      return
+    }
     state.mouse = { x: 0, y: 0 }
+    state.pointerClient = null
     state.isDragging = false
     state.pointerDown = null
+    clearHover()
     setCursor('grab')
   }
 
   const onMouseMove = (e: MouseEvent) => {
+    state.pointerClient = { x: e.clientX, y: e.clientY }
     state.mouse = {
       x: (e.clientX / window.innerWidth) * 2 - 1,
       y: -(e.clientY / window.innerHeight) * 2 + 1,
     }
 
-    if (state.isDragging) {
+    if (!state.isDragging) sampleHover(e.clientX, e.clientY)
+
+    if (state.isDragging && !motionPaused) {
       const dx = e.clientX - state.lastMouse.x
       const dy = e.clientY - state.lastMouse.y
       state.dragDistance += Math.abs(dx) + Math.abs(dy)
@@ -498,6 +626,7 @@ export const createInfiniteCanvas = (
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
+    if (motionPaused) return
     state.scrollAccum += e.deltaY * 0.006
   }
 
@@ -611,6 +740,17 @@ export const createInfiniteCanvas = (
     if (disposed) return
     rafId = requestAnimationFrame(tick)
 
+    const isZooming = Math.abs(state.velocity.z) > 0.05
+
+    if (motionPaused) {
+      state.velocity.x = 0
+      state.velocity.y = 0
+      state.velocity.z = 0
+      state.targetVel.x = 0
+      state.targetVel.y = 0
+      state.targetVel.z = 0
+      state.scrollAccum = 0
+    } else {
     if (keys.forward) state.targetVel.z -= KEYBOARD_SPEED
     if (keys.backward) state.targetVel.z += KEYBOARD_SPEED
     if (keys.left) state.targetVel.x -= KEYBOARD_SPEED
@@ -618,7 +758,32 @@ export const createInfiniteCanvas = (
     if (keys.down) state.targetVel.y -= KEYBOARD_SPEED
     if (keys.up) state.targetVel.y += KEYBOARD_SPEED
 
-    const isZooming = Math.abs(state.velocity.z) > 0.05
+    const EDGE = 200
+    const EDGE_PUSH = 0.42
+    const point = state.pointerClient
+    if (!state.isDragging && !isTouch && point) {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const x = point.x - rect.left
+      const y = point.y - rect.top
+      const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height
+      if (inside) {
+        if (x > rect.width - EDGE) {
+          state.targetVel.x += EDGE_PUSH * ((x - (rect.width - EDGE)) / EDGE)
+        } else if (x < EDGE) {
+          state.targetVel.x -= EDGE_PUSH * ((EDGE - x) / EDGE)
+        }
+        if (y < EDGE) {
+          state.targetVel.y += EDGE_PUSH * ((EDGE - y) / EDGE)
+        } else if (y > rect.height - EDGE) {
+          state.targetVel.y -= EDGE_PUSH * ((y - (rect.height - EDGE)) / EDGE)
+        }
+        sampleHover(point.x, point.y)
+      }
+    }
+
+    state.targetVel.z += state.scrollAccum
+    state.scrollAccum *= 0.8
+
     const zoomFactor = clamp(state.basePos.z / 50, 0.3, 2.0)
     const driftAmount = 8.0 * zoomFactor
     const driftLerp = isZooming ? 0.2 : 0.12
@@ -657,6 +822,7 @@ export const createInfiniteCanvas = (
     state.targetVel.x *= VELOCITY_DECAY
     state.targetVel.y *= VELOCITY_DECAY
     state.targetVel.z *= VELOCITY_DECAY
+    }
 
     const cx = Math.floor(state.basePos.x / CHUNK_SIZE)
     const cy = Math.floor(state.basePos.y / CHUNK_SIZE)
@@ -682,6 +848,7 @@ export const createInfiniteCanvas = (
     }
 
     updatePlaneFades()
+    projectHover()
     renderer.render(scene, camera)
   }
 
@@ -750,8 +917,25 @@ export const createInfiniteCanvas = (
       rebuildAroundCamera()
     },
     restoreHiddenPlanes: () => {
+      const meshes = [...hiddenMeshes]
       hiddenMeshes.clear()
+      heldMesh = null
+      selectedMesh = null
+      for (const mesh of meshes) {
+        const runtime = planesByMesh.get(mesh)
+        if (!runtime) continue
+        runtime.opacity = 1
+        runtime.material.opacity = 1
+        runtime.material.depthWrite = true
+        runtime.mesh.visible = true
+      }
     },
+    concealSelectedPlane: () => {
+      concealMesh(selectedMesh)
+    },
+    setMotionPaused,
+    holdHoveredPlane,
+    releaseHeldPlane,
     getDebugStats: () => {
       const runtimes = [...planesByMesh.values()]
       const visible = runtimes.filter((r) => r.mesh.visible)

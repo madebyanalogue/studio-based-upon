@@ -1,28 +1,27 @@
 :root {
-  /* Colour palette — light (default) */
-  --cream: #F1EDE4;
-  --warm-white: #faf7f2;
-  --sand: #e8dfd2;
-  --stone: #c4b8a8;
-  --charcoal: #111111;
-  --black: #000000;
-  --slate: #414042;
+  /* Colour palette — dark is the default so first paint is never light */
+  --cream: #111111;
+  --warm-white: #1f1c18;
+  --sand: #2a2621;
+  --stone: #6b635a;
+  --charcoal: #f1ede4;
+  --black: #faf7f2;
+  --slate: #c8c0b6;
   --white: #ffffff;
   --blue: #3b5fd1;
   --bronze: #a3946d;
   --putty: #f1ede4;
-  --black: #000000;
   /* Derived from current text colour so light/dark stay in sync */
   --muted: color-mix(in srgb, var(--charcoal) 45%, transparent);
-  --accent: var(--red);
+  --accent: #c4a574;
   --red: #e64c1a;
-  --grid-line: rgba(0, 0, 0, 0.06);
+  --grid-line: rgba(255, 255, 255, 0.1);
   --handwritten-color: var(--charcoal);
-  --ui-border-color: rgba(0, 0, 0, 0.12);
+  --ui-border-color: rgba(255, 255, 255, 0.14);
   --ui-border-radius: 2px;
-  --panel-bg: rgba(255, 255, 255, 0.8);
-  --elevated-bg: #ffffff;
-  --shadow-color: rgba(0, 0, 0, 0.1);
+  --panel-bg: rgba(31, 28, 24, 0.88);
+  --elevated-bg: #2a2621;
+  --shadow-color: rgba(0, 0, 0, 0.45);
 
   --bucket-thumb-width: 130px;
   --dock-gutter: 0px;
@@ -31,7 +30,7 @@
   /* Thumbnail overlay controls ([+], [−], clone, cycle) */
   --thumb-ctrl-inset: 8px;
   --thumb-ctrl-size: 28px;
-  --thumb-ctrl-color: var(--black);
+  --thumb-ctrl-color: var(--charcoal);
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
@@ -52,7 +51,7 @@
   --product-card-aspect-ratio: 0.8;
 
 
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 @supports (color: color(display-p3 1 0 0)) {
@@ -144,6 +143,23 @@ img {
   html.custom-cursor-on [data-cursor='native'],
   html.custom-cursor-on [data-cursor='native'] * {
     cursor: auto !important;
+  }
+
+  html.custom-cursor-on [data-resize='nwse'],
+  html.custom-cursor-on[data-resize-cursor='nwse'],
+  html.custom-cursor-on[data-resize-cursor='nwse'] * {
+    cursor: nwse-resize !important;
+  }
+
+  html.custom-cursor-on [data-resize='nesw'],
+  html.custom-cursor-on[data-resize-cursor='nesw'],
+  html.custom-cursor-on[data-resize-cursor='nesw'] * {
+    cursor: nesw-resize !important;
+  }
+
+  html.custom-cursor-on [data-cursor='pointer'],
+  html.custom-cursor-on [data-cursor='pointer'] * {
+    cursor: pointer !important;
   }
 }
 

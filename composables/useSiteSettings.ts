@@ -102,6 +102,8 @@ export const useSiteSettings = () => {
   )
 
   const MAIN_NAV_ORDER = [
+    { path: '/discover', text: 'Discover' },
+    { path: '/discovery', text: 'Discovery' },
     { path: '/typology', text: 'Typology' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
     { path: '/curate', text: 'Curate' },
@@ -129,11 +131,9 @@ export const useSiteSettings = () => {
         item.path === '/enquire' ||
         item.path === '/gs' ||
         item.path === '/infinite-slider' ||
-        item.path === '/discovery' ||
         item.text === 'Home' ||
         item.text === 'Showcase' ||
         item.text === 'Infinite Slider' ||
-        item.text === 'Discovery' ||
         item.text === 'Flow State'
       ) {
         continue
@@ -142,15 +142,20 @@ export const useSiteSettings = () => {
       let path = item.path
       let text = item.text || ''
 
-      if (path === '/products' || path === '/materials-and-forms') {
+      if (path === '/discover' || text === 'Discover') {
+        path = '/discover'
+        text = 'Discover'
+      } else if (path === '/discovery' || text === 'Discovery') {
+        path = '/discovery'
+        text = 'Discovery'
+      } else if (path === '/products' || path === '/materials-and-forms') {
         path = '/materials-and-forms'
         text = 'Materials & Forms'
       } else if (
         path === '/typology' ||
         path === '/curated-discovery' ||
         text === 'Typology' ||
-        text === 'Curated Discovery' ||
-        text === 'Discover'
+        text === 'Curated Discovery'
       ) {
         path = '/typology'
         text = 'Typology'

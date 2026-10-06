@@ -95,6 +95,29 @@ html.theme-ready {
   --theme-ms: 0.4s;
 }
 
+/* Light mode is opt-in. No class on <html> stays dark (see :root). */
+html:not(.dark) {
+  color-scheme: light;
+
+  --cream: #eee;
+  --warm-white: #faf7f2;
+  --sand: #e8dfd2;
+  --stone: #c4b8a8;
+  --charcoal: #111111;
+  --black: #000000;
+  --slate: #414042;
+  --accent: var(--red);
+  --grid-line: rgba(0, 0, 0, 0.06);
+  --handwritten-color: var(--charcoal);
+  --ui-border-color: rgba(0, 0, 0, 0.12);
+  --panel-bg: rgba(255, 255, 255, 0.8);
+  --elevated-bg: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+
+  --thumb-ctrl-color: var(--black);
+  --thumb-ctrl-bg: var(--cream);
+}
+
 /* Dark mode — warm charcoal surfaces, cream text (inverted light palette) */
 html.dark {
   color-scheme: dark;
