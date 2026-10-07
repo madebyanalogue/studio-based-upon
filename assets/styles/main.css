@@ -34,7 +34,7 @@
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
-  --thumb-radius: 0px;
+  --thumb-radius: 6px;
   --undo-remove-ms: 5s;
 
   --rail-aspect: 5/4;
@@ -43,6 +43,7 @@
   --pdp-gallery-padding:80px;
   --pdp-gallery-gap: 8px;
   --products-grid-gap: 25px;
+  --products-grid-gap: 60px;
 
 
   --card-pad: 0;
@@ -177,6 +178,12 @@ img {
 .page-wrapper {
   flex: 1;
   min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .page-wrapper {
+      --gutter: 50px;
+  }
 }
 
 .page-enter-active,

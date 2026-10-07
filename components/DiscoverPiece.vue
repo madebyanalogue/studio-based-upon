@@ -8,17 +8,17 @@
     :style="frameStyle"
   >
     <img
-      v-for="(like, index) in likes"
-      :key="like.id"
+      v-for="like in likes"
+      :key="like.source.id"
       class="piece__like"
-      :class="{ 'is-open': likesOpen, 'is-dragging': draggingLikeId === like.id }"
-      :src="like.url"
+      :class="{ 'is-open': likesOpen, 'is-dragging': draggingLikeId === like.source.id }"
+      :src="like.source.url"
       alt=""
-      :style="likeStyle(like, index)"
+      :style="likeStyle(like)"
       draggable="false"
       role="button"
-      :aria-label="`Drag ${like.title} onto the board`"
-      @pointerdown.stop="onLikeDown($event, like, index)"
+      :aria-label="`Drag ${like.source.title} onto the board`"
+      @pointerdown.stop="onLikeDown($event, like)"
       @pointermove="onLikeMove"
       @pointerup.stop="onLikeUp($event, like)"
       @pointercancel.stop="onLikeUp($event, like)"
@@ -90,6 +90,7 @@
       :count="gallery.length"
       hide-count
       boxed
+      :show-cursor="false"
       @pointerdown.stop
       @prev="cycle(-1)"
       @next="cycle(1)"
@@ -181,7 +182,9 @@ const returnPiece = inject<(id: string) => boolean>('discover-return-piece', () 
 
 const showChrome = computed(() => props.live && props.controls)
 const imgEl = ref<HTMLImageElement | null>(null)
-const likes = ref<DiscoverSource[]>([])
+/** Slot stays with the card, so dragging one away does not close the gap. */
+type LikeTile = { source: DiscoverSource; slot: number }
+const likes = ref<LikeTile[]>([])
 const likesOpen = ref(false)
 const dismissed = ref(false)
 const frameIndex = ref(0)
@@ -325,7 +328,7 @@ const onMore = async () => {
     return
   }
   selectedId.value = props.piece.id
-  if (!likes.value.length) likes.value = pickLikes()
+  if (!likes.value.length) likes.value = pickLikes().map((source, slot) => ({ source, slot }))
   likesOpen.value = false
   await nextTick()
   requestAnimationFrame(() => {
@@ -333,33 +336,33 @@ const onMore = async () => {
   })
 }
 
-const likeStyle = (like: DiscoverSource, index: number) => {
+const likeStyle = (like: LikeTile) => {
   const slots = likeSlots(props.piece.w, props.piece.h)
-  const spot = slots[index] || slots[0]!
-  const nudge = likeNudge.value[like.id]
+  const spot = slots[like.slot] || slots[0]!
+  const nudge = likeNudge.value[like.source.id]
   const open = likesOpen.value
   const restX = (props.piece.w - LIKE_CARD) / 2
   const restY = (props.piece.h - LIKE_CARD) / 2
   const x = nudge?.x ?? (open ? spot.x : restX)
   const y = nudge?.y ?? (open ? spot.y : restY)
-  const tilt = open ? LIKE_TILT[index % LIKE_TILT.length]! : 0
+  const tilt = open ? LIKE_TILT[like.slot % LIKE_TILT.length]! : 0
   return {
-    zIndex: draggingLikeId.value === like.id ? 40 : open ? 6 : 1,
+    zIndex: draggingLikeId.value === like.source.id ? 40 : open ? 6 : 1,
     width: `${LIKE_CARD}px`,
     height: `${LIKE_CARD}px`,
     transform: `translate(${x}px, ${y}px) rotate(${tilt}deg)`,
   }
 }
 
-const onLikeDown = (event: PointerEvent, like: DiscoverSource, index: number) => {
+const onLikeDown = (event: PointerEvent, like: LikeTile) => {
   if (!likesOpen.value || event.button !== 0) return
   const slots = likeSlots(props.piece.w, props.piece.h)
-  const spot = slots[index] || slots[0]!
+  const spot = slots[like.slot] || slots[0]!
   const el = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   const rect = el?.getBoundingClientRect()
   const scale = rect && el && el.offsetWidth > 0 ? rect.width / el.offsetWidth : Math.max(fieldZoom.value, 0.4)
   likeDrag = {
-    id: like.id,
+    id: like.source.id,
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
@@ -367,7 +370,7 @@ const onLikeDown = (event: PointerEvent, like: DiscoverSource, index: number) =>
     baseY: spot.y,
     scale: scale || 1,
   }
-  draggingLikeId.value = like.id
+  draggingLikeId.value = like.source.id
   likeDragActive.value = true
   try {
     el?.setPointerCapture(event.pointerId)
@@ -388,8 +391,8 @@ const onLikeMove = (event: PointerEvent) => {
   }
 }
 
-const onLikeUp = (event: PointerEvent, like: DiscoverSource) => {
-  if (!likeDrag || likeDrag.id !== like.id || event.pointerId !== likeDrag.pointerId) return
+const onLikeUp = (event: PointerEvent, like: LikeTile) => {
+  if (!likeDrag || likeDrag.id !== like.source.id || event.pointerId !== likeDrag.pointerId) return
   const drag = likeDrag
   const travel = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY)
   const el = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
@@ -398,7 +401,7 @@ const onLikeUp = (event: PointerEvent, like: DiscoverSource) => {
   likeDragActive.value = false
   if (travel < 6 || !el) {
     const next = { ...likeNudge.value }
-    delete next[like.id]
+    delete next[like.source.id]
     likeNudge.value = next
     return
   }
@@ -408,10 +411,10 @@ const onLikeUp = (event: PointerEvent, like: DiscoverSource) => {
   window.setTimeout(() => {
     blockClick.value = false
   }, 0)
-  placeLike(like, el.getBoundingClientRect())
-  likes.value = likes.value.filter((entry) => entry.id !== like.id)
+  placeLike(like.source, el.getBoundingClientRect())
+  likes.value = likes.value.filter((entry) => entry.source.id !== like.source.id)
   const next = { ...likeNudge.value }
-  delete next[like.id]
+  delete next[like.source.id]
   likeNudge.value = next
 }
 

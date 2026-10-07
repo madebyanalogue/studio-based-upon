@@ -19,7 +19,7 @@
   >
     <aside class="pdp__col pdp__col--left" data-cursor="default">
       <div class="pdp__toolbar">
-        <button type="button" class="pdp__close interface" @click="onCloseClick">Close</button>
+        <button type="button" class="pdp__close interface" @click="$emit('close')">Close</button>
         <div
           class="pdp__meta interface pdp__pane-fade"
           :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
@@ -170,16 +170,14 @@
         ref="stageRef"
         class="pdp__stage pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
-        :data-cursor-label="galleryCursorLabel"
-        @pointermove="onGalleryPointerMove"
-        @wheel="onGalleryWheel"
-        @touchmove="onGalleryTouchMove"
+        data-cursor-label="Close"
         @click="onStageClick"
       >
         <div
           v-if="galleryEntries.length"
           ref="stripRef"
           class="pdp__strip"
+          :class="{ 'pdp__strip--single': galleryEntries.length === 1 }"
           data-lenis-prevent
         >
           <div ref="stripTrackRef" class="pdp__strip-track">
@@ -217,6 +215,7 @@
                   playsinline
                   preload="metadata"
                   draggable="false"
+                  data-cursor="default"
                   @loadedmetadata="onStripVideoMeta(i, $event)"
                   @click.stop="onGalleryMediaClick"
                 />
@@ -243,6 +242,7 @@
                       : undefined
                   "
                   draggable="false"
+                  data-cursor="default"
                   @load="onStripImageLoad(i)"
                   @click.stop="onGalleryMediaClick"
                 />
@@ -282,6 +282,10 @@ import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import {
+  ARCHIVE_PDP_CLOSE_EASE,
+  ARCHIVE_PDP_CLOSE_S,
+  ARCHIVE_PDP_OPEN_EASE,
+  ARCHIVE_PDP_OPEN_S,
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
   PRODUCT_OVERLAY_BACKDROP_OPEN_MS,
   PRODUCT_OVERLAY_CHROME_EXIT_MS,
@@ -328,6 +332,7 @@ const {
   setReturnImage,
   requestGridSwap,
   setCloseVeilActive,
+  signalArchiveMotion,
   nextSequence,
 } = useProductOverlay()
 const { openFromProduct } = useEnquiryForm()
@@ -374,10 +379,6 @@ let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
-/** Shared with ProductIndexRail — Spirit frames are appended into the gallery strip. */
-const spiritMode = useState('pdp-spirit-mode', () => false)
-/** Shared with ProductIndexRail — rail increments to request a Spirit toggle. */
-const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
 /** In-frame gallery zoom (stays inside the image footprint) */
 const imageExpanded = ref(false)
 const frameZoomHiRes = ref(false)
@@ -528,62 +529,14 @@ const spiritGalleryEntries = computed((): GalleryEntry[] =>
   product.value ? buildSpiritGalleryEntries(product.value) : [],
 )
 
-const hasSpiritGallery = computed(() => spiritGalleryEntries.value.length > 0)
-
-/** Product gallery, plus Spirit frames when Spirit is on. */
+/** Product frames, then Spirit frames that are not already in the product gallery. */
 const galleryEntries = computed((): GalleryEntry[] => {
   const product = productGalleryEntries.value
-  if (!spiritMode.value) return product
   const spirit = spiritGalleryEntries.value
   if (!spirit.length) return product
-  // Dedupe against product covers so Spirit doesn't repeat the same frame
   const seen = new Set(product.map((entry) => entry.src.replace(/\?.*$/, '')))
   const extra = spirit.filter((entry) => !seen.has(entry.src.replace(/\?.*$/, '')))
   return extra.length ? [...product, ...extra] : product
-})
-
-const toggleSpiritMode = () => {
-  if (!hasSpiritGallery.value) return
-  const enabling = !spiritMode.value
-  const productCount = productGalleryEntries.value.length
-  spiritMode.value = enabling
-  if (enabling) {
-    // Jump to the first Spirit frame so the insert is obvious
-    nextTick(() => {
-      const firstSpirit = productCount
-      if (firstSpirit < galleryEntries.value.length) {
-        selectImage(firstSpirit)
-      }
-    })
-    return
-  }
-  // Leaving Spirit — stay on a product frame if we were past the end
-  if (selectedIndex.value >= productCount) {
-    selectImage(Math.max(0, productCount - 1))
-  }
-}
-
-const closeSpiritMode = () => {
-  if (!spiritMode.value) return
-  const productCount = productGalleryEntries.value.length
-  spiritMode.value = false
-  if (selectedIndex.value >= productCount) {
-    selectImage(Math.max(0, productCount - 1))
-  }
-}
-
-/** Collapse Spirit frames first; otherwise dismiss the PDP. */
-const onCloseClick = () => {
-  if (spiritMode.value) {
-    closeSpiritMode()
-    return
-  }
-  emit('close')
-}
-
-watch(spiritToggleRequest, () => {
-  if (!import.meta.client) return
-  toggleSpiritMode()
 })
 
 /** Intrinsic width/height ratio — reserves strip width before paint. */
@@ -726,33 +679,32 @@ const cycleImage = (direction: 1 | -1) => {
   selectImage(selectedIndex.value + direction)
 }
 
-/** Strip padding clears the index / related rails — center in that open span. */
+/** Strip padding clears the rails — center in that open span. */
 const getStripRailPads = (strip: HTMLElement) => {
   const track = stripTrackRef.value
   const style = getComputedStyle(track ?? strip)
   return {
-    left: Number.parseFloat(style.paddingLeft) || 0,
-    right: Number.parseFloat(style.paddingRight) || 0,
+    top: Number.parseFloat(style.paddingTop) || 0,
+    bottom: Number.parseFloat(style.paddingBottom) || 0,
   }
 }
 
 /**
- * Scroll position that presents this frame the way the gallery rests:
- * first frame flush after the left padding, later frames centered in the
- * clear span. Wide frames pin to the left so they stay clear of the rails.
+ * Scroll position that rests this frame in the vertical centre of the clear
+ * span. Frames taller than that span pin to the top so they stay padded.
  */
 const restingScrollForItem = (item: HTMLElement, strip: HTMLElement) => {
-  const { left: padL, right: padR } = getStripRailPads(strip)
-  const visible = Math.max(0, strip.clientWidth - padL - padR)
-  const ideal = item.offsetLeft + item.offsetWidth / 2 - padL - visible / 2
-  const maxLeftClear = Math.max(0, item.offsetLeft - padL)
-  const minRightClear = Math.max(
+  const { top: padT, bottom: padB } = getStripRailPads(strip)
+  const visible = Math.max(0, strip.clientHeight - padT - padB)
+  const ideal = item.offsetTop + item.offsetHeight / 2 - padT - visible / 2
+  const maxTopClear = Math.max(0, item.offsetTop - padT)
+  const minBottomClear = Math.max(
     0,
-    item.offsetLeft + item.offsetWidth - padL - visible,
+    item.offsetTop + item.offsetHeight - padT - visible,
   )
-  return minRightClear > maxLeftClear
-    ? maxLeftClear
-    : Math.min(Math.max(ideal, minRightClear), maxLeftClear)
+  return minBottomClear > maxTopClear
+    ? maxTopClear
+    : Math.min(Math.max(ideal, minBottomClear), maxTopClear)
 }
 
 /** Center the active frame, using the same resting position as scroll sync. */
@@ -766,22 +718,12 @@ const scrollSelectedIntoView = (smooth = false) => {
   setStripScroll(restingScrollForItem(item, strip), { immediate: !smooth })
 }
 
-/** First frame: flush after index padding. Later frames: center in the clear span.
- *  Spirit / Origin: always center the active frame in the open gallery. */
 const isSpiritOrOrigin = computed(() => {
   const cat = String(product.value?.category || '').toLowerCase()
   return cat === 'spirit' || cat === 'origin'
 })
 
 const scrollGalleryInitial = () => {
-  if (isSpiritOrOrigin.value) {
-    scrollSelectedIntoView(false)
-    return
-  }
-  if (selectedIndex.value === 0) {
-    setStripScroll(0, { immediate: true })
-    return
-  }
   scrollSelectedIntoView(false)
 }
 
@@ -826,18 +768,18 @@ let galleryLenis: Lenis | null = null
 let galleryLenisRaf = 0
 
 const getStripScroll = () =>
-  galleryLenis?.animatedScroll ?? stripRef.value?.scrollLeft ?? 0
+  galleryLenis?.animatedScroll ?? stripRef.value?.scrollTop ?? 0
 
 const setStripScroll = (
-  left: number,
+  top: number,
   { immediate = true }: { immediate?: boolean } = {},
 ) => {
   if (galleryLenis) {
-    galleryLenis.scrollTo(left, immediate ? { immediate: true } : { lerp: 0.12 })
+    galleryLenis.scrollTo(top, immediate ? { immediate: true } : { lerp: 0.12 })
     return
   }
   stripRef.value?.scrollTo({
-    left,
+    top,
     behavior: immediate ? 'auto' : 'smooth',
   })
 }
@@ -869,8 +811,8 @@ const initGalleryLenis = () => {
     wrapper,
     content,
     eventsTarget: stage ?? wrapper,
-    orientation: 'horizontal',
-    gestureOrientation: 'both',
+    orientation: 'vertical',
+    gestureOrientation: 'vertical',
     smoothWheel: true,
     syncTouch: true,
     syncTouchLerp: 0.055,
@@ -920,72 +862,7 @@ const collapseImage = () => {
   frameZoomHiRes.value = false
 }
 
-/** Scroll hint, then Close once the gallery moves or the hint has been up for 2s. */
-const SCROLL_HINT_MS = 2000
-const galleryScrolled = ref(false)
-const galleryCursorLabel = computed(() => {
-  if (galleryEntries.value.length < 2) return undefined
-  return galleryScrolled.value ? 'Close' : 'Scroll'
-})
-let scrollHintTimer: ReturnType<typeof setTimeout> | null = null
-
-const clearScrollHintTimer = () => {
-  if (!scrollHintTimer) return
-  clearTimeout(scrollHintTimer)
-  scrollHintTimer = null
-}
-
-const armScrollHint = () => {
-  clearScrollHintTimer()
-  if (galleryEntries.value.length < 2 || galleryScrolled.value) return
-  scrollHintTimer = setTimeout(() => {
-    scrollHintTimer = null
-    markGalleryScrolled()
-  }, SCROLL_HINT_MS)
-}
 const homeScrollHint = useHomeScrollHint()
-const { resolveFromPoint } = useCursor()
-let galleryPointerX: number | null = null
-let galleryPointerY: number | null = null
-
-const rememberGalleryPointer = (event: { clientX: number; clientY: number }) => {
-  galleryPointerX = event.clientX
-  galleryPointerY = event.clientY
-}
-
-const onGalleryPointerMove = (event: PointerEvent) => {
-  rememberGalleryPointer(event)
-}
-
-const markGalleryScrolled = () => {
-  if (galleryScrolled.value) return
-  clearScrollHintTimer()
-  galleryScrolled.value = true
-}
-
-watch(
-  () => [galleryEntries.value.length, galleryScrolled.value] as const,
-  () => armScrollHint(),
-  { immediate: true },
-)
-
-watch(galleryScrolled, async (scrolled) => {
-  if (!scrolled || galleryPointerX == null || galleryPointerY == null) return
-  await nextTick()
-  resolveFromPoint(galleryPointerX, galleryPointerY)
-})
-
-const onGalleryWheel = (event: WheelEvent) => {
-  if (!event.deltaX && !event.deltaY) return
-  rememberGalleryPointer(event)
-  markGalleryScrolled()
-}
-
-const onGalleryTouchMove = (event: TouchEvent) => {
-  const touch = event.touches[0]
-  if (touch) rememberGalleryPointer(touch)
-  markGalleryScrolled()
-}
 
 const onGalleryMediaClick = () => {
   emit('close')
@@ -1000,11 +877,6 @@ const onStageClick = (event: MouseEvent) => {
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && spiritMode.value) {
-    event.preventDefault()
-    closeSpiritMode()
-    return
-  }
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -1033,7 +905,6 @@ onMounted(() => {
 onUnmounted(() => {
   destroyGalleryLenis()
   window.removeEventListener('keydown', onGalleryKeydown)
-  clearScrollHintTimer()
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
 })
@@ -1180,6 +1051,13 @@ const downloadSpec = () => {
   URL.revokeObjectURL(url)
 }
 
+/** Hero frame radius, so the flyer eases into the same corners the PDP shows. */
+const pdpFrameRadius = (el: HTMLElement | null | undefined) => {
+  const frame = el?.closest<HTMLElement>('.pdp__hero-frame')
+  const radius = frame ? getComputedStyle(frame).borderRadius : ''
+  return radius && radius !== '0px' ? radius : '10px'
+}
+
 const revealWithoutFlip = () => {
   restoreFlipSource()
   setBackdropReady(true)
@@ -1290,7 +1168,7 @@ const runFlipOpen = async () => {
     objectFit: sourceFit,
     zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
-    borderRadius: getComputedStyle(source).borderRadius,
+    borderRadius: getComputedStyle(source).borderRadius || '0px',
     opacity: '1',
   })
   document.body.appendChild(flyer)
@@ -1298,36 +1176,54 @@ const runFlipOpen = async () => {
   // Cover with flyer, then hide source — no blank frame / no hover-opacity dip
   hideFlipSource(source)
 
-  // Backdrop fades in → hold → flyer scales → PDP UI
+  // Backdrop fades in → hold → flyer scales → PDP UI.
+  // From the materials grid the flight starts immediately, with the demo ease.
   const waitMs = (ms: number) =>
     new Promise<void>((resolve) => {
       window.setTimeout(resolve, ms)
     })
 
+  const fromArchive = flipSourceIsArchiveGrid()
   setBackdropReady(true)
   await nextTick()
-  await waitMs(PRODUCT_OVERLAY_BACKDROP_OPEN_MS)
-  await waitMs(PRODUCT_OVERLAY_FLYER_PAUSE_MS)
+  if (fromArchive) {
+    // Start as soon as the hero frame has its real size — no cream hold.
+    let stable = 0
+    for (let i = 0; i < 24; i++) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve())
+      })
+      const w = flipHero.getBoundingClientRect().width
+      if (w > from.width + 40) stable += 1
+      else stable = 0
+      if (stable >= 2) break
+    }
+  } else {
+    await waitMs(PRODUCT_OVERLAY_BACKDROP_OPEN_MS)
+    await waitMs(PRODUCT_OVERLAY_FLYER_PAUSE_MS)
+  }
 
   // Re-measure hero in case layout settled during the fade
   const toAfter = flipHero.getBoundingClientRect()
   const dest = toAfter.width >= 2 ? toAfter : to
 
-  const state = Flip.getState(flyer)
+  const state = Flip.getState(flyer, { props: 'borderRadius' })
 
   gsap.set(flyer, {
     top: dest.top,
     left: dest.left,
     width: dest.width,
     height: dest.height,
-    borderRadius: '0px',
+    borderRadius: pdpFrameRadius(flipHero),
   })
+
+  if (fromArchive) signalArchiveMotion('open')
 
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
   Flip.from(state, {
-    duration: PRODUCT_OVERLAY_FLIP_OPEN_S,
-    ease: 'power2.inOut',
+    duration: fromArchive ? ARCHIVE_PDP_OPEN_S : PRODUCT_OVERLAY_FLIP_OPEN_S,
+    ease: fromArchive ? ARCHIVE_PDP_OPEN_EASE : 'power2.inOut',
     absolute: true,
     scale: false,
     onComplete: () => {
@@ -1402,17 +1298,22 @@ const runFlipClose = async () => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   })
 
-  const chromeElapsed = performance.now() - uiFadeStarted
-  await waitMs(Math.max(0, PRODUCT_OVERLAY_CHROME_EXIT_MS - chromeElapsed))
+  const fromArchive = flipSourceIsArchiveGrid()
+  if (!fromArchive) {
+    const chromeElapsed = performance.now() - uiFadeStarted
+    await waitMs(Math.max(0, PRODUCT_OVERLAY_CHROME_EXIT_MS - chromeElapsed))
+  }
 
   contentReady.value = false
   sidesVisible.value = false
   chromeEnterMotion.value = false
   await nextTick()
-  await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
+  if (!fromArchive) await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
-  // Panel cream can drop now that chrome is gone
+  // Panel cream can drop now that chrome is gone.
+  // Archive close lets the page show through while the image flies home.
   pendingFlip.value = true
+  if (fromArchive) setBackdropReady(false)
   await nextTick()
 
   const from = hero.getBoundingClientRect()
@@ -1512,26 +1413,29 @@ const runFlipClose = async () => {
     objectFit: heroFit,
     zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
-    borderRadius: '0px',
+    borderRadius: pdpFrameRadius(hero),
   })
   document.body.appendChild(flyer)
   if (!flyer.complete) await waitForImage(flyer)
 
   // 2) Flyer returns to the grid thumb
-  const state = Flip.getState(flyer)
+  const state = Flip.getState(flyer, { props: 'borderRadius' })
 
   gsap.set(flyer, {
     top: to.top,
     left: to.left,
     width: to.width,
     height: to.height,
-    borderRadius: getComputedStyle(source).borderRadius,
+    borderRadius: getComputedStyle(source).borderRadius || '0px',
     objectFit: sourceFit,
   })
 
+  const archiveClose = flipSourceIsArchiveGrid()
+  if (archiveClose) signalArchiveMotion('close')
+
   Flip.from(state, {
-    duration: PRODUCT_OVERLAY_FLIP_CLOSE_S,
-    ease: 'power2.inOut',
+    duration: archiveClose ? ARCHIVE_PDP_CLOSE_S : PRODUCT_OVERLAY_FLIP_CLOSE_S,
+    ease: archiveClose ? ARCHIVE_PDP_CLOSE_EASE : 'power2.inOut',
     onComplete: () => {
       // Restore thumb under the flyer, then unmount the overlay immediately.
       // A body-level veil (pointer-events: none) continues the cream fade so
@@ -1541,6 +1445,11 @@ const runFlipClose = async () => {
       source.style.visibility = ''
       source.style.opacity = '1'
       source.style.filter = 'grayscale(0)'
+      if (archiveClose) {
+        finishClose()
+        flyer.remove()
+        return
+      }
       const veil = spawnCloseVeil()
       finishClose()
       fadeVeilAndCleanup(veil)
@@ -1569,7 +1478,6 @@ watch(
     if (!slug || slug === prevSlug) return
 
     showSpecs.value = false
-    galleryScrolled.value = false
     collapseImage()
 
     const token = ++slugSwapToken
@@ -1591,7 +1499,6 @@ watch(
 
       // Hold the outgoing gallery scroll until the new product is committed.
       // Resetting selectedIndex / scrollLeft earlier scrolls the *current* strip.
-      spiritMode.value = false
       applyProduct(next)
       selectedIndex.value = 0
 
@@ -1609,7 +1516,6 @@ watch(
       return
     }
 
-    spiritMode.value = false
     galleryVisible.value = false
     flipStarted.value = false
     flipCloseStarted.value = false
@@ -1638,7 +1544,6 @@ watch(
     if (token !== slugSwapToken || !next) return
     await prepareGalleryEntries(buildProductGalleryEntries(next), 3)
     if (token !== slugSwapToken) return
-    spiritMode.value = false
     applyProduct(next)
     selectedIndex.value = 0
     await nextTick()
@@ -1745,14 +1650,11 @@ watch(
   transform: translateX(var(--pdp-index-rail-width));
 }
 
-/* Close: aside slides off left before the flyer / backdrop */
+/* Close: aside fades in place. The index-rail offset stays put. */
 .pdp--closing.pdp--sides .pdp__col--left {
   opacity: 0;
-  transform: translateX(calc(-100% - 12px));
   pointer-events: none;
-  transition:
-    opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    transform var(--pdp-rail-motion, 0.35s linear);
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pdp__col--right {
@@ -1820,8 +1722,8 @@ watch(
   min-height: 0;
   width: 100%;
   height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   scroll-behavior: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -1831,24 +1733,21 @@ watch(
 
 .pdp__strip-track {
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: var(--pdp-gallery-gap);
-  height: 100%;
-  width: max-content;
+  flex-direction: column;
+  align-items: center;
+  gap: 70px;
+  height: max-content;
+  width: 100%;
   min-height: 100%;
   box-sizing: border-box;
   /* Gallery inset on every side. The related rail covers the right of the
-     viewport, so the track needs that width as well — otherwise the last
-     frame ends underneath it instead of gallery-padding clear of the rail. */
+     viewport, so the extra right padding keeps frames centred in the clear span. */
   padding: var(--pdp-gallery-padding);
   padding-right: calc(var(--pdp-related-rail-width) + var(--pdp-gallery-padding));
 }
 
-/* Spirit / Origin — center frames in the clear gallery span when they fit */
-.pdp--singularity .pdp__strip-track {
-  min-width: 100%;
-  justify-content: safe center;
+.pdp__strip--single .pdp__strip-track {
+  height: 100%;
 }
 
 .pdp__strip::-webkit-scrollbar {
@@ -1859,12 +1758,17 @@ watch(
   position: relative;
   margin: 0;
   flex: 0 0 auto;
-  height: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: auto;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   opacity: 1;
+}
+
+.pdp__strip--single .pdp__strip-item {
+  height: 100%;
+  max-height: 100%;
 }
 
 /* Hide the whole strip (including the active frame) until Flip lands —
@@ -1889,19 +1793,29 @@ watch(
 
 .pdp__strip-item .pdp__hero-frame {
   position: relative;
-  height: 100%;
-  max-height: 100%;
-  /* Reserve width from intrinsic ratio so the strip doesn't reflow on decode */
+  /* Width follows the ratio at the capped height, and clamps when the frame is wider than the clear span. */
+  width: min(
+    100%,
+    calc((100vh - (var(--pdp-gallery-padding) * 2) - 20px) * var(--pdp-ar, 1))
+  );
+  max-height: calc(100vh - (var(--pdp-gallery-padding) * 2) - 20px);
   aspect-ratio: var(--pdp-ar, 1);
-  width: auto;
+  height: auto;
   flex: 0 0 auto;
   display: flex;
   align-items: stretch;
   line-height: 0;
   overflow: hidden;
+  border-radius: 10px;
   background: transparent;
   /* Hide the reserved frame until the bitmap is ready — no placeholder wash */
   visibility: hidden;
+}
+
+.pdp__strip--single .pdp__strip-item .pdp__hero-frame {
+  height: 100%;
+  max-height: 100%;
+  width: auto;
 }
 
 .pdp__strip-item .pdp__hero-frame--ready {

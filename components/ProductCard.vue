@@ -5,7 +5,7 @@
         :is="linkTag"
         v-bind="linkProps"
         class="product-card__media"
-        data-cursor="plus"
+        data-cursor="default"
         :class="{
           'product-card__media--image': Boolean(activeImage),
           'product-card__media--link': Boolean(href),
@@ -32,40 +32,7 @@
           :label="saved ? `Remove ${item.title} from bucket` : `Save ${item.title} to bucket`"
           @click.stop.prevent="onToggle"
         />
-
-        <button
-          v-if="canCycleImages"
-          type="button"
-          class="product-card__edge product-card__edge--prev"
-          data-cursor="prev"
-          tabindex="-1"
-          :aria-label="`Previous image of ${item.title}`"
-          @click.stop.prevent="cycle(-1)"
-          @pointerenter="prefetchOffsetHero(-1)"
-        />
-        <button
-          v-if="canCycleImages"
-          type="button"
-          class="product-card__edge product-card__edge--next"
-          data-cursor="next"
-          tabindex="-1"
-          :aria-label="`Next image of ${item.title}`"
-          @click.stop.prevent="cycle(1)"
-          @pointerenter="prefetchOffsetHero(1)"
-        />
       </component>
-
-      <ImageCycleArrows
-        v-if="!isImageLocked && projectImages.length > 1"
-        class="product-card__cycle"
-        :index="imageIndex"
-        :count="projectImages.length"
-        hide-count
-        boxed
-        :show-cursor="false"
-        @prev="cycle(-1)"
-        @next="cycle(1)"
-      />
     </div>
 
     <div class="product-card__meta">
@@ -222,19 +189,8 @@ const activeHeroImage = computed(
   () => heroImages.value[imageIndex.value] || activeImage.value || '',
 )
 
-const canCycleImages = computed(
-  () => !isImageLocked.value && projectImages.value.length > 1,
-)
-
 const prefetchActiveHero = () => {
   if (activeHeroImage.value) void prefetchImage(activeHeroImage.value)
-}
-
-const prefetchOffsetHero = (direction: 1 | -1) => {
-  const count = heroImages.value.length
-  if (count < 2) return
-  const url = heroImages.value[(imageIndex.value + direction + count) % count]
-  if (url) void prefetchImage(url)
 }
 
 watch(
@@ -256,13 +212,6 @@ watch(projectImages, (urls) => {
         : 0
   }
 })
-
-const cycle = (direction: 1 | -1) => {
-  if (isImageLocked.value) return
-  const count = projectImages.value.length
-  if (count < 2) return
-  imageIndex.value = (imageIndex.value + direction + count) % count
-}
 
 const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
@@ -402,52 +351,15 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.product-card__edge {
-  position: absolute;
-  top: 0;
-  z-index: 2;
-  width: 15%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  pointer-events: none;
-}
-
-.product-card__edge--prev {
-  left: 0;
-}
-
-.product-card__edge--next {
-  right: 0;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .product-card__edge {
-    pointer-events: auto;
-  }
-}
-
-.product-card__cycle {
-  display: none;
-  position: absolute;
-  right: var(--thumb-ctrl-inset);
-  bottom: var(--thumb-ctrl-inset);
-  z-index: 3;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
 /* Wide: heart rides the hover; a saved heart stays readable */
 @media (min-width: 1000px) {
-  .product-card__add,
-  .product-card__cycle {
+  .product-card__add {
     opacity: 0;
     transform: translateY(4px);
     pointer-events: none;
   }
 
   .product-card:hover .product-card__add,
-  .product-card:hover .product-card__cycle,
   .product-card--saved .product-card__add {
     opacity: 1;
     transform: translateY(0);
@@ -467,6 +379,17 @@ const onToggle = (event?: MouseEvent) => {
   border-top: 1px dashed var(--ui-border-color);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .product-card__meta {
+    opacity: 0;
+  }
+
+  .product-card:has(.product-card__media:hover) .product-card__meta,
+  .product-card:has(.product-card__media:focus-visible) .product-card__meta {
+    opacity: 1;
+  }
+}
+
 .product-card__meta * {
   font-size: clamp(8px, 1vw, 9.5px);
   letter-spacing: 0.125em;
@@ -483,8 +406,7 @@ const onToggle = (event?: MouseEvent) => {
     color: var(--charcoal);
   }
 
-  .product-card__add,
-  .product-card__cycle {
+  .product-card__add {
     opacity: 1;
     transform: none;
     pointer-events: auto;

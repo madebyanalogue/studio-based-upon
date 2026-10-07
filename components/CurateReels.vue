@@ -13,6 +13,7 @@
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
     }"
     aria-label="Curate"
+    data-cursor-label="Explore pairings"
   >
     <div class="showcase__columns">
       <div
@@ -28,7 +29,7 @@
           'showcase__column-shell--quiet': quietColumns[column.instanceId],
         }"
         :data-column-id="column.instanceId"
-        :data-cursor-label="column.single || column.images.length < 2 ? undefined : 'Scroll'"
+        :data-cursor-label="column.single || column.locked || column.images.length < 2 ? undefined : 'Scroll column'"
         @pointerenter="onColumnPointerEnter"
         @pointermove="syncColumnHot"
         @pointerleave="onColumnPointerLeave"
@@ -64,7 +65,6 @@
               :data-logical-index="cell.logicalIndex"
               :data-loop-copy="cell.copyIndex"
               :aria-label="`${column.title} — image ${cell.logicalIndex + 1}`"
-              :data-cursor-label="cell.image.productTitle || undefined"
               @click="onSelect(column, cell.logicalIndex)"
             >
               <img
@@ -643,6 +643,20 @@ const loopPeriodHeight = (slotIndex: number) => {
   const el = columnEls[slotIndex]
   const count = columns.value[slotIndex]?.images.length || 0
   if (!el || !count) return 0
+  // offsetHeight * count drops the fractional pixels aspect-ratio accumulates,
+  // so the repeat distance is short of the next copy and wrap fires early.
+  if (!columns.value[slotIndex]?.single) {
+    const from = el.querySelector<HTMLElement>(
+      '.showcase__cell[data-loop-copy="0"][data-logical-index="0"]',
+    )
+    const to = el.querySelector<HTMLElement>(
+      '.showcase__cell[data-loop-copy="1"][data-logical-index="0"]',
+    )
+    if (from && to) {
+      const period = to.offsetTop - from.offsetTop
+      if (period > 1) return period
+    }
+  }
   const cell = el.querySelector<HTMLElement>('.showcase__cell')
   const cellH = cell?.offsetHeight || el.clientWidth / ASPECT
   return cellH * count
@@ -659,11 +673,15 @@ const wrapLoopScroll = (slotIndex: number) => {
   if (!el) return false
 
   // Prefer Lenis animated position so wrap stays in sync with in-flight flick.
-  let scroll = lenis?.animatedScroll ?? currentScroll(slotIndex)
-  let next = scroll
-  while (next < period) next += period
-  while (next >= period * 2) next -= period
-  const delta = next - scroll
+  // Band on the viewport centre, not scrollTop. A centred cell is shorter than
+  // the column, so its scrollTop sits before the copy while the image is still
+  // the middle one — wrapping that jumps a full set and the snap returns home.
+  const scroll = lenis?.animatedScroll ?? currentScroll(slotIndex)
+  const viewMid = el.clientHeight / 2
+  let nextCenter = scroll + viewMid
+  while (nextCenter < period) nextCenter += period
+  while (nextCenter >= period * 2) nextCenter -= period
+  const delta = nextCenter - (scroll + viewMid)
   if (Math.abs(delta) < 0.5) return false
 
   withScrollSuppressed(() => {
@@ -679,7 +697,7 @@ const wrapLoopScroll = (slotIndex: number) => {
       lenis.setScroll(lenis.animatedScroll)
       lenis.preventNextNativeScrollEvent()
     } else {
-      el.scrollTop = next
+      el.scrollTop = scroll + delta
     }
   })
   return true

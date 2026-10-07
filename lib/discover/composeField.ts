@@ -46,8 +46,8 @@ export type FieldFolder = {
   pieces: FieldPiece[]
   label: string
   kicker: string
-  /** Sleeve bursts open. Orb piles like a stack, then opens into a sphere. */
-  mode: 'sleeve' | 'orb' | 'colour'
+  /** Sleeve bursts open. Orb piles like a stack, then opens into a sphere. Word is a title with a ring of images. */
+  mode: 'sleeve' | 'orb' | 'word'
   name: string
 }
 
@@ -190,6 +190,21 @@ const COLOUR_SPLAY = [
   { x: 290, y: 286, r: -0.5 },
 ]
 
+const WORD_THUMB = 1.4
+
+const wordStack = (id: string, name: string, pieces: DiscoverSource[]): FieldFolder => ({
+  id,
+  mode: 'word',
+  name,
+  kicker: '',
+  label: '',
+  pieces: layoutContainer(pieces, COLOUR_SPLAY, id, WORD_THUMB, BASE_WIDTH.detail).map((piece) => ({
+    ...piece,
+    x: piece.x + DISCOVER_GRID,
+    y: piece.y + DISCOVER_GRID / 2,
+  })),
+})
+
 const hashString = (value: string) => {
   let hash = 2166136261
   for (let i = 0; i < value.length; i += 1) {
@@ -207,9 +222,9 @@ const clip = (value: string, max: number) => {
   return `${(space > 8 ? cut.slice(0, space) : cut).trim()}…`
 }
 
-const sizeFor = (source: DiscoverSource, scale = 1) => {
+const sizeFor = (source: DiscoverSource, scale = 1, base = BASE_WIDTH[source.kind]) => {
   const jitter = (hashString(source.id) % 5) * 6 - 12
-  const w = Math.round((BASE_WIDTH[source.kind] + jitter) * scale)
+  const w = Math.round((base + jitter) * scale)
   const aspect = SQUARE_PIECES || !(source.aspect > 0.4 && source.aspect < 2.8) ? 1 : source.aspect
   return { w, h: Math.round(w / aspect) }
 }
@@ -224,9 +239,9 @@ const take = (pool: DiscoverSource[], kinds: PieceKind[]) => {
 
 const placePiece = (
   source: DiscoverSource,
-  slot: { x: number; y: number; rotate: number; z: number; scale?: number },
+  slot: { x: number; y: number; rotate: number; z: number; scale?: number; base?: number },
 ): FieldPiece => {
-  const { w, h } = sizeFor(source, slot.scale ?? 1)
+  const { w, h } = sizeFor(source, slot.scale ?? 1, slot.base)
   return { ...source, x: slot.x, y: slot.y, w, h, rotate: 0, z: slot.z }
 }
 
@@ -282,16 +297,19 @@ const layoutContainer = (
   sources: DiscoverSource[],
   offsets: { x: number; y: number; r: number }[],
   salt: string,
+  scale = 1,
+  base?: number,
 ): FieldPiece[] =>
   sources.map((source, index) => {
     const offset = offsets[index % offsets.length]!
     const nudge = (hashString(`${salt}-${source.id}`) % 11) - 5
     return placePiece(source, {
-      x: offset.x + nudge,
-      y: offset.y + nudge,
+      x: offset.x * scale + nudge,
+      y: offset.y * scale + nudge,
       rotate: offset.r,
       z: index + 1,
-      scale: index === 0 ? 1 : 0.92,
+      scale: (index === 0 ? 1 : 0.92) * scale,
+      base,
     })
   })
 
@@ -303,68 +321,71 @@ const nodeOrder = (clusters: number, stacks: number, folders: number) => {
   return ids
 }
 
-const KEEP_W = 96 * 18
-const KEEP_H = 96 * 11
-
 /** Closed stack plate width. Grid cells match it, so a stack fills one square. */
 export const DISCOVER_GRID = 220
 const STACK_PLATE_H = 256
-
-const unit = (seed: number) => {
-  let hash = 2166136261 ^ seed
-  hash = Math.imul(hash, 16777619)
-  return (hash >>> 0) / 4294967296
-}
+const KEEP_W = DISCOVER_GRID * 6
+const KEEP_H = DISCOVER_GRID * 3
 
 /**
- * 20×11 cells: two extra columns on each side, one extra row above and below.
- * Pieces sit in the margin around the centred safe zone, with a loose scatter.
+ * 12×7 cells. Stacks sit on D1, E1, B4 and C4. Colour spans D7–E7 and
+ * Material spans G7–H7. Sleeve folders stay on B2 and B3; the orb sits on B6
+ * so the B4 stack plate can hang into the cell below.
  */
-const layoutWorld = (count: number) => {
+const layoutWorld = (
+  ids: string[],
+  kinds: { stacks: string[]; sleeves: string[]; orbs: string[]; words: string[] },
+) => {
   const cell = DISCOVER_GRID
-  const cols = 20
-  const rows = 11
+  const cols = 12
+  const rows = 7
   const w = cols * cell
   const h = rows * cell
-  const boxW = cell
-  const boxH = STACK_PLATE_H
 
-  const slotsFor = (variant: number) => {
-    const keepL = (w - KEEP_W) / 2
-    const keepT = (h - KEEP_H) / 2
-    const keepR = keepL + KEEP_W
-    const keepB = keepT + KEEP_H
-    const band = 480
-    const maxX = w - boxW
-    const maxY = Math.floor((h - boxH) / cell) * cell
-    const candidates: { x: number; y: number }[] = []
-    for (let y = 0; y <= maxY; y += cell) {
-      for (let x = 0; x <= maxX; x += cell) {
-        const clearOfKeep = x + boxW <= keepL || x >= keepR || y + boxH <= keepT || y >= keepB
-        const near =
-          x + boxW > keepL - band &&
-          x < keepR + band &&
-          y + boxH > keepT - band &&
-          y < keepB + band
-        if (clearOfKeep && near) candidates.push({ x, y })
-      }
-    }
-    const ranked = candidates
-      .map((spot, index) => ({ spot, rank: unit((index + 1) * 89 + variant * 257) }))
-      .sort((a, b) => a.rank - b.rank || a.spot.x - b.spot.x)
-    const slots: { x: number; y: number; delay: number }[] = []
-    for (const { spot } of ranked) {
-      if (slots.length >= count) break
-      const crowded = slots.some(
-        (slot) => spot.x < slot.x + boxW && spot.x + boxW > slot.x && spot.y < slot.y + boxH && spot.y + boxH > slot.y,
-      )
-      if (crowded) continue
-      slots.push({ x: spot.x, y: spot.y, delay: (slots.length % 5) * 0.05 })
+  const slotsFor = (flip: boolean) => {
+    const at = new Map<string, { x: number; y: number; delay: number }>()
+    const sleeves = flip ? [...kinds.sleeves].reverse() : kinds.sleeves
+    sleeves.forEach((id, index) => {
+      at.set(id, { x: cell, y: (1 + index) * cell, delay: index * 0.05 })
+    })
+    kinds.orbs.forEach((id, index) => {
+      at.set(id, { x: cell, y: (5 + index) * cell, delay: 0.1 })
+    })
+    const wordSpots = [
+      { x: 3 * cell, y: 6 * cell },
+      { x: 6 * cell, y: 6 * cell },
+    ]
+    const wordOrder = flip ? [...wordSpots].reverse() : wordSpots
+    kinds.words.forEach((id, index) => {
+      const spot = wordOrder[index] || wordSpots[0]!
+      at.set(id, { x: spot.x, y: spot.y, delay: index * 0.05 })
+    })
+
+    const stackSpots = [
+      { x: 3 * cell, y: 0 },
+      { x: 4 * cell, y: 0 },
+      { x: cell, y: 3 * cell },
+      { x: 2 * cell, y: 3 * cell },
+    ]
+    const stackOrder = flip ? [...stackSpots].reverse() : stackSpots
+    kinds.stacks.forEach((id, index) => {
+      const spot = stackOrder[index] || stackSpots[0]!
+      at.set(id, { x: spot.x, y: spot.y, delay: (index % 4) * 0.05 })
+    })
+    ids
+      .filter((id) => id.startsWith('cluster-'))
+      .forEach((id, index) => {
+        at.set(id, { x: 0, y: index * 2 * cell, delay: 0 })
+      })
+
+    const slots = ids.map((id, index) => at.get(id) || { x: (index % cols) * cell, y: 0, delay: 0 })
+    for (const id of kinds.words) {
+      slots.push(at.get(id) || { x: 2 * cell, y: 5 * cell, delay: 0 })
     }
     return slots
   }
 
-  return { w, h, cols, rows, slotsA: slotsFor(0), slotsB: slotsFor(1) }
+  return { w, h, cols, rows, slotsA: slotsFor(false), slotsB: slotsFor(true) }
 }
 
 const arrange = (
@@ -426,51 +447,24 @@ const scatterLoose = (
     blocks.push({
       x: node.x,
       y: node.y,
-      w: node.id === 'colour' ? cell * 2 : cell,
-      h: node.id === 'colour' ? cell : STACK_PLATE_H,
+      w: node.id === 'colour' || node.id === 'material' ? cell * 2 : cell,
+      h: node.id === 'colour' || node.id === 'material' ? cell : STACK_PLATE_H,
     })
   }
   const hits = (x: number, y: number) =>
     blocks.some((block) => x < block.x + block.w && x + cell > block.x && y < block.y + block.h && y + cell > block.y)
-  const candidates: { x: number; y: number }[] = []
-  for (let y = 0; y <= world.h - cell; y += cell) {
-    for (let x = 0; x <= world.w - cell; x += cell) {
-      if (!hits(x, y)) candidates.push({ x, y })
-    }
-  }
-  const focusX = world.w / 2
-  const focusY = world.h / 2
-  const spin = ((hashString(sources.map((source) => source.id).join('|')) % 360) * Math.PI) / 180
-  const placed: { x: number; y: number }[] = []
-  const apart = (spot: { x: number; y: number }, gap: number) =>
-    placed.every((other) => Math.hypot(spot.x - other.x, spot.y - other.y) >= gap)
+  // Columns J and K, staggered so the two columns use different rows.
+  const spots = [
+    { x: 9 * cell, y: 0 },
+    { x: 10 * cell, y: 2 * cell },
+    { x: 9 * cell, y: 3 * cell },
+    { x: 10 * cell, y: 5 * cell },
+    { x: 9 * cell, y: 6 * cell },
+    { x: 10 * cell, y: 4 * cell },
+  ].filter((spot) => spot.x >= 0 && spot.y >= 0 && spot.x + cell <= world.w && spot.y + cell <= world.h && !hits(spot.x, spot.y))
 
   return sources.map((source, index) => {
-    const angle = spin + (index / Math.max(sources.length, 1)) * Math.PI * 2
-    const pick = (gap: number) => {
-      let best: { x: number; y: number } | null = null
-      let bestRank = Infinity
-      for (const spot of candidates) {
-        if (gap && !apart(spot, gap)) continue
-        const sx = spot.x + cell / 2
-        const sy = spot.y + cell / 2
-        const turn = Math.PI * 2
-        let delta = Math.abs(Math.atan2(sy - focusY, sx - focusX) - angle) % turn
-        if (delta > Math.PI) delta = turn - delta
-        const radius = Math.hypot(sx - focusX, sy - focusY)
-        const rank = delta * 1600 + Math.abs(radius - 1100)
-        if (rank < bestRank) {
-          bestRank = rank
-          best = spot
-        }
-      }
-      return best
-    }
-    const spot = pick(cell * 4) || pick(cell * 2) || pick(0) || { x: cell, y: cell * (3 + index) }
-    const taken = candidates.findIndex((entry) => entry.x === spot.x && entry.y === spot.y)
-    if (taken >= 0) candidates.splice(taken, 1)
-    placed.push(spot)
-    blocks.push({ x: spot.x, y: spot.y, w: cell, h: cell })
+    const spot = spots[index] || { x: 9 * cell, y: index * cell }
     return { ...placePiece(source, { x: spot.x, y: spot.y, rotate: 0, z: 6 }), w: cell, h: cell }
   })
 }
@@ -548,6 +542,7 @@ export const composeDiscoverField = (sources: DiscoverSource[]): DiscoverFieldMo
     if (index >= 0) rest.splice(index, 1)
   }
   const colourPieces = rest.length >= 12 ? rest.splice(0, 12) : []
+  const materialPieces = rest.length >= 12 ? rest.splice(0, 12) : []
   const orbBudget = rest.length - 6
   if (orbBudget >= 5) {
     const taken = rest.splice(0, Math.min(11, orbBudget))
@@ -577,37 +572,37 @@ export const composeDiscoverField = (sources: DiscoverSource[]): DiscoverFieldMo
   }
 
   const ids = nodeOrder(clusters.length, stacks.length, folders.length)
-  if (colourPieces.length === 12) {
-    folders.push({
-      id: 'colour',
-      mode: 'colour',
-      name: 'Colour',
-      kicker: '',
-      label: '',
-      pieces: layoutContainer(colourPieces, COLOUR_SPLAY, 'colour').map((piece) => ({
-        ...piece,
-        x: piece.x + DISCOVER_GRID,
-        y: piece.y + DISCOVER_GRID / 2,
-      })),
-    })
-  }
-  const world = layoutWorld(ids.length)
+  const wordIds = [
+    ...(colourPieces.length === 12 ? ['colour'] : []),
+    ...(materialPieces.length === 12 ? ['material'] : []),
+  ]
+  if (colourPieces.length === 12) folders.push(wordStack('colour', 'Colour', colourPieces))
+  if (materialPieces.length === 12) folders.push(wordStack('material', 'Material', materialPieces))
+  const world = layoutWorld(ids, {
+    stacks: stacks.map((stack) => stack.id),
+    sleeves: folders.filter((folder) => folder.mode === 'sleeve').map((folder) => folder.id),
+    orbs: folders.filter((folder) => folder.mode === 'orb').map((folder) => folder.id),
+    words: wordIds,
+  })
   const arrangements = [
     arrange('table', { x: 0, y: 0 }, world.slotsA, ids),
     arrange('reading', { x: 0, y: 0 }, world.slotsB, ids),
   ]
 
-  const cell = DISCOVER_GRID
-  for (const arrangement of arrangements) {
-    arrangement.nodes.push({ id: 'colour', x: cell, y: cell, delay: 0 })
-  }
+  wordIds.forEach((id, index) => {
+    const spotA = world.slotsA[ids.length + index] || { x: 0, y: 0, delay: 0 }
+    const spotB = world.slotsB[ids.length + index] || spotA
+    arrangements[0]?.nodes.push({ id, x: spotA.x, y: spotA.y, delay: spotA.delay })
+    arrangements[1]?.nodes.push({ id, x: spotB.x, y: spotB.y, delay: spotB.delay })
+  })
   const loose = scatterLoose(world, arrangements[0]?.nodes || [], looseSources)
+  const cell = DISCOVER_GRID
   const marks: FieldMark[] = [
     { x: cell, y: cell, cross: true, text: 'A03' },
     { x: world.w - cell * 2, y: cell, cross: true, text: 'B07' },
-    { x: world.w / 2, y: world.h - cell * 2, cross: true },
-    { x: cell, y: world.h - cell * 2, text: 'Surface / 04' },
-    { x: world.w - cell * 3, y: world.h / 2, text: 'Form / 02' },
+    { x: 8 * cell, y: world.h - cell, cross: true },
+    { x: cell, y: world.h - cell, text: 'Surface / 04' },
+    { x: world.w - cell * 3, y: 4 * cell, text: 'Form / 02' },
   ]
 
   return {

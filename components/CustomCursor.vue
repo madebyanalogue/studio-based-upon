@@ -64,6 +64,8 @@ import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTyp
 
 const { preset, native, suppressLabel, bare, overColumn, resolveFromPoint } = useCursor()
 const route = useRoute()
+const d2Cursor = useD2Cursor()
+const { isOpen: productOpen } = useProductOverlay()
 
 const TRAIL_LIFE = 520
 const trailPoints: { x: number; y: number; t: number }[] = []
@@ -192,10 +194,17 @@ const TYPOLOGY_ARRIVAL = 'What are you making?'
 const onTypology = computed(
   () => route.path === '/typology' || route.path === '/typology/',
 )
+const onD2 = computed(() => route.path === '/d2' || route.path === '/d2/')
 const cursorLabel = computed(() => {
   if (suppressLabel.value) return ''
   const tip = preset.value?.tooltip || ''
   if (tip === 'Explore') return tip
+  if (onD2.value && !productOpen.value) {
+    if (tip) return tip
+    if (d2Cursor.value === 'scroll') return 'scroll'
+    if (d2Cursor.value === 'delve') return 'click to delve'
+    return ''
+  }
   if (homeScrollHint.value) {
     return onTypology.value ? 'Scroll' : SCROLL_HINT
   }
@@ -409,20 +418,20 @@ const syncLabel = (text: string) => {
   else typeLabelOn(text, generation)
 }
 
-if (import.meta.client) {
-  watch(cursorLabel, (text) => {
-    syncLabel(text)
-  })
-  watch(suppressLabel, (on) => {
-    if (on) dropLabelNow()
-  })
-}
-
 const fine = ref(false)
 const inside = ref(false)
 const tipLeft = ref(false)
 let x = 0
 let y = 0
+
+if (import.meta.client) {
+  watch(cursorLabel, (text) => {
+    syncLabel(text)
+  }, { immediate: true })
+  watch(suppressLabel, (on) => {
+    if (on) dropLabelNow()
+  })
+}
 
 if (import.meta.client) {
   watch(typologyRowsLocked, (locked) => {

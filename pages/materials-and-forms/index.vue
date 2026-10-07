@@ -162,6 +162,12 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { SplitText } from 'gsap/SplitText'
 import type Lenis from 'lenis'
 import {
+  ARCHIVE_PDP_CLOSE_EASE,
+  ARCHIVE_PDP_CLOSE_S,
+  ARCHIVE_PDP_OPEN_EASE,
+  ARCHIVE_PDP_OPEN_S,
+} from '~/composables/useProductOverlay'
+import {
   libraryFilterKey,
   parseLibraryFilterKey,
   type FormalItem,
@@ -222,7 +228,13 @@ type LibraryPrefs = {
 const { items } = await useLibraryCatalog()
 const { imageUrl } = useSanityImage()
 const { libraryFilters: pageFilters } = useSiteSettings()
-const { pendingGridSwap } = useProductOverlay()
+const {
+  pendingGridSwap,
+  isOpen: productOverlayOpen,
+  archiveGridMotion,
+  getFlipSource,
+  flipSourceIsArchiveGrid,
+} = useProductOverlay()
 
 /**
  * Client display order — can diverge from catalog after PDP close swaps the
@@ -289,6 +301,178 @@ watch(
   },
   { flush: 'sync' },
 )
+
+/**
+ * MWG 119 — opening a product from this grid pushes every other visible tile
+ * straight away from the clicked image. They fly home when the PDP closes.
+ */
+const SCATTER_OPEN = { duration: ARCHIVE_PDP_OPEN_S, ease: ARCHIVE_PDP_OPEN_EASE }
+const SCATTER_CLOSE = { duration: ARCHIVE_PDP_CLOSE_S, ease: ARCHIVE_PDP_CLOSE_EASE }
+/** Above the cream veil (319–320), under the Flip flyer (330). */
+const SCATTER_Z = 325
+
+type ScatteredTile = {
+  image: HTMLImageElement
+  clone: HTMLImageElement
+  left: number
+  top: number
+}
+
+let scattered: ScatteredTile[] = []
+let scatterReturnTimer = 0
+
+const holdGridMeta = () => {
+  gridEl.value?.classList.add('products__grid--meta-hold')
+}
+
+const releaseGridMeta = () => {
+  gridEl.value?.classList.remove('products__grid--meta-hold')
+}
+
+const tileInViewport = (rect: DOMRect) =>
+  rect.bottom > 0 &&
+  rect.right > 0 &&
+  rect.top < window.innerHeight &&
+  rect.left < window.innerWidth
+
+const clearScatteredTiles = () => {
+  window.clearTimeout(scatterReturnTimer)
+  scatterReturnTimer = 0
+  scattered.forEach(({ image, clone }) => {
+    gsap.killTweensOf(clone)
+    clone.remove()
+    image.style.removeProperty('visibility')
+  })
+  scattered = []
+}
+
+const scatterArchiveGrid = (source: HTMLElement) => {
+  clearScatteredTiles()
+  const grid = source.closest('.products__grid')
+  if (!grid) return
+
+  const images = [...grid.querySelectorAll<HTMLImageElement>('.product-card__image')]
+  const index = images.findIndex((image) => image === source)
+  if (index < 0) return
+
+  const rects = images.map((image) => image.getBoundingClientRect())
+  const origin = rects[index]
+  if (!origin?.width || !origin.height) return
+  const originX = origin.left + origin.width / 2
+  const originY = origin.top + origin.height / 2
+  const push = Math.hypot(window.innerWidth, window.innerHeight) * 0.9
+
+  images.forEach((image, i) => {
+    if (i === index) return
+    const rect = rects[i]
+    if (!rect || !rect.width || !rect.height || !tileInViewport(rect)) return
+
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    let vx = cx - originX
+    let vy = cy - originY
+    const len = Math.hypot(vx, vy) || 1
+    vx /= len
+    vy /= len
+
+    const media = image.closest('.product-card__media')
+    const mediaStyle = media ? getComputedStyle(media) : null
+    const imageStyle = getComputedStyle(image)
+    const clone = document.createElement('img')
+    clone.src = image.currentSrc || image.src
+    clone.alt = ''
+    clone.setAttribute('aria-hidden', 'true')
+    Object.assign(clone.style, {
+      position: 'fixed',
+      left: `${rect.left}px`,
+      top: `${rect.top}px`,
+      width: `${rect.width}px`,
+      height: `${rect.height}px`,
+      margin: '0',
+      objectFit: imageStyle.objectFit,
+      objectPosition: imageStyle.objectPosition,
+      borderRadius: mediaStyle?.borderRadius || imageStyle.borderRadius,
+      zIndex: String(SCATTER_Z),
+      pointerEvents: 'none',
+      transition: 'none',
+    })
+    document.body.appendChild(clone)
+    image.style.visibility = 'hidden'
+
+    const tile: ScatteredTile = {
+      image,
+      clone,
+      left: rect.left,
+      top: rect.top,
+    }
+    scattered.push(tile)
+    gsap.to(clone, {
+      x: vx * push,
+      y: vy * push,
+      duration: SCATTER_OPEN.duration,
+      ease: SCATTER_OPEN.ease,
+      overwrite: true,
+    })
+  })
+}
+
+const returnScatteredTiles = () => {
+  const tiles = scattered
+  scattered = []
+  if (!tiles.length) return
+
+  gsap.to(
+    tiles.map((tile) => tile.clone),
+    {
+      x: (i: number) => {
+        const home = tiles[i]?.image.getBoundingClientRect()
+        return (home?.left ?? tiles[i]?.left ?? 0) - (tiles[i]?.left ?? 0)
+      },
+      y: (i: number) => {
+        const home = tiles[i]?.image.getBoundingClientRect()
+        return (home?.top ?? tiles[i]?.top ?? 0) - (tiles[i]?.top ?? 0)
+      },
+      duration: SCATTER_CLOSE.duration,
+      ease: SCATTER_CLOSE.ease,
+      stagger: { each: 0.005, from: 'random' },
+      overwrite: true,
+      onComplete: () => {
+        tiles.forEach(({ image, clone }) => {
+          image.style.removeProperty('visibility')
+          clone.remove()
+        })
+      },
+    },
+  )
+}
+
+if (import.meta.client) {
+  watch(
+    archiveGridMotion,
+    (phase) => {
+      if (phase === 'open') {
+        const source = getFlipSource()
+        if (!source || !flipSourceIsArchiveGrid()) return
+        scatterArchiveGrid(source)
+        return
+      }
+      if (phase === 'close') {
+        holdGridMeta()
+        returnScatteredTiles()
+        window.setTimeout(
+          releaseGridMeta,
+          prefersReducedMotion() ? 0 : ARCHIVE_PDP_CLOSE_S * 1000,
+        )
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  watch(productOverlayOpen, (open) => {
+    if (open || !scattered.length) return
+    clearScatteredTiles()
+  })
+}
 
 /** Product ids whose galleries have been fanned into the grid. */
 const expandedIds = ref<Set<string>>(new Set())
@@ -1396,6 +1580,8 @@ onBeforeRouteLeave(async (to, from) => {
 })
 
 onBeforeUnmount(() => {
+  clearScatteredTiles()
+  gridEl.value?.classList.remove('products__grid--meta-hold')
   window.removeEventListener('pageshow', onPageShow)
   history.scrollRestoration = 'auto'
   introRan = false
@@ -1925,11 +2111,19 @@ useHead(() => ({
   pointer-events: none;
 }
 
+/* Titles stay hidden while a product flies home. Hover fade resumes after. */
+.products__grid--meta-hold :deep(.product-card__meta) {
+  opacity: 0 !important;
+  animation: none;
+  transition: none;
+}
+
 .products__grid :deep(.product-card) {
   width: auto;
   max-width: none;
   flex: none;
   min-width: 0;
+  grid-column: span 1 !important;
 }
 
 .products__grid :deep(.product-card--archive-small),

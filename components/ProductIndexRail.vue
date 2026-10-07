@@ -102,19 +102,6 @@
       </button>
     </div>
 
-    <div v-if="hasSpiritGallery" class="pdp-index__reveals pdp-index__reveals--center">
-      <button
-        type="button"
-        class="pdp-index__reveal interface"
-        :class="{ 'pdp-index__reveal--on': spiritMode }"
-        :aria-label="spiritMode ? 'Hide spirit imagery' : 'Show spirit imagery'"
-        :aria-pressed="spiritMode ? 'true' : 'false'"
-        @click="requestSpiritToggle"
-      >
-        {{ spiritMode ? 'Hide Spirit' : 'Spirit' }}
-      </button>
-    </div>
-
     <div class="pdp-index__reveals pdp-index__reveals--right">
       <button
         type="button"
@@ -581,20 +568,6 @@ const pdpChromeVisible = useState('pdp-chrome-visible', () => false)
 /** Overlay flip only — hard-load skips translate-in. */
 const chromeEnterMotion = useState('pdp-chrome-enter-motion', () => false)
 
-/** Shared with ProductDetail — Spirit frames append into the gallery strip. */
-const spiritMode = useState('pdp-spirit-mode', () => false)
-const spiritToggleRequest = useState('pdp-spirit-toggle-req', () => 0)
-
-const hasSpiritGallery = computed(() => {
-  const items = activeProduct.value?.spiritGallery
-  return Array.isArray(items) && items.length > 0
-})
-
-const requestSpiritToggle = () => {
-  if (!hasSpiritGallery.value) return
-  spiritToggleRequest.value += 1
-}
-
 const toggleIndexMode = () => {
   indexRailVisible.value = !indexRailVisible.value
 }
@@ -879,12 +852,6 @@ onMounted(() => {
   align-items: flex-start;
 }
 
-.pdp-index__reveals--center {
-  left: 50%;
-  transform: translateX(-50%);
-  align-items: center;
-}
-
 .pdp-index__reveals--right {
   display: none;
   right: calc(var(--pdp-related-rail-width) + 20px);
@@ -906,10 +873,6 @@ onMounted(() => {
 }
 
 .pdp-index__reveal:hover:not(:disabled) {
-  color: #fff;
-}
-
-.pdp-index__reveal--on {
   color: #fff;
 }
 

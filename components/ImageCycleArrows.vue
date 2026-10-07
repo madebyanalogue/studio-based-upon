@@ -12,7 +12,7 @@
     <button
       type="button"
       class="image-cycle__btn"
-      :data-cursor="cursorLabel ? undefined : 'prev'"
+      :data-cursor="cursorLabel ? undefined : showCursor ? 'prev' : 'default'"
       :data-cursor-label="cursorLabel || undefined"
       aria-label="Previous image"
       @click="$emit('prev')"
@@ -23,7 +23,7 @@
     <button
       type="button"
       class="image-cycle__btn"
-      :data-cursor="cursorLabel ? undefined : 'next'"
+      :data-cursor="cursorLabel ? undefined : showCursor ? 'next' : 'default'"
       :data-cursor-label="cursorLabel || undefined"
       aria-label="Next image"
       @click="$emit('next')"

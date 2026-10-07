@@ -49,14 +49,19 @@ export type ProductReturnImage = {
 /** Cream fade before the open flyer moves. Keep in sync with ProductOverlay CSS. */
 export const PRODUCT_OVERLAY_BACKDROP_OPEN_MS = 180
 /** Brief hold after the cream is in, before the thumbnail flies. */
-export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 40
+export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 0
 export const PRODUCT_OVERLAY_FLIP_OPEN_S = 0.42
 export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 0.4
+/** Materials & Forms grid — same flight as MWG 119. */
+export const ARCHIVE_PDP_OPEN_S = 0.6
+export const ARCHIVE_PDP_OPEN_EASE = 'power4.inOut'
+export const ARCHIVE_PDP_CLOSE_S = 0.4
+export const ARCHIVE_PDP_CLOSE_EASE = 'power3.out'
 /** PDP chrome fade before the return flyer — keep in sync with ProductDetail CSS. */
 /** PDP chrome (index / aside / sibling frames) exit before the close flyer moves. */
 export const PRODUCT_OVERLAY_CHROME_EXIT_MS = 350
-/** UI fade after chrome has exited — kept short; chrome exit owns the wait. */
-export const PRODUCT_OVERLAY_UI_FADE_MS = 200
+/** Gap after the chrome has left, before the return flyer moves. */
+export const PRODUCT_OVERLAY_UI_FADE_MS = 60
 
 /** Beat on the landed flyer before the cream clears, then the fade itself. */
 export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 60
@@ -192,6 +197,18 @@ export const useProductOverlay = () => {
   const isOpen = computed(() => !!openSlug.value)
   /** Rail order for PDP Next. Null uses the catalog sequence in getNextProduct. */
   const nextSequence = useState<PdpNextItem[] | null>('product-overlay-next-sequence', () => null)
+  /**
+   * Pulses when the Materials & Forms flyer actually starts moving, so the
+   * surrounding tiles share that same open or close.
+   */
+  const archiveGridMotion = useState<'open' | 'close' | null>(
+    'product-overlay-archive-motion',
+    () => null,
+  )
+
+  const signalArchiveMotion = (phase: 'open' | 'close') => {
+    archiveGridMotion.value = phase
+  }
 
   const applyNextSequence = (options: ProductOverlayOpenOptions, alreadyOpen: boolean) => {
     if ('sequence' in options) {
@@ -241,6 +258,7 @@ export const useProductOverlay = () => {
       }
       closingFlip.value = false
       backdropReady.value = false
+      archiveGridMotion.value = null
       openImageIndex.value =
         typeof options.imageIndex === 'number' && options.imageIndex >= 0
           ? options.imageIndex
@@ -358,6 +376,7 @@ export const useProductOverlay = () => {
     backdropReady.value = false
     pendingGridSwap.value = null
     nextSequence.value = null
+    archiveGridMotion.value = null
 
     // Unmount while closingFlip is still true so leave isn't a CSS fade
     openSlug.value = null
@@ -434,6 +453,7 @@ export const useProductOverlay = () => {
     returnUrl.value = null
     pendingGridSwap.value = null
     nextSequence.value = null
+    archiveGridMotion.value = null
     if (import.meta.client) {
       unlockPageScroll()
     }
@@ -465,6 +485,8 @@ export const useProductOverlay = () => {
     setReturnImage,
     pendingGridSwap,
     nextSequence,
+    archiveGridMotion,
+    signalArchiveMotion,
     requestGridSwap,
     closeVeilActive,
     setCloseVeilActive,

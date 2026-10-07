@@ -759,11 +759,14 @@ watch(
 
 <style scoped>
 .collection-rail {
-  --discover-rail-gap: 5px;
+  --discover-rail-gap-rest: 5px;
+  --discover-rail-gap: calc(
+    var(--discover-rail-gap-rest) + (60px - var(--discover-rail-gap-rest)) * var(--rail-open)
+  );
   --rail-cols: 5;
   --rail-gaps: 4;
   --rail-card-size: calc(
-    (100vw - (var(--discover-rail-gap) * var(--rail-gaps))) / var(--rail-cols)
+    (100vw - (var(--discover-rail-gap-rest) * var(--rail-gaps))) / var(--rail-cols)
   );
   --rail-open: 0;
   /* Portrait card at 3× its resting width. Every open card aims at this height. */
@@ -825,7 +828,9 @@ watch(
   align-items: flex-end;
   gap: var(--discover-rail-gap);
   width: max-content;
-  padding-block: calc(var(--discover-rail-gap) / 2);
+  padding-block: calc(
+    (var(--discover-rail-gap-rest) / 2) + (50px - var(--discover-rail-gap-rest) / 2) * var(--rail-open)
+  );
   box-sizing: content-box;
 }
 

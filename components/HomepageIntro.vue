@@ -26,10 +26,13 @@
       </defs>
     </svg>
 
-    <div class="homepage-intro__bar">
-      <div ref="logoEl" class="homepage-intro__logo">
+    <div class="homepage-intro__logo" :style="motionOn ? titleFilterStyle : undefined">
+      <div ref="logoEl" class="homepage-intro__logo-mark">
         <BasedUponLogoSansSerif />
       </div>
+    </div>
+
+    <div class="homepage-intro__bar">
       <button type="button" class="homepage-intro__skip interface" @click="onSkip">
         <span class="homepage-intro__skip-chev" aria-hidden="true" />
         Skip intro
@@ -265,7 +268,7 @@ watch(
 const rootEl = ref<HTMLElement | null>(null)
 const logoEl = ref<HTMLElement | null>(null)
 let logoShown = false
-const guideVisible = ref(true)
+const guideVisible = ref(false)
 const motionOn = ref(false)
 const frameIndex = ref(0)
 const pieces = ref<Piece[]>([])
@@ -287,37 +290,28 @@ let fadeVeil: (() => void) | null = null
 let stopPieces: (() => void) | null = null
 let splits: InstanceType<typeof SplitText>[] = []
 let wordsByKey = new Map<string, HTMLElement[]>()
-let imageByKey = new Map<string, HTMLElement>()
 let stopPath: (() => void) | null = null
 let pathRaf = 0
 let pathTarget = 0
 let pathCurrent = 0
+/** Logo melts out across the first beat. Text starts once that melt has finished. */
+const LOGO_EXIT_END = 1
+const TEXT_START = 1.12
 /** Scroll distance that plays the whole path out and enters the studio. */
-const PATH_END = FRAMES.length + 0.05
+const PATH_END = FRAMES.length + TEXT_START + 0.05
 const WHEEL_PER_STAGE = 720
 
 const ensureComposition = (images: string[]) => {
-  if (built || !images.length) return
+  if (built) return
   built = true
   frameIndex.value = 0
-  pieces.value = FRAMES.flatMap((_, index) =>
-    composeFrame(index, images.length ? images : FALLBACK_IMAGES),
-  )
+  const pool = images.length ? images : FALLBACK_IMAGES
+  pieces.value = FRAMES.flatMap((_, index) => composeFrame(index, pool))
 }
 
 watch(imagePool, (images) => ensureComposition(images), { immediate: true })
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
-const preloadImage = (src: string) =>
-  new Promise<void>((resolve) => {
-    const img = new Image()
-    const done = () => resolve()
-    img.onload = done
-    img.onerror = done
-    img.src = src
-    if (img.complete) done()
-  })
 
 const finishSite = (immediate = false) => {
   if (finished) return
@@ -394,20 +388,23 @@ const smoothstep = (value: number) => {
 
 const along = (t: number, start: number, end: number) => smoothstep((t - start) / (end - start))
 
+/** 1 at rest, 0 once the opening logo has melted away. */
+const logoAmount = (t: number) => 1 - along(t, 0.12, LOGO_EXIT_END)
+
 /** 0 while a piece is off the path, 1 while its stage is fully present. */
 const pieceAmount = (piece: Piece, t: number) => {
+  const textT = t - TEXT_START
   const i = piece.frame
-  const enter = along(t, i === 0 ? 0.04 : i - 0.22, i === 0 ? 0.52 : i + 0.28)
+  const enter = along(textT, i === 0 ? 0 : i - 0.22, i === 0 ? 0.5 : i + 0.28)
   const exitStart = piece.carry ? i + 1.55 : i + 0.62
   const exitEnd = piece.carry ? i + 2.05 : i + 1.02
-  return enter * (1 - along(t, exitStart, exitEnd))
+  return enter * (1 - along(textT, exitStart, exitEnd))
 }
 
 const bindPieces = () => {
   const root = rootEl.value
   if (!root) return
   ensurePlugins()
-  imageByKey = new Map()
   wordsByKey = new Map()
   for (const split of splits) {
     try {
@@ -417,10 +414,6 @@ const bindPieces = () => {
     }
   }
   splits = []
-  root.querySelectorAll<HTMLElement>('[data-kind="image"]').forEach((el) => {
-    const key = el.dataset.key
-    if (key) imageByKey.set(key, el)
-  })
   root.querySelectorAll<HTMLElement>('.homepage-intro__type').forEach((el) => {
     const split = new SplitText(el, { type: 'words', wordsClass: 'homepage-intro__word' })
     splits.push(split)
@@ -433,10 +426,20 @@ const bindPieces = () => {
   motionOn.value = true
 }
 
+const paintLogo = (t: number, reduced: boolean) => {
+  const logo = logoEl.value
+  if (!logo) return
+  const amount = reduced ? (t < LOGO_EXIT_END * 0.5 ? 1 : 0) : logoAmount(t)
+  const blur = reduced ? 0 : (1 - amount) * TITLE_BLUR_MAX
+  logo.style.opacity = String(amount)
+  logo.style.filter = `blur(${blur}px)`
+}
+
 const paint = (t: number) => {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const stage = Math.min(FRAMES.length - 1, Math.max(0, Math.floor(t + 0.08)))
+  const stage = Math.min(FRAMES.length - 1, Math.max(0, Math.floor(t - TEXT_START + 0.08)))
   frameIndex.value = stage
+  paintLogo(t, reduced)
   for (const piece of pieces.value) {
     let amount = pieceAmount(piece, t)
     if (reduced) {
@@ -448,13 +451,7 @@ const paint = (t: number) => {
           ? 1
           : 0
     }
-    if (piece.kind === 'image') {
-      const el = imageByKey.get(piece.key)
-      if (!el) continue
-      el.style.opacity = amount > 0.01 ? '1' : '0'
-      el.style.clipPath = `inset(${(1 - amount) * 100}% 0% 0% 0%)`
-      continue
-    }
+    if (piece.kind === 'image') continue
     const words = wordsByKey.get(piece.key)
     if (!words) continue
     const blur = reduced ? 0 : (1 - amount) * TITLE_BLUR_MAX
@@ -546,17 +543,12 @@ const play = async () => {
   window.clearTimeout(fallbackTimer)
   document.dispatchEvent(new CustomEvent('homepage-intro-hold'))
 
-  const pool = imagePool.value.length ? imagePool.value : FALLBACK_IMAGES
-  await Promise.race([Promise.all(pool.map(preloadImage)), delay(4000)])
-  if (finished || !rootEl.value) return
-
   if (document.fonts?.ready) await document.fonts.ready
   await nextTick()
   if (finished || !rootEl.value) return
 
   await fadeLogo()
   if (finished || !rootEl.value) return
-  guideVisible.value = false
   await nextTick()
   bindPieces()
   paint(0)
@@ -640,7 +632,6 @@ onUnmounted(() => {
   background: #000;
   color: #f1ede4;
   --intro-inset: clamp(20px, 5vw, 130px);
-  --intro-logo-h: calc(min(168px, 28vw) * 1142 / 2972.52);
   pointer-events: auto;
 }
 
@@ -658,24 +649,29 @@ onUnmounted(() => {
   left: 5vw;
   right: 5vw;
   z-index: 6;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
   pointer-events: none;
 }
 
 .homepage-intro__logo {
-  grid-column: 2;
-  justify-self: center;
-  width: min(168px, 28vw);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: min(220px, 40vw);
   color: #f1ede4;
-  opacity: 0;
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
+.homepage-intro__logo-mark {
+  opacity: 0;
+  will-change: filter, opacity;
+}
+
 .homepage-intro__skip {
-  grid-column: 3;
-  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
@@ -701,8 +697,7 @@ onUnmounted(() => {
   --intro-line: color-mix(in srgb, currentColor 38%, transparent);
   --intro-label: color-mix(in srgb, currentColor 72%, transparent);
   position: absolute;
-  inset: var(--intro-inset);
-  top: calc(var(--intro-inset) + var(--intro-logo-h) + 1rem);
+  inset: 0;
 }
 
 .homepage-intro__board,
@@ -758,9 +753,7 @@ onUnmounted(() => {
 }
 
 .homepage-intro__piece--image {
-  overflow: hidden;
-  opacity: 0;
-  clip-path: inset(100% 0% 0% 0%);
+  display: none;
 }
 
 .homepage-intro__piece--image img {
@@ -775,26 +768,18 @@ onUnmounted(() => {
 }
 
 .homepage-intro__piece--type {
+  position: absolute;
+  inset: 0;
   z-index: 2;
+  grid-column: 1 / -1 !important;
+  grid-row: 1 / -1 !important;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0.35em;
-  padding: 0.55rem 0.7rem;
-}
-
-.homepage-intro__piece--type.is-start {
-  justify-content: flex-start;
-}
-
-.homepage-intro__piece--type.is-center {
   align-items: center;
   justify-content: center;
-}
-
-.homepage-intro__piece--type.is-end {
-  justify-content: flex-end;
+  gap: 0.35em;
+  padding: 0 8vw;
+  text-align: center;
 }
 
 .homepage-intro__type {
@@ -814,6 +799,7 @@ onUnmounted(() => {
   font-weight: 400;
   line-height: 0.92;
   letter-spacing: -0.02em;
+  text-align: center;
   text-wrap: balance;
 }
 

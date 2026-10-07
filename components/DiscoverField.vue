@@ -2,49 +2,50 @@
   <section
     ref="stageEl"
     class="discover"
-    :class="{ 'discover--touch': isTouch, 'discover--reduce': reduceMotion, 'discover--settled': fieldSettled }"
+    :class="{ 'discover--touch': isTouch, 'discover--reduce': reduceMotion, 'discover--settled': fieldSettled, 'discover--revealed': fieldRevealed }"
     :style="{ '--field-zoom': zoom }"
-    :data-cursor-label="closeOrbCursor ? 'Close' : undefined"
+    :data-cursor-label="closeOrbCursor ? 'Scroll' : undefined"
     aria-label="Discover"
   >
     <p class="sr-only">
-      Explore the work surface. Scroll to zoom, unless an orb is open, in which case the scroll turns it. Arrow keys move the field. G toggles the grid, H toggles the lower grid, J toggles the safe zone. Activate an image to view it. A stack splays, a folder opens, an orb turns.
+      Explore the work surface. On a trackpad, scroll to pan and pinch to zoom. On a mouse, the wheel zooms. When an orb is open, scrolling turns it. Arrow keys move the field. G toggles the grid, H toggles the lower grid, J toggles the safe zone, K toggles the world border. Activate an image to view it. A stack splays, a folder opens, an orb turns.
     </p>
 
     <div v-show="showFloor" class="discover__floor" :style="floorStyle" aria-hidden="true" />
 
     <div class="discover__world" :style="worldStyle">
-      <div class="discover__edge" aria-hidden="true" />
+      <div v-show="showEdge" class="discover__edge" aria-hidden="true" />
       <div v-show="showGrid" class="discover__grid" :style="gridStyle" aria-hidden="true" />
 
       <div
-        v-if="colourFolder"
-        class="discover__node colour folder"
-        data-node-id="colour"
-        :class="{ 'is-open': openFolders.colour, 'is-dragging': !!hot.colour }"
-        :style="nodeStyle('colour')"
+        v-for="folder in wordFolders"
+        :key="folder.id"
+        class="discover__node word folder"
+        :data-node-id="folder.id"
+        :class="{ 'is-open': openFolders[folder.id], 'is-dragging': !!hot[folder.id] }"
+        :style="nodeStyle(folder.id)"
       >
         <button
           type="button"
-          class="colour__word h4"
-          :data-cursor-label="openFolders.colour ? 'Close' : 'Open'"
-          :aria-expanded="!!openFolders.colour"
-          aria-label="Colour"
-          @click="toggleFolder('colour')"
+          class="word__label h4"
+          :data-cursor-label="openFolders[folder.id] ? 'Close' : 'Open'"
+          :aria-expanded="!!openFolders[folder.id]"
+          :aria-label="folder.name"
+          @click="toggleFolder(folder.id)"
         >
-          Colour
+          {{ folder.name }}
         </button>
         <DiscoverPiece
-          v-for="piece in colourFolder.pieces"
+          v-for="piece in folder.pieces"
           :key="piece.id"
           class="folder__piece"
           :class="{ 'is-dragging': !!hot[piece.id] }"
           :piece="piece"
-          :live="!!openFolders.colour"
+          :live="!!openFolders[folder.id]"
           :controls="false"
-          :grid-add="!!openFolders.colour"
-          :data-cursor-label="openFolders.colour ? 'Add +' : undefined"
-          :frame-style="folderPieceStyle(piece, !!openFolders.colour)"
+          :grid-add="!!openFolders[folder.id]"
+          :data-cursor-label="openFolders[folder.id] ? 'Drag' : undefined"
+          :frame-style="folderPieceStyle(piece, !!openFolders[folder.id])"
           loading="lazy"
         />
       </div>
@@ -117,7 +118,7 @@
             :live="!!openStacks[stack.id]"
             :controls="false"
             :grid-add="!!openStacks[stack.id]"
-            :data-cursor-label="openStacks[stack.id] ? 'Add +' : undefined"
+            :data-cursor-label="openStacks[stack.id] ? 'Drag' : undefined"
             :frame-style="stackPieceStyle(stack, piece, index)"
             loading="lazy"
           />
@@ -186,7 +187,7 @@
           :live="!!openFolders[folder.id]"
           :controls="false"
           :grid-add="!!openFolders[folder.id]"
-          :data-cursor-label="openFolders[folder.id] ? 'Add +' : undefined"
+          :data-cursor-label="openFolders[folder.id] ? 'Drag' : undefined"
           :frame-style="folderPieceStyle(piece, !!openFolders[folder.id])"
           loading="lazy"
         />
@@ -204,7 +205,6 @@
           'is-opening': orbPhase[folder.id] === 'fan' || orbPhase[folder.id] === 'orb',
           'is-snapping': orbPhase[folder.id] === 'pile',
         }"
-        :data-cursor="openOrbs[folder.id] ? 'default' : undefined"
         :style="nodeStyle(folder.id)"
         @mouseenter="fanOrb(folder.id)"
         @mouseleave="unfanOrb(folder.id)"
@@ -217,7 +217,9 @@
             :class="{ 'is-dragging': !!hot[piece.id] }"
             :piece="piece"
             :live="!!openOrbs[folder.id]"
-            :data-cursor="openOrbs[folder.id] ? 'default' : undefined"
+            :controls="false"
+            :grid-add="!!openOrbs[folder.id]"
+            :data-cursor-label="openOrbs[folder.id] ? 'Drag' : undefined"
             :frame-style="orbPieceStyle(folder, piece, index)"
             loading="lazy"
           />
@@ -230,7 +232,6 @@
             :aria-label="`Open ${folder.name}`"
             @click="toggleOrb(folder.id)"
           />
-          <span class="orb__name h6">{{ folder.name }}</span>
         </div>
       </div>
 
@@ -309,6 +310,7 @@ const stageEl = ref<HTMLElement | null>(null)
 const showGrid = ref(true)
 const showFloor = ref(false)
 const showKeep = ref(false)
+const showEdge = ref(false)
 const cam = reactive({ x: 168, y: 128 })
 const openStacks = ref<Record<string, boolean>>({})
 const openFolders = ref<Record<string, boolean>>({})
@@ -328,10 +330,8 @@ watch(
 )
 const kept = ref<FieldPiece[]>([])
 const GRID = 96
-const KEEP_COLS = 18
-const KEEP_ROWS = 11
-const KEEP_W = GRID * KEEP_COLS
-const KEEP_H = GRID * KEEP_ROWS
+const KEEP_W = DISCOVER_GRID * 6
+const KEEP_H = DISCOVER_GRID * 3
 const keepBox = reactive({ x: 0, y: 0 })
 const keepStyle = computed(() => ({
   left: `${keepBox.x}px`,
@@ -349,6 +349,7 @@ const entryMeltState = { blur: 0.25, opacity: 1 }
 const isTouch = ref(false)
 const reduceMotion = ref(false)
 const fieldSettled = ref(false)
+const fieldRevealed = ref(false)
 const surrendering = ref(false)
 const hot = ref<Record<string, boolean>>({})
 const selectedId = ref<string | null>(null)
@@ -415,10 +416,12 @@ type Drag =
       pieceId: string | null
     }
 
-const EDGE_MIN = 140
-const MAX_SPEED = 16
+const EDGE_MIN = 280
+const MAX_SPEED = 48
 const ZOOM_MIN = 0.4
 const ZOOM_MAX = 2.5
+const WHEEL_ZOOM = 0.00115
+const PINCH_ZOOM = 0.01
 let zoomTo = ZOOM_START
 let zoomX = 0
 let zoomY = 0
@@ -432,6 +435,7 @@ let glideX = 168
 let glideY = 128
 let raf = 0
 let moved = false
+let trackpadPointer = false
 let dragged = false
 let drag: Drag | null = null
 let pointerId = -1
@@ -577,6 +581,14 @@ const containedSize = (piece: FieldPiece, card = STACK_CARD) => {
   return { w: Math.max(1, Math.round(card * aspect)), h: card }
 }
 
+/** Longest side fills one cell. The other side follows the source image. */
+const boardSize = (piece: { aspect?: number }) => {
+  const cell = DISCOVER_GRID
+  const aspect = piece.aspect && Number.isFinite(piece.aspect) && piece.aspect > 0 ? piece.aspect : 1
+  if (aspect >= 1) return { w: cell, h: Math.max(1, Math.round(cell / aspect)) }
+  return { w: Math.max(1, Math.round(cell * aspect)), h: cell }
+}
+
 const stackBox = (pieces: FieldPiece[], open: boolean) => {
   if (!open) {
     return {
@@ -634,7 +646,7 @@ const closeOrbCursor = computed(() => Object.values(openOrbs.value).some(Boolean
 const visibleSleeves = computed(() =>
   visibleFolders.value.filter((folder) => folder.mode === 'sleeve' && folder.pieces.length > 0),
 )
-const colourFolder = computed(() => visibleFolders.value.find((folder) => folder.mode === 'colour') || null)
+const wordFolders = computed(() => visibleFolders.value.filter((folder) => folder.mode === 'word'))
 const visibleOrbs = computed(() => visibleFolders.value.filter((folder) => folder.mode === 'orb'))
 
 const visibleStacks = computed(() =>
@@ -762,8 +774,9 @@ const stackPieceStyle = (stack: FieldStack, piece: FieldPiece, index: number) =>
 
 const ORB_TILE = 208
 const ORB_RADIUS = 480
-const ORB_W = STACK_CARD + 40
-const ORB_H = STACK_CARD + 18 + STACK_TITLE
+const ORB_SQUARE = STACK_CARD + CLOSED_PAD * 2
+const ORB_W = ORB_SQUARE
+const ORB_H = ORB_SQUARE
 const orbPose = reactive<Record<string, { x: number; y: number; z: number }>>({})
 
 type OrbRuntime = {
@@ -904,7 +917,7 @@ const pointerLeftOrb = (id: string, x: number, y: number) => {
   if (!node) return false
   const rect = node.getBoundingClientRect()
   const cx = rect.left + rect.width / 2
-  const cy = rect.top + (STACK_CARD / 2) * (rect.height / Math.max(ORB_H, 1))
+  const cy = rect.top + rect.height / 2
   const scale = rect.width / Math.max(ORB_W, 1)
   const limit = ORB_RADIUS * 1.55 * Math.max(scale, 0.001)
   return Math.hypot(x - cx, y - cy) > limit
@@ -928,7 +941,7 @@ const orbPieceStyle = (folder: { id: string }, piece: FieldPiece, index: number)
     const spread = phase === 'fan' || (phase !== 'pile' && fannedId.value === folder.id)
     const size = containedSize(piece)
     const x = (ORB_W - size.w) / 2 + rest.x + (spread ? fan.x : 0)
-    const y = (STACK_CARD - size.h) / 2 + rest.y + (spread ? fan.y : 0)
+    const y = (ORB_H - size.h) / 2 + rest.y + (spread ? fan.y : 0)
     const r = rest.r + (spread ? fan.r : 0)
     return {
       width: `${size.w}px`,
@@ -944,7 +957,7 @@ const orbPieceStyle = (folder: { id: string }, piece: FieldPiece, index: number)
     height: `${ORB_TILE}px`,
     zIndex: selectedId.value === piece.id ? 30 : Math.max(1, Math.round(pose.z * 40) + 10),
     opacity: 1,
-    transform: `translate3d(${ORB_W / 2 + pose.x * ORB_RADIUS - ORB_TILE / 2 + shift.x}px, ${STACK_CARD / 2 - pose.y * ORB_RADIUS - ORB_TILE / 2 + shift.y}px, ${pose.z * ORB_RADIUS}px) rotate(0deg)`,
+    transform: `translate3d(${ORB_W / 2 + pose.x * ORB_RADIUS - ORB_TILE / 2 + shift.x}px, ${ORB_H / 2 - pose.y * ORB_RADIUS - ORB_TILE / 2 + shift.y}px, ${pose.z * ORB_RADIUS}px) rotate(0deg)`,
   }
 }
 
@@ -1002,7 +1015,10 @@ const beginOrbOpen = (id: string) => {
     orbPhase.value = { ...orbPhase.value, [id]: 'ready' }
     return
   }
-  if (fannedId.value === id) fannedId.value = null
+  if (fannedId.value === id) {
+    finishOrbOpen(id)
+    return
+  }
   orbPhase.value = { ...orbPhase.value, [id]: 'pile' }
   nextTick(() => {
     requestAnimationFrame(() => {
@@ -1036,19 +1052,19 @@ const settleOrbPiece = (id: string) => {
   const piece = folder.pieces.find((entry) => entry.id === id)
   const el = stageEl.value?.querySelector<HTMLElement>(`.orb [data-piece-id="${id}"]`)
   if (!piece || !el) return
-  const cell = DISCOVER_GRID
+  const size = boardSize(piece)
   const rect = el.getBoundingClientRect()
   const point = toWorld(new DOMRect(rect.left + rect.width / 2, rect.top + rect.height / 2, 0, 0))
-  const maxX = Math.max(0, field.value.world.w - cell)
-  const maxY = Math.max(0, field.value.world.h - cell)
+  const maxX = Math.max(0, field.value.world.w - size.w)
+  const maxY = Math.max(0, field.value.world.h - size.h)
   lifted.value = [
     ...lifted.value,
     {
       ...piece,
-      x: Math.min(maxX, Math.max(0, point.x - cell / 2)),
-      y: Math.min(maxY, Math.max(0, point.y - cell / 2)),
-      w: cell,
-      h: cell,
+      x: Math.min(maxX, Math.max(0, point.x - size.w / 2)),
+      y: Math.min(maxY, Math.max(0, point.y - size.h / 2)),
+      w: size.w,
+      h: size.h,
       rotate: 0,
       z: 20,
     },
@@ -1169,7 +1185,7 @@ const cameraLimits = () => {
   const width = stage?.clientWidth ?? 0
   const height = stage?.clientHeight ?? 0
   const z = Math.max(zoom.value, ZOOM_MIN)
-  const over = DISCOVER_GRID * 3
+  const over = DISCOVER_GRID
   let minX = -over
   let maxX = field.value.world.w - width / z + over
   let minY = -over
@@ -1203,7 +1219,7 @@ const approach = (pos: number, min: number, max: number, delta: number) => {
   if (room <= 0) return 0
   if (reduceMotion.value) return Math.sign(delta) * Math.min(Math.abs(delta), room)
   const brake = 200 / Math.max(zoom.value, ZOOM_MIN)
-  if (room >= brake) return delta
+  if (room >= brake) return Math.sign(delta) * Math.min(Math.abs(delta), room)
   if (room <= 0.8) return Math.sign(delta) * room
   const maxStep = room * 0.16
   return Math.sign(delta) * Math.min(Math.abs(delta), maxStep)
@@ -1235,7 +1251,7 @@ const dismissInstruction = () => {
 const edgeDepth = () => {
   const stage = stageEl.value
   if (!stage) return EDGE_MIN
-  return Math.min(220, Math.max(EDGE_MIN, Math.min(stage.clientWidth, stage.clientHeight) * 0.18))
+  return Math.min(440, Math.max(EDGE_MIN, Math.min(stage.clientWidth, stage.clientHeight) * 0.34))
 }
 
 /** Vertical lane from Surrender up through the nav, where the top and bottom edges do not pan. */
@@ -1257,7 +1273,7 @@ const quietLane = (rect: DOMRect) => {
 
 const updateEdge = (x: number, y: number) => {
   const stage = stageEl.value
-  if (!stage || isTouch.value || drag || overlayOpen.value) {
+  if (!stage || isTouch.value || trackpadPointer || drag || overlayOpen.value) {
     targetX = 0
     targetY = 0
     return
@@ -1274,7 +1290,7 @@ const updateEdge = (x: number, y: number) => {
   const max = reduceMotion.value ? 16 : MAX_SPEED
   const push = (distance: number) => {
     const t = Math.min(1, Math.max(0, distance / edge))
-    return max * t ** 1.05
+    return max * t ** 0.4
   }
   const lane = quietLane(rect)
   targetX = 0
@@ -1302,7 +1318,7 @@ const tick = () => {
   }
   const ease = (target: number, vel: number) => {
     if (reduceMotion.value) return 1
-    return Math.abs(target) + 0.01 >= Math.abs(vel) ? 0.32 : 0.16
+    return Math.abs(target) + 0.01 >= Math.abs(vel) ? 0.9 : 0.65
   }
   velX += (targetX - velX) * ease(targetX, velX)
   velY += (targetY - velY) * ease(targetY, velY)
@@ -1424,7 +1440,7 @@ const onPointerDown = (event: PointerEvent) => {
   const pieceEl = target?.closest<HTMLElement>('.piece[data-piece-id]')
   const nodeEl = target?.closest<HTMLElement>('.discover__node[data-node-id]')
   const orbNode = target?.closest<HTMLElement>('.orb.is-open')
-  const onSleeve = !!target?.closest('.stack__toggle, .folder__sleeve, .stack__plate, .orb__toggle, .orb__name, .colour__word')
+  const onSleeve = !!target?.closest('.stack__toggle, .folder__sleeve, .stack__plate, .orb__toggle, .orb__name, .word__label')
   samples.length = 0
   rememberSample(event.clientX, event.clientY)
   dragged = false
@@ -1705,21 +1721,75 @@ const settleZoom = () => {
   glideY = clampAxis(glideY, limits.minY, limits.maxY)
 }
 
+const wheelUnit = (event: WheelEvent, stage: HTMLElement) =>
+  event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientHeight : 1
+
+/** A mouse notch is a vertical step of 100 or 120. Trackpad scroll and pinch are finer, and pinch also sets ctrlKey. */
+const mouseNotch = (event: WheelEvent) => {
+  if (event.deltaMode !== 0) return true
+  if (event.deltaX !== 0) return false
+  const span = Math.abs(event.deltaY)
+  if (span < 50) return false
+  return span % 100 === 0 || span % 120 === 0
+}
+
+const useTrackpad = () => {
+  trackpadPointer = true
+  targetX = 0
+  targetY = 0
+  velX = 0
+  velY = 0
+}
+
+const zoomAtPointer = (event: WheelEvent, stage: HTMLElement, gain: number) => {
+  const rect = stage.getBoundingClientRect()
+  zoomX = event.clientX - rect.left
+  zoomY = event.clientY - rect.top
+  const unit = wheelUnit(event, stage)
+  zoomTo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomTo * Math.exp(-event.deltaY * unit * gain)))
+}
+
+const panByWheel = (dx: number, dy: number) => {
+  const z = Math.max(zoom.value, ZOOM_MIN)
+  const limits = cameraLimits()
+  cam.x += approach(cam.x, limits.minX, limits.maxX, dx / z)
+  cam.y += approach(cam.y, limits.minY, limits.maxY, dy / z)
+  glideX = cam.x
+  glideY = cam.y
+  flickX = 0
+  flickY = 0
+}
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault()
   if (drag?.kind === 'frame') return
   const stage = stageEl.value
   if (!stage) return
   dismissInstruction()
+  const pinch = event.ctrlKey && !mouseNotch(event)
+  if (pinch) {
+    useTrackpad()
+    zoomAtPointer(event, stage, PINCH_ZOOM)
+    moved = true
+    return
+  }
+  if (!mouseNotch(event)) {
+    useTrackpad()
+    const unit = wheelUnit(event, stage)
+    if (spinOpenOrbs(event.deltaX * unit, event.deltaY * unit)) {
+      moved = true
+      return
+    }
+    panByWheel(event.deltaX * unit, event.deltaY * unit)
+    moved = true
+    return
+  }
+  trackpadPointer = false
   if (spinOpenOrbs(event.deltaX, event.deltaY)) {
     moved = true
     return
   }
-  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientHeight : 1
-  const rect = stage.getBoundingClientRect()
-  zoomX = event.clientX - rect.left
-  zoomY = event.clientY - rect.top
-  zoomTo = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomTo * Math.exp(-event.deltaY * unit * 0.00115)))
+  zoomAtPointer(event, stage, WHEEL_ZOOM)
   moved = true
 }
 
@@ -1739,6 +1809,11 @@ const onKey = (event: KeyboardEvent) => {
     }
     if (event.key === 'j' || event.key === 'J') {
       showKeep.value = !showKeep.value
+      event.preventDefault()
+      return
+    }
+    if (event.key === 'k' || event.key === 'K') {
+      showEdge.value = !showEdge.value
       event.preventDefault()
       return
     }
@@ -1849,17 +1924,22 @@ const placeStackPiece = (id: string) => {
   )
   const folder = field.value.folders.find(
     (entry) =>
-      (entry.mode === 'sleeve' || entry.mode === 'colour') &&
+      (entry.mode === 'sleeve' || entry.mode === 'word') &&
       openFolders.value[entry.id] &&
       entry.pieces.some((piece) => piece.id === id),
   )
-  const host = stack || folder
+  const orb = field.value.folders.find(
+    (entry) =>
+      entry.mode === 'orb' &&
+      openOrbs.value[entry.id] &&
+      entry.pieces.some((piece) => piece.id === id),
+  )
+  const host = stack || folder || orb
   const piece = host?.pieces.find((entry) => entry.id === id)
   if (!host || !piece) return
   if (lifted.value.some((entry) => entry.id === id) || kept.value.some((entry) => entry.id === id)) return
-  const el = stageEl.value?.querySelector<HTMLElement>(
-    `${stack ? '.stack' : '.folder'} [data-piece-id="${id}"]`,
-  )
+  const root = stack ? '.stack' : orb ? '.orb' : '.folder'
+  const el = stageEl.value?.querySelector<HTMLElement>(`${root} [data-piece-id="${id}"]`)
   const spot = el ? toWorld(el.getBoundingClientRect()) : { x: piece.x, y: piece.y, w: piece.w, h: piece.h }
   const node = placementFor(host.id)
   const nodeMove = shiftOf(nodeShift, host.id)
@@ -1878,18 +1958,30 @@ const placeStackPiece = (id: string) => {
     folderDepth.delete(piece.id)
     delete folderShift[piece.id]
   }
+  if (orb) {
+    delete orbPose[id]
+    const spin = orbRuntime.get(orb.id)
+    if (spin) {
+      const index = spin.ids.indexOf(id)
+      if (index >= 0) {
+        spin.ids.splice(index, 1)
+        spin.points.splice(index, 1)
+      }
+    }
+  }
+  const size = boardSize(piece)
   if (reduceMotion.value) {
     placed.x = target.x
     placed.y = target.y
-    placed.w = DISCOVER_GRID
-    placed.h = DISCOVER_GRID
+    placed.w = size.w
+    placed.h = size.h
     return
   }
   gsap.to(placed, {
     x: target.x,
     y: target.y,
-    w: DISCOVER_GRID,
-    h: DISCOVER_GRID,
+    w: size.w,
+    h: size.h,
     duration: 0.72,
     ease: 'power3.inOut',
   })
@@ -1908,7 +2000,7 @@ const settleStackPiece = (id: string) => {
   const cell = box.cells[index] || { x: 0, y: 0 }
   const size = containedSize(piece, OPEN_CARD)
   const shift = pieceShift[id] || { x: 0, y: 0 }
-  const cellSize = DISCOVER_GRID
+  const landed = boardSize(piece)
   const originX = cell.x + (OPEN_CARD - size.w) / 2
   const originY = cell.y + (OPEN_CARD - size.h) / 2
   const cx = originX + shift.x + size.w / 2
@@ -1932,11 +2024,11 @@ const settleStackPiece = (id: string) => {
   const el = stageEl.value?.querySelector<HTMLElement>(`.stack [data-piece-id="${id}"]`)
   if (el) {
     const spot = toWorld(el.getBoundingClientRect())
-    x = spot.x + spot.w / 2 - cellSize / 2
-    y = spot.y + spot.h / 2 - cellSize / 2
+    x = spot.x + spot.w / 2 - landed.w / 2
+    y = spot.y + spot.h / 2 - landed.h / 2
   }
-  const maxX = Math.max(0, field.value.world.w - cellSize)
-  const maxY = Math.max(0, field.value.world.h - cellSize)
+  const maxX = Math.max(0, field.value.world.w - landed.w)
+  const maxY = Math.max(0, field.value.world.h - landed.h)
   x = Math.min(maxX, Math.max(0, x))
   y = Math.min(maxY, Math.max(0, y))
   lifted.value = [
@@ -1945,8 +2037,8 @@ const settleStackPiece = (id: string) => {
       ...piece,
       x,
       y,
-      w: cellSize,
-      h: cellSize,
+      w: landed.w,
+      h: landed.h,
       rotate: 0,
       z: 20,
     },
@@ -1970,17 +2062,17 @@ const settleFolderPiece = (id: string) => {
   const localY = (motion?.y ?? piece.y) + (depth?.y || 0) + shift.y
   const node = placementFor(folder.id)
   const nodeMove = shiftOf(nodeShift, folder.id)
-  const cell = DISCOVER_GRID
+  const size = boardSize(piece)
   let x = (node?.x ?? 0) + nodeMove.x + localX
   let y = (node?.y ?? 0) + nodeMove.y + localY
   const el = stageEl.value?.querySelector<HTMLElement>(`.folder [data-piece-id="${id}"]`)
   if (el) {
     const spot = toWorld(el.getBoundingClientRect())
-    x = spot.x + spot.w / 2 - cell / 2
-    y = spot.y + spot.h / 2 - cell / 2
+    x = spot.x + spot.w / 2 - size.w / 2
+    y = spot.y + spot.h / 2 - size.h / 2
   }
-  const maxX = Math.max(0, field.value.world.w - cell)
-  const maxY = Math.max(0, field.value.world.h - cell)
+  const maxX = Math.max(0, field.value.world.w - size.w)
+  const maxY = Math.max(0, field.value.world.h - size.h)
   x = Math.min(maxX, Math.max(0, x))
   y = Math.min(maxY, Math.max(0, y))
   lifted.value = [
@@ -1989,8 +2081,8 @@ const settleFolderPiece = (id: string) => {
       ...piece,
       x,
       y,
-      w: cell,
-      h: cell,
+      w: size.w,
+      h: size.h,
       rotate: 0,
       z: 20,
     },
@@ -2147,11 +2239,11 @@ const placeLike = (source: DiscoverSource, rect: DOMRect) => {
     lifted.value.some((piece) => piece.id === id) ||
     kept.value.some((piece) => piece.id === id)
   const id = occupied(source.id) ? `${source.id}-like-${Date.now()}` : source.id
-  const cell = DISCOVER_GRID
-  const maxX = Math.max(0, field.value.world.w - cell)
-  const maxY = Math.max(0, field.value.world.h - cell)
-  const x = Math.min(maxX, Math.max(0, spot.x + spot.w / 2 - cell / 2))
-  const y = Math.min(maxY, Math.max(0, spot.y + spot.h / 2 - cell / 2))
+  const size = boardSize(source)
+  const maxX = Math.max(0, field.value.world.w - size.w)
+  const maxY = Math.max(0, field.value.world.h - size.h)
+  const x = Math.min(maxX, Math.max(0, spot.x + spot.w / 2 - size.w / 2))
+  const y = Math.min(maxY, Math.max(0, spot.y + spot.h / 2 - size.h / 2))
   lifted.value = [
     ...lifted.value,
     {
@@ -2159,8 +2251,8 @@ const placeLike = (source: DiscoverSource, rect: DOMRect) => {
       id,
       x,
       y,
-      w: cell,
-      h: cell,
+      w: size.w,
+      h: size.h,
       rotate: 0,
       z: 24,
     },
@@ -2171,10 +2263,11 @@ provide('discover-place-like', placeLike)
 const cloneOnGrid = (id: string, rect: DOMRect) => {
   const source = findPiece(id)
   if (!source) return
+  const size = boardSize(source)
   const cell = DISCOVER_GRID
   const spot = toWorld(rect)
-  const maxX = Math.max(0, field.value.world.w - cell)
-  const maxY = Math.max(0, field.value.world.h - cell)
+  const maxX = Math.max(0, field.value.world.w - size.w)
+  const maxY = Math.max(0, field.value.world.h - size.h)
   const originX = Math.min(maxX, Math.max(0, Math.round(spot.x / cell) * cell))
   const originY = Math.min(maxY, Math.max(0, Math.round(spot.y / cell) * cell))
   const options = [
@@ -2195,8 +2288,8 @@ const cloneOnGrid = (id: string, rect: DOMRect) => {
       id: `${source.id}-clone-${Date.now()}`,
       x: next.x,
       y: next.y,
-      w: cell,
-      h: cell,
+      w: size.w,
+      h: size.h,
       rotate: 0,
       z: 21,
     },
@@ -2258,7 +2351,7 @@ const placeKeep = () => {
   const spanX = world.w + 96
   const spanY = world.h + 96
   const fit = Math.min(stageW / spanX, stageH / spanY, ZOOM_START)
-  const z = Math.min(ZOOM_START, Math.max(ZOOM_MIN, fit * 2))
+  const z = Math.min(ZOOM_START, Math.max(ZOOM_MIN, fit * 2.5))
   zoom.value = z
   zoomTo = z
   const fx = hasNodes ? keepBox.x + KEEP_W / 2 : world.w / 2
@@ -2277,31 +2370,6 @@ const parkStacks = () => {
     top: keepBox.y,
     right: keepBox.x + KEEP_W,
     bottom: keepBox.y + KEEP_H,
-  }
-  for (const stack of field.value.stacks) {
-    const place = placementFor(stack.id)
-    if (!place) continue
-    const box = stackBox(stack.pieces, false)
-    const shift = ensureShift(nodeShift, stack.id)
-    const left = place.x + shift.x
-    const top = place.y + shift.y
-    const overlaps =
-      left < zone.right &&
-      left + box.w > zone.left &&
-      top < zone.bottom &&
-      top + box.h > zone.top
-    if (!overlaps) continue
-    const options = [
-      { dx: zone.left - (left + box.w) - GRID / 4, dy: 0 },
-      { dx: zone.right - left + GRID / 4, dy: 0 },
-      { dx: 0, dy: zone.top - (top + box.h) - GRID / 4 },
-      { dx: 0, dy: zone.bottom - top + GRID / 4 },
-    ]
-    const move = options.reduce((best, option) =>
-      Math.hypot(option.dx, option.dy) < Math.hypot(best.dx, best.dy) ? option : best,
-    )
-    shift.x += move.dx
-    shift.y += move.dy
   }
   for (const folder of field.value.folders) {
     if (folder.mode !== 'orb') continue
@@ -2433,9 +2501,17 @@ onMounted(() => {
   lockPageScroll()
   placeKeep()
   parkStacks()
-  requestAnimationFrame(() => {
+  if (reduceMotion.value) {
     fieldSettled.value = true
-  })
+    fieldRevealed.value = true
+  } else {
+    requestAnimationFrame(() => {
+      fieldSettled.value = true
+      requestAnimationFrame(() => {
+        fieldRevealed.value = true
+      })
+    })
+  }
   raf = requestAnimationFrame(tick)
 })
 
@@ -2567,17 +2643,17 @@ onBeforeUnmount(() => {
   top: 0;
 }
 
-.colour {
+.word {
   z-index: 6;
   width: 440px;
   height: 220px;
 }
 
-.colour.is-open {
+.word.is-open {
   z-index: 24;
 }
 
-.colour__word {
+.word__label {
   position: absolute;
   inset: 0;
   z-index: 20;
@@ -2588,7 +2664,23 @@ onBeforeUnmount(() => {
 }
 
 .discover--settled .discover__node {
-  transition: transform 1.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    transform 1.15s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.75s ease;
+}
+
+.discover__world > .piece,
+.discover__mark,
+.discover__entry {
+  transition: opacity 0.75s ease;
+}
+
+.discover:not(.discover--revealed) .discover__node,
+.discover:not(.discover--revealed) .discover__world > .piece,
+.discover:not(.discover--revealed) .discover__mark,
+.discover:not(.discover--revealed) .discover__entry,
+.discover:not(.discover--revealed) .discover__surrender {
+  opacity: 0;
 }
 
 .discover__node.is-dragging,
@@ -2683,28 +2775,13 @@ onBeforeUnmount(() => {
 
 .orb {
   perspective: 1760px;
-  perspective-origin: 50% 40%;
+  perspective-origin: 50% 50%;
   transform-style: preserve-3d;
 }
 
 .orb__body {
   position: relative;
   transform-style: preserve-3d;
-}
-
-.orb__name {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  z-index: 6;
-  max-width: 100%;
-  margin: 0;
-  color: var(--charcoal);
-  pointer-events: none;
-}
-
-.orb.is-open .orb__name {
-  pointer-events: auto;
 }
 
 .orb__toggle {
@@ -2844,6 +2921,7 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   transition:
     left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.75s ease,
     color 0.2s ease,
     background 0.2s ease,
     border-color 0.2s ease;
