@@ -1,6 +1,9 @@
 <template>
   <div class="products">
-    <section class="products__header section">
+    <section
+      class="products__header section"
+      :class="{ 'products__header--title-front': titleFront }"
+    >
       <svg class="products__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
         <defs>
           <filter
@@ -31,9 +34,31 @@
     </section>
 
     <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
+      <button
+        type="button"
+        class="products__view"
+        :class="{ 'is-on': evenGrid }"
+        :aria-pressed="evenGrid"
+        :aria-label="evenGrid ? 'Show mixed sizes' : 'Show even grid'"
+        :data-cursor-label="evenGrid ? 'Mixed sizes' : 'Even grid'"
+        @click="evenGrid = !evenGrid"
+      >
+        <svg viewBox="0 0 20 14" width="18" height="13" fill="none" aria-hidden="true">
+          <rect x="0.7" y="0.7" width="5" height="5" rx="0.6" />
+          <rect x="7.5" y="0.7" width="5" height="5" rx="0.6" />
+          <rect x="14.3" y="0.7" width="5" height="5" rx="0.6" />
+          <rect x="0.7" y="8.3" width="5" height="5" rx="0.6" />
+          <rect x="7.5" y="8.3" width="5" height="5" rx="0.6" />
+          <rect x="14.3" y="8.3" width="5" height="5" rx="0.6" />
+        </svg>
+      </button>
       <div
         ref="filtersEl"
         class="products__filters"
+        :class="{
+          'is-collapsed': filtersCollapsed,
+          'is-open': filtersCollapsed && filtersMenuOpen,
+        }"
         role="group"
         aria-label="Filter by type or tag"
       >
@@ -52,9 +77,20 @@
               'type-chip--active': activeChipKey === 'all',
               'type-chip--lit': activeChipKey === 'all',
             }"
-            @click="selectFilter('')"
+            :aria-expanded="filtersCollapsed && activeChipKey === 'all' ? filtersMenuOpen : undefined"
+            :aria-haspopup="filtersCollapsed && activeChipKey === 'all' ? 'listbox' : undefined"
+            @click="onFilterChipClick('')"
           >
             All <span class="type-chip__count">({{ filterCount('') }})</span>
+            <span
+              v-if="activeChipKey === 'all'"
+              class="type-chip__chevron"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 12 8" width="10" height="7">
+                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
           </button>
           <button
             v-for="filter in pageFilters"
@@ -66,10 +102,21 @@
               'type-chip--active': activeChipKey === filterKey(filter),
               'type-chip--lit': activeChipKey === filterKey(filter),
             }"
-            @click="selectFilter(filterKey(filter))"
+            :aria-expanded="filtersCollapsed && activeChipKey === filterKey(filter) ? filtersMenuOpen : undefined"
+            :aria-haspopup="filtersCollapsed && activeChipKey === filterKey(filter) ? 'listbox' : undefined"
+            @click="onFilterChipClick(filterKey(filter))"
           >
             {{ filter.label }}
             <span class="type-chip__count">({{ filterCount(filterKey(filter)) }})</span>
+            <span
+              v-if="activeChipKey === filterKey(filter)"
+              class="type-chip__chevron"
+              aria-hidden="true"
+            >
+              <svg viewBox="0 0 12 8" width="10" height="7">
+                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
           </button>
 
           <label
@@ -79,6 +126,7 @@
               'type-chip--active': activeChipKey === '__search__',
               'type-chip--lit': activeChipKey === '__search__',
             }"
+            @click="onSearchChipClick"
           >
             <span class="products__search-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -93,6 +141,19 @@
               placeholder="Search"
               aria-label="Search materials and forms"
             />
+            <button
+              v-if="activeChipKey === '__search__'"
+              type="button"
+              class="type-chip__chevron"
+              :aria-expanded="filtersCollapsed ? filtersMenuOpen : undefined"
+              :aria-haspopup="filtersCollapsed ? 'listbox' : undefined"
+              aria-label="Show filters"
+              @click.prevent.stop="toggleFilterMenu"
+            >
+              <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
+                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
             <button
               v-if="isSearchUiActive"
               type="button"
@@ -117,6 +178,7 @@
         :class="{
           'products__grid--revealed': gridRevealed,
           'products__grid--animating': gridAnimating,
+          'products__grid--even': evenGrid,
         }"
       >
         <template v-for="(row, rowIndex) in displayRows" :key="row.slotKey">
@@ -391,6 +453,8 @@ const scatterArchiveGrid = (source: HTMLElement) => {
       margin: '0',
       objectFit: imageStyle.objectFit,
       objectPosition: imageStyle.objectPosition,
+      opacity: imageStyle.opacity,
+      filter: imageStyle.filter,
       borderRadius: mediaStyle?.borderRadius || imageStyle.borderRadius,
       zIndex: String(SCATTER_Z),
       pointerEvents: 'none',
@@ -459,6 +523,7 @@ if (import.meta.client) {
       if (phase === 'close') {
         holdGridMeta()
         returnScatteredTiles()
+        void restoreTitleAfterProduct()
         window.setTimeout(
           releaseGridMeta,
           prefersReducedMotion() ? 0 : ARCHIVE_PDP_CLOSE_S * 1000,
@@ -469,8 +534,12 @@ if (import.meta.client) {
   )
 
   watch(productOverlayOpen, (open) => {
-    if (open || !scattered.length) return
-    clearScatteredTiles()
+    if (open) {
+      if (flipSourceIsArchiveGrid()) void meltTitleForProduct()
+      return
+    }
+    if (scattered.length) clearScatteredTiles()
+    void restoreTitleAfterProduct()
   })
 }
 
@@ -556,6 +625,8 @@ const titleText = ref(
  * gooey-in has words parked at opacity 0 / full blur, then paint + animate.
  */
 const titlePaintReady = ref(false)
+/** Lift the heading above the product overlay while it melts. */
+const titleFront = ref(false)
 const titleFilterId = `maf-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
 
@@ -563,6 +634,9 @@ let titleSplitInstance: InstanceType<typeof SplitText> | null = null
 let titleGooeyTrigger: ScrollTrigger | null = null
 let titleGooeyBooted = false
 let titleSwapLock = false
+/** Product overlay owns the title until it has melted back in. */
+let titleHeldForProduct = false
+let titleRestoreStarted = false
 let titleSwapGen = 0
 let titleSwapTween: gsap.core.Tween | null = null
 let titleSwapAbort: (() => void) | null = null
@@ -723,6 +797,26 @@ const titleGooeyIn = async (next: string, forcedEffect?: number) => {
   applyTitleGooey(targetEffect)
 }
 
+/** Melt the archive title away while a product is open, then back on close. */
+const meltTitleForProduct = async () => {
+  if (!titleGooeyBooted) return
+  titleHeldForProduct = true
+  titleFront.value = true
+  await titleGooeyOut()
+  if (!titleRestoreStarted) titleFront.value = false
+}
+
+const restoreTitleAfterProduct = async () => {
+  if (!titleHeldForProduct || titleRestoreStarted) return
+  titleRestoreStarted = true
+  titleFront.value = true
+  await playTitleGooeyIn()
+  titleFront.value = false
+  titleHeldForProduct = false
+  titleRestoreStarted = false
+  applyTitleGooey(scrollTitleEffect())
+}
+
 const swapTitleGooey = async (next: string) => {
   if (next === titleText.value) return
   await titleGooeyOut()
@@ -759,6 +853,7 @@ const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
     scrub: 0.55,
     invalidateOnRefresh: true,
     onUpdate: (self) => {
+      if (titleHeldForProduct) return
       const effect = 1 - self.progress
       if (titleSwapLock) {
         // Hard-load + immediate scroll: don't let the intro tween keep a solid
@@ -1095,6 +1190,147 @@ const selectFilter = (key: string) => {
   activeFilter.value = key
 }
 
+const filtersCollapsed = ref(false)
+const filtersMenuOpen = ref(false)
+const FILTER_COLLAPSE_AT = 80
+const FILTER_EXPAND_AT = 24
+let suppressFilterMenuLayout = false
+let filterFlipGen = 0
+let filterLenisUnsub: (() => void) | null = null
+let filterWindowScrollUnsub: (() => void) | null = null
+
+const filterChipEls = () =>
+  Array.from(
+    filtersEl.value?.querySelectorAll<HTMLElement>('[data-filter-chip]') ?? [],
+  )
+
+const chipIsActive = (el: HTMLElement) =>
+  el.classList.contains('type-chip--active')
+
+const layoutFilterMenu = (open: boolean) => {
+  filterFlipGen += 1
+  if (!filtersCollapsed.value) {
+    filterChipEls().forEach((el) => {
+      el.style.transform = ''
+    })
+    return
+  }
+  const active = filterChipEls().find(chipIsActive)
+  if (active) active.style.transform = ''
+  const rest = filterChipEls().filter((el) => !chipIsActive(el))
+  let y = (active?.offsetHeight || 38) + 2
+  rest.forEach((el) => {
+    el.style.transition =
+      'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease'
+    el.style.transform = open ? `translateY(${y}px)` : ''
+    y += (el.offsetHeight || 38) + 2
+  })
+}
+
+const playFilterFlip = (first: Map<HTMLElement, DOMRect>) => {
+  const gen = ++filterFlipGen
+  const chips = filterChipEls()
+  chips.forEach((el) => {
+    el.style.transition = 'none'
+    el.style.transform = ''
+  })
+  chips.forEach((el) => {
+    const from = first.get(el)
+    if (!from) return
+    const to = el.getBoundingClientRect()
+    const dx = from.left - to.left
+    const dy = from.top - to.top
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
+    el.style.transform = `translate(${dx}px, ${dy}px)`
+  })
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (gen !== filterFlipGen) return
+      chips.forEach((el) => {
+        el.style.transition =
+          'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease'
+        el.style.transform = ''
+      })
+      scheduleFilterLiquidSync(false)
+    })
+  })
+}
+
+const setFiltersCollapsed = (collapsed: boolean) => {
+  if (filtersCollapsed.value === collapsed) return
+  const first = new Map(
+    filterChipEls().map((el) => [el, el.getBoundingClientRect()]),
+  )
+  suppressFilterMenuLayout = true
+  if (!collapsed) filtersMenuOpen.value = false
+  filtersCollapsed.value = collapsed
+  suppressFilterMenuLayout = false
+  if (prefersReducedMotion()) {
+    filterChipEls().forEach((el) => {
+      el.style.transform = ''
+    })
+    void nextTick(() => scheduleFilterLiquidSync(true))
+    return
+  }
+  void nextTick(() => playFilterFlip(first))
+}
+
+const readFilterScrollY = () => {
+  const lenis = $lenis as { scroll?: number } | undefined
+  if (lenis && typeof lenis.scroll === 'number') return lenis.scroll
+  if (!import.meta.client) return 0
+  return window.scrollY || document.documentElement.scrollTop || 0
+}
+
+const syncFilterCollapse = (y = readFilterScrollY()) => {
+  if (!filtersCollapsed.value && y > FILTER_COLLAPSE_AT) setFiltersCollapsed(true)
+  else if (filtersCollapsed.value && y < FILTER_EXPAND_AT) setFiltersCollapsed(false)
+}
+
+const onFilterChipClick = (key: string) => {
+  const id = key || 'all'
+  if (filtersCollapsed.value) {
+    const current = activeChipKey.value === id
+    if (!filtersMenuOpen.value) {
+      filtersMenuOpen.value = true
+      return
+    }
+    if (current) {
+      filtersMenuOpen.value = false
+      return
+    }
+    selectFilter(key)
+    filtersMenuOpen.value = false
+    return
+  }
+  selectFilter(key)
+}
+
+const toggleFilterMenu = () => {
+  if (!filtersCollapsed.value) return
+  filtersMenuOpen.value = !filtersMenuOpen.value
+}
+
+const onSearchChipClick = (event: MouseEvent) => {
+  if (!filtersCollapsed.value) return
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (target.closest('input, .products__search-clear, .type-chip__chevron')) return
+  filtersMenuOpen.value = !filtersMenuOpen.value
+}
+
+const onFilterPointerDown = (event: PointerEvent) => {
+  if (!filtersMenuOpen.value) return
+  const root = filtersEl.value
+  if (root && event.target instanceof Node && root.contains(event.target)) return
+  filtersMenuOpen.value = false
+}
+
+watch(filtersMenuOpen, (open) => {
+  if (suppressFilterMenuLayout) return
+  void nextTick(() => layoutFilterMenu(open))
+})
+
 const clearSearch = () => {
   const restore = filterBeforeSearch.value
   filterBeforeSearch.value = null
@@ -1112,6 +1348,7 @@ watch(
 )
 /** Kept for cookie shape only — layout is a fixed 6-col archive grid. */
 const columns = ref(6)
+const evenGrid = ref(false)
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
 
@@ -1569,10 +1806,29 @@ onMounted(() => {
       filterResizeObserver.observe(filtersEl.value)
     }
     window.addEventListener('resize', onFilterWindowResize)
+    document.addEventListener('pointerdown', onFilterPointerDown)
+    bindFilterScroll()
+    syncFilterCollapse()
   })
 })
 
 const onFilterWindowResize = () => scheduleFilterLiquidSync(true)
+
+const bindFilterScroll = () => {
+  filterLenisUnsub?.()
+  filterLenisUnsub = null
+  const lenis = $lenis as { on?: (e: string, cb: () => void) => void; off?: (e: string, cb: () => void) => void; scroll?: number } | undefined
+  if (lenis?.on && lenis.off) {
+    const onScroll = () => syncFilterCollapse(lenis.scroll)
+    lenis.on('scroll', onScroll)
+    filterLenisUnsub = () => lenis.off?.('scroll', onScroll)
+  }
+
+  filterWindowScrollUnsub?.()
+  const onWindowScroll = () => syncFilterCollapse()
+  window.addEventListener('scroll', onWindowScroll, { passive: true })
+  filterWindowScrollUnsub = () => window.removeEventListener('scroll', onWindowScroll)
+}
 
 onBeforeRouteLeave(async (to, from) => {
   if (isOverlayHistoryRestore() || to.path === from.path) return
@@ -1594,6 +1850,11 @@ onBeforeUnmount(() => {
   filterResizeObserver?.disconnect()
   filterResizeObserver = null
   window.removeEventListener('resize', onFilterWindowResize)
+  document.removeEventListener('pointerdown', onFilterPointerDown)
+  filterLenisUnsub?.()
+  filterLenisUnsub = null
+  filterWindowScrollUnsub?.()
+  filterWindowScrollUnsub = null
   if (filterPillEl.value) gsap.killTweensOf(filterPillEl.value)
   teardownTitleGooey()
   if (import.meta.client && gridEl.value) {
@@ -1822,6 +2083,12 @@ useHead(() => ({
   max-width: none;
 }
 
+/* Above the product overlay (320) and below the flying thumb (500). */
+.products__header--title-front {
+  z-index: 450;
+  pointer-events: none;
+}
+
 .products__title-filter {
   position: absolute;
   width: 0;
@@ -1853,15 +2120,44 @@ useHead(() => ({
   color: var(--muted);
 }
 
+.products__view {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-color);
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+.products__view rect {
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.products__view.is-on,
+.products__view:hover {
+  opacity: 1;
+}
+
+.products__view.is-on rect {
+  fill: currentColor;
+}
+
 .products__filter-tool {
   position: fixed;
   right: 20px;
   top: 130px;
   z-index: 60;
   display: flex;
-  flex-direction: column;
-  align-items: end;
-  gap: 1rem;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.35rem;
   width: -moz-max-content;
   width: max-content;
   max-width: unset;
@@ -1906,15 +2202,41 @@ useHead(() => ({
   gap: 0;
 }
 
+.products__filters.is-collapsed .type-chip:not(.type-chip--active) {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: max-content;
+  white-space: nowrap;
+}
+
+.products__filters.is-collapsed .type-chip--active {
+  z-index: 3;
+}
+
+.products__filters.is-collapsed:not(.is-open) .type-chip:not(.type-chip--active) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.products__filters.is-collapsed.is-open .type-chip:not(.type-chip--active) {
+  z-index: 2;
+  pointer-events: auto;
+}
+
 .type-chip {
   position: relative;
+  display: inline-flex;
+  align-items: center;
   font-size: var(--text-sm);
   color: var(--text-color);
   opacity: 1;
   transition:
     color 0.25s ease,
     background 0.25s ease,
-    border-radius 1.6s cubic-bezier(0.22, 1, 0.36, 1);
+    border-radius 1.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.45s ease;
   padding: 10px 15px;
   border: none;
   border-radius: var(--ui-border-radius);
@@ -1933,7 +2255,9 @@ useHead(() => ({
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .products__filters-pill {
+  .products__filters-pill,
+  .type-chip,
+  .type-chip__chevron {
     transition: none;
   }
 }
@@ -1941,6 +2265,42 @@ useHead(() => ({
 .type-chip__count {
   font-variant-numeric: tabular-nums;
   display: none;
+}
+
+.type-chip__chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 0;
+  min-width: 0;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    width 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    margin-left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.3s ease,
+    transform 0.35s ease;
+}
+
+.products__filters.is-collapsed .type-chip--active .type-chip__chevron {
+  width: 0.7rem;
+  margin-left: 0.45rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.products__filters.is-collapsed.is-open .type-chip--active .type-chip__chevron {
+  transform: rotate(180deg);
+}
+
+.type-chip__chevron svg {
+  display: block;
 }
 
 .products__search {
@@ -2088,12 +2448,25 @@ useHead(() => ({
 }
 @media (min-width: 1400px) {
   .products__grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .products__view {
+    display: inline-flex;
+  }
+
+  .products__grid--even {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .products__grid--even :deep(.product-card),
+  .products__grid--even .products__spacer {
+    grid-column: span 1 !important;
   }
 }
 @media (min-width: 2080px) {
   .products__grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 @media (min-width: 2500px) {
@@ -2123,7 +2496,6 @@ useHead(() => ({
   max-width: none;
   flex: none;
   min-width: 0;
-  grid-column: span 1 !important;
 }
 
 .products__grid :deep(.product-card--archive-small),

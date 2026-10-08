@@ -207,6 +207,7 @@
                   class="pdp__hero-image pdp__hero-video"
                   :class="{
                     'pdp__hero-image--ready': galleryReady[entry.id],
+                    'pdp__hero-image--saved': isFrameSaved(i),
                   }"
                   :src="entry.src"
                   :poster="entry.posterSrc || undefined"
@@ -232,6 +233,7 @@
                   :class="{
                     'pdp__hero-image--zoomed': i === selectedIndex && imageExpanded,
                     'pdp__hero-image--ready': galleryReady[entry.id],
+                    'pdp__hero-image--saved': isFrameSaved(i),
                   }"
                   :style="
                     i === selectedIndex && imageExpanded
@@ -320,6 +322,7 @@ const {
   getFlipSource,
   getFlipSourceProductId,
   flipSourceIsArchiveGrid,
+  flipSourceStartsImmediately,
   getFlipImageUrl,
   clearPendingFlip,
   setBackdropReady,
@@ -362,7 +365,7 @@ const { data: product, refresh } = await useAsyncData(
   },
 )
 
-const showSpecs = ref(false)
+const showSpecs = ref(true)
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
@@ -941,10 +944,11 @@ const orderLabel = computed(() => {
 
 /** Shared with ProductIndexRail — drives gallery left padding. */
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
-  default: () => true,
+  default: () => false,
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
+indexRailVisible.value = false
 
 /** Shared with ProductIndexRail — session-only (not cookie). */
 const { relatedRailVisible, requestRelatedToggle } = usePdpRelatedRail()
@@ -1058,6 +1062,38 @@ const pdpFrameRadius = (el: HTMLElement | null | undefined) => {
   return radius && radius !== '0px' ? radius : '10px'
 }
 
+/** Visible thumbnail radius, in px. The image is often square; the clip sits on a parent. */
+const sourceRadiusPx = (el: HTMLElement | null) => {
+  let node: HTMLElement | null = el
+  while (node && node !== document.documentElement) {
+    const radius = getComputedStyle(node).borderRadius
+    const value = Number.parseFloat(radius)
+    if (Number.isFinite(value) && value > 0) return value
+    node = node.parentElement
+  }
+  return 0
+}
+
+const frameRadiusPx = (el: HTMLElement | null | undefined) => {
+  const raw = pdpFrameRadius(el)
+  const value = Number.parseFloat(raw)
+  return Number.isFinite(value) ? value : 10
+}
+
+const tweenCornerRadius = (
+  flyer: HTMLElement,
+  from: number,
+  to: number,
+  duration: number,
+  ease: string,
+) => {
+  gsap.fromTo(
+    flyer,
+    { borderRadius: from },
+    { borderRadius: to, duration, ease, overwrite: 'auto' },
+  )
+}
+
 const revealWithoutFlip = () => {
   restoreFlipSource()
   setBackdropReady(true)
@@ -1156,6 +1192,8 @@ const runFlipOpen = async () => {
   }
 
   const sourceFit = getComputedStyle(source).objectFit || 'cover'
+  const fromRadius = sourceRadiusPx(source)
+  const toRadius = frameRadiusPx(flipHero)
   Object.assign(flyer.style, {
     position: 'fixed',
     top: `${from.top}px`,
@@ -1168,7 +1206,8 @@ const runFlipOpen = async () => {
     objectFit: sourceFit,
     zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
-    borderRadius: getComputedStyle(source).borderRadius || '0px',
+    overflow: 'hidden',
+    borderRadius: `${fromRadius}px`,
     opacity: '1',
   })
   document.body.appendChild(flyer)
@@ -1184,6 +1223,7 @@ const runFlipOpen = async () => {
     })
 
   const fromArchive = flipSourceIsArchiveGrid()
+  const startImmediate = flipSourceStartsImmediately()
   setBackdropReady(true)
   await nextTick()
   if (fromArchive) {
@@ -1198,7 +1238,7 @@ const runFlipOpen = async () => {
       else stable = 0
       if (stable >= 2) break
     }
-  } else {
+  } else if (!startImmediate) {
     await waitMs(PRODUCT_OVERLAY_BACKDROP_OPEN_MS)
     await waitMs(PRODUCT_OVERLAY_FLYER_PAUSE_MS)
   }
@@ -1207,23 +1247,25 @@ const runFlipOpen = async () => {
   const toAfter = flipHero.getBoundingClientRect()
   const dest = toAfter.width >= 2 ? toAfter : to
 
-  const state = Flip.getState(flyer, { props: 'borderRadius' })
+  const state = Flip.getState(flyer)
 
   gsap.set(flyer, {
     top: dest.top,
     left: dest.left,
     width: dest.width,
     height: dest.height,
-    borderRadius: pdpFrameRadius(flipHero),
   })
 
   if (fromArchive) signalArchiveMotion('open')
 
+  const openDuration = fromArchive ? ARCHIVE_PDP_OPEN_S : PRODUCT_OVERLAY_FLIP_OPEN_S
+  const openEase = fromArchive ? ARCHIVE_PDP_OPEN_EASE : 'power2.inOut'
+
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
   Flip.from(state, {
-    duration: fromArchive ? ARCHIVE_PDP_OPEN_S : PRODUCT_OVERLAY_FLIP_OPEN_S,
-    ease: fromArchive ? ARCHIVE_PDP_OPEN_EASE : 'power2.inOut',
+    duration: openDuration,
+    ease: openEase,
     absolute: true,
     scale: false,
     onComplete: () => {
@@ -1241,6 +1283,7 @@ const runFlipOpen = async () => {
       })
     },
   })
+  tweenCornerRadius(flyer, fromRadius, toRadius, openDuration, openEase)
 }
 
 const runFlipClose = async () => {
@@ -1299,7 +1342,8 @@ const runFlipClose = async () => {
   })
 
   const fromArchive = flipSourceIsArchiveGrid()
-  if (!fromArchive) {
+  const startImmediate = flipSourceStartsImmediately()
+  if (!startImmediate) {
     const chromeElapsed = performance.now() - uiFadeStarted
     await waitMs(Math.max(0, PRODUCT_OVERLAY_CHROME_EXIT_MS - chromeElapsed))
   }
@@ -1308,12 +1352,12 @@ const runFlipClose = async () => {
   sidesVisible.value = false
   chromeEnterMotion.value = false
   await nextTick()
-  if (!fromArchive) await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
+  if (!startImmediate) await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
   // Panel cream can drop now that chrome is gone.
-  // Archive close lets the page show through while the image flies home.
+  // Archive / kebab close lets the page show through while the image flies home.
   pendingFlip.value = true
-  if (fromArchive) setBackdropReady(false)
+  if (startImmediate) setBackdropReady(false)
   await nextTick()
 
   const from = hero.getBoundingClientRect()
@@ -1413,29 +1457,35 @@ const runFlipClose = async () => {
     objectFit: heroFit,
     zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
     pointerEvents: 'none',
-    borderRadius: pdpFrameRadius(hero),
+    overflow: 'hidden',
+    borderRadius: `${frameRadiusPx(hero)}px`,
   })
   document.body.appendChild(flyer)
   if (!flyer.complete) await waitForImage(flyer)
 
   // 2) Flyer returns to the grid thumb
-  const state = Flip.getState(flyer, { props: 'borderRadius' })
+  const state = Flip.getState(flyer)
+  const closeFromRadius = frameRadiusPx(hero)
+  const closeToRadius = sourceRadiusPx(source)
 
   gsap.set(flyer, {
     top: to.top,
     left: to.left,
     width: to.width,
     height: to.height,
-    borderRadius: getComputedStyle(source).borderRadius || '0px',
     objectFit: sourceFit,
   })
 
   const archiveClose = flipSourceIsArchiveGrid()
+  const immediateClose = flipSourceStartsImmediately()
   if (archiveClose) signalArchiveMotion('close')
 
+  const closeDuration = archiveClose ? ARCHIVE_PDP_CLOSE_S : PRODUCT_OVERLAY_FLIP_CLOSE_S
+  const closeEase = archiveClose ? ARCHIVE_PDP_CLOSE_EASE : 'power2.inOut'
+
   Flip.from(state, {
-    duration: archiveClose ? ARCHIVE_PDP_CLOSE_S : PRODUCT_OVERLAY_FLIP_CLOSE_S,
-    ease: archiveClose ? ARCHIVE_PDP_CLOSE_EASE : 'power2.inOut',
+    duration: closeDuration,
+    ease: closeEase,
     onComplete: () => {
       // Restore thumb under the flyer, then unmount the overlay immediately.
       // A body-level veil (pointer-events: none) continues the cream fade so
@@ -1445,7 +1495,7 @@ const runFlipClose = async () => {
       source.style.visibility = ''
       source.style.opacity = '1'
       source.style.filter = 'grayscale(0)'
-      if (archiveClose) {
+      if (immediateClose) {
         finishClose()
         flyer.remove()
         return
@@ -1456,6 +1506,7 @@ const runFlipClose = async () => {
       dismissFlyer(flyer)
     },
   })
+  tweenCornerRadius(flyer, closeFromRadius, closeToRadius, closeDuration, closeEase)
 }
 
 const onHeroLoad = () => {
@@ -1477,7 +1528,6 @@ watch(
   async (slug, prevSlug) => {
     if (!slug || slug === prevSlug) return
 
-    showSpecs.value = false
     collapseImage()
 
     const token = ++slugSwapToken
@@ -2058,7 +2108,7 @@ watch(
 
 .pdp__spec--toggle {
   display: block;
-  padding: 0 var(--gutter);
+  padding: 0 17px;
   /* border-top: 1px solid var(--grid-line); */
   border-bottom: 1px solid var(--grid-line);
 }
@@ -2148,7 +2198,7 @@ watch(
 .pdp__disclosure-mark path {
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.15;
+  stroke-width: 1.5;
   stroke-linecap: butt;
   stroke-linejoin: miter;
   /* Ends stay put. Only the middle vertex moves, so the chevron
@@ -2158,7 +2208,7 @@ watch(
 }
 
 .pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark path {
-  d: path("M1 3 L7 1 L13 3");
+  d: path("M1 3 L7 -3 L13 3");
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2324,7 +2374,7 @@ watch(
 
 .pdp__info-copy {
   margin: 0;
-  padding: 0.85rem var(--gutter) 0;
+  padding: 0.85rem 0 0;
 }
 
 .pdp__info-text {

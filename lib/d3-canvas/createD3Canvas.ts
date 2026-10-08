@@ -24,8 +24,6 @@ import type { DiscoveryMediaItem } from '~/lib/infinite-canvas/types'
 
 const FOV = 60
 const CLICK_DRAG = 6
-const EDGE = 200
-const EDGE_PUSH = 0.16
 /** Shared with the kebab open so the field leaves as the row grows. */
 export const D3_REVEAL_S = 0.95
 export const D3_REVEAL_EASE = 'power3.inOut'
@@ -72,6 +70,10 @@ export type D3CanvasHandle = {
   setColors: (background: string, fog: string) => void
   /** Hide every copy of a gathered product, including chunks that load later. */
   conceal: (productId: string) => void
+  /** Let a removed product back into the field. */
+  reveal: (productId: string) => void
+  /** Live screen box for a plane, used so a gather starts on the thumbnail. */
+  screenRectFor: (id: string) => D3ScreenRect | null
   /** Push remaining planes away from the screen centre and stop depth travel. */
   disperse: (duration?: number) => void
   /** Bring dispersed planes home and resume depth travel. */
@@ -150,12 +152,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     last: { x: 0, y: 0 },
     lastTouches: [] as Touch[],
     lastPinch: 0,
-    pointer: null as { x: number; y: number } | null,
   }
-
-  const isTouch =
-    typeof window !== 'undefined' &&
-    ('ontouchstart' in window || navigator.maxTouchPoints > 0)
 
   let rowMode = false
   const planes: PlaneRuntime[] = []
@@ -318,9 +315,51 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     const layouts = generateChunkPlanesCached(0, 0, 0, layoutSeed)
     const preferred = layouts.find((layout) => layout.position.z < state.z - 10) || layouts[0]
     if (!preferred) return
-    state.x = preferred.position.x
-    state.y = preferred.position.y
-    state.z = preferred.position.z + 36
+    const z = preferred.position.z + 36
+    const nearby = CHUNK_OFFSETS.flatMap((offset) =>
+      generateChunkPlanesCached(offset.dx, offset.dy, offset.dz, layoutSeed),
+    )
+    const scoreSpot = (x: number, y: number) => {
+      camera.position.set(x, y, z)
+      camera.updateMatrixWorld()
+      let nearest = Infinity
+      let hitsCentre = false
+      for (const layout of nearby) {
+        const depth = z - layout.position.z
+        if (depth < 0.5 || depth > DEPTH_FADE_END) continue
+        projected.set(layout.position.x, layout.position.y, layout.position.z).project(camera)
+        if (projected.z < -1 || projected.z > 1) continue
+        const pcx = projected.x
+        const pcy = projected.y
+        nearest = Math.min(nearest, Math.hypot(pcx, pcy))
+        projected.set(layout.position.x + layout.scale.y * 1.7, layout.position.y, layout.position.z).project(camera)
+        const halfX = Math.abs(projected.x - pcx)
+        projected.set(layout.position.x, layout.position.y + layout.scale.y * 0.6, layout.position.z).project(camera)
+        const halfY = Math.abs(projected.y - pcy)
+        if (Math.abs(pcx) <= halfX && Math.abs(pcy) <= halfY) hitsCentre = true
+      }
+      return { nearest, hitsCentre }
+    }
+    let x = preferred.position.x
+    let y = preferred.position.y
+    let bestScore = -1
+    for (let ring = 24; ring <= 150; ring += 14) {
+      for (let step = 0; step < 28; step += 1) {
+        const angle = (step / 28) * Math.PI * 2 + ring * 0.01
+        const nextX = preferred.position.x + Math.cos(angle) * ring
+        const nextY = preferred.position.y + Math.sin(angle) * ring
+        const spot = scoreSpot(nextX, nextY)
+        const score = spot.hitsCentre ? -1 : spot.nearest
+        if (score > bestScore) {
+          bestScore = score
+          x = nextX
+          y = nextY
+        }
+      }
+    }
+    state.x = x
+    state.y = y
+    state.z = z
     camera.position.set(state.x, state.y, state.z)
   }
 
@@ -362,22 +401,25 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     const now = performance.now()
     if (now - hoverAt < 32) return
     hoverAt = now
-    const runtime = hitAt(clientX, clientY)
     if (rowMode) {
-      setCanvasLabel(runtime ? 'Gather' : 'Close')
+      setCanvasLabel('Close')
+      onHover?.(null)
       return
     }
-    publishHover(runtime)
+    publishHover(hitAt(clientX, clientY))
   }
 
   const trySelect = (clientX: number, clientY: number) => {
+    // Kebab open: any field click closes, including over a faded plane.
+    if (rowMode) {
+      onClose?.()
+      return
+    }
     const runtime = hitAt(clientX, clientY)
     if (runtime && onSelect) {
       publishHover(null)
       onSelect(payloadOf(runtime))
-      return
     }
-    if (rowMode) onClose?.()
   }
 
   const onMouseDown = (event: MouseEvent) => {
@@ -398,12 +440,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     event.target instanceof Element &&
     Boolean(event.target.closest('[data-d3-gather], .header'))
 
-  const onMouseOut = (event: MouseEvent) => {
-    if (!event.relatedTarget) state.pointer = null
-  }
-
   const onMouseMove = (event: MouseEvent) => {
-    state.pointer = { x: event.clientX, y: event.clientY }
     if (overUi(event)) {
       publishHover(null)
       if (!state.dragging) return
@@ -474,6 +511,13 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         runtime.material.opacity = 0
         continue
       }
+      // Kebab open: gsap owns the fade — don't fight it with depth targets.
+      if (rowMode) {
+        runtime.mesh.visible =
+          runtime.ready && runtime.material.opacity > INVIS_THRESHOLD
+        runtime.material.depthWrite = false
+        continue
+      }
       const dist = Math.max(
         Math.abs(runtime.chunkCx - gridX),
         Math.abs(runtime.chunkCy - gridY),
@@ -526,20 +570,6 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     raf = requestAnimationFrame(tick)
 
     if (!rowMode) {
-      const point = state.pointer
-      if (!state.dragging && !isTouch && point) {
-        const rect = renderer.domElement.getBoundingClientRect()
-        const x = point.x - rect.left
-        const y = point.y - rect.top
-        const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height
-        if (inside) {
-          if (x > rect.width - EDGE) state.tx += EDGE_PUSH * ((x - (rect.width - EDGE)) / EDGE)
-          else if (x < EDGE) state.tx -= EDGE_PUSH * ((EDGE - x) / EDGE)
-          if (y < EDGE) state.ty += EDGE_PUSH * ((EDGE - y) / EDGE)
-          else if (y > rect.height - EDGE) state.ty -= EDGE_PUSH * ((y - (rect.height - EDGE)) / EDGE)
-        }
-      }
-
       state.tz += state.scroll
       state.scroll *= 0.8
       state.tx = clamp(state.tx, -MAX_VELOCITY, MAX_VELOCITY)
@@ -585,7 +615,6 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
   canvas.addEventListener('mousedown', onMouseDown)
   window.addEventListener('mouseup', onMouseUp)
   window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseout', onMouseOut)
   canvas.addEventListener('wheel', onWheel, { passive: false })
   canvas.addEventListener('touchstart', onTouchStart, { passive: false })
   canvas.addEventListener('touchmove', onTouchMove, { passive: false })
@@ -604,8 +633,22 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     }
   }
 
+  const reveal = (productId: string) => {
+    if (!productId) return
+    concealedProducts.delete(productId)
+    for (const runtime of planes) {
+      if (String(runtime.mesh.userData.productId) !== productId) continue
+      runtime.hidden = false
+    }
+  }
+
   return {
     conceal,
+    reveal,
+    screenRectFor: (id: string) => {
+      const runtime = planes.find((plane) => plane.id === id && !plane.hidden)
+      return runtime ? screenRectOf(runtime.mesh) : null
+    },
     disperse: (duration = D3_REVEAL_S) => {
       rowMode = true
       state.vx = state.vy = state.vz = 0
@@ -620,6 +663,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         if (runtime.hidden || runtime.opacity < 0.08) continue
         gsap.killTweensOf(runtime.mesh.position)
         gsap.killTweensOf(runtime.mesh.scale)
+        gsap.killTweensOf(runtime.material)
         const dx = runtime.homeX - originX
         const dy = runtime.homeY - originY
         const len = Math.hypot(dx, dy)
@@ -646,6 +690,14 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
           duration,
           ease: D3_REVEAL_EASE,
         })
+        gsap.to(runtime.material, {
+          opacity: 0,
+          duration,
+          ease: D3_REVEAL_EASE,
+          onUpdate: () => {
+            runtime.opacity = runtime.material.opacity
+          },
+        })
       }
     },
     recall: (duration = D3_REVEAL_S) => {
@@ -656,6 +708,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         if (runtime.hidden) continue
         gsap.killTweensOf(runtime.mesh.position)
         gsap.killTweensOf(runtime.mesh.scale)
+        gsap.killTweensOf(runtime.material)
         gsap.to(runtime.mesh.position, {
           x: runtime.homeX,
           y: runtime.homeY,
@@ -668,6 +721,15 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
           y: runtime.homeScaleY,
           duration,
           ease: D3_REVEAL_EASE,
+        })
+        // Depth fade resumes on the next ticks; nudge opacity up so it can.
+        gsap.to(runtime, {
+          opacity: 1,
+          duration,
+          ease: D3_REVEAL_EASE,
+          onUpdate: () => {
+            runtime.material.opacity = runtime.opacity
+          },
         })
       }
     },
@@ -721,7 +783,6 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
       canvas.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseout', onMouseOut)
       canvas.removeEventListener('wheel', onWheel)
       canvas.removeEventListener('touchstart', onTouchStart)
       canvas.removeEventListener('touchmove', onTouchMove)

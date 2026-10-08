@@ -32,15 +32,17 @@ export function markHomepagePreloaderDone() {
 
 export type HomepageIntroPhase = 'skipped' | 'cover' | 'type' | 'chrome' | 'done'
 
-export type HomepageIntroImages = {
-  leftImage: string
-  rightImage: string
+export type HomepageIntroProduct = {
+  title: string
+  meta: string
+  image: string
+  href: string
 }
 
 export function useHomepageIntro() {
   const phase = useState<HomepageIntroPhase>('homepage-intro-phase', () => 'skipped')
-  const slides = useState<HomepageIntroImages[] | null>('homepage-intro-slides', () => null)
-  return { phase, slides }
+  const product = useState<HomepageIntroProduct | null>('homepage-intro-product', () => null)
+  return { phase, product }
 }
 
 export function clearHomepageIntroLock() {

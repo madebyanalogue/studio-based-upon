@@ -1,8 +1,7 @@
 export default defineNuxtPlugin((nuxtApp) => {
   const { isDark, initTheme } = useTheme()
 
-  // Own the dark class here. Home and Curate used to set html class="dark"
-  // themselves, and leaving those pages stripped it — About flipped to light.
+  // Own the dark class here so client navigation keeps the saved theme.
   useHead(() => ({
     htmlAttrs: {
       class: {

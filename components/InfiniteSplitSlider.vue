@@ -691,6 +691,16 @@ const fadeCaptions = (opacity: number, seconds = TEXT_FADE_DURATION) =>
     })
   })
 
+/** Nav and stack stay parked until the column wipe has finished. */
+const revealIntroChrome = () => {
+  const root = document.documentElement
+  if (!root.classList.contains('homepage-intro')) return
+  root.classList.add('homepage-intro-reveal')
+  window.setTimeout(() => {
+    clearHomepageIntroLock()
+  }, 1800)
+}
+
 /** Wipe the columns open, then bring the slide captions in. */
 const playEntrance = async () => {
   if (entranceStarted || leaving) return
@@ -699,6 +709,7 @@ const playEntrance = async () => {
   if (!running || leaving) return
   await wipeColumns('in')
   if (!running || leaving) return
+  revealIntroChrome()
 
   const captions = captionNodes()
   if (captions.length) gsap.set(captions, { opacity: 0 })
@@ -1123,7 +1134,7 @@ watch(
   height: 80svh;
   display: flex;
   overflow: visible;
-  background: #000;
+  background: var(--cream);
   z-index: 0;
   touch-action: none;
 }

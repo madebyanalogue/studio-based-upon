@@ -493,6 +493,33 @@ const bindReveal = (
   )
 }
 
+/** Melt a title out in the band below the viewport top, and back in on the way down. */
+const bindTitleExit = (block: TitleBlock) => {
+  const paint = (melted: number) => {
+    gsap.killTweensOf(block.words)
+    gsap.set(block.words, {
+      opacity: 1 - melted,
+      filter: `blur(${TITLE_BLUR_MAX * melted}px)`,
+    })
+  }
+  scrollTriggers.push(
+    ScrollTrigger.create({
+      trigger: block.el,
+      start: 'top top+=240',
+      end: 'top top+=72',
+      scrub: true,
+      onUpdate: (self) => {
+        if (self.progress <= 0 || !block.words.length) return
+        paint(self.progress)
+      },
+      onLeaveBack: () => {
+        if (!block.words.length) return
+        paint(0)
+      },
+    }),
+  )
+}
+
 const playPlanEnter = async () => {
   if (!import.meta.client || !planEl.value) return
   if (prefersReducedMotion()) {
@@ -532,7 +559,10 @@ const playPlanEnter = async () => {
   await nextTick()
   if (!planEl.value || leavePromise) return
 
-  titles.forEach((block) => bindReveal(block.el, () => playTitle(block)))
+  titles.forEach((block) => {
+    bindReveal(block.el, () => playTitle(block))
+    bindTitleExit(block)
+  })
   copies.forEach((block) => bindReveal(block.root, () => playCopy(titles, block)))
   images.forEach((el) => {
     bindReveal(el, () => playImage(el), 'top bottom')

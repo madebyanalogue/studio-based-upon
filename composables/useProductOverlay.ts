@@ -171,6 +171,16 @@ const endOverlayHistoryRestore = () => {
   }, 0)
 }
 
+/** Skip page outros for a history change that is really an overlay handoff. */
+export const suppressOverlayRouteLeave = async (run: () => Promise<unknown>) => {
+  beginOverlayHistoryRestore()
+  try {
+    return await run()
+  } finally {
+    endOverlayHistoryRestore()
+  }
+}
+
 export const useProductOverlay = () => {
   const openSlug = useState<string | null>('product-overlay-slug', () => null)
   const returnUrl = useState<string | null>('product-overlay-return', () => null)
@@ -316,6 +326,18 @@ export const useProductOverlay = () => {
       flipSourceEl &&
       flipSourceEl.closest('.products__grid')
     )
+
+  /** True when the Flip shell is a Discovery kebab card */
+  const flipSourceIsDiscoveryKebab = () =>
+    !!(
+      import.meta.client &&
+      flipSourceEl &&
+      flipSourceEl.closest('[data-d3-gather]')
+    )
+
+  /** Skip cream/chrome holds — Flip starts as soon as the flyer is ready */
+  const flipSourceStartsImmediately = () =>
+    flipSourceIsArchiveGrid() || flipSourceIsDiscoveryKebab()
 
   /** Hero-tier URL preferred for the Flip flyer when prefetched */
   const getFlipImageUrl = () => flipImageUrl
@@ -469,6 +491,8 @@ export const useProductOverlay = () => {
     getFlipSource,
     getFlipSourceProductId,
     flipSourceIsArchiveGrid,
+    flipSourceIsDiscoveryKebab,
+    flipSourceStartsImmediately,
     getFlipImageUrl,
     clearPendingFlip,
     setBackdropReady,

@@ -1,11 +1,17 @@
 import type { SplitSliderSlide } from '~/components/InfiniteSplitSlider.vue'
-import { productGalleryFrames } from '~/composables/productImages'
+import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 
 export type InfiniteSliderPageData = {
   seoTitle?: string
   seoDescription?: string
   slides: SplitSliderSlide[]
+  connectedProduct: {
+    title: string
+    meta: string
+    image: string
+    href: string
+  } | null
 }
 
 export const INFINITE_SLIDER_PAGE_QUERY = `*[_type == "infiniteSliderPage"][0] {
@@ -41,6 +47,12 @@ export const INFINITE_SLIDER_PAGE_QUERY = `*[_type == "infiniteSliderPage"][0] {
     },
     leftImage { asset->{ _id, url } },
     rightImage { asset->{ _id, url } },
+    product->{
+      title,
+      "slug": slug.current,
+      image { asset->{ _id, url } },
+      gallery[] { asset->{ _id, url } }
+    },
     "productSlug": product->slug.current
   }
 }`
@@ -119,7 +131,7 @@ export const useInfiniteSlider = async () => {
   const { imageUrl } = useSanityImage()
 
   const { data, pending, error, refresh } = await useAsyncData(
-    'infiniteSliderPage-v4',
+    'infiniteSliderPage-v5',
     () =>
       $fetch('/api/sanity/query', {
         method: 'POST',
@@ -134,10 +146,36 @@ export const useInfiniteSlider = async () => {
     if (!raw) {
       return {
         slides: demoInfiniteSliderSlides(),
+        connectedProduct: null,
       }
     }
 
     const slidesRaw = Array.isArray(raw.slides) ? raw.slides : []
+    const connectedProduct = (() => {
+      for (const slide of slidesRaw) {
+        const product = (slide as Record<string, unknown>).product as
+          | {
+              title?: string
+              slug?: string
+              image?: { asset?: { _id?: string; url?: string } }
+              gallery?: { asset?: { _id?: string; url?: string } }[]
+            }
+          | null
+          | undefined
+        const slug = String(product?.slug || '').trim()
+        if (!slug) continue
+        const frame = productCoverFrame(product || {})
+        const image = imageUrl(frame || null, 480, 80)
+        if (!image) continue
+        return {
+          title: String(product?.title || 'Untitled'),
+          meta: "Sotheby's London, 2020",
+          image,
+          href: `/materials-and-forms/${slug}`,
+        }
+      }
+      return null
+    })()
     const slides: SplitSliderSlide[] = slidesRaw
       .map((slide: Record<string, unknown>) => {
         const productSlug = String(slide.productSlug || '').trim()
@@ -220,6 +258,7 @@ export const useInfiniteSlider = async () => {
         seoTitle: (raw.seoTitle as string) || undefined,
         seoDescription: (raw.seoDescription as string) || undefined,
         slides: demoInfiniteSliderSlides(),
+        connectedProduct,
       }
     }
 
@@ -227,6 +266,7 @@ export const useInfiniteSlider = async () => {
       seoTitle: (raw.seoTitle as string) || undefined,
       seoDescription: (raw.seoDescription as string) || undefined,
       slides,
+      connectedProduct,
     }
   })
 

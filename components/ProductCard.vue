@@ -365,6 +365,26 @@ const onToggle = (event?: MouseEvent) => {
     transform: translateY(0);
     pointer-events: auto;
   }
+  .product-card--saved:not(:hover) .product-card__add {
+    opacity: 0;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .product-card--saved .product-card__image,
+  .product-card--saved .product-card__type-label {
+    opacity: 0.1;
+    filter: grayscale(100%);
+    transition: opacity 0.45s ease;
+  }
+
+  .product-card--saved:hover .product-card__image,
+  .product-card--saved:focus-within .product-card__image,
+  .product-card--saved:hover .product-card__type-label,
+  .product-card--saved:focus-within .product-card__type-label {
+    opacity: 1;
+    filter: grayscale(0%);
+  }
 }
 
 .product-card__meta {

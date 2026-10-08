@@ -4,6 +4,7 @@
     class="showcase"
     :class="{
       'showcase--arrived': arrived,
+      'showcase--meta': metaReady,
       'showcase--page-clip': pageClipping,
       'showcase--restructuring': columnMotion,
       'showcase--surrendering': surrendering,
@@ -473,6 +474,8 @@ const { addItem } = useBucket()
 const columns = ref<ShowcaseColumn[]>([])
 /** False until the opening layout is in place and the showcase can fade in. */
 const arrived = ref(false)
+/** Column titles wait until the entrance wipe has finished, then fade in together. */
+const metaReady = ref(false)
 const pageClipping = ref(false)
 /** True while a column is fading and its width is easing open or closed. */
 const columnMotion = ref(false)
@@ -2435,6 +2438,7 @@ const playArrival = async () => {
   if (reduced || !targets.length) {
     pageClipping.value = false
     arrivalAnimating = false
+    if (!pageLeaving) metaReady.value = true
     showScrollHint()
     return
   }
@@ -2449,6 +2453,7 @@ const playArrival = async () => {
   })
   pageClipping.value = false
   arrivalAnimating = false
+  metaReady.value = true
   showScrollHint()
 }
 
@@ -3076,11 +3081,16 @@ onBeforeUnmount(() => {
   right: 0;
   margin: 12px 0 0;
   pointer-events: none;
-  opacity: 1;
+  opacity: 0;
   transition: opacity 1.15s ease;
 }
 
+.showcase--meta .showcase__column-meta {
+  opacity: 1;
+}
+
 .showcase--surrendering .showcase__column-meta,
+.showcase--meta .showcase__column-meta--out,
 .showcase__column-meta--out {
   opacity: 0;
   transition-duration: 0.28s;

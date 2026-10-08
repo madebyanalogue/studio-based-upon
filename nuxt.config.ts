@@ -81,11 +81,10 @@ export default defineNuxtConfig({
           href: 'https://fonts.googleapis.com/css2?family=Homemade+Apple&display=swap',
         },
       ],
-      // <html class="dark"> is the default. Drop it only for a saved light theme
-      // or (Pre)Crafted, before the body is shown.
+      // <html class="dark"> is the default on every route. Drop it only for a saved light theme.
       script: [
         {
-          innerHTML: `(function(){try{var p=location.pathname;var root=document.documentElement;var forcedDark=p==='/'||p==='/home'||p==='/curate'||p.indexOf('/curate/')===0;var precrafted=p==='/pre-crafted'||p.indexOf('/pre-crafted/')===0;if(precrafted){root.classList.remove('dark');}else if(!forcedDark){var t=localStorage.getItem('basedupon:theme');if(t==='light')root.classList.remove('dark');else root.classList.add('dark');}var c=localStorage.getItem('sba-text-case');if(c==='uppercase')root.classList.add('text-uppercase');root.classList.remove('face-serif','serif-sans');var home=p==='/'||p==='/home';if(home){var nav=performance.getEntriesByType&&performance.getEntriesByType('navigation')[0];var reload=nav&&nav.type==='reload';var entry=sessionStorage.getItem('sba-entry-path');var done=sessionStorage.getItem('sba-home-preloader-done');if(reload||!entry||((entry==='/'||entry==='/home')&&!done)){root.classList.add('homepage-intro');}}}catch(e){}})();`,
+          innerHTML: `(function(){try{var p=location.pathname;var root=document.documentElement;var t=localStorage.getItem('basedupon:theme');if(t==='light')root.classList.remove('dark');else root.classList.add('dark');var c=localStorage.getItem('sba-text-case');if(c==='uppercase')root.classList.add('text-uppercase');root.classList.remove('face-serif','serif-sans');var home=p==='/'||p==='/home';if(home){var nav=performance.getEntriesByType&&performance.getEntriesByType('navigation')[0];var reload=nav&&nav.type==='reload';var entry=sessionStorage.getItem('sba-entry-path');var done=sessionStorage.getItem('sba-home-preloader-done');if(reload||!entry||((entry==='/'||entry==='/home')&&!done)){root.classList.add('homepage-intro');}}}catch(e){}})();`,
           tagPosition: 'head',
           tagPriority: 'critical',
         },

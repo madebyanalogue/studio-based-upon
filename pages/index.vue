@@ -19,7 +19,7 @@ definePageMeta({
 })
 
 const { page } = await useInfiniteSlider()
-const { phase: introPhase, slides: introSlides } = useHomepageIntro()
+const { phase: introPhase, product: introProduct } = useHomepageIntro()
 const holdEntrance = computed(() => introPhase.value === 'cover')
 const sliderEl = ref<{ playLeave: () => Promise<void> } | null>(null)
 
@@ -29,12 +29,9 @@ onBeforeRouteLeave(async (to, from) => {
 })
 
 watch(
-  () => page.value.slides,
-  (next) => {
-    introSlides.value = next.map((slide) => ({
-      leftImage: slide.leftImage,
-      rightImage: slide.rightImage,
-    }))
+  () => page.value.connectedProduct,
+  (product) => {
+    introProduct.value = product
   },
   { immediate: true },
 )
@@ -53,19 +50,19 @@ useHead(() => ({
 <style scoped>
 .home-page {
   min-height: 100dvh;
-  background: #000;
+  background: var(--cream);
 }
 
 .home-page__fallback {
   min-height: 100dvh;
-  background: #000;
+  background: var(--cream);
 }
 </style>
 
 <style>
 html.infinite-slider-active,
 body.infinite-slider-active {
-  background: #000;
+  background: var(--cream);
 }
 
 body.infinite-slider-active .page-wrapper {

@@ -30,6 +30,7 @@
           'stack__rail--multi': railBoards.length > 1,
           'stack__rail--expanded': railExpanded,
           'stack__rail--exiting': railExiting,
+          'stack__rail--spread': !!spreadBoardId,
         }"
         @mouseenter="onRailEnter"
         @mouseleave="onRailLeave"
@@ -47,6 +48,7 @@
               railBoards.length > 1 &&
               !railExpanded &&
               board.id !== activeMoodboardId,
+            'stack__pile-wrap--spread': spreadBoardId === board.id,
           }"
           @mouseenter="onPileMouseEnter(board.id)"
           @mouseleave="onPileMouseLeave(board.id)"
@@ -91,9 +93,12 @@
               'stack__pile--dispersing':
                 expandedBoardIds.includes(board.id) &&
                 preparingBoardId !== board.id,
+              'stack__pile--spread': spreadBoardId === board.id,
             }"
             :aria-label="board.name"
             :data-cursor="selectionPileCursor"
+            :data-lenis-prevent="spreadBoardId === board.id ? '' : undefined"
+            @wheel="onSpreadWheel"
             @click="onPileClick(board.id)"
           >
             <span
@@ -849,6 +854,40 @@ const flipSurface = ref<'pile' | 'cells'>('pile')
 const keepPileForFlip = ref(false)
 /** Hover fan — locked through open so Flip.fit starts from fanned positions. */
 const pileFanned = ref(false)
+/** Open selection laid out as a bottom row instead of the cart grid. */
+const spreadBoardId = ref<string | null>(null)
+
+const onSpreadWheel = (event: WheelEvent) => {
+  const el = event.currentTarget
+  if (!(el instanceof HTMLElement) || !el.classList.contains('stack__pile--spread')) return
+  if (el.scrollWidth <= el.clientWidth + 1) return
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  event.preventDefault()
+  event.stopPropagation()
+  el.scrollLeft += delta
+}
+
+const pinSpreadEnd = async (id: string) => {
+  for (let i = 0; i < 10; i++) {
+    await wait(40)
+    if (spreadBoardId.value !== id) return
+    const pile = pileEls.value[id]
+    if (!pile || pile.dataset.spreadPinned === '1') return
+    const max = pile.scrollWidth - pile.clientWidth
+    if (max > 1) {
+      pile.scrollLeft = max
+      pile.dataset.spreadPinned = '1'
+      return
+    }
+  }
+}
+
+watch(spreadBoardId, (id) => {
+  if (!id) return
+  const pile = pileEls.value[id]
+  if (pile) delete pile.dataset.spreadPinned
+  void pinSpreadEnd(id)
+})
 /** Tip / count visibility — hides on open click, returns with close backdrop. */
 const pileCountVisible = ref(true)
 /** Square track size from grid width / cols — keeps cells square without overlap. */
@@ -1200,7 +1239,12 @@ const createPlusVisible = computed(() => {
 
 const railCellSize = () => {
   const active = pileWrapEls.value[activeMoodboardId.value || '']
-  return active?.offsetWidth || 0
+  if (!active) return cellSizePx.value || 0
+  if (active.classList.contains('stack__pile-wrap--spread')) {
+    const card = active.querySelector<HTMLElement>('.stack__pile-card')
+    return card?.offsetWidth || cellSizePx.value || 0
+  }
+  return active.offsetWidth || cellSizePx.value || 0
 }
 
 const parkInactiveRailBelow = () => {
@@ -1213,17 +1257,15 @@ const parkInactiveRailBelow = () => {
     gsap.killTweensOf(el)
     gsap.set(el, {
       yPercent: 110,
-      width: 0,
-      minWidth: 0,
-      paddingLeft: 0,
-      paddingRight: 0,
-      overflow: 'visible',
+      height: 0,
+      minHeight: 0,
+      overflow: 'hidden',
     })
   }
   const create = createSlotRef.value
   if (create) {
     gsap.killTweensOf(create)
-    gsap.set(create, { opacity: 0, width: 0, paddingLeft: 0 })
+    gsap.set(create, { opacity: 0, height: 0, overflow: 'hidden' })
   }
   createPlusReady.value = false
 }
@@ -1250,8 +1292,8 @@ const expandRail = async () => {
   for (const el of rising) {
     gsap.killTweensOf(el)
     gsap.set(el, {
-      width: cell,
-      minWidth: cell,
+      height: cell,
+      minHeight: cell,
       overflow: 'visible',
       pointerEvents: 'auto',
       yPercent: 110,
@@ -1280,7 +1322,7 @@ const expandRail = async () => {
   const create = createSlotRef.value
   if (create) {
     gsap.killTweensOf(create)
-    gsap.set(create, { width: '2.5rem', paddingLeft: 20, overflow: 'visible' })
+    gsap.set(create, { height: 'auto', overflow: 'visible' })
     createPlusReady.value = true
     await new Promise<void>((resolve) => {
       gsap.fromTo(
@@ -1371,8 +1413,8 @@ const collapseRail = async () => {
 
     if (token !== railAnimToken) return
 
-    if (create) gsap.set(create, { width: 0, paddingLeft: 0 })
-    for (const el of dropping) gsap.set(el, { width: 0, minWidth: 0 })
+    if (create) gsap.set(create, { height: 0 })
+    for (const el of dropping) gsap.set(el, { height: 0, minHeight: 0 })
 
     syncRailOrder(true)
     await nextTick()
@@ -1459,9 +1501,9 @@ const shelveInactiveRail = () => {
       onComplete: () => {
         // Collapse width after the drop so they don’t sit in the rail
         if (el === createSlotRef.value) {
-          gsap.set(el, { width: 0, paddingLeft: 0, opacity: 0 })
+          gsap.set(el, { height: 0, opacity: 0 })
         } else {
-          gsap.set(el, { width: 0, minWidth: 0 })
+          gsap.set(el, { height: 0, minHeight: 0 })
         }
       },
     })
@@ -1544,29 +1586,27 @@ const keepCreatePlusOut = () => {
   if (!create || !import.meta.client) return
   gsap.killTweensOf(create)
   gsap.set(create, {
-    width: '2.5rem',
-    paddingLeft: 20,
+    height: 'auto',
     opacity: 1,
     overflow: 'visible',
   })
 }
 
-/** Rise a newly created empty wrap; width opens so (+) slides right without tucking. */
+/** Rise a newly created empty wrap so it appears above the active pile. */
 const riseNewRailSlot = async (el: HTMLElement) => {
-  const cell = railCellSize() || el.scrollWidth || 120
+  const cell = railCellSize() || el.scrollHeight || 120
   gsap.killTweensOf(el)
-  // Start collapsed + below so the first paint never flashes the full slot
   gsap.set(el, {
-    width: 0,
-    minWidth: 0,
-    overflow: 'visible',
+    height: 0,
+    minHeight: 0,
+    overflow: 'hidden',
     pointerEvents: 'auto',
     yPercent: 110,
   })
   await new Promise<void>((resolve) => {
     gsap.to(el, {
-      width: cell,
-      minWidth: cell,
+      height: cell,
+      minHeight: cell,
       yPercent: 0,
       duration: 0.4,
       ease: 'power3.out',
@@ -1607,9 +1647,9 @@ const onCreateSelection = async () => {
     } else {
       // Collapse before the browser paints the full-size wrap
       gsap.set(el, {
-        width: 0,
-        minWidth: 0,
-        overflow: 'visible',
+        height: 0,
+        minHeight: 0,
+        overflow: 'hidden',
         pointerEvents: 'auto',
         yPercent: 110,
       })
@@ -1627,8 +1667,8 @@ const onCreateSelection = async () => {
         if (!wrap) continue
         gsap.killTweensOf(wrap)
         gsap.set(wrap, {
-          width: cell,
-          minWidth: cell,
+          height: cell,
+          minHeight: cell,
           yPercent: 0,
           overflow: 'visible',
           pointerEvents: 'auto',
@@ -1681,10 +1721,8 @@ const onRemoveEmptyStack = async (boardId: string) => {
       // 2) Then close the gap so neighbours ease together
       await new Promise<void>((resolve) => {
         gsap.to(el, {
-          width: 0,
-          minWidth: 0,
-          paddingLeft: 0,
-          paddingRight: 0,
+          height: 0,
+          minHeight: 0,
           duration: 0.32,
           ease: 'power2.inOut',
           overwrite: true,
@@ -1707,7 +1745,7 @@ const onRemoveEmptyStack = async (boardId: string) => {
       const create = createSlotRef.value
       if (create) {
         gsap.killTweensOf(create)
-        gsap.set(create, { clearProps: 'transform,width,padding,opacity,xPercent' })
+        gsap.set(create, { clearProps: 'transform,height,padding,opacity,xPercent,yPercent' })
       }
       return
     }
@@ -1722,8 +1760,8 @@ const onRemoveEmptyStack = async (boardId: string) => {
         if (!wrap) continue
         gsap.killTweensOf(wrap)
         gsap.set(wrap, {
-          width: cell,
-          minWidth: cell,
+          height: cell,
+          minHeight: cell,
           yPercent: 0,
           overflow: 'visible',
           pointerEvents: 'auto',
@@ -3117,6 +3155,7 @@ const onPileClick = async (boardId: string) => {
   setActiveMoodboard(boardId)
   pileRef.value = pileEls.value[boardId] || null
   if (!wasActive) {
+    spreadBoardId.value = null
     if (railBoards.value.length > 1) void collapseRail()
     return
   }
@@ -3129,7 +3168,7 @@ const onPileClick = async (boardId: string) => {
     }
     return
   }
-  void openFromPile()
+  spreadBoardId.value = spreadBoardId.value === boardId ? null : boardId
 }
 
 const railSwitchBusy = ref(false)
@@ -4885,7 +4924,7 @@ const openSelectionStackFromNav = () => {
         pileRef.value = pileEls.value[id] || pileRef.value
         const board = moodboards.value.find((entry) => entry.id === id)
         if (board?.items.length) {
-          void openFromPile()
+          spreadBoardId.value = id
           return
         }
       }
@@ -4899,7 +4938,7 @@ const openSelectionStackFromNav = () => {
     pileRef.value = pileEls.value[id] || pileRef.value
     const board = moodboards.value.find((entry) => entry.id === id)
     if (board?.items.length) {
-      void openFromPile()
+      spreadBoardId.value = spreadBoardId.value === id ? null : id
       return
     }
   }
@@ -5097,7 +5136,7 @@ onBeforeUnmount(() => {
   bottom: 0;
   z-index: 210;
   display: flex;
-  flex-direction: row-reverse;
+  flex-direction: column-reverse;
   align-items: flex-end;
   gap: 0;
   pointer-events: none;
@@ -5105,6 +5144,12 @@ onBeforeUnmount(() => {
   transition:
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.35s ease;
+}
+
+.stack__rail.stack__rail--spread {
+  left: 0 !important;
+  right: 0 !important;
+  width: 100%;
 }
 
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
@@ -5279,6 +5324,12 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
 }
 
+.stack__pile-wrap--empty {
+  width: var(--stack-cell-size);
+  height: var(--stack-cell-size) !important;
+  min-height: 0 !important;
+}
+
 .stack__pile-empty {
   /* 67% of the image content box (33% smaller), centered in the cell */
   --stack-empty-size: calc((100% - 2 * var(--stack-cell-pad, 17%)) * 0.67);
@@ -5393,11 +5444,11 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 4;
   flex: 0 0 auto;
-  width: 2.5rem;
-  height: var(--stack-cell-size);
+  width: var(--stack-cell-size);
+  height: auto;
   margin: 0;
-  padding: 0 0 0 20px;
-  box-sizing: content-box;
+  padding: 0 0 16px;
+  box-sizing: border-box;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -5431,7 +5482,12 @@ onBeforeUnmount(() => {
   color: var(--text-color);
 }
 
-/* Single-selection: CSS fade on rail hover */
+.stack__rail:not(.stack__rail--multi) .stack__create:not(.stack__create--visible):not(.stack__create--ready) {
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 .stack__rail:not(.stack__rail--multi) .stack__create-plus {
   opacity: 0;
   transition: opacity 0.28s ease;
@@ -5736,6 +5792,49 @@ onBeforeUnmount(() => {
 .stack__pile--fanned .stack__pile-card--fan {
   transform: translate(var(--pile-hover-x), var(--pile-hover-y))
     rotate(var(--pile-hover-r)) scale(var(--pile-hover-scale, 1));
+}
+
+/* Open pile: a bottom row. Wheel over the row moves the overflow. */
+.stack__pile-wrap--spread {
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.stack__pile--spread {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  height: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 12px 28px 18px;
+  box-sizing: border-box;
+  scrollbar-width: none;
+  cursor: grab;
+}
+
+.stack__pile--spread .stack__pile-card:first-child {
+  margin-left: auto;
+}
+
+.stack__pile--spread::-webkit-scrollbar {
+  display: none;
+}
+
+.stack__pile--spread .stack__pile-card,
+.stack__pile--spread.stack__pile--fanned .stack__pile-card--fan {
+  position: relative;
+  left: auto;
+  top: auto;
+  flex: 0 0 var(--stack-cell-size);
+  width: var(--stack-cell-size);
+  height: var(--stack-cell-size);
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

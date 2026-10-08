@@ -1,4 +1,11 @@
 :root {
+  /* Intro 3D. Edit these. Ground is the field behind the figure.
+     Stone is the figure, with its own light and dark colour. */
+  --intro-ground-light: #eee;
+  --intro-ground-dark: #111111;
+  --intro-stone: #b9b7ae;
+  --intro-stone-dark: #b9b7ae;
+
   --background-color: var(--cream);
   --text-color: var(--charcoal);
   --header-bg: var(--warm-white);

@@ -4,7 +4,7 @@
   --warm-white: #1f1c18;
   --sand: #2a2621;
   --stone: #6b635a;
-  --charcoal: #f1ede4;
+  --charcoal: #eee;
   --black: #faf7f2;
   --slate: #c8c0b6;
   --white: #ffffff;
@@ -302,37 +302,38 @@ html.stack-chrome-hidden .stack__boards-rail {
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Homepage intro — hide chrome until the opening pair has wiped in. */
-html.homepage-intro body {
-  background: #000;
-}
-
+/* Homepage intro — hold the nav and stack until the slider wipe has finished. */
 html.homepage-intro .header {
   opacity: 0;
-  transition: opacity 1.9s ease;
+  transform: translate3d(0, -18px, 0);
+  transition:
+    opacity 0.9s ease,
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html.homepage-intro.homepage-intro-reveal .header {
   opacity: 1;
-  transition-delay: 1.05s;
+  transform: none;
+  transition-delay: 0.28s;
 }
 
 /* A saved stack stays below the fold through the intro, then rises into place. */
 html.homepage-intro .stack,
 html.homepage-intro .stack__boards-rail {
   transform: translate3d(0, calc(100% + 1.5rem), 0);
-  transition: transform 1.4s cubic-bezier(0.65, 0, 0.35, 1);
+  transition: transform 1.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html.homepage-intro.homepage-intro-reveal .stack,
 html.homepage-intro.homepage-intro-reveal .stack__boards-rail {
   transform: translate3d(0, 0, 0);
-  transition-delay: 0.85s;
+  transition-delay: 0.42s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   html.homepage-intro .header,
   html.homepage-intro.homepage-intro-reveal .header {
+    transform: none;
     transition: none;
   }
 

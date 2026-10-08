@@ -1,7 +1,7 @@
 <template>
   <div class="home-discover">
     <ClientOnly>
-      <InfiniteDiscoveryCanvas :items="discoveryItems" />
+      <D3Field :items="discoveryItems" />
       <template #fallback>
         <div class="home-discover__fallback" aria-hidden="true" />
       </template>
@@ -41,12 +41,24 @@ useHead(() => ({
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],
+  bodyAttrs: {
+    class: 'discovery-active',
+  },
 }))
 </script>
 
 <style scoped>
+.home-discover,
 .home-discover__fallback {
   height: 100dvh;
   background: var(--cream);
+}
+</style>
+
+<style>
+html:has(body.discovery-active),
+body.discovery-active {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 </style>

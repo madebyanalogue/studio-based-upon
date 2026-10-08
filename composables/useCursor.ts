@@ -7,6 +7,10 @@ import {
 const NATIVE_SELECTOR =
   'input, textarea, select, [contenteditable="true"], [data-cursor="native"], [data-cursor="pointer"]'
 
+/** Dark image surfaces where the light-mode cursor should stay white. */
+const LIGHT_CURSOR_MEDIA =
+  '.split-slider, .collection-rail__card, .story-break__media, .discover-card__media, .product-card__media--image, .pdp__hero-frame, .pdp-index__tile-media, .bucket__thumb, .stack__column-thumb, .stack__cell-figure'
+
 export const useCursor = () => {
   const preset = useState<CursorPreset | null>('site-cursor-preset', () => null)
   const native = useState<boolean>('site-cursor-native', () => false)
@@ -16,6 +20,10 @@ export const useCursor = () => {
   const bare = useState<boolean>('site-cursor-bare', () => false)
   /** Pointer is inside the typology trigger column, including the gaps between cells. */
   const overColumn = useState<boolean>('site-cursor-over-column', () => false)
+  /** Light mode: white cursor over the homepage slider, typology rows, and thumbnails. */
+  const onMedia = useState<boolean>('site-cursor-on-media', () => false)
+  /** Homepage slider: white cursor in light and dark mode. */
+  const onSlider = useState<boolean>('site-cursor-on-slider', () => false)
   /** Programmatic overlay for onboarding — wins over hover until cleared. */
   const overrideId = useState<string | null>('site-cursor-override', () => null)
 
@@ -47,6 +55,8 @@ export const useCursor = () => {
   const resolveFromPoint = (x: number, y: number) => {
     if (overrideId.value) {
       overColumn.value = false
+      onMedia.value = false
+      onSlider.value = false
       suppressLabel.value = false
       bare.value = false
       native.value = overrideId.value === CURSOR_NATIVE_ID
@@ -61,6 +71,8 @@ export const useCursor = () => {
 
     if (document.documentElement.dataset.resizeCursor) {
       native.value = true
+      onMedia.value = false
+      onSlider.value = false
       suppressLabel.value = false
       bare.value = false
       preset.value = null
@@ -70,11 +82,19 @@ export const useCursor = () => {
     overColumn.value = pointerOverTypologyColumn(x, y)
 
     const stack = document.elementsFromPoint(x, y)
+    let notedSurface = false
+    const noteSurface = (node: Element) => {
+      if (notedSurface) return
+      notedSurface = true
+      onMedia.value = Boolean(node.closest(LIGHT_CURSOR_MEDIA))
+      onSlider.value = Boolean(node.closest('.split-slider'))
+    }
     for (const node of stack) {
       if (!(node instanceof Element)) continue
       if (node.closest('.site-cursor')) continue
       if (getComputedStyle(node).pointerEvents === 'none') continue
-      if (node.closest('.header')) {
+      noteSurface(node)
+      if (node.closest('.header, .homepage-intro__theme, .homepage-intro__skip, .homepage-intro__next, .homepage-intro__product')) {
         native.value = false
         suppressLabel.value = true
         bare.value = false
@@ -119,6 +139,10 @@ export const useCursor = () => {
     }
 
     native.value = false
+    if (!notedSurface) {
+      onMedia.value = false
+      onSlider.value = false
+    }
     suppressLabel.value = false
     bare.value = false
     preset.value = null
@@ -130,6 +154,8 @@ export const useCursor = () => {
     suppressLabel,
     bare,
     overColumn,
+    onMedia,
+    onSlider,
     overrideId,
     setCursor,
     resolveFromPoint,

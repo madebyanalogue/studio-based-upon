@@ -142,6 +142,7 @@
             <span
               class="pdp-index__frame"
               :class="`pdp-index__frame--${item.orientation}`"
+              :style="{ aspectRatio: String(item.aspect) }"
             >
               <img
                 class="pdp-index__tile-image"
@@ -232,6 +233,8 @@ type IndexCard = {
   typeLabel: string
   /** landscape (≥1) or portrait (<1) — drives fixed tile aspect */
   orientation: 'landscape' | 'portrait'
+  /** Natural cover width / height. */
+  aspect: number
 }
 
 const INDEX_EXCLUDED_TYPES = new Set(['spirit', 'origin'])
@@ -287,6 +290,7 @@ const indexItems = computed((): IndexCard[] => {
         })(),
         typeLabel: typeLabelFor(item.category || item.type),
         orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
+        aspect: item.aspectRatio > 0 ? item.aspectRatio : 1,
       }
     })
     .filter((item): item is IndexCard => !!item)
@@ -519,7 +523,7 @@ const relatedItems = computed((): IndexCard[] => {
 })
 
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
-  default: () => true,
+  default: () => false,
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
@@ -661,7 +665,7 @@ onMounted(() => {
   --index-rail-width: var(--pdp-rail-open-width);
   --index-motion: var(--pdp-rail-motion);
   --index-chrome-motion: 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-  --rail-padding: 15px;
+  --rail-padding: 30px;
 
   position: absolute;
   inset: 0;
@@ -925,6 +929,9 @@ onMounted(() => {
   padding-bottom: 4px;
   line-height: 0;
 }
+.pdp-index__tile:last-child {
+  padding-bottom: var(--rail-padding);
+}
 
 .pdp-index__tile--active {
   opacity: 0.2;
@@ -995,6 +1002,27 @@ onMounted(() => {
   aspect-ratio: var(--rail-aspect);
 }
 
+/* More like this uses each cover's own ratio, not the shared rail box. */
+.pdp-index__rail--right .pdp-index__tile-media {
+  aspect-ratio: auto;
+  height: auto;
+}
+
+.pdp-index__rail--right .pdp-index__frame,
+.pdp-index__rail--right .pdp-index__frame--landscape,
+.pdp-index__rail--right .pdp-index__frame--portrait {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  overflow: hidden;
+  border-radius: var(--thumb-radius);
+}
+
 .pdp-index__tile-image {
   display: block;
   width: 100%;
@@ -1015,6 +1043,7 @@ onMounted(() => {
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
+    display: none;
 }
 
 .pdp-index__tile:hover .pdp-index__add,

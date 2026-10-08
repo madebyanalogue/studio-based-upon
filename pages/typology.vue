@@ -2,7 +2,7 @@
   <div
     ref="pageEl"
     class="discover-page"
-    :class="{ 'discover-page--enter': pageEntering }"
+    :class="{ 'discover-page--enter': pageEntering, 'discover-page--settled': pageSettled }"
   >
     <svg
       class="discover-page__title-filter"
@@ -376,6 +376,7 @@ provide(typologyRowHoverKey, { setHoveredTitle })
 
 const pageEl = ref<HTMLElement | null>(null)
 const pageEntering = ref(true)
+const pageSettled = ref(false)
 const FIRST_WIPE_S = 2
 const REST_FADE_S = 1.2
 const REST_STAGGER_S = 0.4
@@ -458,7 +459,10 @@ const playPageEnter = async () => {
     ...pageEl.value.querySelectorAll<HTMLElement>('.discover-page__content > *'),
   ].map((row) => ({ row, target: rowWipeTarget(row) }))
 
-  if (!items.length) return
+  if (!items.length) {
+    pageSettled.value = true
+    return
+  }
 
   if (prefersReducedMotion()) {
     items.forEach(({ row, target }) => {
@@ -468,6 +472,7 @@ const playPageEnter = async () => {
       row.style.removeProperty('transition')
     })
     pageEntering.value = false
+    pageSettled.value = true
     return
   }
 
@@ -483,6 +488,7 @@ const playPageEnter = async () => {
   ].map((row) => ({ row, target: rowWipeTarget(row) }))
   if (!items.length) {
     enterStarted = false
+    pageSettled.value = true
     return
   }
 
@@ -502,6 +508,7 @@ const playPageEnter = async () => {
     delay: WIPE_DELAY_S,
     onComplete: () => {
       enterTween = null
+      pageSettled.value = true
       items.forEach(({ row, target }) => {
         clearTopWipe(target)
         row.style.removeProperty('pointer-events')
@@ -741,6 +748,10 @@ onBeforeUnmount(() => {
 .discover-page--enter .discover-page__content > * :deep(.discover-card__media),
 .discover-page--enter .discover-page__content > * :deep(.story-break__media) {
   clip-path: inset(100% 0% 0% 0%);
+}
+
+.discover-page:not(.discover-page--settled) :deep(.collection-rail .collection-rail__card--trigger) {
+  pointer-events: none;
 }
 
 .discover-page__title-filter {

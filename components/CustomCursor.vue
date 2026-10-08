@@ -8,6 +8,8 @@
         'site-cursor--mark': isMark,
         'site-cursor--heart': isHeart,
         'site-cursor--tip-left': tipLeft,
+        'site-cursor--on-media': onMedia,
+        'site-cursor--on-slider': onSlider,
       }"
       aria-hidden="true"
     >
@@ -62,10 +64,8 @@
 <script setup lang="ts">
 import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTypologyRowHover'
 
-const { preset, native, suppressLabel, bare, overColumn, resolveFromPoint } = useCursor()
+const { preset, native, suppressLabel, bare, overColumn, onMedia, onSlider, resolveFromPoint } = useCursor()
 const route = useRoute()
-const d2Cursor = useD2Cursor()
-const { isOpen: productOpen } = useProductOverlay()
 
 const TRAIL_LIFE = 520
 const trailPoints: { x: number; y: number; t: number }[] = []
@@ -194,17 +194,10 @@ const TYPOLOGY_ARRIVAL = 'What are you making?'
 const onTypology = computed(
   () => route.path === '/typology' || route.path === '/typology/',
 )
-const onD2 = computed(() => route.path === '/d2' || route.path === '/d2/')
 const cursorLabel = computed(() => {
   if (suppressLabel.value) return ''
   const tip = preset.value?.tooltip || ''
   if (tip === 'Explore') return tip
-  if (onD2.value && !productOpen.value) {
-    if (tip) return tip
-    if (d2Cursor.value === 'scroll') return 'scroll'
-    if (d2Cursor.value === 'delve') return 'click to delve'
-    return ''
-  }
   if (homeScrollHint.value) {
     return onTypology.value ? 'Scroll' : SCROLL_HINT
   }
@@ -555,7 +548,7 @@ const onBlur = () => {
 }
 
 let media: MediaQueryList | null = null
-const onMedia = () => {
+const onFinePointerChange = () => {
   fine.value = readFine()
 }
 
@@ -563,7 +556,7 @@ onMounted(() => {
   fine.value = readFine()
   reduceMotion.value = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   media = window.matchMedia('(hover: hover) and (pointer: fine)')
-  media.addEventListener('change', onMedia)
+  media.addEventListener('change', onFinePointerChange)
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   document.documentElement.addEventListener('mouseleave', onPointerLeave)
   window.addEventListener('blur', onBlur)
@@ -573,7 +566,7 @@ onUnmounted(() => {
   window.cancelAnimationFrame(markRaf)
   window.cancelAnimationFrame(trailRaf)
   clearLabelTimer()
-  media?.removeEventListener('change', onMedia)
+  media?.removeEventListener('change', onFinePointerChange)
   window.removeEventListener('pointermove', onPointerMove)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
   window.removeEventListener('blur', onBlur)
@@ -667,6 +660,67 @@ html:not(.dark) .site-cursor__orb {
 
 html:not(.dark) .site-cursor__hint {
   color: var(--red);
+  mix-blend-mode: normal;
+}
+
+/* Intro keeps the red cursor in dark mode as well. */
+html.dark.homepage-intro .site-cursor__orb {
+  background: var(--red);
+  mix-blend-mode: normal;
+}
+
+html.dark.homepage-intro .site-cursor__hint {
+  color: var(--red);
+  mix-blend-mode: normal;
+}
+
+html.dark.homepage-intro .site-cursor__chev {
+  border-color: var(--red);
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-media .site-cursor__orb {
+  background: #fff;
+}
+
+html:not(.dark) .site-cursor--on-media .site-cursor__hint,
+html:not(.dark) .site-cursor--on-media .site-cursor__mark,
+html:not(.dark) .site-cursor--on-media .site-cursor__heart {
+  color: #fff;
+}
+
+html:not(.dark) .site-cursor--on-media .site-cursor__chev {
+  border-color: #fff;
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-media .site-cursor__mark,
+html:not(.dark) .site-cursor--on-media .site-cursor__heart {
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-slider .site-cursor__orb,
+html.dark .site-cursor--on-slider .site-cursor__orb,
+html.dark.homepage-intro .site-cursor--on-slider .site-cursor__orb {
+  background: #fff;
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-slider .site-cursor__hint,
+html.dark .site-cursor--on-slider .site-cursor__hint,
+html.dark.homepage-intro .site-cursor--on-slider .site-cursor__hint,
+html:not(.dark) .site-cursor--on-slider .site-cursor__mark,
+html.dark .site-cursor--on-slider .site-cursor__mark,
+html:not(.dark) .site-cursor--on-slider .site-cursor__heart,
+html.dark .site-cursor--on-slider .site-cursor__heart {
+  color: #fff;
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-slider .site-cursor__chev,
+html.dark .site-cursor--on-slider .site-cursor__chev,
+html.dark.homepage-intro .site-cursor--on-slider .site-cursor__chev {
+  border-color: #fff;
   mix-blend-mode: normal;
 }
 
