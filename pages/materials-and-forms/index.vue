@@ -291,6 +291,7 @@ const {
   pendingGridSwap,
   isOpen: productOverlayOpen,
   archiveGridMotion,
+  archiveScatterCovering,
   getFlipSource,
   flipSourceIsArchiveGrid,
 } = useProductOverlay()
@@ -403,6 +404,7 @@ const clearScatteredTiles = () => {
     image.style.removeProperty('visibility')
   })
   scattered = []
+  archiveScatterCovering.value = false
 }
 
 const scatterArchiveGrid = (source: HTMLElement) => {
@@ -467,6 +469,7 @@ const scatterArchiveGrid = (source: HTMLElement) => {
       top: rect.top,
     }
     scattered.push(tile)
+    archiveScatterCovering.value = true
     gsap.to(clone, {
       x: vx * push,
       y: vy * push,
@@ -480,7 +483,11 @@ const scatterArchiveGrid = (source: HTMLElement) => {
 const returnScatteredTiles = () => {
   const tiles = scattered
   scattered = []
-  if (!tiles.length) return
+  if (!tiles.length) {
+    archiveScatterCovering.value = false
+    return
+  }
+  archiveScatterCovering.value = true
 
   gsap.to(
     tiles.map((tile) => tile.clone),
@@ -502,6 +509,7 @@ const returnScatteredTiles = () => {
           image.style.removeProperty('visibility')
           clone.remove()
         })
+        archiveScatterCovering.value = false
       },
     },
   )

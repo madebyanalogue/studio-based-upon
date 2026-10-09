@@ -215,6 +215,12 @@ export const useProductOverlay = () => {
     'product-overlay-archive-motion',
     () => null,
   )
+  /**
+   * Homecoming grid clones sit above the page (z 325). The corner pile has to
+   * stay above them until the clones are actually removed, or it ducks under
+   * the tiles and pops back.
+   */
+  const archiveScatterCovering = useState('archive-scatter-covering', () => false)
 
   const signalArchiveMotion = (phase: 'open' | 'close') => {
     archiveGridMotion.value = phase
@@ -515,6 +521,7 @@ export const useProductOverlay = () => {
     pendingGridSwap,
     nextSequence,
     archiveGridMotion,
+    archiveScatterCovering,
     signalArchiveMotion,
     requestGridSwap,
     closeVeilActive,

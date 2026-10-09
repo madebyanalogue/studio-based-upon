@@ -15,7 +15,10 @@
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
     }"
     aria-label="Pairings"
-    data-cursor-label="Explore pairings"
+    :data-cursor-label="exploreCursorLabel || undefined"
+    @pointerenter="noteShowcasePointer"
+    @pointermove="noteShowcasePointer"
+    @pointerleave="clearShowcasePointer"
   >
     <div class="showcase__columns">
       <div
@@ -31,7 +34,7 @@
           'showcase__column-shell--quiet': quietColumns[column.instanceId],
         }"
         :data-column-id="column.instanceId"
-        :data-cursor-label="column.single || column.locked || column.images.length < 2 ? undefined : 'Scroll column'"
+        :data-cursor-label="scrollCursorLabel(column)"
         @pointerenter="onColumnPointerEnter"
         @pointermove="syncColumnHot"
         @pointerleave="onColumnPointerLeave"
@@ -133,7 +136,7 @@
               </svg>
             </span>
             <span class="showcase__tooltip showcase__tooltip--above interface" aria-hidden="true">
-              {{ column.locked ? 'Unlock column' : 'Lock column' }}
+              {{ column.locked ? 'Unlock' : 'Lock' }}
             </span>
           </button>
           <button
@@ -2142,7 +2145,10 @@ const initLenisForSlot = (slotIndex: number) => {
         event.stopPropagation()
         return
       }
-      if (event.deltaX || event.deltaY) dismissScrollHint()
+      if (event.deltaX || event.deltaY) {
+        dismissScrollHint()
+        dismissColumnScrollHint()
+      }
       onUserIntent(slotIndex)
     },
     {
@@ -2180,6 +2186,7 @@ const initLenisForSlot = (slotIndex: number) => {
         lockSnapPending[slotIndex]
       ) return
       dismissScrollHint()
+      dismissColumnScrollHint()
     },
     { passive: true, signal: abort.signal },
   )
@@ -2307,6 +2314,44 @@ let releasePageClip: (() => void) | null = null
 let leavePromise: Promise<void> | null = null
 const homeScrollHint = useHomeScrollHint()
 let scrollHintDismissed = false
+/** Intro cursor copy on the page. Cleared a few seconds after arrival. */
+const exploreCursorLabel = ref('Explore pairings')
+const EXPLORE_CURSOR_MS = 3000
+let exploreCursorTimer = 0
+/** Once any column is scrolled, the "Scroll" cursor prompt stays gone. */
+const columnScrollHintSeen = useCookie<boolean>('sba-pairings-scrolled', {
+  default: () => false,
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
+let showcasePointer: { x: number; y: number } | null = null
+const { resolveFromPoint } = useCursor()
+
+const noteShowcasePointer = (event: PointerEvent) => {
+  showcasePointer = { x: event.clientX, y: event.clientY }
+}
+
+const clearShowcasePointer = () => {
+  showcasePointer = null
+}
+
+const refreshCursorLabel = () => {
+  const point = showcasePointer
+  if (!point) return
+  nextTick(() => resolveFromPoint(point.x, point.y))
+}
+
+const scrollCursorLabel = (column: ShowcaseColumn) => {
+  if (columnScrollHintSeen.value) return undefined
+  if (column.single || column.locked || column.images.length < 2) return undefined
+  return 'Scroll'
+}
+
+const dismissColumnScrollHint = () => {
+  if (columnScrollHintSeen.value) return
+  columnScrollHintSeen.value = true
+  refreshCursorLabel()
+}
 
 const dismissScrollHint = () => {
   scrollHintDismissed = true
@@ -2985,12 +3030,20 @@ onMounted(() => {
   motionReady = true
   if (!columns.value.length) resetFromBuckets()
   remountMotion({ intro: true })
+  exploreCursorTimer = window.setTimeout(() => {
+    exploreCursorTimer = 0
+    if (!exploreCursorLabel.value) return
+    exploreCursorLabel.value = ''
+    refreshCursorLabel()
+  }, EXPLORE_CURSOR_MS)
   if (COLOUR_WASH_ENABLED) {
     document.addEventListener('pointerdown', onColourDocPointerDown)
   }
 })
 
 onBeforeUnmount(() => {
+  window.clearTimeout(exploreCursorTimer)
+  exploreCursorTimer = 0
   dismissScrollHint()
   if (COLOUR_WASH_ENABLED) {
     document.removeEventListener('pointerdown', onColourDocPointerDown)

@@ -34,7 +34,7 @@
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
-  --thumb-radius: 6px;
+  --thumb-radius: 3px;
   --undo-remove-ms: 5s;
 
   --rail-aspect: 5/4;

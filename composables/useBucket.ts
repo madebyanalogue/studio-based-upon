@@ -182,6 +182,13 @@ const defaultMoodboard = (index = 1): MoodboardBucket => ({
   items: [],
 })
 
+/**
+ * DOM node the in-flight gather was measured from.
+ * Kept off useState (not serializable) and outside useBucket() so the card
+ * that starts the fly and the stack that plays it share the same element.
+ */
+let pendingFlySource: HTMLElement | null = null
+
 export const useBucket = () => {
   const { version: bucketUiVersion } = useBucketUi()
   const moodboards = useState<MoodboardBucket[]>('moodboards', () => [defaultMoodboard()])
@@ -204,8 +211,6 @@ export const useBucket = () => {
     /** Land in a gap that opens at the centre of the spread row. */
     center?: boolean
   } | null>('bucket-pending-fly', () => null)
-  // DOM source kept off useState (not serializable)
-  let pendingFlySource: HTMLElement | null = null
 
   const activeMoodboard = computed(() => {
     const boards = moodboards.value

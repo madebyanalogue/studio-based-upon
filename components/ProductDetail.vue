@@ -461,7 +461,7 @@ const pushImageEntry = (
   if (seen.has(key)) return
   seen.add(key)
   entries.push({
-    id: `${recordId}-img-${entries.length}`,
+    id: `${recordId}-product-${entries.length}`,
     kind: 'image',
     src,
     thumbSrc: imageUrl(asset, IMAGE_WIDTH.strip) || src,
@@ -502,7 +502,7 @@ const buildSpiritGalleryEntries = (
       seen.add(key)
       const posterSrc = video.poster ? imageUrl(video.poster, 1000) : ''
       entries.push({
-        id: `${record._id}-vid-${entries.length}`,
+        id: `${record._id}-spirit-vid-${entries.length}`,
         kind: 'video',
         src,
         thumbSrc: posterSrc || src,
@@ -519,7 +519,7 @@ const buildSpiritGalleryEntries = (
     if (seen.has(key)) continue
     seen.add(key)
     entries.push({
-      id: `${record._id}-img-${entries.length}`,
+      id: `${record._id}-spirit-${entries.length}`,
       kind: 'image',
       src,
       thumbSrc: src,
@@ -594,18 +594,20 @@ const markGalleryImageReady = (index: number, img?: HTMLImageElement | null) => 
       `[data-strip-index="${index}"] .pdp__hero-image`,
     )
   if (node?.naturalWidth && node.naturalHeight) {
-    galleryAspects[entry.id] = node.naturalWidth / node.naturalHeight
+    const ratio = node.naturalWidth / node.naturalHeight
+    if (galleryAspects[entry.id] !== ratio) galleryAspects[entry.id] = ratio
   }
-  galleryReady[entry.id] = true
+  if (!galleryReady[entry.id]) galleryReady[entry.id] = true
 }
 
 const markGalleryVideoReady = (index: number, video?: HTMLVideoElement | null) => {
   const entry = galleryEntries.value[index]
   if (!entry || entry.kind !== 'video') return
   if (video?.videoWidth && video.videoHeight) {
-    galleryAspects[entry.id] = video.videoWidth / video.videoHeight
+    const ratio = video.videoWidth / video.videoHeight
+    if (galleryAspects[entry.id] !== ratio) galleryAspects[entry.id] = ratio
   }
-  galleryReady[entry.id] = true
+  if (!galleryReady[entry.id]) galleryReady[entry.id] = true
 }
 
 const syncStripVideos = () => {
@@ -1871,7 +1873,7 @@ watch(
   align-items: stretch;
   line-height: 0;
   overflow: hidden;
-  border-radius: 10px;
+  border-radius: var(--thumb-radius);
   background: transparent;
   /* Hide the reserved frame until the bitmap is ready — no placeholder wash */
   visibility: hidden;

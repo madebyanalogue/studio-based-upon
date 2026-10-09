@@ -16,7 +16,11 @@
         'stack--freeform': cartIsFreeform && panelTab === 'selections',
         'stack--view-flip': viewFlipBusy,
         'stack--above-pdp':
-          (productOverlayOpen || pdpCloseVeilActive || pdpPileHold) && !pdpOpenedFromCart,
+          (productOverlayOpen ||
+            pdpCloseVeilActive ||
+            pdpPileHold ||
+            archiveScatterCovering) &&
+          !pdpOpenedFromCart,
         'stack--enquiry-parked': enquiryParked,
       }"
       :style="stackCssVars"
@@ -939,6 +943,7 @@ const {
   returnImage,
   isOpen: productOverlayOpen,
   closeVeilActive: pdpCloseVeilActive,
+  archiveScatterCovering,
 } = useProductOverlay()
 const { fetchProduct } = useProductCatalog()
 
@@ -1269,7 +1274,7 @@ const pdpFocusItemId = ref<string | null>(null)
  * than derived from pdpFocusItemId because that clears before the close veil ends.
  */
 const pdpOpenedFromCart = ref(false)
-/** Keep the corner pile above homecoming grid tiles for a frame after the PDP unmounts. */
+/** Keep the corner pile above homecoming grid tiles after the PDP unmounts. */
 const pdpPileHold = ref(false)
 let pdpPileHoldGen = 0
 const FLIP_DURATION = 0.95
@@ -8085,7 +8090,7 @@ onBeforeUnmount(() => {
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 40px;
 }
 
 .stack__toolbar-clear {
