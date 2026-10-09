@@ -117,7 +117,7 @@ const showLoader = ref(true)
 const loaderDone = ref(false)
 const hovering = ref(false)
 const mode = ref<D2Mode>('surrender')
-const drag = ref<D2Drag>('rotate')
+const drag = ref<D2Drag>('pan')
 
 const hint = computed(() => {
   const gesture = drag.value === 'pan' ? 'Drag or flick to move' : 'Drag to look'

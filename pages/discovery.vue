@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-const EXCLUDED_TYPES = new Set(['spirit'])
+const INCLUDED_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'origin'])
 
 const homeQuery = `*[_type == "infiniteSliderPage"][0] {
   seoTitle,
@@ -24,7 +24,7 @@ const discoveryItems = computed(() =>
     const keys = [item.category, ...(item.categories || [])]
       .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z]/g, ''))
       .filter(Boolean)
-    return !keys.some((key) => EXCLUDED_TYPES.has(key))
+    return keys.some((key) => INCLUDED_TYPES.has(key))
   }),
 )
 

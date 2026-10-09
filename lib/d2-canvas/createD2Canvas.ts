@@ -73,6 +73,8 @@ type Particle = {
   goalRot: THREE.Euler
   goalScale: THREE.Vector3
   goalOpacity: number
+  /** Applied when a control morph finishes, so surrender depth order holds during the flight. */
+  goalOrder: number
 }
 
 export type D2Mode = 'surrender' | 'control'
@@ -135,7 +137,7 @@ export const createD2Canvas = (
   controls.target.set(0, 0, 0)
 
   let mode: D2Mode = 'surrender'
-  let drag: D2Drag = 'rotate'
+  let drag: D2Drag = 'pan'
   let morphT = 1
   let navigationHeld = false
   let panLimitX = 8
@@ -311,6 +313,7 @@ export const createD2Canvas = (
         goalRot: homeRot.clone(),
         goalScale: new THREE.Vector3(1, 1, 1),
         goalOpacity: concealed ? 0 : 1,
+        goalOrder: 0,
       })
     }
     if (mode === 'control') beginMorph('control')
@@ -413,6 +416,7 @@ export const createD2Canvas = (
         particle.goalRot.copy(particle.homeRot)
         particle.goalScale.set(1, 1, 1)
         particle.goalOpacity = particle.concealed ? 0 : 1
+        particle.goalOrder = 0
         particle.mesh.renderOrder = 0
       }
       camTo.copy(surrenderCam)
@@ -451,7 +455,7 @@ export const createD2Canvas = (
       particle.goalRot.set(0, 0, 0)
       particle.goalScale.copy(containedScale(particle.mesh))
       particle.goalOpacity = 1
-      particle.mesh.renderOrder = index
+      particle.goalOrder = index
       slot.set(particle.productId, { pos: particle.goalPos, scale: particle.goalScale })
     })
 
@@ -460,7 +464,7 @@ export const createD2Canvas = (
       const home = slot.get(particle.productId)
       particle.goalRot.set(0, 0, 0)
       particle.goalOpacity = 0
-      particle.mesh.renderOrder = -1
+      particle.goalOrder = -1
       if (home) {
         particle.goalPos.copy(home.pos)
         particle.goalScale.copy(home.scale)
@@ -642,6 +646,9 @@ export const createD2Canvas = (
       morphT = Math.min(1, morphT + delta / MORPH_SECONDS)
       applyMorph(easeInOut(morphT))
       if (morphT >= 1) {
+        if (mode === 'control') {
+          for (const particle of particles) particle.mesh.renderOrder = particle.goalOrder
+        }
         settleControls()
         controls.enabled = !navigationHeld
       }
@@ -676,6 +683,7 @@ export const createD2Canvas = (
   renderer.domElement.addEventListener('pointerup', releasePanFlick)
   renderer.domElement.addEventListener('pointercancel', releasePanFlick)
   resize()
+  applyDrag()
   applyAtmosphere()
   animate()
 

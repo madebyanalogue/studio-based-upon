@@ -8,6 +8,7 @@
       'showcase--page-clip': pageClipping,
       'showcase--restructuring': columnMotion,
       'showcase--surrendering': surrendering,
+      'showcase--duo': columnCount === 2,
     }"
     :style="{
       '--showcase-slots': Math.max(columnCount, 1),
@@ -136,6 +137,7 @@
             </span>
           </button>
           <button
+            v-if="canRemoveColumn"
             type="button"
             class="showcase__remove"
             :aria-label="`Remove ${column.title} column`"
@@ -530,7 +532,9 @@ const revealedImages = ref<Record<string, true>>({})
 const restLoadsAllowed = ref(false)
 
 const columnCount = computed(() => columns.value.length)
+const MIN_COLUMNS = 2
 const canAddColumn = computed(() => columnCount.value < MAX_COLUMNS)
+const canRemoveColumn = computed(() => columnCount.value > MIN_COLUMNS)
 
 const columnEls: (HTMLElement | null)[] = Array.from({ length: MAX_COLUMNS }, () => null)
 const trackEls: (HTMLElement | null)[] = Array.from({ length: MAX_COLUMNS }, () => null)
@@ -2893,7 +2897,7 @@ const onUploadChange = (event: Event) => {
 }
 
 const removeColumn = async (slotIndex: number) => {
-  if (columnMotion.value) return
+  if (columnMotion.value || !canRemoveColumn.value) return
   const column = columns.value[slotIndex]
   if (!column) return
 
@@ -3046,6 +3050,8 @@ onBeforeUnmount(() => {
   --showcase-ctrl-outline: color-mix(in srgb, var(--charcoal) 15%, transparent);
   --showcase-ctrl-border: 1px solid var(--showcase-ctrl-outline);
 
+  --showcase-side: 5vw;
+
   position: relative;
   width: 100%;
   height: 100dvh;
@@ -3057,7 +3063,7 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   align-items: center;
-  width: 90%;
+  width: calc(100% - 2 * var(--showcase-side));
   height: 100%;
   margin-inline: auto;
   gap: var(--showcase-column-gap);
@@ -3197,6 +3203,16 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
   width: 100%;
   pointer-events: none;
+}
+
+/* Two columns: same frame as the homepage slider (80svh). Cap the slot too so the caption sits under the image. */
+.showcase--duo .showcase__cell,
+.showcase--duo .showcase__slot {
+  max-height: 80svh;
+}
+
+.showcase--duo .showcase__column-meta {
+  margin-top: 16px;
 }
 
 .showcase__cell {

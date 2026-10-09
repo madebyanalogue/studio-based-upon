@@ -11,69 +11,47 @@
       <div class="d3-field__loader-bar" :style="{ width: `${textureProgress}%` }" />
     </div>
 
-    <div
-      v-if="gathered.length"
-      ref="stackEl"
-      class="d3-gather"
-      :class="{
-        'is-row': lined,
-        'is-scrolling': lined && kebabScroll,
-        'is-glass': gatherGlass,
-        'is-peeking':
-          !lined && pileHover !== null && pileHover < gathered.length - 1,
-      }"
-      data-d3-gather
-      data-cursor="default"
-      data-lenis-prevent
-      @click="onStackClick"
-    >
-      <div ref="trackEl" class="d3-gather__track">
-        <div
-          v-for="(item, index) in gathered"
-          :key="item.id"
-          class="d3-gather__card"
-          :class="{ 'is-peek-shift': !lined && pileHover !== null && index > pileHover }"
-          :data-gather-id="item.id"
-          :data-cursor-label="lined ? 'View' : undefined"
-          :style="{
-            '--ar': item.aspect,
-            zIndex: index + 1,
-          }"
-          @pointerenter="onCardEnter(index)"
-          @pointerleave="onCardLeave(index)"
-          @click="onCardClick(item, $event)"
+    <div v-show="!showLoader" class="d3-field__toggles">
+      <div
+        class="d3-field__mode"
+        role="tablist"
+        aria-label="Field mode"
+        data-cursor="default"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="interface"
+          :aria-selected="mode === 'control'"
+          :class="{ 'is-active': mode === 'control' }"
+          @click="setMode('control')"
         >
-          <div class="d3-gather__media">
-            <img :src="item.url" alt="" draggable="false" />
-          </div>
-          <template v-if="lined">
-            <button
-              type="button"
-              class="d3-gather__remove"
-              data-cursor="default"
-              aria-label="Remove"
-              @click.stop="removeGathered(item.id)"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
-            <button
-              type="button"
-              class="d3-gather__more"
-              data-cursor-label="More like this"
-              aria-label="More like this"
-              @click.stop="moreLikeThis(item)"
-            >
-              <span class="d3-gather__more-label">More like this</span>
-            </button>
-          </template>
-        </div>
+          Control
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="interface"
+          :aria-selected="mode === 'surrender'"
+          :class="{ 'is-active': mode === 'surrender' }"
+          @click="setMode('surrender')"
+        >
+          Surrender
+        </button>
       </div>
+      <label class="d3-field__presence interface" data-cursor="default">
+        <span>Visibility</span>
+        <input
+          v-model.number="presence"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          aria-label="Image visibility"
+        />
+        <span class="d3-field__presence-value">{{ presence }}</span>
+      </label>
     </div>
-
-    <p class="d3-field__hint interface">
-      <template v-if="lined">Scroll to move the selection</template>
-      <template v-else>Scroll to explore · Click to gather</template>
-    </p>
   </section>
 </template>
 
@@ -88,8 +66,8 @@ import {
   type D3SelectPayload,
 } from '~/lib/d3-canvas/createD3Canvas'
 import type { DiscoveryMediaItem } from '~/lib/infinite-canvas/types'
-import { productSlug } from '~/composables/useProductCatalog'
-import { productCoverFrame } from '~/composables/productImages'
+import { productPath, productSlug } from '~/composables/useProductCatalog'
+import { productGalleryFrames } from '~/composables/productImages'
 
 type DiscoveryItem = {
   _id: string
@@ -104,6 +82,10 @@ type DiscoveryItem = {
   related?: { _id?: string }[]
   image?: { asset?: { url?: string; _id?: string } }
   gallery?: { asset?: { url?: string; _id?: string } }[]
+  spiritGallery?: Array<
+    | { _type?: 'image'; asset?: { url?: string; _id?: string } }
+    | { _type: 'spiritVideo'; poster?: { asset?: { url?: string; _id?: string } } }
+  >
   linkType?: string
   externalUrl?: string
 }
@@ -122,6 +104,13 @@ const props = defineProps<{
 }>()
 
 const { imageUrl, getImageSrc } = useSanityImage()
+const { requestSave, items: pileItems, registerPileFly } = useBucket()
+const mode = ref<'control' | 'surrender'>('surrender')
+const presence = useCookie<number>('sba-discovery-presence', {
+  default: () => 60,
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
 const {
   open: openProduct,
   isOpen: productOverlayOpen,
@@ -311,26 +300,54 @@ const toCanvasTextureUrl = (remoteUrl: string) => {
   return `/api/image-proxy?url=${encodeURIComponent(remoteUrl)}`
 }
 
+const frameAsset = (
+  entry:
+    | { _type?: string; asset?: { url?: string; _id?: string }; poster?: { asset?: { url?: string; _id?: string } } }
+    | undefined,
+) => {
+  if (!entry) return undefined
+  if (entry._type === 'spiritVideo') return entry.poster?.asset
+  return entry.asset
+}
+
 const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
   const media: DiscoveryMediaItem[] = []
+  let order = 0
   for (const item of items) {
-    const slug = productSlug(item)
+    const slug = productSlug(item) || item.slug?.current || item._id
     if (!slug) continue
-    const cover = productCoverFrame(item)
-    const remote =
-      (cover ? imageUrl(cover, 900) : '') ||
-      (cover?.asset ? getImageSrc(cover.asset) : '') ||
-      ''
-    const url = toCanvasTextureUrl(remote)
-    if (!url) continue
-    const dims = parseDimensions(cover?.asset)
-    media.push({
-      url,
-      width: dims.width,
-      height: dims.height,
-      slug,
-      title: item.title,
-      productId: item._id,
+    const frames: { asset?: { url?: string; _id?: string } }[] = []
+    const seen = new Set<string>()
+    const push = (asset?: { url?: string; _id?: string }) => {
+      if (!asset) return
+      const key = String(asset._id || asset.url || '')
+      if (!key || seen.has(key)) return
+      seen.add(key)
+      frames.push({ asset })
+    }
+    for (const frame of productGalleryFrames(item)) push(frame.asset)
+    for (const entry of item.spiritGallery || []) push(frameAsset(entry))
+    frames.forEach((frame, imageIndex) => {
+      const remote =
+        imageUrl(frame, 1400) ||
+        (frame.asset ? getImageSrc(frame.asset) : '') ||
+        ''
+      const url = toCanvasTextureUrl(remote)
+      if (!url || !remote) return
+      const dims = parseDimensions(frame.asset)
+      media.push({
+        url,
+        displayUrl: remote,
+        width: dims.width,
+        height: dims.height,
+        slug,
+        title: item.title,
+        productId: item._id,
+        frameId: `${item._id}::${imageIndex}`,
+        imageIndex,
+        order: order++,
+        itemType: item.category || item.type || '',
+      })
     })
   }
   return media
@@ -387,61 +404,82 @@ const settleCards = () => {
   return cards
 }
 
-const gather = async (payload: D3SelectPayload) => {
-  if (lined.value) return
-  if (gathered.value.some((item) => item.productId === payload.productId)) {
-    handle?.conceal(payload.productId)
-    return
-  }
+const heldFrameIds = new Set<string>()
+const heldGhosts = new Map<string, HTMLImageElement>()
+
+const syncPile = () => {
+  handle?.syncConcealed(pileItems.value.map((item) => item.id).filter((id) => !heldFrameIds.has(id)))
+}
+
+const releaseHold = (frameId: string) => {
+  heldFrameIds.delete(frameId)
+  heldGhosts.get(frameId)?.remove()
+  heldGhosts.delete(frameId)
+  syncPile()
+}
+
+const onPileFly = (_phase: 'shown' | 'done', itemId?: string) => {
+  if (itemId && heldFrameIds.has(itemId)) releaseHold(itemId)
+}
+
+watch(presence, (value) => {
+  handle?.setImagePresence(Math.min(100, Math.max(0, Number(value) || 0)) / 100)
+})
+
+const setMode = (next: 'control' | 'surrender') => {
+  if (mode.value === next) return
+  mode.value = next
+  handle?.setMode(next)
+}
+
+const gather = (payload: D3SelectPayload) => {
+  const frameId =
+    payload.frameId ||
+    `${payload.productId}::${payload.imageIndex ?? 0}`
+  if (!frameId || pileItems.value.some((item) => item.id === frameId) || heldFrameIds.has(frameId)) return
   if (!payload.url || payload.screenRect.width < 2) return
-
-  const preload = new Image()
-  preload.src = payload.url
-  if (!preload.complete) {
-    await Promise.race([
-      preload.decode().catch(() => undefined),
-      new Promise((resolve) => window.setTimeout(resolve, 400)),
-    ])
-  }
-
-  const held = stackEl.value ? [...stackEl.value.querySelectorAll<HTMLElement>('.d3-gather__card')] : []
-  const fromById = new Map(held.map((card) => [card.dataset.gatherId || '', cardBox(card)]))
-  if (stackEl.value) settleCards()
-
-  const index = gathered.value.length
-  const aspect = payload.width / Math.max(payload.height, 1)
-  const item: GatheredItem = {
-    id: payload.id,
-    productId: payload.productId,
-    slug: payload.slug,
-    url: payload.url,
-    aspect: Math.max(0.15, Math.min(aspect, 8)),
-    y: 0,
-  }
-  gathered.value.push(item)
-  await nextTick()
-  if (!stackEl.value) return
-
-  const cards = [...stackEl.value.querySelectorAll<HTMLElement>('.d3-gather__card')]
-  const incoming = cards.find((card) => card.dataset.gatherId === item.id)
-  if (!incoming) return
-  incoming.style.visibility = 'hidden'
-  const live = handle?.screenRectFor(item.id)
-  const origin = live && live.width > 2 ? live : payload.screenRect
-  const duration = reducedMotion() ? 0 : D3_REVEAL_S
-  const from = cards.map((card) => {
-    const previous = fromById.get(card.dataset.gatherId || '')
-    if (previous) return previous
-    return {
-      left: origin.left,
-      top: origin.top,
-      width: origin.width,
-      height: origin.height,
-    }
+  const productFrames = mediaItems.value
+    .filter((item) => item.productId === payload.productId)
+    .sort((a, b) => (a.imageIndex ?? 0) - (b.imageIndex ?? 0))
+  const imageUrls = productFrames.map((item) => item.displayUrl || '').filter(Boolean)
+  const displayUrl =
+    payload.displayUrl ||
+    productFrames.find((item) => item.frameId === frameId)?.displayUrl ||
+    payload.url
+  const ghost = document.createElement('img')
+  ghost.src = payload.url || displayUrl
+  ghost.alt = ''
+  ghost.setAttribute('aria-hidden', 'true')
+  Object.assign(ghost.style, {
+    position: 'fixed',
+    left: `${payload.screenRect.left}px`,
+    top: `${payload.screenRect.top}px`,
+    width: `${payload.screenRect.width}px`,
+    height: `${payload.screenRect.height}px`,
+    objectFit: 'cover',
+    margin: '0',
+    padding: '0',
+    pointerEvents: 'none',
+    visibility: 'hidden',
+    zIndex: '400',
   })
-  playIntoLayout(cards, from, duration)
-  incoming.style.visibility = 'visible'
-  handle?.conceal(payload.productId)
+  document.body.appendChild(ghost)
+  heldFrameIds.add(frameId)
+  heldGhosts.set(frameId, ghost)
+  const source = (props.items || []).find((item) => item._id === payload.productId)
+  const flying = requestSave(
+    {
+      id: payload.productId,
+      title: payload.title,
+      imageUrl: displayUrl,
+      itemType: payload.itemType || source?.category || source?.type || 'product',
+      link: source ? productPath(source) : null,
+      imageUrls: imageUrls.length ? imageUrls : [displayUrl],
+      imageIndex: payload.imageIndex ?? 0,
+    },
+    { source: ghost },
+  )
+  if (!flying) releaseHold(frameId)
 }
 
 type CardBox = {
@@ -860,6 +898,9 @@ const mountCanvas = () => {
   if (import.meta.dev) {
     ;(window as Window & { __d3?: D3CanvasHandle }).__d3 = handle
   }
+  syncPile()
+  handle.setImagePresence(Math.min(100, Math.max(0, Number(presence.value) || 0)) / 100)
+  if (mode.value === 'control') handle.setMode('control')
   window.clearTimeout(loaderHideTimer)
   loaderHideTimer = window.setTimeout(scheduleLoaderHide, 1600)
 }
@@ -895,9 +936,8 @@ const onGatherGlassKey = (event: KeyboardEvent) => {
 }
 
 onMounted(() => {
+  registerPileFly(onPileFly)
   mountCanvas()
-  restoreKebabCache()
-  window.addEventListener('keydown', onGatherGlassKey)
   themeObserver = new MutationObserver(() => {
     const colors = readThemeColors()
     handle?.setColors(colors.background, colors.fog)
@@ -912,13 +952,10 @@ watch(mediaItems, (media, prev) => {
   const same =
     prev &&
     media.length === prev.length &&
-    media.every((item, index) => item.productId === prev[index]?.productId)
+    media.every((item, index) => item.frameId === prev[index]?.frameId)
   if (same) return
   if (!handle) {
-    if (media.length) {
-      mountCanvas()
-      restoreKebabCache()
-    }
+    if (media.length) mountCanvas()
     return
   }
   if (!media.length) {
@@ -926,8 +963,10 @@ watch(mediaItems, (media, prev) => {
     handle = null
     return
   }
-  if (gathered.value.length) return
   handle.setMedia(shuffleMedia(media))
+  syncPile()
+  handle.setImagePresence(Math.min(100, Math.max(0, Number(presence.value) || 0)) / 100)
+  if (mode.value === 'control') handle.setMode('control')
 })
 
 watch(
@@ -969,9 +1008,15 @@ watch(lined, (open) => {
   if (!open) pileHover.value = null
 })
 
+watch(
+  () => pileItems.value.map((item) => item.id).join('|'),
+  () => syncPile(),
+)
+
 onBeforeUnmount(() => {
+  registerPileFly(null)
+  for (const id of [...heldFrameIds]) releaseHold(id)
   window.clearTimeout(loaderHideTimer)
-  window.removeEventListener('keydown', onGatherGlassKey)
   clearScatteredTiles()
   stopKebabScroll()
   themeObserver?.disconnect()
@@ -1014,6 +1059,72 @@ onBeforeUnmount(() => {
   height: 2px;
   background: var(--charcoal);
   transition: width 0.2s ease;
+}
+
+.d3-field__toggles {
+  position: fixed;
+  left: 50%;
+  bottom: calc(60px + var(--bucket-push, 0px));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translateX(-50%);
+}
+
+.d3-field__presence {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--charcoal);
+  font-size: var(--text-sm);
+}
+
+.d3-field__presence input {
+  width: 120px;
+  margin: 0;
+  accent-color: var(--charcoal);
+  cursor: pointer;
+}
+
+.d3-field__presence-value {
+  min-width: 1.6rem;
+  text-align: right;
+}
+
+.d3-field__mode {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.d3-field__mode button {
+  margin: 0;
+  padding: 0.45rem 1.05rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--charcoal);
+  cursor: pointer;
+}
+
+.d3-field__mode button.is-active {
+  background: var(--charcoal);
+  color: var(--cream);
 }
 
 .d3-gather {
@@ -1298,24 +1409,5 @@ onBeforeUnmount(() => {
   .d3-gather.is-row .d3-gather__card:focus-within .d3-gather__more-label {
     opacity: 1;
   }
-}
-
-.d3-field__hint {
-  position: fixed;
-  right: var(--gutter);
-  bottom: calc(30px + var(--bucket-push, 0px));
-  z-index: 30;
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  pointer-events: none;
-  background: rgba(250, 247, 242, 0.88);
-  backdrop-filter: blur(8px);
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-}
-
-:global(html.dark) .d3-field__hint {
-  background: rgba(31, 28, 24, 0.88);
 }
 </style>

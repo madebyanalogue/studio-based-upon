@@ -36,12 +36,18 @@ export type D3ScreenRect = {
   height: number
 }
 
+export type D3Mode = 'surrender' | 'control'
+
 export type D3SelectPayload = {
   id: string
   slug: string
   title: string
   productId: string
   url: string
+  displayUrl?: string
+  frameId?: string
+  imageIndex?: number
+  itemType?: string
   width: number
   height: number
   screenRect: D3ScreenRect
@@ -62,16 +68,23 @@ type PlaneRuntime = {
   chunkCx: number
   chunkCy: number
   chunkCz: number
+  /** Spawned for the control grid when the frame is not already in a chunk. */
+  ephemeral?: boolean
 }
 
 export type D3CanvasHandle = {
   dispose: () => void
   setMedia: (media: DiscoveryMediaItem[]) => void
   setColors: (background: string, fog: string) => void
-  /** Hide every copy of a gathered product, including chunks that load later. */
-  conceal: (productId: string) => void
-  /** Let a removed product back into the field. */
-  reveal: (productId: string) => void
+  /** Hide every copy of a gathered frame, including chunks that load later. */
+  conceal: (frameId: string) => void
+  /** Let a removed frame back into the field. */
+  reveal: (frameId: string) => void
+  /** Replace the concealed set from the selection pile. */
+  syncConcealed: (frameIds: string[]) => void
+  setMode: (mode: D3Mode) => void
+  /** 0 fades images out quickly. 1 keeps them visible much further into the field. */
+  setImagePresence: (value: number) => void
   /** Live screen box for a plane, used so a gather starts on the thumbnail. */
   screenRectFor: (id: string) => D3ScreenRect | null
   /** Push remaining planes away from the screen centre and stop depth travel. */
@@ -157,7 +170,21 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
   let rowMode = false
   const planes: PlaneRuntime[] = []
   const chunkGroups = new Map<string, THREE.Group>()
-  const concealedProducts = new Set<string>()
+  const concealedFrames = new Set<string>()
+  let controlMode = false
+  let imagePresence = 0.6
+  let settling = false
+  let controlDist = 52
+  let controlBaseDist = 52
+  let controlPlaneZ = 0
+  let controlCell = 8
+  let controlAnchor = { x: 0, y: 0, z: 0 }
+  let controlBounds = { cx: 0, cy: 0, hw: 1, hh: 1 }
+  let controlSlots: Array<PlaneRuntime | null> = []
+  let controlGlideX = 0
+  let controlGlideY = 0
+  const flickSamples: Array<{ t: number; x: number; y: number }> = []
+  let savedFog: THREE.Fog | null = null
   let lastChunkKey = ''
   let lastChunkUpdate = 0
   let pendingChunk: { cx: number; cy: number; cz: number } | null = null
@@ -176,6 +203,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     camera.aspect = width / Math.max(height, 1)
     camera.updateProjectionMatrix()
     renderer.setSize(width, height, false)
+    if (controlMode) placeGrid(false)
   }
 
   const screenRectOf = (mesh: THREE.Mesh): D3ScreenRect => {
@@ -208,6 +236,10 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     title: String(runtime.mesh.userData.title || ''),
     productId: String(runtime.mesh.userData.productId || ''),
     url: String(runtime.mesh.userData.url || ''),
+    displayUrl: String(runtime.mesh.userData.displayUrl || runtime.mesh.userData.url || ''),
+    frameId: String(runtime.mesh.userData.frameId || ''),
+    imageIndex: Number(runtime.mesh.userData.imageIndex) || 0,
+    itemType: String(runtime.mesh.userData.itemType || ''),
     width: Number(runtime.mesh.userData.width) || 1,
     height: Number(runtime.mesh.userData.height) || 1,
     screenRect: screenRectOf(runtime.mesh),
@@ -246,7 +278,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     const group = new THREE.Group()
     group.name = key
     const layouts = generateChunkPlanesCached(cx, cy, cz, layoutSeed)
-    const pool = media.filter((item) => !concealedProducts.has(item.productId))
+    const pool = media.filter((item) => !concealedFrames.has(item.frameId || ''))
     for (const layout of layouts) {
       if (!pool.length) continue
       const item = pool[layout.mediaIndex % pool.length]
@@ -268,9 +300,13 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
       mesh.userData.title = item.title
       mesh.userData.productId = item.productId
       mesh.userData.url = item.url
+      mesh.userData.displayUrl = item.displayUrl || item.url
+      mesh.userData.frameId = item.frameId || ''
+      mesh.userData.imageIndex = item.imageIndex ?? 0
+      mesh.userData.itemType = item.itemType || ''
       mesh.userData.width = item.width
       mesh.userData.height = item.height
-      const hidden = concealedProducts.has(item.productId)
+      const hidden = concealedFrames.has(item.frameId || '')
       const runtime: PlaneRuntime = {
         id: layout.id,
         mesh,
@@ -423,16 +459,19 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
   }
 
   const onMouseDown = (event: MouseEvent) => {
+    clearControlGlide()
     state.dragging = true
     state.down = { x: event.clientX, y: event.clientY }
     state.dragged = 0
     state.last = { x: event.clientX, y: event.clientY }
+    trackFlick(event.clientX, event.clientY)
   }
 
   const onMouseUp = (event: MouseEvent) => {
     const click = state.down && state.dragged < CLICK_DRAG
     state.dragging = false
     state.down = null
+    if (controlMode) releaseControlGlide()
     if (click) trySelect(event.clientX, event.clientY)
   }
 
@@ -452,6 +491,11 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     state.dragged += Math.abs(dx) + Math.abs(dy)
     state.last = { x: event.clientX, y: event.clientY }
     if (rowMode) return
+    if (controlMode) {
+      panControl(dx, dy)
+      trackFlick(event.clientX, event.clientY)
+      return
+    }
     state.tx -= dx * 0.06
     state.ty += dy * 0.06
   }
@@ -459,6 +503,19 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
   const onWheel = (event: WheelEvent) => {
     event.preventDefault()
     if (rowMode) return
+    if (controlMode) {
+      // Trackpad pinch arrives as a ctrl-wheel. Zoom stays at the control distance.
+      if (event.ctrlKey) return
+      clearControlGlide()
+      const unit =
+        event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? renderer.domElement.clientHeight
+            : 1
+      panControl(-event.deltaX * unit, -event.deltaY * unit)
+      return
+    }
     state.scroll += event.deltaY * 0.006
   }
 
@@ -466,10 +523,12 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     event.preventDefault()
     state.lastTouches = Array.from(event.touches)
     state.lastPinch = pinchDistance(state.lastTouches)
+    clearControlGlide()
     const touch = event.touches[0]
     if (touch) {
       state.down = { x: touch.clientX, y: touch.clientY }
       state.dragged = 0
+      trackFlick(touch.clientX, touch.clientY)
     }
   }
 
@@ -481,11 +540,17 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
       const dx = touches[0].clientX - state.lastTouches[0].clientX
       const dy = touches[0].clientY - state.lastTouches[0].clientY
       state.dragged += Math.abs(dx) + Math.abs(dy)
-      state.tx -= dx * 0.05
-      state.ty += dy * 0.05
-    } else if (touches.length === 2 && state.lastPinch > 0) {
+      if (controlMode) {
+        panControl(dx, dy)
+        trackFlick(touches[0].clientX, touches[0].clientY)
+      } else {
+        state.tx -= dx * 0.05
+        state.ty += dy * 0.05
+      }
+    } else if (touches.length === 2 && state.lastPinch > 0 && !controlMode) {
       const dist = pinchDistance(touches)
       state.scroll += (state.lastPinch - dist) * 0.006
+      flickSamples.length = 0
       state.lastPinch = dist
     }
     state.lastTouches = touches
@@ -497,14 +562,37 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     const point = state.down
     state.lastTouches = Array.from(event.touches)
     state.lastPinch = pinchDistance(state.lastTouches)
-    if (event.touches.length === 0) state.down = null
+    if (event.touches.length === 0) {
+      if (controlMode) releaseControlGlide()
+      state.down = null
+    }
     if (click && point) trySelect(point.x, point.y)
   }
+
+  const fadeSpan = () => {
+    const presence = clamp(imagePresence, 0, 1)
+    return {
+      start: DEPTH_FADE_START + presence * 90,
+      end: DEPTH_FADE_END + presence * 280,
+      power: 2 - presence * 1.4,
+    }
+  }
+
+  const applyPresenceFog = () => {
+    const fog = scene.fog instanceof THREE.Fog ? scene.fog : savedFog
+    if (!fog) return
+    const presence = clamp(imagePresence, 0, 1)
+    fog.near = 120 + presence * 200
+    fog.far = 320 + presence * 380
+  }
+
+  applyPresenceFog()
 
   const updateFades = () => {
     const gridX = Math.floor(state.x / CHUNK_SIZE)
     const gridY = Math.floor(state.y / CHUNK_SIZE)
     const gridZ = Math.floor(state.z / CHUNK_SIZE)
+    const fade = fadeSpan()
     for (const runtime of planes) {
       if (runtime.hidden) {
         runtime.mesh.visible = false
@@ -524,7 +612,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         Math.abs(runtime.chunkCz - gridZ),
       )
       const depth = Math.abs(runtime.mesh.position.z - state.z)
-      if (depth > DEPTH_FADE_END + 50) {
+      if (depth > fade.end + 80) {
         runtime.opacity = 0
         runtime.material.opacity = 0
         runtime.mesh.visible = false
@@ -534,11 +622,12 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         dist <= RENDER_DISTANCE
           ? 1
           : Math.max(0, 1 - (dist - RENDER_DISTANCE) / Math.max(CHUNK_FADE_MARGIN, 0.0001))
-      const depthFade =
-        depth <= DEPTH_FADE_START
+      const linear =
+        depth <= fade.start
           ? 1
-          : Math.max(0, 1 - (depth - DEPTH_FADE_START) / Math.max(DEPTH_FADE_END - DEPTH_FADE_START, 0.0001))
-      const target = Math.min(gridFade, depthFade * depthFade)
+          : Math.max(0, 1 - (depth - fade.start) / Math.max(fade.end - fade.start, 0.0001))
+      const depthFade = Math.pow(linear, fade.power)
+      const target = Math.min(gridFade, depthFade)
       runtime.opacity = lerp(runtime.opacity, target, 0.18)
       runtime.mesh.visible = runtime.ready && runtime.opacity > INVIS_THRESHOLD
       runtime.material.opacity = runtime.mesh.visible ? runtime.opacity : 0
@@ -557,6 +646,429 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     pendingChunk = null
   }
 
+  const CONTROL_S = 0.9
+  const CONTROL_EASE = 'power3.inOut'
+
+  const chooseColumns = (count: number, pxW: number, pxH: number) => {
+    const safe = Math.max(1, count)
+    const target = Math.max(pxW / Math.max(pxH, 1), 0.01)
+    let bestCols = 1
+    let bestScore = Infinity
+    for (let cols = 1; cols <= safe; cols++) {
+      const rows = Math.ceil(safe / cols)
+      const shape = cols / Math.max(rows, 0.001)
+      const last = safe - (rows - 1) * cols
+      const score =
+        Math.abs(Math.log(shape / target)) + (rows > 1 && last / cols < 0.45 ? 0.12 : 0)
+      if (score < bestScore) {
+        bestScore = score
+        bestCols = cols
+      }
+    }
+    return Math.min(safe, bestCols + 3)
+  }
+
+  const uniqueControlMedia = () => {
+    const sorted = media.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    const seen = new Set<string>()
+    const items: Array<DiscoveryMediaItem | null> = []
+    for (const item of sorted) {
+      const key = item.frameId || ''
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      items.push(concealedFrames.has(key) ? null : item)
+    }
+    return items
+  }
+
+  const stampMedia = (mesh: THREE.Mesh, item: DiscoveryMediaItem) => {
+    mesh.userData.slug = item.slug
+    mesh.userData.title = item.title
+    mesh.userData.productId = item.productId
+    mesh.userData.url = item.url
+    mesh.userData.displayUrl = item.displayUrl || item.url
+    mesh.userData.frameId = item.frameId || ''
+    mesh.userData.imageIndex = item.imageIndex ?? 0
+    mesh.userData.itemType = item.itemType || ''
+    mesh.userData.width = item.width
+    mesh.userData.height = item.height
+  }
+
+  const spawnControlPlane = (item: DiscoveryMediaItem): PlaneRuntime => {
+    const aspect = item.width && item.height ? item.width / item.height : 1
+    const planeH = 8
+    const planeW = planeH * aspect
+    const material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+    const mesh = new THREE.Mesh(PLANE_GEOMETRY, material)
+    mesh.position.set(state.x, state.y, state.z - 24)
+    mesh.scale.set(planeW, planeH, 1)
+    mesh.visible = false
+    stampMedia(mesh, item)
+    const runtime: PlaneRuntime = {
+      id: `control:${item.frameId || item.url}`,
+      mesh,
+      material,
+      opacity: 0,
+      ready: false,
+      hidden: false,
+      ephemeral: true,
+      homeX: mesh.position.x,
+      homeY: mesh.position.y,
+      homeZ: mesh.position.z,
+      homeScaleX: planeW,
+      homeScaleY: planeH,
+      chunkCx: 0,
+      chunkCy: 0,
+      chunkCz: 0,
+    }
+    getTexture(item, (tex) => {
+      runtime.ready = true
+      material.map = tex
+      material.needsUpdate = true
+      if (controlMode && controlSlots.includes(runtime)) mesh.visible = true
+    })
+    scene.add(mesh)
+    planes.push(runtime)
+    return runtime
+  }
+
+  const placeGrid = (animate: boolean) => {
+    const count = controlSlots.length
+    if (!count) return
+    const pxW = Math.max(renderer.domElement.clientWidth, 1)
+    const pxH = Math.max(renderer.domElement.clientHeight, 1)
+    const cols = chooseColumns(count, pxW, pxH)
+    const rows = Math.ceil(count / cols)
+    const gap = 0.08
+    const stepUnits = 1 + gap
+    const tan = Math.tan(THREE.MathUtils.degToRad(FOV) / 2)
+    const aspect = Math.max(pxW / pxH, 0.01)
+    const viewH = 2 * tan * controlBaseDist
+    const viewW = viewH * aspect
+    const widthFit = (viewW * 0.9) / (cols * stepUnits)
+    const heightFit = (viewH * 0.86) / (rows * stepUnits)
+    const fit = Math.min(widthFit, heightFit)
+    const step = stepUnits * fit
+    const cell = fit
+    const gridW = cols * step - gap * fit
+    const gridH = rows * step - gap * fit
+    const visibleH = viewH * 0.86
+    const originX = controlAnchor.x
+    const originY =
+      gridH <= visibleH
+        ? controlAnchor.y
+        : controlAnchor.y + visibleH / 2 - cell / 2
+    const planeZ = controlAnchor.z - controlBaseDist
+    controlPlaneZ = planeZ
+    controlCell = cell
+    controlBounds = {
+      cx: originX,
+      cy: gridH <= visibleH ? originY : originY - ((rows - 1) * step) / 2,
+      hw: gridW / 2,
+      hh: gridH / 2,
+    }
+    controlDist = controlBaseDist
+    state.z = controlPlaneZ + controlDist
+    clampControlCamera()
+    controlSlots.forEach((runtime, index) => {
+      if (!runtime) return
+      const col = index % cols
+      const row = Math.floor(index / cols)
+      const x = originX + (col - (cols - 1) / 2) * step
+      const y =
+        gridH <= visibleH
+          ? originY + ((rows - 1) / 2 - row) * step
+          : originY - row * step
+      const imgW = Number(runtime.mesh.userData.width) || 1
+      const imgH = Number(runtime.mesh.userData.height) || 1
+      const ar = imgW / Math.max(imgH, 0.001)
+      let w = cell * 0.9
+      let h = w / ar
+      if (h > cell * 0.9) {
+        h = cell * 0.9
+        w = h * ar
+      }
+      runtime.hidden = false
+      gsap.killTweensOf(runtime.mesh.position)
+      gsap.killTweensOf(runtime.mesh.scale)
+      gsap.killTweensOf(runtime.material)
+      const applyOrder = () => {
+        if (controlMode) runtime.mesh.renderOrder = index
+      }
+      if (!animate) {
+        runtime.mesh.position.set(x, y, planeZ)
+        runtime.mesh.scale.set(w, h, 1)
+        runtime.opacity = 1
+        runtime.material.opacity = 1
+        runtime.material.depthWrite = false
+        runtime.mesh.visible = true
+        applyOrder()
+        return
+      }
+      runtime.mesh.visible = true
+      gsap.to(runtime.mesh.position, {
+        x,
+        y,
+        z: planeZ,
+        duration: CONTROL_S,
+        ease: CONTROL_EASE,
+        onComplete: applyOrder,
+      })
+      gsap.to(runtime.mesh.scale, {
+        x: w,
+        y: h,
+        duration: CONTROL_S,
+        ease: CONTROL_EASE,
+      })
+      gsap.to(runtime.material, {
+        opacity: 1,
+        duration: 0.45,
+        onUpdate: () => {
+          runtime.opacity = runtime.material.opacity
+          runtime.material.depthWrite = false
+          runtime.mesh.visible = runtime.opacity > 0.02
+        },
+      })
+    })
+  }
+
+  const buildControl = (animate: boolean) => {
+    const items = uniqueControlMedia()
+    const used = new Set<PlaneRuntime>()
+    const next: Array<PlaneRuntime | null> = []
+    for (const item of items) {
+      if (!item) {
+        next.push(null)
+        continue
+      }
+      const key = item.frameId || ''
+      const matches = planes.filter(
+        (plane) => String(plane.mesh.userData.frameId || '') === key && !concealedFrames.has(key),
+      )
+      matches.sort(
+        (a, b) =>
+          Math.abs(a.mesh.position.z - state.z) - Math.abs(b.mesh.position.z - state.z),
+      )
+      const runtime = matches[0] || spawnControlPlane(item)
+      used.add(runtime)
+      next.push(runtime)
+    }
+    for (const runtime of planes) {
+      if (used.has(runtime)) {
+        runtime.hidden = false
+        continue
+      }
+      gsap.killTweensOf(runtime.material)
+      runtime.hidden = true
+      runtime.opacity = 0
+      runtime.material.opacity = 0
+      runtime.mesh.visible = false
+    }
+    for (const runtime of planes.slice()) {
+      if (runtime.ephemeral && !used.has(runtime)) removeRuntime(runtime)
+    }
+    controlSlots = next.map((runtime) => (runtime && planes.includes(runtime) ? runtime : null))
+    placeGrid(animate)
+  }
+
+  const clampControlCamera = () => {
+    const tan = Math.tan(THREE.MathUtils.degToRad(FOV) / 2)
+    const aspect = Math.max(camera.aspect || 1, 0.01)
+    const halfH = controlDist * tan
+    const halfW = halfH * aspect
+    const slack = controlCell * 0.45
+    const limitX = Math.max(slack, controlBounds.hw - halfW + slack)
+    const limitY = Math.max(slack, controlBounds.hh - halfH + slack)
+    state.x = clamp(state.x, controlBounds.cx - limitX, controlBounds.cx + limitX)
+    state.y = clamp(state.y, controlBounds.cy - limitY, controlBounds.cy + limitY)
+    state.z = controlPlaneZ + controlDist
+    camera.position.set(state.x, state.y, state.z)
+  }
+
+  const clearControlGlide = () => {
+    controlGlideX = 0
+    controlGlideY = 0
+    flickSamples.length = 0
+  }
+
+  const trackFlick = (x: number, y: number) => {
+    const now = performance.now()
+    flickSamples.push({ t: now, x, y })
+    const cutoff = now - 90
+    while (flickSamples.length > 1 && flickSamples[0].t < cutoff) flickSamples.shift()
+  }
+
+  const releaseControlGlide = () => {
+    if (state.dragged < CLICK_DRAG || flickSamples.length < 2) {
+      clearControlGlide()
+      return
+    }
+    const first = flickSamples[0]
+    const last = flickSamples[flickSamples.length - 1]
+    const dt = Math.max(last.t - first.t, 16)
+    const frames = dt / (1000 / 60)
+    const tan = Math.tan(THREE.MathUtils.degToRad(FOV) / 2)
+    const viewH = 2 * tan * controlDist
+    const worldPerPixel = viewH / Math.max(renderer.domElement.clientHeight, 1)
+    controlGlideX = (-(last.x - first.x) / frames) * worldPerPixel
+    controlGlideY = ((last.y - first.y) / frames) * worldPerPixel
+    flickSamples.length = 0
+  }
+
+  const stepControlGlide = (dt: number) => {
+    const speed = Math.hypot(controlGlideX, controlGlideY)
+    if (speed < 0.0004) {
+      controlGlideX = 0
+      controlGlideY = 0
+      return
+    }
+    const frame = dt / (1000 / 60)
+    state.x += controlGlideX * frame
+    state.y += controlGlideY * frame
+    const unclampedX = state.x
+    const unclampedY = state.y
+    clampControlCamera()
+    if (Math.abs(state.x - unclampedX) > 1e-4) controlGlideX = 0
+    if (Math.abs(state.y - unclampedY) > 1e-4) controlGlideY = 0
+    const decay = Math.pow(0.94, frame)
+    controlGlideX *= decay
+    controlGlideY *= decay
+  }
+
+  const panControl = (dx: number, dy: number) => {
+    const tan = Math.tan(THREE.MathUtils.degToRad(FOV) / 2)
+    const viewH = 2 * tan * controlDist
+    const worldPerPixel = viewH / Math.max(renderer.domElement.clientHeight, 1)
+    state.x -= dx * worldPerPixel
+    state.y += dy * worldPerPixel
+    clampControlCamera()
+  }
+
+  const leaveControl = () => {
+    controlMode = false
+    settling = true
+    clearControlGlide()
+    controlSlots = []
+    state.x = controlAnchor.x
+    state.y = controlAnchor.y
+    state.z = controlAnchor.z
+    state.vx = state.vy = state.vz = 0
+    state.tx = state.ty = state.tz = 0
+    camera.position.set(state.x, state.y, state.z)
+    if (savedFog) scene.fog = savedFog
+    savedFog = null
+    for (const runtime of planes.slice()) {
+      gsap.killTweensOf(runtime.mesh.position)
+      gsap.killTweensOf(runtime.mesh.scale)
+      gsap.killTweensOf(runtime.material)
+      runtime.mesh.renderOrder = 0
+      if (runtime.ephemeral) {
+        removeRuntime(runtime)
+        continue
+      }
+      const key = String(runtime.mesh.userData.frameId || '')
+      runtime.hidden = Boolean(key && concealedFrames.has(key))
+      if (runtime.hidden) {
+        runtime.mesh.visible = false
+        runtime.material.opacity = 0
+        runtime.opacity = 0
+        continue
+      }
+      gsap.to(runtime.mesh.position, {
+        x: runtime.homeX,
+        y: runtime.homeY,
+        z: runtime.homeZ,
+        duration: CONTROL_S,
+        ease: CONTROL_EASE,
+      })
+      gsap.to(runtime.mesh.scale, {
+        x: runtime.homeScaleX,
+        y: runtime.homeScaleY,
+        duration: CONTROL_S,
+        ease: CONTROL_EASE,
+      })
+    }
+    gsap.delayedCall(CONTROL_S + 0.02, () => {
+      settling = false
+    })
+  }
+
+  const enterControl = (animate: boolean) => {
+    if (!controlMode) {
+      controlAnchor = { x: state.x, y: state.y, z: state.z }
+      controlBaseDist = 52
+      controlDist = controlBaseDist
+      savedFog = scene.fog instanceof THREE.Fog ? scene.fog : null
+      scene.fog = null
+      state.vx = state.vy = state.vz = 0
+      state.tx = state.ty = state.tz = 0
+      state.scroll = 0
+      clearControlGlide()
+    }
+    controlMode = true
+    settling = false
+    buildControl(animate)
+  }
+
+  const hideRuntime = (runtime: PlaneRuntime) => {
+    gsap.killTweensOf(runtime.mesh.position)
+    gsap.killTweensOf(runtime.mesh.scale)
+    gsap.killTweensOf(runtime.material)
+    runtime.hidden = true
+    runtime.opacity = 0
+    runtime.material.opacity = 0
+    runtime.mesh.visible = false
+  }
+
+  const applyConcealed = () => {
+    for (const runtime of planes) {
+      const key = String(runtime.mesh.userData.frameId || '')
+      if (!key || !concealedFrames.has(key)) continue
+      hideRuntime(runtime)
+    }
+    if (controlMode) {
+      let filled = false
+      const items = uniqueControlMedia()
+      if (items.length !== controlSlots.length) {
+        buildControl(false)
+        return
+      }
+      for (let index = 0; index < controlSlots.length; index += 1) {
+        const item = items[index]
+        const runtime = controlSlots[index]
+        if (runtime) {
+          const key = String(runtime.mesh.userData.frameId || '')
+          if (key && concealedFrames.has(key)) controlSlots[index] = null
+          continue
+        }
+        if (!item) continue
+        const key = item.frameId || ''
+        const matches = planes.filter((plane) => String(plane.mesh.userData.frameId || '') === key)
+        matches.sort(
+          (a, b) =>
+            Math.abs(a.mesh.position.z - state.z) - Math.abs(b.mesh.position.z - state.z),
+        )
+        const next = matches[0] || spawnControlPlane(item)
+        next.hidden = false
+        controlSlots[index] = next
+        filled = true
+      }
+      if (filled) placeGrid(false)
+      return
+    }
+    for (const runtime of planes) {
+      if (runtime.ephemeral) continue
+      const key = String(runtime.mesh.userData.frameId || '')
+      if (key && concealedFrames.has(key)) continue
+      runtime.hidden = false
+    }
+  }
+
   setTextureProgressCallback(onTextureProgress ?? null)
   resize()
   frameCamera()
@@ -564,12 +1076,18 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
 
   let raf = 0
   let disposed = false
+  let lastTick = performance.now()
 
   const tick = () => {
     if (disposed) return
     raf = requestAnimationFrame(tick)
+    const now = performance.now()
+    const dt = Math.min(Math.max(now - lastTick, 0), 48)
+    lastTick = now
 
-    if (!rowMode) {
+    if (controlMode && !state.dragging && !state.down) stepControlGlide(dt)
+
+    if (!rowMode && !controlMode && !settling) {
       state.tz += state.scroll
       state.scroll *= 0.8
       state.tx = clamp(state.tx, -MAX_VELOCITY, MAX_VELOCITY)
@@ -587,7 +1105,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     }
 
     camera.position.set(state.x, state.y, state.z)
-    if (!rowMode) {
+    if (!rowMode && !controlMode && !settling) {
       const cx = Math.floor(state.x / CHUNK_SIZE)
       const cy = Math.floor(state.y / CHUNK_SIZE)
       const cz = Math.floor(state.z / CHUNK_SIZE)
@@ -605,7 +1123,7 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
         syncChunks(pending.cx, pending.cy, pending.cz)
       }
     }
-    updateFades()
+    if (!controlMode && !settling) updateFades()
     renderer.render(scene, camera)
   }
 
@@ -621,30 +1139,45 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
   canvas.addEventListener('touchend', onTouchEnd, { passive: false })
   window.addEventListener('resize', resize)
 
-  const conceal = (productId: string) => {
-    if (!productId) return
-    concealedProducts.add(productId)
-    for (const runtime of planes) {
-      if (String(runtime.mesh.userData.productId) !== productId) continue
-      runtime.hidden = true
-      runtime.opacity = 0
-      runtime.mesh.visible = false
-      runtime.material.opacity = 0
-    }
+  const conceal = (frameId: string) => {
+    if (!frameId) return
+    concealedFrames.add(frameId)
+    applyConcealed()
   }
 
-  const reveal = (productId: string) => {
-    if (!productId) return
-    concealedProducts.delete(productId)
-    for (const runtime of planes) {
-      if (String(runtime.mesh.userData.productId) !== productId) continue
-      runtime.hidden = false
+  const reveal = (frameId: string) => {
+    if (!frameId) return
+    concealedFrames.delete(frameId)
+    applyConcealed()
+  }
+
+  const syncConcealed = (frameIds: string[]) => {
+    concealedFrames.clear()
+    for (const id of frameIds) {
+      if (id) concealedFrames.add(id)
     }
+    applyConcealed()
+  }
+
+  const setImagePresence = (value: number) => {
+    imagePresence = clamp(value, 0, 1)
+    applyPresenceFog()
+  }
+
+  const setMode = (next: D3Mode) => {
+    if (next === 'control') {
+      enterControl(true)
+      return
+    }
+    if (controlMode) leaveControl()
   }
 
   return {
     conceal,
     reveal,
+    syncConcealed,
+    setMode,
+    setImagePresence,
     screenRectFor: (id: string) => {
       const runtime = planes.find((plane) => plane.id === id && !plane.hidden)
       return runtime ? screenRectOf(runtime.mesh) : null
@@ -736,14 +1269,18 @@ export const createD3Canvas = (options: CreateD3CanvasOptions): D3CanvasHandle =
     setMedia: (next) => {
       media = next.slice()
       layoutSeed += 1
-      concealedProducts.clear()
       clearChunks()
+      if (controlMode) {
+        buildControl(false)
+        return
+      }
       frameCamera()
       syncAroundCamera()
     },
     setColors: (background, fog) => {
       scene.background = new THREE.Color(background)
       if (scene.fog instanceof THREE.Fog) scene.fog.color.set(fog)
+      else if (savedFog) savedFog.color.set(fog)
     },
     getDebugStats: () => ({
       planes: planes.length,

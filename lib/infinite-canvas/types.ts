@@ -7,6 +7,13 @@ export type DiscoveryMediaItem = {
   slug: string
   title: string
   productId: string
+  /** Stable cart id: product id plus gallery index. */
+  frameId?: string
+  /** Gallery-grouped sequence used by the control grid. */
+  order?: number
+  imageIndex?: number
+  displayUrl?: string
+  itemType?: string
 }
 
 export type PlaneData = {

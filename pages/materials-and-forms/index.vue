@@ -33,25 +33,35 @@
       <p v-if="pageDescription" class="products__intro">{{ pageDescription }}</p>
     </section>
 
-    <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
-      <button
-        type="button"
-        class="products__view"
-        :class="{ 'is-on': evenGrid }"
-        :aria-pressed="evenGrid"
-        :aria-label="evenGrid ? 'Show mixed sizes' : 'Show even grid'"
-        :data-cursor-label="evenGrid ? 'Mixed sizes' : 'Even grid'"
-        @click="evenGrid = !evenGrid"
+    <div class="products__dock">
+      <div
+        class="products__mode"
+        role="tablist"
+        aria-label="Grid layout"
+        data-cursor="default"
       >
-        <svg viewBox="0 0 20 14" width="18" height="13" fill="none" aria-hidden="true">
-          <rect x="0.7" y="0.7" width="5" height="5" rx="0.6" />
-          <rect x="7.5" y="0.7" width="5" height="5" rx="0.6" />
-          <rect x="14.3" y="0.7" width="5" height="5" rx="0.6" />
-          <rect x="0.7" y="8.3" width="5" height="5" rx="0.6" />
-          <rect x="7.5" y="8.3" width="5" height="5" rx="0.6" />
-          <rect x="14.3" y="8.3" width="5" height="5" rx="0.6" />
-        </svg>
-      </button>
+        <button
+          type="button"
+          role="tab"
+          class="interface"
+          :aria-selected="!evenGrid"
+          :class="{ 'is-active': !evenGrid }"
+          @click="setGridMode(false)"
+        >
+          Organic
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="interface"
+          :aria-selected="evenGrid"
+          :class="{ 'is-active': evenGrid }"
+          @click="setGridMode(true)"
+        >
+          Uniform
+        </button>
+      </div>
+      <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
       <div
         ref="filtersEl"
         class="products__filters"
@@ -62,21 +72,12 @@
         role="group"
         aria-label="Filter by type or tag"
       >
-        <span
-          ref="filterPillEl"
-          class="products__filters-pill"
-          aria-hidden="true"
-        />
-
         <div class="products__filters-list">
           <button
             type="button"
             class="type-chip"
             data-filter-chip="all"
-            :class="{
-              'type-chip--active': activeChipKey === 'all',
-              'type-chip--lit': activeChipKey === 'all',
-            }"
+            :class="{ 'type-chip--active': activeChipKey === 'all' }"
             :aria-expanded="filtersCollapsed && activeChipKey === 'all' ? filtersMenuOpen : undefined"
             :aria-haspopup="filtersCollapsed && activeChipKey === 'all' ? 'listbox' : undefined"
             @click="onFilterChipClick('')"
@@ -98,10 +99,7 @@
             type="button"
             class="type-chip"
             :data-filter-chip="filterKey(filter)"
-            :class="{
-              'type-chip--active': activeChipKey === filterKey(filter),
-              'type-chip--lit': activeChipKey === filterKey(filter),
-            }"
+            :class="{ 'type-chip--active': activeChipKey === filterKey(filter) }"
             :aria-expanded="filtersCollapsed && activeChipKey === filterKey(filter) ? filtersMenuOpen : undefined"
             :aria-haspopup="filtersCollapsed && activeChipKey === filterKey(filter) ? 'listbox' : undefined"
             @click="onFilterChipClick(filterKey(filter))"
@@ -122,10 +120,7 @@
           <label
             class="products__search type-chip"
             data-filter-chip="__search__"
-            :class="{
-              'type-chip--active': activeChipKey === '__search__',
-              'type-chip--lit': activeChipKey === '__search__',
-            }"
+            :class="{ 'type-chip--active': activeChipKey === '__search__' }"
             @click="onSearchChipClick"
           >
             <span class="products__search-icon" aria-hidden="true">
@@ -168,6 +163,7 @@
             </button>
           </label>
         </div>
+      </div>
       </div>
     </div>
 
@@ -220,6 +216,7 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
+import { Flip } from 'gsap/Flip'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { SplitText } from 'gsap/SplitText'
 import type Lenis from 'lenis'
@@ -1014,86 +1011,12 @@ const filterBeforeSearch = ref<string | null>(
 /** Immediate UI — search owns the active chip as soon as there’s text. */
 const isSearchUiActive = computed(() => searchQuery.value.trim().length > 0)
 
-type FilterChipRect = { key: string; x: number; y: number; w: number; h: number }
-
 const filtersEl = ref<HTMLElement | null>(null)
-const filterPillEl = ref<HTMLElement | null>(null)
-const filterPillReady = ref(false)
-let filterLiquidRaf = 0
-let filterResizeObserver: ResizeObserver | null = null
 
 const activeChipKey = computed(() => {
   if (isSearchUiActive.value) return '__search__'
   return activeFilter.value || 'all'
 })
-
-const measureFilterPillTarget = (): FilterChipRect | null => {
-  const root = filtersEl.value
-  if (!root) return null
-  const rootRect = root.getBoundingClientRect()
-  const chips = Array.from(
-    root.querySelectorAll<HTMLElement>('[data-filter-chip]'),
-  )
-  const el =
-    chips.find((c) => c.dataset.filterChip === activeChipKey.value) ||
-    chips[0]
-  if (!el) return null
-  const r = el.getBoundingClientRect()
-  return {
-    key: el.dataset.filterChip || '',
-    x: r.left - rootRect.left,
-    y: r.top - rootRect.top,
-    w: r.width,
-    h: r.height,
-  }
-}
-
-const syncFilterPill = (immediate = false) => {
-  if (!import.meta.client || !filtersEl.value) return
-
-  const pill = filterPillEl.value
-  const target = measureFilterPillTarget()
-  if (!pill || !target) return
-
-  // Radius is CSS `--ui-border-radius` — clear any leftover GSAP inline radius.
-  pill.style.removeProperty('border-radius')
-
-  const vars = {
-    x: target.x,
-    y: target.y,
-    width: target.w,
-    height: target.h,
-  }
-
-  if (immediate || prefersReducedMotion()) {
-    gsap.set(pill, vars)
-  } else {
-    gsap.to(pill, {
-      ...vars,
-      duration: 0.55,
-      ease: 'power3.out',
-      overwrite: 'auto',
-    })
-  }
-
-  if (!filterPillReady.value) {
-    pill.classList.add('is-ready')
-    filterPillReady.value = true
-  }
-}
-
-const scheduleFilterLiquidSync = (immediate = false) => {
-  if (!import.meta.client) return
-  if (immediate) {
-    cancelAnimationFrame(filterLiquidRaf)
-    void nextTick(() => syncFilterPill(true))
-    return
-  }
-  cancelAnimationFrame(filterLiquidRaf)
-  filterLiquidRaf = requestAnimationFrame(() => {
-    syncFilterPill(false)
-  })
-}
 
 const displayTitle = computed(() => {
   if (isSearchUiActive.value) return pageTitle.value
@@ -1190,14 +1113,8 @@ const selectFilter = (key: string) => {
   activeFilter.value = key
 }
 
-const filtersCollapsed = ref(false)
+const filtersCollapsed = ref(true)
 const filtersMenuOpen = ref(false)
-const FILTER_COLLAPSE_AT = 80
-const FILTER_EXPAND_AT = 24
-let suppressFilterMenuLayout = false
-let filterFlipGen = 0
-let filterLenisUnsub: (() => void) | null = null
-let filterWindowScrollUnsub: (() => void) | null = null
 
 const filterChipEls = () =>
   Array.from(
@@ -1208,7 +1125,6 @@ const chipIsActive = (el: HTMLElement) =>
   el.classList.contains('type-chip--active')
 
 const layoutFilterMenu = (open: boolean) => {
-  filterFlipGen += 1
   if (!filtersCollapsed.value) {
     filterChipEls().forEach((el) => {
       el.style.transform = ''
@@ -1218,73 +1134,15 @@ const layoutFilterMenu = (open: boolean) => {
   const active = filterChipEls().find(chipIsActive)
   if (active) active.style.transform = ''
   const rest = filterChipEls().filter((el) => !chipIsActive(el))
-  let y = (active?.offsetHeight || 38) + 2
-  rest.forEach((el) => {
+  let y = 0
+  for (let i = rest.length - 1; i >= 0; i -= 1) {
+    const el = rest[i]!
+    const h = el.offsetHeight || 38
+    y -= h + 8
     el.style.transition =
       'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease'
     el.style.transform = open ? `translateY(${y}px)` : ''
-    y += (el.offsetHeight || 38) + 2
-  })
-}
-
-const playFilterFlip = (first: Map<HTMLElement, DOMRect>) => {
-  const gen = ++filterFlipGen
-  const chips = filterChipEls()
-  chips.forEach((el) => {
-    el.style.transition = 'none'
-    el.style.transform = ''
-  })
-  chips.forEach((el) => {
-    const from = first.get(el)
-    if (!from) return
-    const to = el.getBoundingClientRect()
-    const dx = from.left - to.left
-    const dy = from.top - to.top
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
-    el.style.transform = `translate(${dx}px, ${dy}px)`
-  })
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (gen !== filterFlipGen) return
-      chips.forEach((el) => {
-        el.style.transition =
-          'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease'
-        el.style.transform = ''
-      })
-      scheduleFilterLiquidSync(false)
-    })
-  })
-}
-
-const setFiltersCollapsed = (collapsed: boolean) => {
-  if (filtersCollapsed.value === collapsed) return
-  const first = new Map(
-    filterChipEls().map((el) => [el, el.getBoundingClientRect()]),
-  )
-  suppressFilterMenuLayout = true
-  if (!collapsed) filtersMenuOpen.value = false
-  filtersCollapsed.value = collapsed
-  suppressFilterMenuLayout = false
-  if (prefersReducedMotion()) {
-    filterChipEls().forEach((el) => {
-      el.style.transform = ''
-    })
-    void nextTick(() => scheduleFilterLiquidSync(true))
-    return
   }
-  void nextTick(() => playFilterFlip(first))
-}
-
-const readFilterScrollY = () => {
-  const lenis = $lenis as { scroll?: number } | undefined
-  if (lenis && typeof lenis.scroll === 'number') return lenis.scroll
-  if (!import.meta.client) return 0
-  return window.scrollY || document.documentElement.scrollTop || 0
-}
-
-const syncFilterCollapse = (y = readFilterScrollY()) => {
-  if (!filtersCollapsed.value && y > FILTER_COLLAPSE_AT) setFiltersCollapsed(true)
-  else if (filtersCollapsed.value && y < FILTER_EXPAND_AT) setFiltersCollapsed(false)
 }
 
 const onFilterChipClick = (key: string) => {
@@ -1327,7 +1185,6 @@ const onFilterPointerDown = (event: PointerEvent) => {
 }
 
 watch(filtersMenuOpen, (open) => {
-  if (suppressFilterMenuLayout) return
   void nextTick(() => layoutFilterMenu(open))
 })
 
@@ -1339,18 +1196,70 @@ const clearSearch = () => {
   if (restore !== null) activeFilter.value = restore
 }
 
-watch(
-  [activeChipKey, pageFilters, isSearchUiActive, searchQuery],
-  async () => {
-    await nextTick()
-    scheduleFilterLiquidSync(false)
-  },
-)
 /** Kept for cookie shape only — layout is a fixed 6-col archive grid. */
 const columns = ref(6)
-const evenGrid = ref(false)
+const gridMode = useCookie<'organic' | 'uniform'>('sba-materials-grid', {
+  default: () => 'organic',
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
+const evenGrid = ref(gridMode.value === 'uniform')
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
+let gridModeGen = 0
+let scrollLockRelease: (() => void) | null = null
+let scrollSettleGen = 0
+
+const setGridMode = (uniform: boolean) => {
+  if (evenGrid.value === uniform) return
+  gridMode.value = uniform ? 'uniform' : 'organic'
+  holdDocumentHeight()
+  // A shrinking grid emits a native scroll that would otherwise zero the ease.
+  const lenis = pageLenis()
+  if (lenis) lenis.isScrolling = 'smooth'
+  const grid = gridEl.value
+  if (!import.meta.client || !grid || prefersReducedMotion()) {
+    evenGrid.value = uniform
+    void nextTick(() => finishGridScroll(false))
+    return
+  }
+  // Move the image frame, not the whole card. The caption under it is a
+  // fixed height, so scaling the card stretches the picture and snaps at the end.
+  const targets = Array.from(
+    grid.querySelectorAll<HTMLElement>(
+      '.product-card:not(.is-filtered-out) .product-card__media, .products__spacer:not(.is-filtered-out)',
+    ),
+  )
+  if (!targets.length) {
+    evenGrid.value = uniform
+    void nextTick(() => finishGridScroll(false))
+    return
+  }
+  const gen = ++gridModeGen
+  gsap.killTweensOf(targets)
+  targets.forEach((el) => {
+    el.style.transform = ''
+  })
+  const state = Flip.getState(targets)
+  evenGrid.value = uniform
+  gridAnimating.value = true
+  void nextTick(() => {
+    if (gen !== gridModeGen) return
+    // Layout is the new grid immediately; glide while that range is still held open.
+    glideGridScroll()
+    Flip.from(state, {
+      duration: 0.75,
+      ease: 'power3.inOut',
+      absolute: false,
+      scale: true,
+      onComplete: () => {
+        if (gen !== gridModeGen) return
+        gridAnimating.value = false
+        finishGridScroll(true)
+      },
+    })
+  })
+}
 
 /**
  * Tile layout from CMS `gridSize` + cover snap to portrait / square / landscape.
@@ -1379,6 +1288,101 @@ let searchFlipTimer: ReturnType<typeof setTimeout> | null = null
 let filterTransitionGen = 0
 
 const { $lenis } = useNuxtApp()
+
+const pageLenis = () =>
+  useNuxtApp().$lenis as
+    | (Lenis & { dimensions: { resize: () => void }; isScrolling?: string | false })
+    | undefined
+
+/** Keep the current scroll range so a shorter grid cannot hard-clamp the page. */
+const holdDocumentHeight = () => {
+  scrollSettleGen += 1
+  scrollLockRelease?.()
+  scrollLockRelease = null
+  if (!import.meta.client) return
+  const root = document.documentElement
+  const height = Math.max(root.scrollHeight, document.body.scrollHeight)
+  root.style.minHeight = `${height}px`
+  root.style.overflowAnchor = 'none'
+  scrollLockRelease = () => {
+    root.style.minHeight = ''
+    root.style.overflowAnchor = ''
+  }
+}
+
+const releaseDocumentHeight = () => {
+  scrollLockRelease?.()
+  scrollLockRelease = null
+  const lenis = pageLenis()
+  // dimensions.resize() updates the limit only. lenis.resize() would snap the ease.
+  lenis?.dimensions.resize()
+  if (lenis?.isScrolling === 'smooth') lenis.isScrolling = false
+}
+
+/** Document offset of the grid content, ignoring the height hold on the page. */
+const gridScrollLimit = () => {
+  const grid = gridEl.value
+  if (!grid) return Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
+  let bottom = grid.getBoundingClientRect().bottom + window.scrollY
+  const wrap = grid.parentElement
+  if (wrap) bottom += Number.parseFloat(getComputedStyle(wrap).paddingBottom) || 0
+  const page = wrap?.parentElement
+  if (page?.classList.contains('products')) {
+    bottom += Number.parseFloat(getComputedStyle(page).paddingBottom) || 0
+  }
+  return Math.max(0, bottom - window.innerHeight)
+}
+
+/** Glide toward the grid bottom while the old document height is held open. */
+const glideGridScroll = () => {
+  const gen = scrollSettleGen
+  const lenis = pageLenis()
+  const limit = gridScrollLimit()
+  const pos = Math.max(window.scrollY || 0, lenis?.animatedScroll ?? 0)
+  if (!lenis || pos <= limit + 1) return
+  lenis.isScrolling = 'smooth'
+  lenis.scrollTo(limit, {
+    force: true,
+    duration: 0.75,
+    onComplete: () => {
+      if (gen !== scrollSettleGen) return
+      const live = Math.max(window.scrollY || 0, lenis.animatedScroll)
+      if (live > gridScrollLimit() + 1) return
+      releaseDocumentHeight()
+    },
+  })
+}
+
+/** Drop the height hold once the grid and the glide have both landed. */
+const finishGridScroll = (smooth: boolean) => {
+  const gen = scrollSettleGen
+  const lenis = pageLenis()
+  const limit = gridScrollLimit()
+  const pos = Math.max(window.scrollY || 0, lenis?.animatedScroll ?? 0)
+  if (!lenis || pos <= limit + 1) {
+    releaseDocumentHeight()
+    return
+  }
+  if (!smooth) {
+    lenis.scrollTo(limit, { immediate: true, force: true })
+    releaseDocumentHeight()
+    return
+  }
+  // A glide already in flight owns the release. Another scrollTo to the same
+  // target completes immediately and drops the height hold early.
+  if (lenis.animate.isRunning && Math.abs(lenis.animate.to - limit) <= 1) return
+  lenis.isScrolling = 'smooth'
+  lenis.scrollTo(limit, {
+    force: true,
+    duration: 0.75,
+    onComplete: () => {
+      if (gen !== scrollSettleGen) return
+      const live = Math.max(window.scrollY || 0, lenis.animatedScroll)
+      if (live > gridScrollLimit() + 1) return
+      releaseDocumentHeight()
+    },
+  })
+}
 
 const scrollPageToTop = () => {
   if (!import.meta.client) return
@@ -1797,38 +1801,8 @@ onMounted(() => {
     { once: true },
   )
 
-  void nextTick(() => {
-    syncFilterPill(true)
-    if (filtersEl.value && typeof ResizeObserver !== 'undefined') {
-      filterResizeObserver = new ResizeObserver(() => {
-        scheduleFilterLiquidSync(true)
-      })
-      filterResizeObserver.observe(filtersEl.value)
-    }
-    window.addEventListener('resize', onFilterWindowResize)
-    document.addEventListener('pointerdown', onFilterPointerDown)
-    bindFilterScroll()
-    syncFilterCollapse()
-  })
+  document.addEventListener('pointerdown', onFilterPointerDown)
 })
-
-const onFilterWindowResize = () => scheduleFilterLiquidSync(true)
-
-const bindFilterScroll = () => {
-  filterLenisUnsub?.()
-  filterLenisUnsub = null
-  const lenis = $lenis as { on?: (e: string, cb: () => void) => void; off?: (e: string, cb: () => void) => void; scroll?: number } | undefined
-  if (lenis?.on && lenis.off) {
-    const onScroll = () => syncFilterCollapse(lenis.scroll)
-    lenis.on('scroll', onScroll)
-    filterLenisUnsub = () => lenis.off?.('scroll', onScroll)
-  }
-
-  filterWindowScrollUnsub?.()
-  const onWindowScroll = () => syncFilterCollapse()
-  window.addEventListener('scroll', onWindowScroll, { passive: true })
-  filterWindowScrollUnsub = () => window.removeEventListener('scroll', onWindowScroll)
-}
 
 onBeforeRouteLeave(async (to, from) => {
   if (isOverlayHistoryRestore() || to.path === from.path) return
@@ -1836,6 +1810,7 @@ onBeforeRouteLeave(async (to, from) => {
 })
 
 onBeforeUnmount(() => {
+  releaseDocumentHeight()
   clearScatteredTiles()
   gridEl.value?.classList.remove('products__grid--meta-hold')
   window.removeEventListener('pageshow', onPageShow)
@@ -1846,16 +1821,7 @@ onBeforeUnmount(() => {
   titleSwapGen += 1
   if (revealTimer) clearTimeout(revealTimer)
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
-  cancelAnimationFrame(filterLiquidRaf)
-  filterResizeObserver?.disconnect()
-  filterResizeObserver = null
-  window.removeEventListener('resize', onFilterWindowResize)
   document.removeEventListener('pointerdown', onFilterPointerDown)
-  filterLenisUnsub?.()
-  filterLenisUnsub = null
-  filterWindowScrollUnsub?.()
-  filterWindowScrollUnsub = null
-  if (filterPillEl.value) gsap.killTweensOf(filterPillEl.value)
   teardownTitleGooey()
   if (import.meta.client && gridEl.value) {
     gsap.killTweensOf(
@@ -2120,50 +2086,61 @@ useHead(() => ({
   color: var(--muted);
 }
 
-.products__view {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  margin-top: 2px;
-  padding: 0;
+.products__dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(60px + var(--bucket-push, 0px));
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding-right: var(--gutter, 16px);
+  pointer-events: none;
+}
+
+.products__mode {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.products__mode button {
+  margin: 0;
+  padding: 0.45rem 1.05rem;
   border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-color);
-  opacity: 0.4;
+  color: var(--charcoal);
   cursor: pointer;
 }
 
-.products__view rect {
-  stroke: currentColor;
-  stroke-width: 1.2;
-}
-
-.products__view.is-on,
-.products__view:hover {
-  opacity: 1;
-}
-
-.products__view.is-on rect {
-  fill: currentColor;
+.products__mode button.is-active {
+  background: var(--charcoal);
+  color: var(--cream);
 }
 
 .products__filter-tool {
-  position: fixed;
-  right: 20px;
-  top: 130px;
-  z-index: 60;
+  position: relative;
+  z-index: 2;
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 0.35rem;
-  width: -moz-max-content;
+  align-items: flex-end;
+  justify-content: flex-end;
   width: max-content;
   max-width: unset;
   padding: 0;
   pointer-events: auto;
-  justify-content: flex-end;
 }
 
 .products__filters {
@@ -2175,20 +2152,13 @@ useHead(() => ({
   text-align: center;
 }
 
-.products__filters-pill {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  border-radius: var(--ui-border-radius);
-  background: var(--text-color);
-  opacity: 0;
-  pointer-events: none;
-  will-change: transform, width, height, border-radius;
-}
-
-.products__filters-pill.is-ready {
-  opacity: 1;
+.products__filters.is-collapsed {
+  padding: 4px;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .products__filters-list {
@@ -2212,6 +2182,8 @@ useHead(() => ({
 
 .products__filters.is-collapsed .type-chip--active {
   z-index: 3;
+  background: #fff;
+  color: #111;
 }
 
 .products__filters.is-collapsed:not(.is-open) .type-chip:not(.type-chip--active) {
@@ -2222,6 +2194,28 @@ useHead(() => ({
 .products__filters.is-collapsed.is-open .type-chip:not(.type-chip--active) {
   z-index: 2;
   pointer-events: auto;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--charcoal);
+}
+
+.products__filters.is-collapsed .type-chip,
+.products__filters.is-collapsed .type-chip:hover,
+.products__filters.is-collapsed .type-chip--active,
+.products__filters.is-collapsed .products__search:hover,
+.products__filters.is-collapsed .products__search:focus-within {
+  border-radius: 999px;
+}
+
+.products__filters.is-collapsed .type-chip {
+  padding: 0.45rem 1.05rem;
+}
+
+.products__filters.is-collapsed .products__search:has(.products__search-clear) {
+  padding-right: calc(1.05rem + 1.25rem);
 }
 
 .type-chip {
@@ -2248,14 +2242,13 @@ useHead(() => ({
   border-radius: var(--ui-border-radius);
 }
 
-.type-chip--active,
-.type-chip--lit {
+.type-chip--active {
   border-radius: var(--ui-border-radius);
-  color: var(--background-color);
+  background: #fff;
+  color: #111;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .products__filters-pill,
   .type-chip,
   .type-chip__chevron {
     transition: none;
@@ -2293,10 +2286,11 @@ useHead(() => ({
   margin-left: 0.45rem;
   opacity: 1;
   pointer-events: auto;
+  transform: rotate(180deg);
 }
 
 .products__filters.is-collapsed.is-open .type-chip--active .type-chip__chevron {
-  transform: rotate(180deg);
+  transform: rotate(0deg);
 }
 
 .type-chip__chevron svg {
@@ -2424,6 +2418,7 @@ useHead(() => ({
 
 .products__grid-wrap {
   padding-top: 1.5rem;
+  padding-bottom: calc(7.5rem + var(--bucket-push, 0px));
 }
 
 .products__grid {
@@ -2451,17 +2446,8 @@ useHead(() => ({
     grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
-  .products__view {
-    display: inline-flex;
-  }
-
   .products__grid--even {
     grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-
-  .products__grid--even :deep(.product-card),
-  .products__grid--even .products__spacer {
-    grid-column: span 1 !important;
   }
 }
 @media (min-width: 2080px) {
@@ -2606,6 +2592,24 @@ useHead(() => ({
   .products__grid :deep(.product-card--archive-full),
   .products__spacer.product-card--archive-full {
     grid-column: span 2;
+  }
+}
+
+.products__grid--even :deep(.product-card),
+.products__grid--even .products__spacer {
+  grid-column: span 1 !important;
+}
+
+@media (max-width: 860px) {
+  .products__dock {
+    justify-content: space-between;
+    padding-left: var(--gutter, 16px);
+  }
+
+  .products__mode {
+    position: relative;
+    left: auto;
+    transform: none;
   }
 }
 </style>

@@ -389,10 +389,14 @@ const onToggle = (event?: MouseEvent) => {
   }
 }
 
+.product-card--saved {
+  --gathered-thumb-opacity: 0.1;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .product-card--saved .product-card__image,
   .product-card--saved .product-card__placeholder {
-    opacity: 0.1;
+    opacity: var(--gathered-thumb-opacity);
     filter: grayscale(100%);
     transition: opacity 0.45s ease;
   }
