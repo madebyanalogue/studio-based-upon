@@ -108,17 +108,6 @@
           >
             {{ selectionNavLabel }}
           </button>
-
-          <button
-            type="button"
-            class="header__version interface"
-            :class="{ 'header__version--active': boardsPanelOpen }"
-            :aria-pressed="boardsPanelOpen"
-            aria-label="My Boards"
-            @click="onMyBoardsClick"
-          >
-            My Boards
-          </button>
         </div>
 
         <div class="header__cta" role="group" aria-label="Contact">
@@ -150,7 +139,7 @@ const {
   hoverSelectionStack,
   closeDrawer,
 } = useBucket()
-const { boardsPanelOpen, openBoardsPanel, closeBoardsPanel } = useBoards()
+const { closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
 const { $lenis } = useNuxtApp()
@@ -295,15 +284,6 @@ const onSelectionsHover = (hot: boolean) => {
 const onSelectionsClick = () => {
   closeBoardsPanel()
   openSelectionStack()
-}
-
-const onMyBoardsClick = () => {
-  if (boardsPanelOpen.value) {
-    closeBoardsPanel()
-    return
-  }
-  if (isOpen.value) closeDrawer()
-  openBoardsPanel()
 }
 </script>
 

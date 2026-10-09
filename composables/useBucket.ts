@@ -197,6 +197,8 @@ export const useBucket = () => {
     itemId: string
     imageUrl: string
     from: { left: number; top: number; width: number; height: number }
+    /** Land in a gap that opens at the centre of the spread row. */
+    center?: boolean
   } | null>('bucket-pending-fly', () => null)
   // DOM source kept off useState (not serializable)
   let pendingFlySource: HTMLElement | null = null
@@ -1139,6 +1141,64 @@ export const useBucket = () => {
     openDrawer('selections')
   }
 
+  let prepareCollectLanding: (() => Promise<void>) | null = null
+  let collectFlight: Promise<void> = Promise.resolve()
+  let collectGate: Promise<void> = Promise.resolve()
+
+  const registerCollectLanding = (handler: (() => Promise<void>) | null) => {
+    prepareCollectLanding = handler
+  }
+
+  const trackCollectFlight = (flight: Promise<void>) => {
+    collectFlight = flight
+  }
+
+  const insertItemInMoodboard = (moodboardId: string, item: BucketItem, index: number) => {
+    moodboards.value = moodboards.value.map((board) => {
+      if (board.id !== moodboardId) return board
+      if (board.items.some((entry) => entry.id === item.id)) return board
+      const items = board.items.slice()
+      const at = Math.max(0, Math.min(index, items.length))
+      items.splice(at, 0, item)
+      return { ...board, items }
+    })
+    persist()
+  }
+
+  /**
+   * Add a piece into the middle of the active selection and fly it there.
+   * BucketStack opens the row and parts the neighbours around the landing slot.
+   */
+  const collectIntoOpenStack = (
+    item: BucketItem,
+    from: { left: number; top: number; width: number; height: number },
+  ) => {
+    const run = collectGate.then(async () => {
+      ensureActive()
+      const boardId = activeMoodboardId.value
+      if (!boardId) return
+      const normalized = normalizeBucketItem(item)
+      const board = moodboards.value.find((entry) => entry.id === boardId)
+      if (board?.items.some((entry) => entry.id === normalized.id)) return
+      if (prepareCollectLanding) await prepareCollectLanding()
+      const count =
+        moodboards.value.find((entry) => entry.id === boardId)?.items.length ?? 0
+      pendingFly.value = {
+        itemId: normalized.id,
+        imageUrl: normalized.imageUrl,
+        from,
+        center: true,
+      }
+      insertItemInMoodboard(boardId, normalized, Math.floor(count / 2))
+      await collectFlight
+    })
+    collectGate = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
   onMounted(hydrate)
 
   return {
@@ -1214,5 +1274,8 @@ export const useBucket = () => {
     openDrawer,
     pendingFly,
     consumePendingFly,
+    collectIntoOpenStack,
+    registerCollectLanding,
+    trackCollectFlight,
   }
 }

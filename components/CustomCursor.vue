@@ -7,6 +7,8 @@
       :class="{
         'site-cursor--mark': isMark,
         'site-cursor--heart': isHeart,
+        'site-cursor--advance': isAdvance,
+        'site-cursor--resting': showArrow,
         'site-cursor--tip-left': tipLeft,
         'site-cursor--on-media': onMedia,
         'site-cursor--on-slider': onSlider,
@@ -14,7 +16,23 @@
       aria-hidden="true"
     >
       <canvas v-show="trailOn" ref="trailCanvas" class="site-cursor__line" />
-      <div v-show="showOrb" ref="orbRef" class="site-cursor__orb" />
+      <div v-show="showOrb" ref="orbRef" class="site-cursor__orb">
+        <svg
+          v-show="isAdvance"
+          class="site-cursor__orb-arrow"
+          :class="{ 'is-in': showArrow }"
+          viewBox="-0.5 -0.5 23 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1"
+          stroke-linecap="round"
+          stroke-linejoin="miter"
+          aria-hidden="true"
+        >
+          <path d="M1 7.5h20" />
+          <path d="M15.6 2.1 21 7.5 15.6 12.9" />
+        </svg>
+      </div>
       <span
         v-show="sideChevron"
         ref="chevRef"
@@ -48,7 +66,7 @@
         v-show="labelMounted"
         ref="labelRef"
         class="site-cursor__hint interface"
-        :class="{ 'is-removing': labelRemoving, 'is-fading': labelFading }"
+        :class="{ 'is-removing': labelRemoving, 'is-fading': labelFading, 'is-traveling': !labelStill }"
       >
         <span
           v-for="(char, index) in labelChars"
@@ -124,6 +142,11 @@ const sideChevron = computed(() => {
 })
 
 const isHeart = computed(() => !homeScrollHint.value && preset.value?.icon === 'heart')
+const isAdvance = computed(() => {
+  if (homeScrollHint.value) return false
+  const tip = preset.value?.tooltip
+  return tip === 'Continue' || tip === 'Enter'
+})
 const showOrb = computed(() => !isMark.value && !isHeart.value)
 
 const pose = ref<MarkPose>({
@@ -353,7 +376,7 @@ const fadeLabelOff = (generation: number, done: () => void) => {
     if (event.target !== hint || event.propertyName !== 'opacity') return
     finish()
   }
-  const timer = window.setTimeout(finish, 220)
+  const timer = window.setTimeout(finish, 340)
   fadeCleanup = () => {
     settled = true
     hint?.removeEventListener('transitionend', onEnd)
@@ -414,8 +437,38 @@ const syncLabel = (text: string) => {
 const fine = ref(false)
 const inside = ref(false)
 const tipLeft = ref(false)
+const labelStill = ref(true)
+const showArrow = computed(() => isAdvance.value && labelStill.value)
+let restTimer = 0
+let revealTimer = 0
 let x = 0
 let y = 0
+
+const LABEL_REST_MS = 450
+
+const labelSide = () => (isAdvance.value ? x >= 170 : x > window.innerWidth - 220)
+
+const parkLabel = () => {
+  window.clearTimeout(restTimer)
+  window.clearTimeout(revealTimer)
+  restTimer = window.setTimeout(() => {
+    restTimer = 0
+    tipLeft.value = isAdvance.value ? true : labelSide()
+    requestAnimationFrame(() => {
+      labelStill.value = true
+      revealTimer = window.setTimeout(() => {
+        revealTimer = 0
+        if (labelStill.value) tipLeft.value = labelSide()
+      }, 300)
+    })
+  }, LABEL_REST_MS)
+}
+
+const noteMotion = () => {
+  if (reduceMotion.value) return
+  labelStill.value = false
+  parkLabel()
+}
 
 if (import.meta.client) {
   watch(cursorLabel, (text) => {
@@ -496,8 +549,10 @@ const place = () => {
     const turn = prev ? 135 : -45
     chevRef.value.style.transform = `translate3d(${x + nudge}px, ${y}px, 0) translate(-50%, -50%) rotate(${turn}deg)`
   }
-  const flip = x > window.innerWidth - 220
-  if (tipLeft.value !== flip) tipLeft.value = flip
+  if (labelStill.value) {
+    const flip = labelSide()
+    if (tipLeft.value !== flip) tipLeft.value = flip
+  }
   const label = labelRef.value
   if (label) {
     label.style.transform = `translate3d(${x}px, ${y}px, 0)`
@@ -507,8 +562,11 @@ const place = () => {
 const onPointerMove = (event: PointerEvent) => {
   if (!fine.value) return
   if (event.pointerType && event.pointerType !== 'mouse') return
+  const dx = event.clientX - x
+  const dy = event.clientY - y
   x = event.clientX
   y = event.clientY
+  if (Math.hypot(dx, dy) > 2) noteMotion()
   inside.value = true
   if (route.path === '/about' && !reduceMotion.value) {
     const last = trailPoints[trailPoints.length - 1]
@@ -566,6 +624,8 @@ onUnmounted(() => {
   window.cancelAnimationFrame(markRaf)
   window.cancelAnimationFrame(trailRaf)
   clearLabelTimer()
+  window.clearTimeout(restTimer)
+  window.clearTimeout(revealTimer)
   media?.removeEventListener('change', onFinePointerChange)
   window.removeEventListener('pointermove', onPointerMove)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
@@ -627,16 +687,48 @@ watch(trailOn, (on) => {
   margin: 0;
   border-radius: 50%;
   background: #fff;
+  border: 0 solid transparent;
   mix-blend-mode: difference;
+  z-index: 2;
   translate: -50% -50%;
   transform: translate3d(-100px, -100px, 0);
   will-change: transform, width, height, background, border;
+  display: grid;
+  place-items: center;
   transition:
     width 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     height 0.18s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.18s ease,
     background 0.18s ease,
-    border-color 0.18s ease;
+    border-color 0.18s ease,
+    border-width 0.18s ease;
+}
+
+.site-cursor__orb-arrow {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.site-cursor--advance .site-cursor__orb-arrow {
+  width: calc(20px * 23 / 22);
+  height: calc(20px * 16 / 22);
+  color: var(--text-color);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.site-cursor--advance .site-cursor__orb-arrow.is-in {
+  opacity: 1;
+}
+
+.site-cursor--advance.site-cursor--resting .site-cursor__orb {
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border: 1px solid #fff;
+  color: var(--text-color);
+  mix-blend-mode: normal;
 }
 
 .site-cursor__chev {
@@ -653,9 +745,16 @@ watch(trailOn, (on) => {
   transform: translate3d(-100px, -100px, 0);
 }
 
-html:not(.dark) .site-cursor__orb {
+html:not(.dark) .site-cursor__orb,
+html:not(.dark) .site-cursor--advance .site-cursor__orb {
   background: var(--red);
   mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--advance.site-cursor--resting .site-cursor__orb {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--text-color);
 }
 
 html:not(.dark) .site-cursor__hint {
@@ -664,13 +763,27 @@ html:not(.dark) .site-cursor__hint {
 }
 
 /* Intro keeps the red cursor in dark mode as well. */
-html.dark.homepage-intro .site-cursor__orb {
+html.dark.homepage-intro .site-cursor__orb,
+html.dark.homepage-intro .site-cursor--advance .site-cursor__orb {
   background: var(--red);
   mix-blend-mode: normal;
 }
 
+html.dark.homepage-intro .site-cursor--advance.site-cursor--resting .site-cursor__orb {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--text-color);
+}
+
 html.dark.homepage-intro .site-cursor__hint {
   color: var(--red);
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--advance .site-cursor__hint,
+html.dark .site-cursor--advance .site-cursor__hint,
+html.dark.homepage-intro .site-cursor--advance .site-cursor__hint {
+  color: var(--text-color);
   mix-blend-mode: normal;
 }
 
@@ -701,9 +814,20 @@ html:not(.dark) .site-cursor--on-media .site-cursor__heart {
 
 html:not(.dark) .site-cursor--on-slider .site-cursor__orb,
 html.dark .site-cursor--on-slider .site-cursor__orb,
-html.dark.homepage-intro .site-cursor--on-slider .site-cursor__orb {
+html.dark.homepage-intro .site-cursor--on-slider .site-cursor__orb,
+html:not(.dark) .site-cursor--on-slider.site-cursor--advance .site-cursor__orb,
+html.dark .site-cursor--on-slider.site-cursor--advance .site-cursor__orb,
+html.dark.homepage-intro .site-cursor--on-slider.site-cursor--advance .site-cursor__orb {
   background: #fff;
   mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--on-slider.site-cursor--advance.site-cursor--resting .site-cursor__orb,
+html.dark .site-cursor--on-slider.site-cursor--advance.site-cursor--resting .site-cursor__orb,
+html.dark.homepage-intro .site-cursor--on-slider.site-cursor--advance.site-cursor--resting .site-cursor__orb {
+  background: transparent;
+  border-color: #fff;
+  color: var(--text-color);
 }
 
 html:not(.dark) .site-cursor--on-slider .site-cursor__hint,
@@ -781,7 +905,7 @@ html.dark.homepage-intro .site-cursor--on-slider .site-cursor__chev {
   white-space: nowrap;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.16s ease;
+  transition: opacity 0.28s ease;
   translate: 18px -50%;
   transform: translate3d(-100px, -100px, 0);
 }
@@ -798,7 +922,28 @@ html.dark.homepage-intro .site-cursor--on-slider .site-cursor__chev {
   translate: calc(-100% - 30px) -50%;
 }
 
-.site-cursor__hint.is-fading {
+.site-cursor--advance .site-cursor__hint {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 48px;
+  box-sizing: border-box;
+  padding: 0 18px 0 58px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color) 72%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  translate: -24px -50%;
+}
+
+.site-cursor--advance.site-cursor--tip-left .site-cursor__hint,
+.site-cursor--advance .site-cursor__hint.is-traveling {
+  padding: 0 58px 0 18px;
+  translate: calc(-100% + 24px) -50%;
+}
+
+.site-cursor__hint.is-fading,
+.site-cursor__hint.is-traveling {
   opacity: 0;
 }
 

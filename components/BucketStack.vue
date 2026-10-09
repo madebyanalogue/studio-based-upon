@@ -20,7 +20,7 @@
       :style="stackCssVars"
       :aria-hidden="isOpen || stagePresent || isMoodboard || showRail ? 'false' : 'true'"
     >
-      <!-- Selection piles + create slot (bottom-right) -->
+      <!-- Selection piles + create slot (bottom-left) -->
       <div
         v-if="showRail"
         ref="railRef"
@@ -94,6 +94,7 @@
                 expandedBoardIds.includes(board.id) &&
                 preparingBoardId !== board.id,
               'stack__pile--spread': spreadBoardId === board.id,
+              'stack__pile--spreading': spreadingBoardId === board.id,
             }"
             :aria-label="board.name"
             :data-cursor="selectionPileCursor"
@@ -101,26 +102,28 @@
             @wheel="onSpreadWheel"
             @click="onPileClick(board.id)"
           >
-            <span
-              v-for="(card, index) in stackPileCards(board)"
-              :key="card.id"
-              class="stack__pile-card stack__pile-card--fan"
-              :class="{ 'stack__pile-card--arriving': arrivingIds.includes(card.id) }"
-              :data-item-id="card.id"
-              :data-flip-id="
-                flipSurface === 'pile' && board.id === activeMoodboardId
-                  ? card.id
-                  : undefined
-              "
-              :style="pileCardStyle(card.id, stackPileCards(board))"
-            >
-              <img
-                v-if="card.imageUrl"
-                :src="card.imageUrl"
-                :alt="card.title"
-                class="stack__pile-image"
-                draggable="false"
-              />
+            <span class="stack__pile-fan">
+              <span
+                v-for="(card, index) in stackPileCards(board)"
+                :key="card.id"
+                class="stack__pile-card stack__pile-card--fan"
+                :class="{ 'stack__pile-card--arriving': arrivingIds.includes(card.id) }"
+                :data-item-id="card.id"
+                :data-flip-id="
+                  flipSurface === 'pile' && board.id === activeMoodboardId
+                    ? card.id
+                    : undefined
+                "
+                :style="pileCardStyle(card.id, stackPileCards(board), board.id)"
+              >
+                <img
+                  v-if="card.imageUrl"
+                  :src="card.imageUrl"
+                  :alt="card.title"
+                  class="stack__pile-image"
+                  draggable="false"
+                />
+              </span>
             </span>
           </button>
 
@@ -856,37 +859,241 @@ const keepPileForFlip = ref(false)
 const pileFanned = ref(false)
 /** Open selection laid out as a bottom row instead of the cart grid. */
 const spreadBoardId = ref<string | null>(null)
+/** Fan-out / line-up flight — kills the pile card’s CSS transform tween. */
+const spreadingBoardId = ref<string | null>(null)
 
 const onSpreadWheel = (event: WheelEvent) => {
   const el = event.currentTarget
   if (!(el instanceof HTMLElement) || !el.classList.contains('stack__pile--spread')) return
-  if (el.scrollWidth <= el.clientWidth + 1) return
+  const scroller = el.querySelector<HTMLElement>('.stack__pile-fan') || el
+  if (scroller.scrollWidth <= scroller.clientWidth + 1) return
   const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
   event.preventDefault()
   event.stopPropagation()
-  el.scrollLeft += delta
+  scroller.scrollLeft += delta
 }
 
-const pinSpreadEnd = async (id: string) => {
+const pinSpreadStart = async (id: string) => {
   for (let i = 0; i < 10; i++) {
     await wait(40)
     if (spreadBoardId.value !== id) return
     const pile = pileEls.value[id]
     if (!pile || pile.dataset.spreadPinned === '1') return
-    const max = pile.scrollWidth - pile.clientWidth
-    if (max > 1) {
-      pile.scrollLeft = max
-      pile.dataset.spreadPinned = '1'
-      return
-    }
+    const fan = pile.querySelector<HTMLElement>('.stack__pile-fan')
+    ;(fan || pile).scrollLeft = 0
+    pile.dataset.spreadPinned = '1'
+    return
   }
 }
 
-watch(spreadBoardId, (id) => {
-  if (!id) return
-  const pile = pileEls.value[id]
-  if (pile) delete pile.dataset.spreadPinned
-  void pinSpreadEnd(id)
+const SPREAD_CARD_CLEAR =
+  'transform,x,y,xPercent,yPercent,rotation,scale,scaleX,scaleY,top,left,right,bottom,width,height,maxWidth,maxHeight,position,zIndex,margin,marginLeft,marginRight'
+
+type DockSpring = { value: number; velocity: number }
+
+let dockRaf = 0
+let dockPointer: { x: number; y: number } | null = null
+let dockPile: HTMLElement | null = null
+let spreadFlipTween: gsap.core.Timeline | null = null
+let spreadAnimToken = 0
+const dockSprings = new Map<HTMLElement, DockSpring>()
+
+const spreadCardsOf = (pile: HTMLElement) =>
+  [...pile.querySelectorAll<HTMLElement>('.stack__pile-card')]
+
+const dockMetrics = (pile: HTMLElement) => {
+  const cs = getComputedStyle(pile)
+  const num = (name: string, fallback: number) => {
+    const value = Number.parseFloat(cs.getPropertyValue(name))
+    return Number.isFinite(value) ? value : fallback
+  }
+  return {
+    base: num('--dock-base', 30),
+    max: num('--dock-max', 148),
+    reach: num('--dock-reach', 86),
+  }
+}
+
+/** Cosine falloff — hovered thumb full size, neighbours ease back to the row. */
+const dockSizeFor = (distance: number, base: number, max: number, reach: number) => {
+  if (distance >= reach) return base
+  const influence = Math.cos((distance / reach) * Math.PI * 0.5) ** 2
+  return base + (max - base) * influence
+}
+
+const stepDockSpring = (spring: DockSpring, target: number) => {
+  const next = spring.value + (target - spring.value) * 0.38
+  if (Math.abs(next - target) < 0.012) {
+    spring.value = target
+    spring.velocity = 0
+  } else {
+    spring.value = next
+    spring.velocity = 1
+  }
+  return spring.value
+}
+
+const clearSpreadCardProps = (pile: HTMLElement) => {
+  const cards = spreadCardsOf(pile)
+  if (!cards.length) return
+  gsap.set(cards, { clearProps: SPREAD_CARD_CLEAR })
+  cards.forEach((card) => dockSprings.delete(card))
+}
+
+const stopDockLoop = () => {
+  if (dockRaf) cancelAnimationFrame(dockRaf)
+  dockRaf = 0
+}
+
+const unbindDock = () => {
+  stopDockLoop()
+  dockPointer = null
+  if (import.meta.client) {
+    window.removeEventListener('pointermove', onDockPointerMove)
+  }
+  dockPile = null
+  dockSprings.clear()
+}
+
+const spreadFanOf = (pile: HTMLElement) =>
+  pile.querySelector<HTMLElement>('.stack__pile-fan') || pile
+
+const applyDock = (pile: HTMLElement) => {
+  const { base, max, reach } = dockMetrics(pile)
+  const fan = spreadFanOf(pile)
+  const fanRect = fan.getBoundingClientRect()
+  const pointer = dockPointer
+  const localX =
+    pointer == null ? null : pointer.x - fanRect.left + fan.scrollLeft
+  const near =
+    pointer != null &&
+    localX != null &&
+    pointer.x >= fanRect.left - 80 &&
+    pointer.x <= fanRect.right + 80 &&
+    pointer.y >= fanRect.bottom - 280 &&
+    pointer.y <= fanRect.bottom + 28
+  const activeX = near ? localX : null
+  let moving = false
+
+  const cards = spreadCardsOf(pile).sort((a, b) => a.offsetLeft - b.offsetLeft)
+  cards.forEach((card, index) => {
+    const center = card.offsetLeft + card.offsetWidth / 2
+    const distance =
+      activeX == null ? Number.POSITIVE_INFINITY : Math.abs(activeX - center)
+    const target = dockSizeFor(distance, base, max, reach) / base
+    const spring = dockSprings.get(card) ?? { value: 1, velocity: 0 }
+    const next = stepDockSpring(spring, target)
+    dockSprings.set(card, spring)
+
+    const idle = activeX == null && Math.abs(next - 1) < 0.02 && spring.velocity === 0
+    if (idle) {
+      card.style.transform = ''
+      card.style.transformOrigin = ''
+      card.style.zIndex = ''
+      dockSprings.delete(card)
+      return
+    }
+    if (spring.velocity !== 0) moving = true
+    const edge =
+      index === 0 ? 'left bottom' : index === cards.length - 1 ? 'right bottom' : 'center bottom'
+    card.style.transformOrigin = edge
+    card.style.transform = `scale(${next})`
+    card.style.zIndex = String(20 + Math.round(next * 100))
+  })
+
+  return moving
+}
+
+const runDockLoop = () => {
+  if (dockRaf || !dockPile) return
+  const tick = () => {
+    const pile = dockPile
+    if (!pile || spreadBoardId.value == null) {
+      dockRaf = 0
+      return
+    }
+    const moving = applyDock(pile)
+    if (!moving) {
+      dockRaf = 0
+      return
+    }
+    dockRaf = requestAnimationFrame(tick)
+  }
+  dockRaf = requestAnimationFrame(tick)
+}
+
+function onDockPointerMove(event: PointerEvent) {
+  if (spreadingBoardId.value || !dockPile) return
+  dockPointer = { x: event.clientX, y: event.clientY }
+  runDockLoop()
+}
+
+const bindDock = (pile: HTMLElement) => {
+  if (dockPile === pile) return
+  unbindDock()
+  dockPile = pile
+  window.addEventListener('pointermove', onDockPointerMove)
+}
+
+watch(spreadBoardId, async (id, prev) => {
+  if (!import.meta.client) return
+  const token = ++spreadAnimToken
+  const pileId = id || prev || null
+  unbindDock()
+  spreadFlipTween?.kill()
+  spreadFlipTween = null
+
+  const pile = pileId ? pileEls.value[pileId] : null
+  if (!pile) {
+    spreadingBoardId.value = null
+    if (id) void pinSpreadStart(id)
+    return
+  }
+
+  const cards = spreadCardsOf(pile)
+  const state = cards.length ? Flip.getState(cards) : null
+  const ordered = [...cards].sort(
+    (a, b) => Number(a.style.order) - Number(b.style.order),
+  )
+  spreadingBoardId.value = pileId
+  if (id) delete pile.dataset.spreadPinned
+
+  await nextTick()
+  if (token !== spreadAnimToken) return
+
+  gsap.killTweensOf(spreadCardsOf(pile))
+  clearSpreadCardProps(pile)
+  if (id) bindDock(pile)
+
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!state || !ordered.length || reduce) {
+    spreadingBoardId.value = null
+    if (id) {
+      void pinSpreadStart(id)
+      runDockLoop()
+    }
+    return
+  }
+
+  spreadFlipTween = Flip.from(state, {
+    targets: ordered,
+    absolute: true,
+    duration: 0.52,
+    stagger: 0.03,
+    ease: 'power3.out',
+    scale: true,
+    prune: true,
+    onComplete: () => {
+      if (token !== spreadAnimToken) return
+      clearSpreadCardProps(pile)
+      spreadingBoardId.value = null
+      spreadFlipTween = null
+      if (id && spreadBoardId.value === id) {
+        void pinSpreadStart(id)
+        runDockLoop()
+      }
+    },
+  })
 })
 /** Tip / count visibility — hides on open click, returns with close backdrop. */
 const pileCountVisible = ref(true)
@@ -2263,6 +2470,7 @@ const pileTipLocked = ref(false)
 
 const showPileTip = (boardId: string) =>
   !pileTipLocked.value &&
+  spreadBoardId.value !== boardId &&
   !isOpen.value &&
   !stagePresent.value &&
   !isFlipping.value &&
@@ -3270,7 +3478,7 @@ watch(
   { deep: true, immediate: true },
 )
 
-const pileCardStyle = (id: string, cards: StackPileCard[]) => {
+const pileCardStyle = (id: string, cards: StackPileCard[], boardId?: string) => {
   const landing = pileLandingId.value
   const flying = arrivingIds.value
   // Until the thud, pose as if the flyer isn't in the stack yet
@@ -3296,6 +3504,7 @@ const pileCardStyle = (id: string, cards: StackPileCard[]) => {
   const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
   const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
   const zIndex = cards.findIndex((card) => card.id === id) + 1
+  const inSpread = !!boardId && spreadBoardId.value === boardId
 
   return {
     '--pile-x': `${x}px`,
@@ -3304,7 +3513,10 @@ const pileCardStyle = (id: string, cards: StackPileCard[]) => {
     '--pile-hover-x': `${hoverX}px`,
     '--pile-hover-y': `${hoverY}px`,
     '--pile-hover-r': `${hoverRot}deg`,
-    zIndex: zIndex > 0 ? zIndex : cards.length,
+    // Dock writes z-index while the row is open; Vue must not overwrite it.
+    ...(inSpread ? {} : { zIndex: zIndex > 0 ? zIndex : cards.length }),
+    // Spread row reads left → right from the top card; deeper cards follow.
+    order: Math.max(cards.length - 1 - cards.findIndex((card) => card.id === id), 0),
   }
 }
 
@@ -5032,6 +5244,9 @@ onBeforeUnmount(() => {
   destroyGridLenis()
   clearColumnPointerListeners()
   destroyColumnGhost()
+  unbindDock()
+  spreadFlipTween?.kill()
+  spreadFlipTween = null
   if (import.meta.client) {
     window.removeEventListener('resize', onWinResize)
     document.removeEventListener('pointerdown', onSelectionMenuPointerDown)
@@ -5131,13 +5346,15 @@ onBeforeUnmount(() => {
 
 .stack__rail {
   position: fixed;
-  right: var(--pdp-related-rail-width);
-  left: auto;
+  left: 0;
+  right: auto;
+  top: auto;
   bottom: 0;
+  transform: none;
   z-index: 210;
   display: flex;
   flex-direction: column-reverse;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0;
   pointer-events: none;
   overflow: visible;
@@ -5147,9 +5364,12 @@ onBeforeUnmount(() => {
 }
 
 .stack__rail.stack__rail--spread {
+  top: auto;
+  bottom: 0;
   left: 0 !important;
   right: 0 !important;
   width: 100%;
+  transform: none;
 }
 
 /* Boards pile — sibling of .stack so PDP (320) can cover it */
@@ -5794,35 +6014,62 @@ onBeforeUnmount(() => {
     rotate(var(--pile-hover-r)) scale(var(--pile-hover-scale, 1));
 }
 
-/* Open pile: a bottom row. Wheel over the row moves the overflow. */
+.stack__pile-fan {
+  display: contents;
+}
+
+/* Open pile: thumbs fan out into a bottom row, then magnify like a dock. */
 .stack__pile-wrap--spread {
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
   height: auto !important;
   min-height: 0 !important;
 }
 
 .stack__pile--spread {
+  --dock-base: 30px;
+  --dock-gap: 4px;
+  --dock-max: 148px;
+  --dock-reach: 62px;
   position: relative;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  overflow: visible;
+  padding: 0;
+  box-sizing: border-box;
+  cursor: default;
+  line-height: 0;
+}
+
+.stack__pile--spread .stack__pile-fan {
   display: flex;
   flex-direction: row;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 14px;
-  width: 100%;
-  height: auto;
+  gap: var(--dock-gap);
+  position: relative;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  /* Room above the row so magnified thumbs aren’t clipped by the scroller. */
+  padding: 320px 0 0;
+  margin-top: -320px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 12px 28px 18px;
   box-sizing: border-box;
   scrollbar-width: none;
-  cursor: grab;
+  pointer-events: none;
 }
 
-.stack__pile--spread .stack__pile-card:first-child {
-  margin-left: auto;
+.stack__pile--spread.stack__pile--spreading .stack__pile-fan {
+  overflow: visible;
 }
 
-.stack__pile--spread::-webkit-scrollbar {
+.stack__pile--spread .stack__pile-fan::-webkit-scrollbar {
   display: none;
 }
 
@@ -5831,10 +6078,30 @@ onBeforeUnmount(() => {
   position: relative;
   left: auto;
   top: auto;
-  flex: 0 0 var(--stack-cell-size);
-  width: var(--stack-cell-size);
-  height: var(--stack-cell-size);
+  bottom: auto;
+  flex: 0 0 auto;
+  width: var(--dock-base);
+  height: auto;
+  max-width: none;
+  max-height: none;
+  align-self: flex-end;
   transform: none;
+  transform-origin: center bottom;
+  overflow: visible;
+  transition: none;
+  pointer-events: auto;
+}
+
+.stack__pile--spreading .stack__pile-card {
+  transition: none;
+}
+
+.stack__pile--spread .stack__pile-image {
+  width: 100%;
+  height: auto;
+  padding: 0;
+  object-fit: contain;
+  object-position: center bottom;
 }
 
 @media (prefers-reduced-motion: reduce) {

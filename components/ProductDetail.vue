@@ -365,7 +365,12 @@ const { data: product, refresh } = await useAsyncData(
   },
 )
 
-const showSpecs = ref(true)
+/** Open by default. Closed state is remembered for the next product. */
+const showSpecs = useCookie<boolean>('sba-pdp-specs', {
+  default: () => true,
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
@@ -1672,8 +1677,8 @@ watch(
 
 .pdp__col--left {
   position: absolute;
-  top: var(--pdp-gallery-padding);
-  left: var(--pdp-gallery-padding);
+  top: 30px;
+  left: 30px;
   right: auto;
   bottom: unset;
   z-index: 120; /* above header logo (100) and index rail (110) */
@@ -1691,13 +1696,11 @@ watch(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
-  /* Clear the index rail when open — follow --pdp-index-rail-width @property
-     (no transform transition, or it double-eases and lags the rail) */
-  transform: translateX(var(--pdp-index-rail-width));
+  transform: none;
 }
 
 .pdp--sides .pdp__col--left {
-  transform: translateX(var(--pdp-index-rail-width));
+  transform: none;
 }
 
 /* Close: aside fades in place. The index-rail offset stays put. */
@@ -1794,6 +1797,7 @@ watch(
      viewport, so the extra right padding keeps frames centred in the clear span. */
   padding: var(--pdp-gallery-padding);
   padding-right: calc(var(--pdp-related-rail-width) + var(--pdp-gallery-padding));
+  padding-left: 320px;
 }
 
 .pdp__strip--single .pdp__strip-track {

@@ -10,33 +10,16 @@
     @click="onFieldClick"
   >
     <IntroMaterialSpotlight
+      v-for="slot in 3"
+      :key="slot"
       :dark="isDark"
-      :revealed="backdropIn"
-      :flatten="flattening"
+      :revealed="activeModel === slot - 1"
+      :flatten="modelFlatten[slot - 1]"
       :to-page="toPage"
-      :placement="modelSlot"
+      :placement="slot - 1"
     />
 
-    <svg class="homepage-intro__goo" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
-      <defs>
-        <filter
-          :id="titleFilterId"
-          x="-40%"
-          y="-40%"
-          width="180%"
-          height="180%"
-          color-interpolation-filters="sRGB"
-        >
-          <feColorMatrix
-            in="SourceGraphic"
-            type="matrix"
-            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 255 -140"
-          />
-        </filter>
-      </defs>
-    </svg>
-
-    <div class="homepage-intro__logo" :style="titleFilterStyle">
+    <div class="homepage-intro__logo">
       <div ref="logoEl" class="homepage-intro__logo-mark">
         <BasedUponLogoSansSerif />
       </div>
@@ -54,7 +37,6 @@
           :key="line"
           class="homepage-intro__type is-display"
           :data-line="lineIndex"
-          :style="titleFilterStyle"
         >{{ line }}</p>
         <div v-if="piece.follow?.length" class="homepage-intro__follow">
           <p
@@ -63,7 +45,6 @@
             class="homepage-intro__type is-display"
             :data-line="lineIndex"
             :data-follow-index="lineIndex"
-            :style="titleFilterStyle"
           >{{ line }}</p>
         </div>
       </div>
@@ -101,25 +82,56 @@
     </div>
 
     <a
-      v-if="introProduct"
+      v-if="activeCard"
       ref="productEl"
       class="homepage-intro__product"
-      :class="{ 'is-in': enterReady }"
-      :href="introProduct.href"
+      :class="{ 'is-in': productVisible }"
+      :href="activeCard.href"
       data-cursor="default"
       @click.prevent.stop="onProduct"
     >
       <img
         class="homepage-intro__product-thumb"
-        :src="introProduct.image"
-        :alt="introProduct.title"
+        :src="activeCard.image"
+        :alt="activeCard.title"
         draggable="false"
       />
       <span class="homepage-intro__product-meta">
-        <span class="homepage-intro__product-title">{{ introProduct.title }}</span>
-        <span class="homepage-intro__product-line">{{ introProduct.meta }}</span>
+        <span class="homepage-intro__product-title">{{ activeCard.title }}</span>
+        <span v-if="activeCard.meta" class="homepage-intro__product-line">{{ activeCard.meta }}</span>
       </span>
     </a>
+
+    <div
+      class="homepage-intro__progress"
+      :class="{ 'is-in': showProgress }"
+      aria-hidden="true"
+    >
+      <span>{{ frameIndex }}</span>
+      <span class="homepage-intro__progress-line" />
+      <span>{{ FRAMES.length - 1 }}</span>
+    </div>
+
+    <div
+      v-if="frameIndex === FRAMES.length - 1"
+      class="homepage-intro__finale"
+    >
+      <span
+        class="homepage-intro__rule"
+        :class="{ 'is-drawn': ruleDrawn }"
+        @transitionend="onRuleEnd"
+      />
+      <button
+        ref="enterEl"
+        type="button"
+        class="homepage-intro__enter interface"
+        :class="{ 'is-in': enterReady }"
+        data-cursor="default"
+        @click.stop="onEnter"
+      >
+        Enter the studio
+      </button>
+    </div>
 
     <button
       type="button"
@@ -128,28 +140,6 @@
       @click.stop="onSkip"
     >
       Skip
-    </button>
-
-    <button
-      v-if="enterReady"
-      ref="enterEl"
-      type="button"
-      class="homepage-intro__enter interface"
-      data-cursor="default"
-      @click.stop="onEnter"
-    >
-      Enter the studio
-    </button>
-
-    <button
-      v-show="frameIndex < FRAMES.length - 1"
-      type="button"
-      class="homepage-intro__next"
-      :class="{ 'is-in': nextReady }"
-      data-cursor="default"
-      @click.stop="advanceSlide"
-    >
-      Next
     </button>
   </div>
 </template>
@@ -160,10 +150,9 @@ import { SplitText } from 'gsap/SplitText'
 import {
   clearHomepageIntroLock,
   useHomepageIntro,
+  type HomepageIntroProduct,
 } from '~/composables/useHomepagePreloader'
 import { suppressOverlayRouteLeave } from '~/composables/useProductOverlay'
-
-const TITLE_BLUR_MAX = 60
 
 type Piece = {
   key: string
@@ -199,7 +188,7 @@ const FRAMES: Frame[] = [
 
 const STAGE_NAMES = ['Studio Based Upon', 'Two decades', 'Everything starts', 'Explore what']
 /** Hold after the title is fully in, before the click sends it out. */
-const DEFAULT_BEATS = [1.5, 1.4, 2.6, 1.4]
+const DEFAULT_BEATS = [0.7, 1.4, 2.6, 1.4]
 
 const pieces: Piece[] = FRAMES.map((frame, frameIndex) => ({
   key: `f${frameIndex}`,
@@ -208,13 +197,34 @@ const pieces: Piece[] = FRAMES.map((frame, frameIndex) => ({
   follow: frame.follow,
 }))
 
-const titleFilterId = `intro-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
-const titleFilterStyle = {
-  filter: `url(#${titleFilterId})`,
-  WebkitFilter: `url(#${titleFilterId})`,
-}
+const { phase } = useHomepageIntro()
 
-const { phase, product: introProduct } = useHomepageIntro()
+const PRODUCT_AFTER_MS = 2000
+const thumb = (url: string) => `${url}?w=640&auto=format&q=80`
+/** Cards for the three model slides: Two decades, Everything starts, Explore what. */
+const SLIDE_PRODUCTS: Record<number, HomepageIntroProduct> = {
+  1: {
+    title: 'Diamond Coffee Table (Blush)',
+    meta: 'Diamond',
+    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/fbcd128f554f3e317ee629acb7459adb1cd6f33b-3000x2000.jpg'),
+    href: '/materials-and-forms/diamond-coffee-table-blush',
+  },
+  2: {
+    title: 'Untitled 06',
+    meta: '',
+    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/2d612776950658cd0acd084b4ebb9361a273f195-1993x3000.jpg'),
+    href: '/materials-and-forms/untitled-06',
+  },
+  3: {
+    title: 'Double Twist Table',
+    meta: 'Twist',
+    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/c21436a67fe96cf2afda2fbca9789b4dbd4e5d51-3000x1924.jpg'),
+    href: '/materials-and-forms/double-twist-table',
+  },
+}
+const activeCard = ref<HomepageIntroProduct | null>(null)
+const productVisible = ref(false)
+let productTimer = 0
 const homeScrollHint = useHomeScrollHint()
 const route = useRoute()
 
@@ -235,19 +245,22 @@ const { preset: cursorPreset } = useCursor()
 const { open: openProduct } = useProductOverlay()
 const router = useRouter()
 const backdropIn = ref(false)
-const flattening = ref(true)
 const toPage = ref(false)
-/** Same figure, restaged. One pose per slide after the opening line. */
-const modelSlot = ref(0)
+/** One spotlight per group. -1 until the first group begins. */
+const activeModel = ref(-1)
+const modelFlatten = ref([true, true, true])
 /** How long each title holds after it is in. */
 const beats = ref<number[]>([...DEFAULT_BEATS])
 /** Hold after the logo has landed, before the first line. */
 const logoHoldMs = ref(520)
-/** Pause on the last slide before the exit choices appear. */
-const choicesDelayMs = ref(1100)
 const enterReady = ref(false)
 const enterEl = ref<HTMLElement | null>(null)
 const productEl = ref<HTMLElement | null>(null)
+const ruleDrawn = ref(false)
+/** From Two decades until the last slide. */
+const showProgress = computed(
+  () => frameIndex.value >= 1 && frameIndex.value < FRAMES.length - 1,
+)
 const leaving = ref(false)
 
 let started = false
@@ -255,40 +268,17 @@ let finished = false
 /** Two decades onward waits for a click. The follow lines stay inside their slide. */
 const CLICK_FROM = 1
 const awaitingClick = ref(false)
-/** Next button fades in once a group's text has settled. */
-const nextReady = ref(false)
-/** Next types on only after the arrived slide has had a moment to settle. */
-const CURSOR_AFTER_MS = 700
-const NEXT_AFTER_MS = 650
+/** Continue types on only after the arrived slide has had a moment to settle. */
+const CURSOR_AFTER_MS = 1200
 const cursorLabel = ref<string | undefined>(undefined)
 let cursorTimer = 0
-let nextTimer = 0
-
-const clearNextButton = () => {
-  window.clearTimeout(nextTimer)
-  nextTimer = 0
-  nextReady.value = false
-}
-
-const armNextButton = () => {
-  clearNextButton()
-  if (finished || leaving.value) return
-  if (frameIndex.value < CLICK_FROM || frameIndex.value >= FRAMES.length - 1) return
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  nextTimer = window.setTimeout(() => {
-    nextTimer = 0
-    if (finished || leaving.value || !awaitingClick.value) return
-    if (frameIndex.value < CLICK_FROM || frameIndex.value >= FRAMES.length - 1) return
-    nextReady.value = true
-  }, reduced ? 120 : NEXT_AFTER_MS)
-}
 
 const clearNextCursor = () => {
   window.clearTimeout(cursorTimer)
   cursorTimer = 0
   cursorLabel.value = undefined
   const tip = cursorPreset.value?.tooltip
-  if (tip === 'Next' || tip === 'Enter') cursorPreset.value = null
+  if (tip === 'Continue' || tip === 'Enter') cursorPreset.value = null
 }
 
 const armNextCursor = () => {
@@ -301,7 +291,7 @@ const armNextCursor = () => {
     cursorTimer = 0
     if (finished || leaving.value || !awaitingClick.value) return
     if (frameIndex.value < CLICK_FROM) return
-    const label = frameIndex.value >= FRAMES.length - 1 ? 'Enter' : 'Next'
+    const label = frameIndex.value >= FRAMES.length - 1 ? 'Enter' : 'Continue'
     cursorLabel.value = label
     cursorPreset.value = { id: 'cursor-label', tooltip: label }
   }, reduced ? 160 : CURSOR_AFTER_MS)
@@ -310,16 +300,15 @@ let pluginsReady = false
 let failTimer = 0
 let releaseTimer = 0
 let veilTimer = 0
-let choicesTimer = 0
 let fadeVeil: (() => void) | null = null
 let splits: InstanceType<typeof SplitText>[] = []
 type LineGroup = { words: HTMLElement[]; follow: number | null }
 let linesByKey = new Map<string, LineGroup[]>()
 let stopPath: (() => void) | null = null
-/** Logo rests, then melts out as the first line is already arriving. */
-const LOGO_EXIT_START = 0.28
-const LOGO_EXIT_END = 1.05
-const TEXT_START = 0.22
+/** Logo fades out fully before the first line fades in. */
+const LOGO_EXIT_START = 0
+const LOGO_EXIT_END = 0.28
+const TEXT_START = LOGO_EXIT_END
 /** Path units per second while the slides play themselves. */
 const SLIDE_RATE = 0.48
 
@@ -331,11 +320,9 @@ const finishSite = (immediate = false) => {
   homeScrollHint.value = false
   stopPath?.()
   clearNextCursor()
-  clearNextButton()
+  dismissProduct()
   window.clearTimeout(failTimer)
   window.clearTimeout(releaseTimer)
-  window.clearTimeout(choicesTimer)
-  choicesTimer = 0
   if (immediate) {
     clearHomepageIntroLock()
     if (phase.value !== 'done' && phase.value !== 'skipped') phase.value = 'done'
@@ -344,7 +331,7 @@ const finishSite = (immediate = false) => {
   }
 
   meltVisibleType()
-  flattening.value = true
+  modelFlatten.value = [true, true, true]
   toPage.value = true
   const flattenAt = performance.now()
   const FLATTEN_MS = 1200
@@ -419,17 +406,23 @@ const along = (t: number, start: number, end: number) => smoothstep((t - start) 
 const textOrigin = () => TEXT_START
 const logoAmount = (t: number) => 1 - along(t, LOGO_EXIT_START, LOGO_EXIT_END)
 
-/** Outgoing goo. The span is the melt speed, shared by every slide. */
-const EXIT_LEAD = 0.78
-const EXIT_TAIL = 0.42
+/** Outgoing fade. The span is the fade speed, shared by every slide. */
+const EXIT_LEAD = 0.22
+const EXIT_TAIL = 0.1
 const EXIT_SPAN = EXIT_LEAD + EXIT_TAIL
-/** Incoming goo. Span is the melt speed. */
-const ENTER_SPAN = 1.15
-/** How long a group waits, after it begins, before the title melt starts. */
-const GROUP_TEXT_DELAY = 0.4
-const FOLLOW_AFTER = 0.22
-const FOLLOW_STAGGER = 0.36
-const FOLLOW_SPAN = 0.9
+/** Opening line leaves a little quicker than the later slides. */
+const OPENING_EXIT_SPAN = 0.18
+const exitSpanFor = (index: number) => (index === 0 ? OPENING_EXIT_SPAN : EXIT_SPAN)
+/** Incoming fade. One slide is fully out before the next begins. */
+const ENTER_SPAN = 0.42
+/** Pause after a slide has gone, before the next title fades in. */
+const GROUP_TEXT_DELAY = 0.28
+const FOLLOW_AFTER = 0.08
+const FOLLOW_STAGGER = 0.32
+const FOLLOW_SPAN = 0.28
+/** Last slide: each word fades in on its own. */
+const WORD_STAGGER = 0.07
+const WORD_SPAN = 0.18
 
 const minHold = (index: number) => {
   const followCount = FRAMES[index]?.follow?.length ?? 0
@@ -439,7 +432,7 @@ const minHold = (index: number) => {
 const holdFor = (index: number) => Math.max(minHold(index), beats.value[index] ?? 1.4)
 /** Time from a slide's start until its title has finished melting in. */
 const leadIn = (index: number) => ENTER_SPAN + (index === 0 ? 0 : GROUP_TEXT_DELAY)
-const slideSpan = (index: number) => leadIn(index) + holdFor(index) + EXIT_SPAN
+const slideSpan = (index: number) => leadIn(index) + holdFor(index) + exitSpanFor(index)
 
 const frameStart = (index: number) => {
   let cursor = 0
@@ -459,7 +452,7 @@ const pieceAmount = (piece: Piece, t: number) => {
   const enterStart = enterStartFor(piece.frame)
   const enter = along(textT, enterStart, enterStart + ENTER_SPAN)
   const exitStart = exitStartFor(piece.frame)
-  return enter * (1 - along(textT, exitStart, exitStart + EXIT_SPAN))
+  return enter * (1 - along(textT, exitStart, exitStart + exitSpanFor(piece.frame)))
 }
 
 /** Follow lines arrive under the headline, each a step after the last. */
@@ -468,7 +461,7 @@ const followAmount = (piece: Piece, index: number, t: number) => {
   const lineStart = enterStartFor(piece.frame) + ENTER_SPAN + FOLLOW_AFTER + index * FOLLOW_STAGGER
   const enter = along(textT, lineStart, lineStart + FOLLOW_SPAN)
   const exitStart = exitStartFor(piece.frame)
-  return enter * (1 - along(textT, exitStart, exitStart + EXIT_SPAN))
+  return enter * (1 - along(textT, exitStart, exitStart + exitSpanFor(piece.frame)))
 }
 
 const stageAt = (t: number) => {
@@ -483,6 +476,10 @@ const stageAt = (t: number) => {
 const arrivedTextT = (index: number) => {
   const frame = FRAMES[index]
   const enterStart = enterStartFor(index)
+  if (index === FRAMES.length - 1) {
+    const wordCount = frame?.lines.join(' ').split(/\s+/).filter(Boolean).length ?? 1
+    return enterStart + Math.max(0, wordCount - 1) * WORD_STAGGER + WORD_SPAN
+  }
   const followCount = frame?.follow?.length ?? 0
   if (!followCount) return enterStart + ENTER_SPAN
   return enterStart + ENTER_SPAN + FOLLOW_AFTER + (followCount - 1) * FOLLOW_STAGGER + FOLLOW_SPAN
@@ -522,12 +519,11 @@ const paintLogo = (t: number, reduced: boolean) => {
   const logo = logoEl.value
   if (!logo) return
   const amount = reduced ? (t < LOGO_EXIT_END * 0.5 ? 1 : 0) : logoAmount(t)
-  const blur = reduced ? 0 : (1 - amount) * TITLE_BLUR_MAX
   logo.style.opacity = String(amount)
-  logo.style.filter = `blur(${blur}px)`
+  logo.style.filter = 'none'
 }
 
-/** Drop whatever slide type is on screen through the same gooey melt. */
+/** Fade whatever slide type is on screen. */
 const meltVisibleType = () => {
   const words: HTMLElement[] = []
   for (const groups of linesByKey.values()) {
@@ -537,15 +533,15 @@ const meltVisibleType = () => {
       }
     }
   }
-  const enter = enterEl.value
-  if (enter) {
-    enter.style.animation = 'none'
-    words.push(enter)
-  }
   const product = productEl.value
   if (product) {
     product.style.animation = 'none'
     words.push(product)
+  }
+  const enter = enterEl.value
+  if (enter) {
+    enter.style.animation = 'none'
+    words.push(enter)
   }
   if (!words.length) return
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -555,14 +551,13 @@ const meltVisibleType = () => {
   }
   gsap.to(words, {
     opacity: 0,
-    filter: `blur(${TITLE_BLUR_MAX}px)`,
     duration: 0.42,
     ease: 'power2.in',
     overwrite: 'auto',
   })
 }
 
-/** One pose per slide after the opener: in before the title, out with it. */
+/** Each group has its own figure: in before the title, out with it. */
 const syncModels = (t: number) => {
   if (toPage.value || leaving.value) return
   const textT = t - textOrigin()
@@ -572,13 +567,18 @@ const syncModels = (t: number) => {
   }
   if (slide < 1) {
     backdropIn.value = false
-    flattening.value = true
-    modelSlot.value = 0
+    activeModel.value = -1
+    modelFlatten.value = [true, true, true]
     return
   }
-  modelSlot.value = slide - 1
-  backdropIn.value = true
-  flattening.value = textT >= exitStartFor(slide)
+  const slot = slide - 1
+  // Hold the next figure until the previous one has faded out.
+  const revealed = textT >= enterStartFor(slide)
+  activeModel.value = revealed ? slot : -1
+  if (revealed) backdropIn.value = true
+  const flat = [true, true, true]
+  if (revealed) flat[slot] = textT >= exitStartFor(slide)
+  modelFlatten.value = flat
 }
 
 const paint = (t: number) => {
@@ -599,13 +599,30 @@ const paint = (t: number) => {
     }
     const groups = linesByKey.get(piece.key)
     if (!groups) continue
+    if (piece.frame === FRAMES.length - 1) {
+      const words = groups.flatMap((group) => group.words)
+      const textT = t - textOrigin()
+      const enterStart = enterStartFor(piece.frame)
+      const exitStart = exitStartFor(piece.frame)
+      const exit = reduced ? 1 : 1 - along(textT, exitStart, exitStart + EXIT_SPAN)
+      words.forEach((word, index) => {
+        const start = enterStart + index * WORD_STAGGER
+        const enter = reduced
+          ? stage === piece.frame
+            ? 1
+            : 0
+          : along(textT, start, start + WORD_SPAN)
+        word.style.opacity = String(enter * exit)
+        word.style.filter = 'none'
+      })
+      continue
+    }
     for (const group of groups) {
       let lineAmount = group.follow == null ? amount : followAmount(piece, group.follow, t)
       if (reduced) lineAmount = amount
-      const blur = reduced ? 0 : (1 - lineAmount) * TITLE_BLUR_MAX
       for (const word of group.words) {
         word.style.opacity = String(lineAmount)
-        word.style.filter = `blur(${blur}px)`
+        word.style.filter = 'none'
       }
     }
   }
@@ -613,29 +630,39 @@ const paint = (t: number) => {
 }
 
 const armClosingChoices = () => {
-  if (enterReady.value || choicesTimer || finished) return
+  if (enterReady.value || ruleDrawn.value || finished) return
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  choicesTimer = window.setTimeout(() => {
-    choicesTimer = 0
-    if (!finished) enterReady.value = true
-  }, reduced ? 280 : choicesDelayMs.value)
+  if (reduced) {
+    ruleDrawn.value = true
+    enterReady.value = true
+    return
+  }
+  ruleDrawn.value = true
+}
+
+const onRuleEnd = (event: TransitionEvent) => {
+  if (event.propertyName !== 'transform') return
+  if (!ruleDrawn.value || finished) return
+  enterReady.value = true
 }
 
 const onEnter = () => {
   if (finished) return
   leaving.value = true
+  ruleDrawn.value = false
   finishSite()
 }
 
 const onSkip = () => {
   if (finished) return
   leaving.value = true
-  finishSite(true)
+  finishSite()
 }
 
 const onProduct = async () => {
-  if (finished || !introProduct.value) return
-  const match = introProduct.value.href.match(/\/materials-and-forms\/([^/?#]+)/)
+  const card = activeCard.value
+  if (finished || !card || !productVisible.value) return
+  const match = card.href.match(/\/materials-and-forms\/([^/?#]+)/)
   const slug = match?.[1]
   onEnter()
   if (!slug) return
@@ -647,12 +674,9 @@ const onFieldClick = (event: MouseEvent) => {
   const target = event.target
   if (target instanceof Element && target.closest('button')) return
   if (finished || leaving.value) return
-  if (awaitingClick.value && frameIndex.value >= CLICK_FROM) {
-    if (frameIndex.value >= FRAMES.length - 1) onEnter()
-    else advanceSlide()
-    return
-  }
-  if (frameIndex.value < CLICK_FROM) onEnter()
+  if (!awaitingClick.value || frameIndex.value < CLICK_FROM) return
+  if (frameIndex.value >= FRAMES.length - 1) onEnter()
+  else advanceSlide()
 }
 
 const onKey = (event: KeyboardEvent) => {
@@ -709,19 +733,36 @@ const playTo = (target: number, onArrive?: () => void, dest?: number | null) => 
   }
 }
 
-watch(choicesDelayMs, () => {
-  if (choicesTimer && frameIndex.value >= FRAMES.length - 1 && !enterReady.value) {
-    window.clearTimeout(choicesTimer)
-    choicesTimer = 0
-    armClosingChoices()
-  }
-})
+const dismissProduct = () => {
+  window.clearTimeout(productTimer)
+  productTimer = 0
+  productVisible.value = false
+}
+
+const armProductCard = () => {
+  dismissProduct()
+  const frame = frameIndex.value
+  const card = SLIDE_PRODUCTS[frame]
+  if (!card || finished) return
+  productTimer = window.setTimeout(() => {
+    productTimer = 0
+    if (finished || frameIndex.value !== frame) return
+    activeCard.value = card
+    productVisible.value = false
+    void nextTick(() => {
+      requestAnimationFrame(() => {
+        if (finished || frameIndex.value !== frame) return
+        productVisible.value = true
+      })
+    })
+  }, PRODUCT_AFTER_MS)
+}
 
 const settleSlide = () => {
   awaitingClick.value = true
   if (frameIndex.value >= FRAMES.length - 1) armClosingChoices()
-  else armNextButton()
   armNextCursor()
+  armProductCard()
 }
 
 const advanceSlide = () => {
@@ -732,8 +773,8 @@ const advanceSlide = () => {
     return
   }
   awaitingClick.value = false
-  clearNextButton()
   clearNextCursor()
+  dismissProduct()
   const leaveAt = textOrigin() + exitStartFor(frameIndex.value)
   if (leaveAt > pathState.t) {
     pathState.t = leaveAt
@@ -772,11 +813,10 @@ const fadeLogo = async () => {
     if (logo) gsap.set(logo, { opacity: 1, filter: 'none' })
     return
   }
-  if (logo) gsap.set(logo, { opacity: 0, filter: `blur(${TITLE_BLUR_MAX}px)` })
+  if (logo) gsap.set(logo, { opacity: 0 })
   const rise = logo
     ? gsap.to(logo, {
         opacity: 1,
-        filter: 'blur(0px)',
         duration: 1.7,
         delay: 0.42,
         ease: 'power2.out',
@@ -802,9 +842,8 @@ onUnmounted(() => {
   if (fadeVeil) document.removeEventListener('homepage-columns-opening', fadeVeil)
   window.clearTimeout(veilTimer)
   window.clearTimeout(failTimer)
-  window.clearTimeout(choicesTimer)
   window.clearTimeout(cursorTimer)
-  window.clearTimeout(nextTimer)
+  window.clearTimeout(productTimer)
   for (const split of splits) {
     try {
       split.revert()
@@ -844,18 +883,10 @@ onUnmounted(() => {
   background: var(--cream);
 }
 
-.homepage-intro__goo {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
 .homepage-intro__theme {
   position: absolute;
   left: 50%;
-  top: 28px;
+  top: 30px;
   z-index: 6;
   display: flex;
   align-items: center;
@@ -1005,12 +1036,69 @@ onUnmounted(() => {
   color: var(--muted, color-mix(in srgb, currentColor 62%, transparent));
 }
 
-.homepage-intro__enter,
-.homepage-intro__next {
+.homepage-intro__progress {
   position: absolute;
   left: 50%;
-  top: 75%;
+  bottom: 80px;
   z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.homepage-intro__progress-line {
+  width: 40px;
+  height: 1px;
+  background: currentColor;
+}
+
+.homepage-intro__progress.is-in {
+  opacity: 1;
+}
+
+.homepage-intro__finale {
+  position: absolute;
+  left: 50%;
+  /* From the bottom of the centered title to the slide indicator. */
+  top: calc(50% + 1.7rem);
+  bottom: 80px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.homepage-intro__rule {
+  position: absolute;
+  top: 3rem;
+  left: 50%;
+  width: 1px;
+  height: calc(50% - 7.5rem);
+  margin-left: -0.5px;
+  background: currentColor;
+  transform-origin: top center;
+  transform: scaleY(0);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.homepage-intro__rule.is-drawn {
+  transform: scaleY(1);
+}
+
+.homepage-intro__enter {
   margin: 0;
   padding: 0.75rem 1.15rem;
   border: 1px solid currentColor;
@@ -1021,29 +1109,20 @@ onUnmounted(() => {
   letter-spacing: 0.14em;
   line-height: 1.35;
   text-transform: uppercase;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-}
-
-.homepage-intro__next {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.55s ease;
+  transition: opacity 0.45s ease;
 }
 
-.homepage-intro__next.is-in {
+.homepage-intro__enter.is-in {
   opacity: 1;
   pointer-events: auto;
-}
-
-.homepage-intro__enter {
-  animation: intro-enter-in 0.55s ease both;
 }
 
 .homepage-intro__skip {
   position: absolute;
   right: 60px;
-  bottom: 90px;
+  bottom: 60px;
   z-index: 6;
   margin: 0;
   padding: 10px;
@@ -1059,11 +1138,6 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-@keyframes intro-enter-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 .homepage-intro__logo {
   position: absolute;
   left: 50%;
@@ -1077,7 +1151,7 @@ onUnmounted(() => {
 
 .homepage-intro__logo-mark {
   opacity: 0;
-  will-change: filter, opacity;
+  will-change: opacity;
 }
 
 .homepage-intro__stage {
@@ -1104,7 +1178,7 @@ onUnmounted(() => {
   position: absolute;
   left: 8vw;
   right: 8vw;
-  top: calc(50% + 2.75rem);
+  top: calc(64% + 2.75rem);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1152,7 +1226,7 @@ onUnmounted(() => {
 
 .homepage-intro :deep(.homepage-intro__word) {
   display: inline-block;
-  will-change: filter, opacity;
+  will-change: opacity;
 }
 
 </style>

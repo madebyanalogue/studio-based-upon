@@ -16,7 +16,7 @@ const props = withDefaults(
     flatten?: boolean
     /** Blend the field into the page colour. Used on the way out. */
     toPage?: boolean
-    /** Which restaged pose to rise into. Same model, new place. */
+    /** Which pose this figure holds. Each group mounts its own spotlight. */
     placement?: number
   }>(),
   { revealed: false, dark: false, flatten: false, toPage: false, placement: 0 },
@@ -35,7 +35,8 @@ const fragmentPars = `
 const fragmentMain = `
   float d = distance(vWPos, uHitPoint);
   float reveal = 1.0 - smoothstep(uRadius, uRadius + uSoftness, d);
-  float mask = reveal * uActive * (1.0 - uFlat);
+  float rise = smoothstep(0.04, 0.4, 1.0 - uFlat);
+  float mask = reveal * uActive * rise;
   float lightMix = mix(1.0, 0.5, mask);
   float darkMix = mix(0.16, 1.0, mask);
   roughnessFactor = mix(mix(0.95, 0.45, mask), 1.0, uFlat);
@@ -227,7 +228,7 @@ onMounted(async () => {
     theme += ((props.dark ? 1 : 0) - theme) * (reduced ? 1 : 0.08)
     const flatTarget = props.flatten ? 1 : 0
     const rising = flatTarget < flat
-    flat += (flatTarget - flat) * (reduced ? 1 : rising ? 0.028 : 0.04)
+    flat += (flatTarget - flat) * (reduced ? 1 : rising ? 0.16 : 0.08)
     pageBlend += ((props.toPage ? 1 : 0) - pageBlend) * (reduced ? 1 : 0.04)
     readPageBackground()
     cssColor('--intro-ground-light', lightClear)
@@ -242,7 +243,7 @@ onMounted(async () => {
       const pose = PLACEMENTS[Math.min(Math.max(props.placement, 0), PLACEMENTS.length - 1)]!
       const goalX = homeX + pose.x * modelSpan
       const goalY = homeY + pose.y * modelSpan
-      const travel = reduced ? 1 : props.toPage ? 0 : flat > 0.82 ? 0.18 : 0
+      const travel = props.toPage ? 0 : 1
       model.position.x = THREE.MathUtils.lerp(model.position.x, goalX, travel)
       model.position.y = THREE.MathUtils.lerp(model.position.y, goalY, travel)
     }
@@ -311,11 +312,12 @@ onMounted(async () => {
   background: var(--intro-ground-light, #eee);
   opacity: 0;
   transition:
-    opacity 0.55s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.28s ease,
     background 0.45s ease;
 }
 
 .intro-spotlight.is-in {
+  z-index: 1;
   opacity: 1;
 }
 

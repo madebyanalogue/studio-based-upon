@@ -222,9 +222,16 @@ let hoverX = 0
 let hoverY = 0
 let lastCursorScroll = -1
 let scrollHintReady = false
+let scrollHintTimer = 0
 let captionSwapGen = 0
 const homeScrollHint = useHomeScrollHint()
 const { resolveFromPoint } = useCursor()
+const SCROLL_HINT_DELAY_MS = 400
+
+const clearScrollHintTimer = () => {
+  window.clearTimeout(scrollHintTimer)
+  scrollHintTimer = 0
+}
 
 const syncScrollHint = () => {
   const show =
@@ -233,6 +240,7 @@ const syncScrollHint = () => {
 }
 
 const dismissScrollHint = () => {
+  clearScrollHintTimer()
   if (userScrolled.value) return
   userScrolled.value = true
   homeScrollHint.value = false
@@ -246,9 +254,14 @@ const dismissScrollHint = () => {
 }
 
 const showScrollHint = () => {
-  scrollHintReady = true
-  pointerOverSlider = rootEl.value?.matches(':hover') ?? false
-  syncScrollHint()
+  if (scrollHintReady || scrollHintTimer || userScrolled.value || leaving) return
+  scrollHintTimer = window.setTimeout(() => {
+    scrollHintTimer = 0
+    if (!running || leaving || userScrolled.value) return
+    scrollHintReady = true
+    pointerOverSlider = rootEl.value?.matches(':hover') ?? false
+    syncScrollHint()
+  }, SCROLL_HINT_DELAY_MS)
 }
 
 const onSliderPointerEnter = (event: PointerEvent) => {
@@ -1042,6 +1055,7 @@ const playLeave = () => {
   if (leavePromise) return leavePromise
   leavePromise = new Promise<void>((resolve) => {
     leaving = true
+    clearScrollHintTimer()
     homeScrollHint.value = false
     introTween?.kill()
     introPlaying = false
@@ -1097,6 +1111,7 @@ watch(
 
 onBeforeUnmount(() => {
   running = false
+  clearScrollHintTimer()
   homeScrollHint.value = false
   cancelAnimationFrame(rafId)
   cancelIntro()

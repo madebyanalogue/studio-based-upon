@@ -358,13 +358,21 @@ html.homepage-intro:not(.homepage-intro-type) .split-slider__type {
   opacity: 0 !important;
 }
 
-.stack__rail,
+.stack__rail {
+  left: 0 !important;
+  right: auto !important;
+}
+
 .stack__boards-rail {
   left: auto !important;
   right: var(--pdp-related-rail-width) !important;
+}
+
+.stack__rail,
+.stack__boards-rail {
   transition:
-    /* `right` follows --pdp-related-rail-width (@property on html) — don't also
-       transition `right` or it double-eases and staggers against the rails */
+    /* Rail offset follows a @property on html — don't also transition
+       left/right or it double-eases and staggers against the rails */
     transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.35s ease;
 }
