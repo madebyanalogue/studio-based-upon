@@ -37,7 +37,8 @@ export const mountEnquiryFlyers = (
       `height:${box.height}px`,
       'object-fit:contain',
       'pointer-events:none',
-    ].join(';')
+      box.z != null && Number.isFinite(box.z) ? `z-index:${Math.round(box.z)}` : '',
+    ].filter(Boolean).join(';')
     root.appendChild(img)
   }
   document.body.appendChild(root)

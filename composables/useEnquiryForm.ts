@@ -21,6 +21,8 @@ export type EnquiryFlyRect = {
   top: number
   width: number
   height: number
+  /** Freeform stack order. Kept on the flyer so the gather doesn't flatten. */
+  z?: number
 }
 
 type EnquiryFlyBridge = {

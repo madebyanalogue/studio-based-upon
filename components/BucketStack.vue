@@ -727,7 +727,7 @@
             :class="{ 'is-active': !cartIsFreeform }"
             @click="setCartView('order')"
           >
-            Order
+            Ordered
           </button>
         </div>
         <button
@@ -4571,7 +4571,9 @@ const measureStackFlyRects = () => {
     top: number
     width: number
     height: number
+    z?: number
   }> = []
+  const freeform = cartIsFreeform.value
   for (const item of items.value) {
     if (!item.imageUrl) continue
     const img = root.querySelector<HTMLImageElement>(
@@ -4580,6 +4582,13 @@ const measureStackFlyRects = () => {
     if (!img) continue
     const rect = img.getBoundingClientRect()
     if (rect.width < 2 || rect.height < 2) continue
+    let z: number | undefined
+    if (freeform) {
+      const card = img.closest<HTMLElement>('.stack__free-card')
+      const painted = Number.parseInt(card ? getComputedStyle(card).zIndex : '', 10)
+      const stored = freeformLayouts.value[freeformBoardId()]?.[item.id]?.z
+      z = Number.isFinite(painted) ? painted : stored
+    }
     rects.push({
       id: item.id,
       src: item.imageUrl,
@@ -4587,8 +4596,10 @@ const measureStackFlyRects = () => {
       top: rect.top,
       width: rect.width,
       height: rect.height,
+      z,
     })
   }
+  if (freeform) rects.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
   return rects
 }
 
