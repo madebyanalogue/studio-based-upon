@@ -2,7 +2,7 @@
   <button
     type="button"
     class="add-btn"
-    :data-cursor="heartCursor"
+    :data-cursor="cursor || heartCursor"
     :class="{
       'add-btn--active': active,
       [`add-btn--${variant}`]: true,
@@ -56,6 +56,8 @@ const props = withDefaults(
     active?: boolean
     /** Visual glyph: heart (add), minus, or duplicate squares. */
     variant?: 'add' | 'remove' | 'clone' | 'plus'
+    /** Overrides the variant cursor. `pointer` is the system pointer. */
+    cursor?: string
   }>(),
   { variant: 'add' },
 )

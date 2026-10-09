@@ -83,6 +83,7 @@
 import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTypologyRowHover'
 
 const { preset, native, suppressLabel, bare, overColumn, onMedia, onSlider, resolveFromPoint } = useCursor()
+const { isOpen: cartOpen } = useBucket()
 const route = useRoute()
 
 const TRAIL_LIFE = 520
@@ -217,6 +218,13 @@ const TYPOLOGY_ARRIVAL = 'What are you making?'
 const onTypology = computed(
   () => route.path === '/typology' || route.path === '/typology/',
 )
+/** Cart stage covers the typology page, including the close fade. */
+const cartCoversPage = computed(
+  () =>
+    cartOpen.value ||
+    (import.meta.client &&
+      document.documentElement.classList.contains('bucket-stack-open')),
+)
 const cursorLabel = computed(() => {
   if (suppressLabel.value) return ''
   const tip = preset.value?.tooltip || ''
@@ -227,7 +235,14 @@ const cursorLabel = computed(() => {
   if (typologyCloseLabelHeld.value && tip === 'Close') return ''
   if (tip) return tip
   if (bare.value) return ''
-  if (onTypology.value && !typologyRowsLocked.value && !overColumn.value) return TYPOLOGY_ARRIVAL
+  if (
+    onTypology.value &&
+    !cartCoversPage.value &&
+    !typologyRowsLocked.value &&
+    !overColumn.value
+  ) {
+    return TYPOLOGY_ARRIVAL
+  }
   return ''
 })
 

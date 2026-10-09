@@ -103,9 +103,10 @@ export const useSiteSettings = () => {
 
   const MAIN_NAV_ORDER = [
     { path: '/discovery', text: 'Discovery' },
+    { path: '/d2', text: 'D2' },
     { path: '/typology', text: 'Typology' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
-    { path: '/curate', text: 'Curate' },
+    { path: '/curate', text: 'Pairings' },
     { path: '/pre-crafted', text: '(Pre)Crafted' },
     { path: '/about', text: 'About' },
   ] as const
@@ -129,8 +130,6 @@ export const useSiteSettings = () => {
         item.path === '/contact' ||
         item.path === '/enquire' ||
         item.path === '/gs' ||
-        item.path === '/d2' ||
-        item.text === 'D2' ||
         item.path === '/infinite-slider' ||
         item.text === 'Home' ||
         item.text === 'Showcase' ||
@@ -153,6 +152,9 @@ export const useSiteSettings = () => {
       ) {
         path = '/discovery'
         text = 'Discovery'
+      } else if (path === '/d2' || text === 'D2') {
+        path = '/d2'
+        text = 'D2'
       } else if (path === '/products' || path === '/materials-and-forms') {
         path = '/materials-and-forms'
         text = 'Materials & Forms'
@@ -168,10 +170,11 @@ export const useSiteSettings = () => {
         path === '/curate' ||
         path === '/#curate' ||
         text === 'Curate' ||
+        text === 'Pairings' ||
         text === 'Showcase Reels'
       ) {
         path = '/curate'
-        text = 'Curate'
+        text = 'Pairings'
       } else if (path === '/pre-crafted' || text === '(Pre)Crafted') {
         path = '/pre-crafted'
         text = '(Pre)Crafted'

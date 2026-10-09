@@ -42,6 +42,8 @@ export type PendingRemoval = {
   item: BucketItem
   index: number
   seq: number
+  /** Cart layout the item was removed from. Freeform undos stay off the ordered grid. */
+  surface?: 'freeform' | 'order'
 }
 
 /** Selection items lent to the board canvas — restored to the cart on board close. */
@@ -146,6 +148,8 @@ let moodboardStackExitHandler: (() => Promise<void>) | null = null
 let moodboardStagedRevealHandler: (() => Promise<void>) | null = null
 /** Staged open: tools + toolbox enter (after grid). */
 let moodboardChromeEnterHandler: (() => Promise<void>) | null = null
+type PileFlyPhase = 'shown' | 'done'
+let pileFlyHandler: ((phase: PileFlyPhase, itemId?: string) => void) | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -461,7 +465,7 @@ export const useBucket = () => {
     isOpen.value = true
   }
 
-  const removeItem = (id: string) => {
+  const removeItem = (id: string, surface?: PendingRemoval['surface']) => {
     ensureActive()
     const boardId = activeMoodboardId.value!
     const board = moodboards.value.find((b) => b.id === boardId)
@@ -491,7 +495,7 @@ export const useBucket = () => {
 
     pendingRemovals.value = [
       ...pendingRemovals.value.filter((p) => p.key !== key),
-      { key, moodboardId: boardId, item, index, seq: ++removalSeq },
+      { key, moodboardId: boardId, item, index, seq: ++removalSeq, surface },
     ]
 
     // v1: timed undo strip. v2: keep until the cart closes.
@@ -775,6 +779,7 @@ export const useBucket = () => {
       moodboards.value
         .find((b) => b.id === boardId)
         ?.items.some((i) => i.id === normalized.id) ?? false
+    let queuedFly = false
     // Fly only when adding — never when unhearting / removing
     if (
       !alreadySaved &&
@@ -785,11 +790,10 @@ export const useBucket = () => {
       const rect = opts.source.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) {
         pendingFlySource = opts.source
-        // Instant hide — no CSS opacity transition on the way out
+        // Stay visible until the flyer image is ready — hiding here leaves a blank gap.
         opts.source.setAttribute('data-bucket-fly', normalized.id)
         opts.source.style.setProperty('transition', 'none')
-        opts.source.style.setProperty('opacity', '0')
-        hideCycleControl(opts.source)
+        queuedFly = true
         pendingFly.value = {
           itemId: normalized.id,
           imageUrl: normalized.imageUrl,
@@ -827,6 +831,18 @@ export const useBucket = () => {
     }
 
     toggleInMoodboard(boardId, normalized, openOnAdd)
+    return queuedFly
+  }
+
+  /** D2 holds its WebGL plane until the flyer is actually on screen. */
+  const registerPileFly = (
+    handler: ((phase: PileFlyPhase, itemId?: string) => void) | null,
+  ) => {
+    pileFlyHandler = handler
+  }
+
+  const notePileFly = (phase: PileFlyPhase, itemId?: string) => {
+    pileFlyHandler?.(phase, itemId)
   }
 
   const consumePendingFly = () => {
@@ -1274,6 +1290,8 @@ export const useBucket = () => {
     openDrawer,
     pendingFly,
     consumePendingFly,
+    registerPileFly,
+    notePileFly,
     collectIntoOpenStack,
     registerCollectLanding,
     trackCollectFlight,

@@ -3,7 +3,7 @@
     v-if="count > 1"
     class="image-cycle"
     :class="{ 'image-cycle--boxed': boxed }"
-    :data-cursor="cursorLabel ? undefined : showCursor ? undefined : 'native'"
+    :data-cursor="cursorLabel ? undefined : boxed ? 'pointer' : showCursor ? undefined : 'native'"
     :data-cursor-label="cursorLabel || undefined"
     @pointerdown.stop
     @click.stop
@@ -12,7 +12,7 @@
     <button
       type="button"
       class="image-cycle__btn"
-      :data-cursor="cursorLabel ? undefined : showCursor ? 'prev' : 'default'"
+      :data-cursor="cursorLabel ? undefined : boxed ? 'pointer' : showCursor ? 'prev' : 'default'"
       :data-cursor-label="cursorLabel || undefined"
       aria-label="Previous image"
       @click="$emit('prev')"
@@ -23,7 +23,7 @@
     <button
       type="button"
       class="image-cycle__btn"
-      :data-cursor="cursorLabel ? undefined : showCursor ? 'next' : 'default'"
+      :data-cursor="cursorLabel ? undefined : boxed ? 'pointer' : showCursor ? 'next' : 'default'"
       :data-cursor-label="cursorLabel || undefined"
       aria-label="Next image"
       @click="$emit('next')"
@@ -115,6 +115,11 @@ defineEmits<{
   border: 0;
   background: transparent;
   color: inherit;
+  cursor: pointer;
+}
+
+.image-cycle--boxed,
+.image-cycle--boxed .image-cycle__btn {
   cursor: pointer;
 }
 

@@ -322,6 +322,7 @@ const {
   getFlipSource,
   getFlipSourceProductId,
   flipSourceIsArchiveGrid,
+  flipSourceIsCart,
   flipSourceStartsImmediately,
   getFlipImageUrl,
   clearPendingFlip,
@@ -1228,10 +1229,11 @@ const runFlipOpen = async () => {
     })
 
   const fromArchive = flipSourceIsArchiveGrid()
+  const fromCart = flipSourceIsCart()
   const startImmediate = flipSourceStartsImmediately()
   setBackdropReady(true)
   await nextTick()
-  if (fromArchive) {
+  if (fromArchive || fromCart) {
     // Start as soon as the hero frame has its real size — no cream hold.
     let stable = 0
     for (let i = 0; i < 24; i++) {
@@ -1264,7 +1266,12 @@ const runFlipOpen = async () => {
   if (fromArchive) signalArchiveMotion('open')
 
   const openDuration = fromArchive ? ARCHIVE_PDP_OPEN_S : PRODUCT_OVERLAY_FLIP_OPEN_S
-  const openEase = fromArchive ? ARCHIVE_PDP_OPEN_EASE : 'power2.inOut'
+  // Cart leaves on the click — power2.inOut holds the aspect still at the start.
+  const openEase = fromArchive
+    ? ARCHIVE_PDP_OPEN_EASE
+    : flipSourceIsCart()
+      ? 'power3.out'
+      : 'power2.inOut'
 
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
@@ -1486,7 +1493,11 @@ const runFlipClose = async () => {
   if (archiveClose) signalArchiveMotion('close')
 
   const closeDuration = archiveClose ? ARCHIVE_PDP_CLOSE_S : PRODUCT_OVERLAY_FLIP_CLOSE_S
-  const closeEase = archiveClose ? ARCHIVE_PDP_CLOSE_EASE : 'power2.inOut'
+  const closeEase = archiveClose
+    ? ARCHIVE_PDP_CLOSE_EASE
+    : flipSourceIsCart()
+      ? 'power3.out'
+      : 'power2.inOut'
 
   Flip.from(state, {
     duration: closeDuration,

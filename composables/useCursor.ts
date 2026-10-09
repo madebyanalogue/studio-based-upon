@@ -5,7 +5,7 @@ import {
 } from '~/composables/cursorLibrary'
 
 const NATIVE_SELECTOR =
-  'input, textarea, select, [contenteditable="true"], [data-cursor="native"], [data-cursor="pointer"]'
+  'input, textarea, select, [contenteditable="true"], [data-cursor="native"], [data-cursor="pointer"], [data-cursor="grab"]'
 
 /** Dark image surfaces where the light-mode cursor should stay white. */
 const LIGHT_CURSOR_MEDIA =
@@ -70,6 +70,16 @@ export const useCursor = () => {
     if (typeof document === 'undefined') return
 
     if (document.documentElement.dataset.resizeCursor) {
+      native.value = true
+      onMedia.value = false
+      onSlider.value = false
+      suppressLabel.value = false
+      bare.value = false
+      preset.value = null
+      return
+    }
+
+    if (document.documentElement.classList.contains('stack-freeform-dragging')) {
       native.value = true
       onMedia.value = false
       onSlider.value = false

@@ -335,9 +335,13 @@ export const useProductOverlay = () => {
       flipSourceEl.closest('[data-d3-gather]')
     )
 
+  /** True when the Flip shell is a cart thumbnail */
+  const flipSourceIsCart = () =>
+    !!(import.meta.client && flipSourceEl && flipSourceEl.closest('.stack'))
+
   /** Skip cream/chrome holds — Flip starts as soon as the flyer is ready */
   const flipSourceStartsImmediately = () =>
-    flipSourceIsArchiveGrid() || flipSourceIsDiscoveryKebab()
+    flipSourceIsArchiveGrid() || flipSourceIsDiscoveryKebab() || flipSourceIsCart()
 
   /** Hero-tier URL preferred for the Flip flyer when prefetched */
   const getFlipImageUrl = () => flipImageUrl
@@ -492,6 +496,7 @@ export const useProductOverlay = () => {
     getFlipSourceProductId,
     flipSourceIsArchiveGrid,
     flipSourceIsDiscoveryKebab,
+    flipSourceIsCart,
     flipSourceStartsImmediately,
     getFlipImageUrl,
     clearPendingFlip,

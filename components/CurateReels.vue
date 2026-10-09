@@ -13,7 +13,7 @@
       '--showcase-slots': Math.max(columnCount, 1),
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
     }"
-    aria-label="Curate"
+    aria-label="Pairings"
     data-cursor-label="Explore pairings"
   >
     <div class="showcase__columns">
@@ -1446,7 +1446,7 @@ const surrenderImageIndex = (slotIndex: number) => {
  */
 const retargetSingleColumn = (slotIndex: number) => {
   const column = columns.value[slotIndex]
-  if (!column || column.images.length > 1) return false
+  if (!column || column.images.length > 1 || column.objectUrl) return false
   const currentSrc = column.images[0]?.src
   const pool = bucketPool.value.filter((bucket) =>
     bucket.images?.some((image) => image.src && image.src !== currentSrc),
@@ -1489,7 +1489,7 @@ const surrenderColumns = async () => {
   await refreshColumnMetrics()
 
   const targets = columns.value.flatMap((column, slotIndex) =>
-    column.locked || !column.images.length ? [] : [slotIndex],
+    column.locked || column.objectUrl || !column.images.length ? [] : [slotIndex],
   )
   if (!targets.length) return
 
@@ -2665,6 +2665,9 @@ const columnShell = (instanceId: string) =>
     `[data-column-id="${instanceId}"]`,
   ) ?? null
 
+const columnWrap = (instanceId: string) =>
+  columnShell(instanceId)?.closest<HTMLElement>('.showcase__column-wrap') ?? null
+
 const columnContent = (shell: HTMLElement) =>
   Array.from(shell.children).filter(
     (el): el is HTMLElement =>
@@ -2753,62 +2756,62 @@ const wipeClip = (shell: HTMLElement, from: number, to: number) =>
     step(started)
   })
 
-/** Grow a zero-width column into its share of the row. The cell stays clipped shut. */
+/** Open a zero-width gap. The cell stays clipped shut until the width has settled. */
 const playColumnEnter = async (instanceId: string) => {
   await nextTick()
   const slotIndex = columns.value.findIndex((column) => column.instanceId === instanceId)
   if (slotIndex >= 0) revealColumnImages(slotIndex)
   const shell = columnShell(instanceId)
-  if (!shell) return
+  const wrap = columnWrap(instanceId)
+  if (!shell || !wrap) return
   const content = columnContent(shell)
-  gsap.set(shell, {
+  gsap.set(wrap, {
     flexGrow: 0,
     flexShrink: 1,
     flexBasis: 0,
+    minWidth: 0,
     overflow: 'hidden',
   })
   shell.style.clipPath = CLIP_HIDDEN
   gsap.set(content, { opacity: 1 })
   dropColumnFlag(pendingColumns, instanceId)
   await nextTick()
-  await gsap.fromTo(
-    shell,
-    { flexGrow: 0, flexShrink: 1, flexBasis: 0 },
-    {
-      flexGrow: 1,
-      flexShrink: 1,
-      flexBasis: 0,
-      duration: COLUMN_WIDTH_S,
-      ease: 'power3.inOut',
-      overwrite: 'auto',
-      onUpdate: holdColumnCenters,
-    },
-  )
+  await gsap.to(wrap, {
+    flexGrow: 1,
+    duration: COLUMN_WIDTH_S,
+    ease: 'power3.inOut',
+    overwrite: 'auto',
+    onUpdate: holdColumnCenters,
+  })
   releaseColumnCenterHold()
 }
 
 /** Wipe the cell open once the width has settled and the frame is aligned. */
 const playColumnContentIn = async (instanceId: string) => {
   const shell = columnShell(instanceId)
+  const wrap = columnWrap(instanceId)
   if (!shell) return
   dropColumnFlag(quietColumns, instanceId)
+  dropColumnFlag(leavingColumns, instanceId)
   await nextTick()
   await wipeClip(shell, 100, 0)
   shell.style.clipPath = ''
-  gsap.set(shell, { clearProps: 'flexGrow,flexShrink,flexBasis,overflow,clipPath' })
+  if (wrap) gsap.set(wrap, { clearProps: 'flexGrow,flexShrink,flexBasis,minWidth,overflow' })
+  gsap.set(shell, { clearProps: 'overflow,clipPath' })
   gsap.set(columnContent(shell), { clearProps: 'opacity' })
 }
 
 /** Wipe the cell shut, then collapse its width so the row closes up. */
 const playColumnExit = async (instanceId: string) => {
   const shell = columnShell(instanceId)
-  if (!shell) return
+  const wrap = columnWrap(instanceId)
+  if (!shell || !wrap) return
+  gsap.set(wrap, { minWidth: 0, overflow: 'hidden' })
   gsap.set(shell, { overflow: 'hidden' })
   shell.style.clipPath = CLIP_VISIBLE
   await wipeClip(shell, 0, 100)
-  await gsap.to(shell, {
+  await gsap.to(wrap, {
     flexGrow: 0,
-    flexShrink: 1,
     flexBasis: 0,
     duration: COLUMN_WIDTH_S,
     ease: 'power3.inOut',
@@ -2835,6 +2838,7 @@ const replaceColumnsAnimated = async (
     if (!reduced) {
       pendingColumns.value = { ...pendingColumns.value, [enteringId]: true }
       quietColumns.value = { ...quietColumns.value, [enteringId]: true }
+      leavingColumns.value = { ...leavingColumns.value, [enteringId]: true }
     }
     columns.value = nextColumns
     const slotIndex = nextColumns.findIndex((column) => column.instanceId === enteringId)
@@ -2847,6 +2851,7 @@ const replaceColumnsAnimated = async (
   } finally {
     dropColumnFlag(pendingColumns, enteringId)
     dropColumnFlag(quietColumns, enteringId)
+    dropColumnFlag(leavingColumns, enteringId)
     structuralLayoutDepth = Math.max(0, structuralLayoutDepth - 1)
     columnMotion.value = false
   }

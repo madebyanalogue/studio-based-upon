@@ -23,7 +23,9 @@ onBeforeRouteLeave(async (to, from) => {
 })
 
 useHead(() => ({
-  title: page.value?.seoTitle || 'Curate — Studio Based Upon',
+  title: page.value?.seoTitle && !/^curate\b/i.test(page.value.seoTitle)
+    ? page.value.seoTitle
+    : 'Pairings — Studio Based Upon',
   meta: page.value?.seoDescription
     ? [{ name: 'description', content: page.value.seoDescription }]
     : [],

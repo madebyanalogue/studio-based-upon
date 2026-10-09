@@ -13,6 +13,8 @@
         'stack--boards-landed': boardsLanded,
         'stack--boards-handoff': boardsGridHandoff,
         'stack--boards-cart': stagePresent && panelTab === 'boards',
+        'stack--freeform': cartIsFreeform && panelTab === 'selections',
+        'stack--view-flip': viewFlipBusy,
         'stack--above-pdp':
           (productOverlayOpen || pdpCloseVeilActive) && !pdpOpenedFromCart,
         'stack--enquiry-parked': enquiryParked,
@@ -231,11 +233,25 @@
         :aria-hidden="isMoodboard ? 'true' : undefined"
         :aria-label="panelTab === 'boards' ? 'Boards' : 'My selection'"
       >
-        <div class="stack__backdrop" data-cursor="close-label" @click="requestClose" />
+        <div
+          class="stack__backdrop"
+          :data-cursor="cartIsFreeform && panelTab === 'selections' ? 'default' : 'close-label'"
+          @click="onBackdropClick"
+        />
+        <div
+          v-if="panelTab === 'selections'"
+          class="stack__freeform-dots"
+          :class="{
+            'stack__freeform-dots--on': freeformDotsOn,
+            'stack__freeform-dots--leaving': freeformDotsLeaving,
+          }"
+          :style="freeformDotsLeaving ? { transitionDuration: `${freeformDotsLeaveMs}ms` } : undefined"
+          aria-hidden="true"
+        />
 
         <!-- Cell shells always stay in flow (squares). Only .stack__cell-media Flips. -->
         <div
-          v-if="showSelectionGrid"
+          v-if="showOrderGrid"
           ref="gridRef"
           class="stack__grid"
           :class="{
@@ -252,7 +268,7 @@
             :style="gridStyle"
           >
           <div
-            v-for="(entry, index) in selectionEntries"
+            v-for="(entry, index) in orderEntries"
             :key="entry.kind === 'undo' ? `undo-${entry.key}` : entry.item.id"
             class="stack__cell"
             :class="cellClass(entry)"
@@ -295,15 +311,9 @@
                     />
                   </button>
                   <AddButton
-                    v-if="galleryCount(entry.item) > 1"
-                    class="stack__cell-ctrl stack__cell-ctrl--clone"
-                    variant="clone"
-                    :label="`Clone ${entry.item.title}`"
-                    @click.stop="cloneItem(entry.item.id)"
-                  />
-                  <AddButton
                     class="stack__cell-ctrl stack__cell-ctrl--remove"
                     variant="remove"
+                    cursor="pointer"
                     :label="`Remove ${entry.item.title}`"
                     @click.stop="onRemoveClick(entry.item)"
                   />
@@ -321,6 +331,90 @@
               </div>
             </div>
           </div>
+          </div>
+        </div>
+
+        <div
+          v-if="showFreeform"
+          ref="gridRef"
+          class="stack__freeform"
+          data-cursor="default"
+          data-lenis-prevent
+        >
+          <div ref="freeformPlane" class="stack__freeform-plane">
+            <div
+              v-for="entry in freeformEntries"
+              :key="`free-${entry.item.id}`"
+              class="stack__free-card stack__cell"
+              :class="[
+                cellClass(entry),
+                { 'stack__free-card--handles': freeformHandleId === entry.item.id },
+              ]"
+              :style="freeformStyle(entry.item.id)"
+              @dragstart.prevent
+            >
+              <div
+                class="stack__cell-media"
+                :data-stack-id="entry.item.id"
+                :data-flip-id="flipSurface === 'cells' ? entry.item.id : undefined"
+              >
+                <div
+                  class="stack__cell-frame"
+                  @pointerdown="onFreePointerDown($event, entry.item.id)"
+                >
+                  <div class="stack__cell-figure">
+                    <button
+                      type="button"
+                      class="stack__cell-hit"
+                      data-cursor="grab"
+                      draggable="false"
+                      :aria-label="`Open ${entry.item.title}`"
+                      @dragstart.prevent
+                      @click="onFreeClick(entry.item, $event)"
+                    >
+                      <img
+                        v-if="entry.item.imageUrl"
+                        :src="entry.item.imageUrl"
+                        :alt="entry.item.title"
+                        class="stack__cell-image"
+                        draggable="false"
+                        @load="onFreeImageLoad(entry.item.id, $event)"
+                      />
+                    </button>
+                    <AddButton
+                      class="stack__cell-ctrl stack__cell-ctrl--remove"
+                      variant="remove"
+                      cursor="pointer"
+                      :label="`Remove ${entry.item.title}`"
+                      @pointerdown.stop
+                      @click.stop="onRemoveClick(entry.item)"
+                    />
+                    <ImageCycleArrows
+                      v-if="galleryCount(entry.item) > 1"
+                      class="stack__cell-ctrl stack__cell-ctrl--cycle"
+                      :index="galleryIndex(entry.item)"
+                      :count="galleryCount(entry.item)"
+                      hide-count
+                      boxed
+                      @pointerdown.stop
+                      @prev="cycleItemImage(entry.item.id, -1)"
+                      @next="cycleItemImage(entry.item.id, 1)"
+                    />
+                  </div>
+                  <span
+                    v-for="corner in freeformCorners"
+                    :key="corner"
+                    class="stack__free-handle"
+                    :class="`stack__free-handle--${corner}`"
+                    data-cursor="native"
+                    :data-resize="corner === 'tl' || corner === 'br' ? 'nwse' : 'nesw'"
+                    @pointerenter="armResizeCursor(corner)"
+                    @pointerleave="clearResizeCursor"
+                    @pointerdown.stop="onFreeResizeDown($event, entry.item.id, corner)"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -600,21 +694,60 @@
           <button
             type="button"
             class="stack__toolbar-create interface"
+            data-cursor="default"
             :disabled="!items.length"
-            @click="onBuildMoodboard"
+            @click="sendEnquiry"
           >
-            Create Board
+            Send as Enquiry
           </button>
         </header>
 
-        <button
-          type="button"
-          class="stack__enquiry interface"
-          :class="{ 'stack__enquiry--visible': enquiryVisible && !enquiryFormOpen }"
-          :disabled="!items.length"
-          @click="sendEnquiry"
+        <div
+          class="stack__view-toggle"
+          :class="{ 'stack__view-toggle--visible': controlsVisible && !enquiryFormOpen }"
+          role="tablist"
+          aria-label="Selection layout"
+          data-cursor="default"
         >
-          Send as Enquiry
+          <button
+            type="button"
+            role="tab"
+            class="interface"
+            :aria-selected="cartIsFreeform"
+            :class="{ 'is-active': cartIsFreeform }"
+            @click="setCartView('freeform')"
+          >
+            Freeform
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="interface"
+            :aria-selected="!cartIsFreeform"
+            :class="{ 'is-active': !cartIsFreeform }"
+            @click="setCartView('order')"
+          >
+            Order
+          </button>
+        </div>
+        <button
+          v-if="cartIsFreeform"
+          type="button"
+          class="stack__close-global interface"
+          :class="{ 'stack__close-global--visible': controlsVisible && !enquiryFormOpen }"
+          data-cursor="default"
+          @click="requestClose"
+        >
+          Close
+        </button>
+        <button
+          v-if="cartIsFreeform && latestPendingRemoval"
+          type="button"
+          class="stack__undo-global interface"
+          :class="{ 'stack__undo-global--visible': controlsVisible && !enquiryFormOpen }"
+          @click="onGlobalUndo"
+        >
+          Undo
         </button>
       </template>
 
@@ -762,6 +895,7 @@ const {
   setItemImageIndex,
   pendingFly,
   consumePendingFly,
+  notePileFly,
   parkSelectionItem,
   restoreParkedSelectionItem,
   parkedSelectionItems,
@@ -793,8 +927,6 @@ const {
   open,
   returnImage,
   isOpen: productOverlayOpen,
-  beginFlipOpenGate,
-  releaseFlipOpenGate,
   closeVeilActive: pdpCloseVeilActive,
 } = useProductOverlay()
 const { fetchProduct } = useProductCatalog()
@@ -1118,8 +1250,6 @@ const BACKDROP_CLOSE_MS = 800
 const GRID_LINES_MS = 320
 const CONTROLS_FADE_IN_DELAY_MS = 400
 const CONTROLS_FADE_OUT_DELAY_MS = 100
-/** Cart → PDP: fade other items / grid / info before flyer moves */
-const PDP_CART_FADE_MS = 300
 const pdpFocusItemId = ref<string | null>(null)
 /**
  * PDP launched from a cart cell — the stage must stay *under* the overlay so the
@@ -1208,11 +1338,12 @@ const countLabel = computed(() => {
 const onRemoveClick = async (item: BucketItem) => {
   const id = item.id
   if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
+  if (freeformHandleId.value === id) freeformHandleId.value = null
   const undoKey = `${activeMoodboardId.value}::${id}`
   setCellPhase(id, 'scale-out')
   await wait(CELL_SCALE_MS)
   if (cellPhase.value[id] !== 'scale-out') return
-  removeItem(id)
+  removeItem(id, cartIsFreeform.value ? 'freeform' : 'order')
   clearCellPhase(id)
   await nextTick()
   await waitFrames(2)
@@ -1245,6 +1376,18 @@ const onUndoClick = async (key: string, item: BucketItem) => {
   setCellPhase(id, 'scaled-in')
   await wait(CELL_SCALE_MS)
   if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+}
+
+const latestPendingRemoval = computed(() => {
+  const list = activePendingRemovals.value
+  if (!list.length) return null
+  return list.reduce((latest, entry) => (entry.seq > latest.seq ? entry : latest))
+})
+
+const onGlobalUndo = () => {
+  const pending = latestPendingRemoval.value
+  if (!pending) return
+  void onUndoClick(pending.key, pending.item)
 }
 
 const onDeleteSelection = async () => {
@@ -1374,10 +1517,10 @@ const showCreateSlot = computed(() => showRail.value && !isMoodboard.value)
 /** Tips when more than one visible selection is on the rail. */
 const showSelectionTips = computed(() => railBoards.value.length > 1)
 
-/** Cursor chip while the cart is closed — opens this selection. */
+/** Closed pile uses the plain cursor — no “View My Selection” label. */
 const selectionPileCursor = computed(() =>
   !isOpen.value && !stagePresent.value && !isMoodboard.value
-    ? 'view-selection'
+    ? 'default'
     : undefined,
 )
 
@@ -1436,19 +1579,7 @@ const railExpanded = ref(false)
 const createPlusReady = ref(false)
 let railAnimToken = 0
 
-const createPlusVisible = computed(() => {
-  // While the cart is up the rail only exists to host the flip — a stale
-  // railHot from before the open would otherwise slide (+) in mid-close
-  if (
-    isOpen.value ||
-    stagePresent.value ||
-    isFlipping.value ||
-    keepPileForFlip.value
-  )
-    return false
-  if (moodboards.value.length <= 1) return railHot.value
-  return createPlusReady.value
-})
+const createPlusVisible = computed(() => false)
 
 const railCellSize = () => {
   const active = pileWrapEls.value[activeMoodboardId.value || '']
@@ -2006,6 +2137,702 @@ const showSelectionGrid = computed(
     selectionEntries.value.length > 0,
 )
 
+const cartView = useCookie<'freeform' | 'order'>('sba-cart-view', {
+  default: () => 'freeform',
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
+const cartIsFreeform = computed(() => cartView.value !== 'order')
+const showOrderGrid = computed(() => showSelectionGrid.value && !cartIsFreeform.value)
+const showFreeform = computed(() => showSelectionGrid.value && cartIsFreeform.value)
+const freeformEntries = computed(() =>
+  selectionEntries.value.filter(
+    (entry): entry is Extract<SelectionEntry, { kind: 'item' }> => entry.kind === 'item',
+  ),
+)
+/** Ordered grid keeps its own undos. Removals made in freeform stay on the freeform Undo control. */
+const orderEntries = computed(() =>
+  selectionEntries.value.filter((entry) => {
+    if (entry.kind !== 'undo') return true
+    return !activePendingRemovals.value.some(
+      (pending) => pending.key === entry.key && pending.surface === 'freeform',
+    )
+  }),
+)
+const setCartView = (view: 'freeform' | 'order') => {
+  if ((view === 'freeform') === cartIsFreeform.value) return
+  if (!import.meta.client) {
+    cartView.value = view
+    return
+  }
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce) {
+    cartView.value = view
+    return
+  }
+  void animateCartView(view)
+}
+
+let viewFlipToken = 0
+let viewFlipTween: gsap.core.Animation | null = null
+const viewFlipBusy = ref(false)
+let viewFlyers: HTMLElement[] = []
+
+const clearViewFlyers = () => {
+  viewFlipTween?.kill()
+  viewFlipTween = null
+  for (const flyer of viewFlyers) flyer.remove()
+  viewFlyers = []
+}
+
+/** Move each piece from the layout it’s in to the other one. */
+const animateCartView = async (view: 'freeform' | 'order') => {
+  const token = ++viewFlipToken
+  clearViewFlyers()
+  const outgoing = gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []
+  const flyers = new Map<string, HTMLImageElement>()
+  for (const media of outgoing) {
+    const id = media.dataset.stackId
+    const img = media.querySelector<HTMLImageElement>('.stack__cell-image')
+    if (!id || !img) continue
+    const from = img.getBoundingClientRect()
+    if (from.width < 2 || from.height < 2) continue
+    const flyer = img.cloneNode(true) as HTMLImageElement
+    flyer.className = 'stack__view-flyer'
+    flyer.alt = ''
+    flyer.setAttribute('aria-hidden', 'true')
+    Object.assign(flyer.style, {
+      position: 'fixed',
+      margin: '0',
+      pointerEvents: 'none',
+      objectFit: 'contain',
+      borderRadius: '2px',
+      left: `${from.left}px`,
+      top: `${from.top}px`,
+      width: `${from.width}px`,
+      height: `${from.height}px`,
+    })
+    document.body.appendChild(flyer)
+    viewFlyers.push(flyer)
+    flyers.set(id, flyer)
+  }
+  // Leaving freeform: keep the stacking that's on screen until the pieces land.
+  // Leaving the grid: jump to the freeform stacking before anything moves.
+  const stackZ = (id: string) => {
+    if (view === 'freeform') return freeformLayouts.value[freeformBoardId()]?.[id]?.z ?? 0
+    const card = gridRef.value
+      ?.querySelector(`[data-stack-id="${CSS.escape(id)}"]`)
+      ?.closest('.stack__free-card')
+    const painted = Number.parseInt(card ? getComputedStyle(card).zIndex : '', 10)
+    if (Number.isFinite(painted)) return painted
+    return freeformLayouts.value[freeformBoardId()]?.[id]?.z ?? 0
+  }
+  const heldZ = new Map<string, number>()
+  const stackedIds = [...flyers.keys()].sort((a, b) => {
+    const az = stackZ(a)
+    const bz = stackZ(b)
+    heldZ.set(a, az)
+    heldZ.set(b, bz)
+    return az - bz || (a < b ? -1 : a > b ? 1 : 0)
+  })
+  stackedIds.forEach((id, index) => {
+    const flyer = flyers.get(id)
+    if (!flyer) return
+    if (!heldZ.has(id)) heldZ.set(id, stackZ(id))
+    // Above the cart (280) and the toolbar (420); chrome buttons stay at 430.
+    // DOM order matches this too, so a tie still paints in freeform order.
+    flyer.style.setProperty('z-index', String(Math.min(421 + index, 429)), 'important')
+    document.body.appendChild(flyer)
+  })
+  const releaseOrderStack = () => {
+    gridRef.value?.querySelectorAll<HTMLElement>('.stack__cell').forEach((cell) => {
+      cell.style.removeProperty('z-index')
+    })
+  }
+  if (!flyers.size) {
+    viewFlipBusy.value = false
+    cartView.value = view
+    return
+  }
+  // Order lines wait until the pieces have landed, then fade in.
+  if (view === 'order') gridLinesVisible.value = false
+  viewFlipBusy.value = true
+  cartView.value = view
+  await nextTick()
+  if (token !== viewFlipToken) return
+  if (view === 'order') {
+    syncCellSize()
+    // Grid cells keep the freeform stack until the flight ends, then drop it.
+    for (const media of gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []) {
+      const cell = media.closest<HTMLElement>('.stack__cell')
+      const z = heldZ.get(media.dataset.stackId || '')
+      if (cell && z != null) cell.style.zIndex = String(z)
+    }
+  } else {
+    seedFreeformAspects()
+    measureFreeformPlane()
+    await nextTick()
+    if (token !== viewFlipToken) return
+    const imgs = [
+      ...(gridRef.value?.querySelectorAll<HTMLImageElement>('.stack__cell-image') ?? []),
+    ]
+    await Promise.all(imgs.map((img) => img.decode?.().catch(() => undefined)))
+    if (token !== viewFlipToken) return
+    for (const img of imgs) {
+      const id = img.closest('[data-stack-id]')?.getAttribute('data-stack-id') || ''
+      if (!img.naturalWidth || !img.naturalHeight) continue
+      noteFreeformAspect(id, img.naturalWidth / img.naturalHeight)
+    }
+    measureFreeformPlane()
+  }
+  await nextTick()
+  if (token !== viewFlipToken) {
+    if (view === 'order') releaseOrderStack()
+    return
+  }
+  const incoming = gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []
+  const tl = gsap.timeline({
+    onComplete: () => {
+      if (token !== viewFlipToken) return
+      viewFlipTween = null
+      viewFlipBusy.value = false
+      if (view === 'order') {
+        releaseOrderStack()
+        gridLinesVisible.value = true
+      }
+      requestAnimationFrame(() => {
+        if (token !== viewFlipToken) return
+        for (const flyer of viewFlyers) flyer.remove()
+        viewFlyers = []
+      })
+    },
+  })
+  let index = 0
+  for (const media of incoming) {
+    const id = media.dataset.stackId
+    const flyer = id ? flyers.get(id) : undefined
+    const img = media.querySelector<HTMLImageElement>('.stack__cell-image')
+    if (!flyer || !img) continue
+    const to = img.getBoundingClientRect()
+    tl.to(
+      flyer,
+      {
+        left: to.left,
+        top: to.top,
+        width: to.width,
+        height: to.height,
+        duration: 0.72,
+        ease: 'power3.inOut',
+      },
+      index * 0.02,
+    )
+    index += 1
+  }
+  if (!index) {
+    clearViewFlyers()
+    viewFlipBusy.value = false
+    if (view === 'order') {
+      releaseOrderStack()
+      gridLinesVisible.value = true
+    }
+    return
+  }
+  viewFlipTween = tl
+}
+
+const freeformDotsOn = ref(false)
+const freeformDotsLeaving = ref(false)
+const freeformDotsLeaveMs = ref(200)
+/** Close has started — don't fade the matrix back in when the flight ends. */
+const freeformDotsSuppress = ref(false)
+let freeformDotsLeaveTimer = 0
+
+const beginFreeformDotsLeave = (ms = 200) => {
+  if (!freeformDotsOn.value) return
+  window.clearTimeout(freeformDotsLeaveTimer)
+  freeformDotsLeaveMs.value = ms
+  freeformDotsOn.value = false
+  freeformDotsLeaving.value = true
+  freeformDotsLeaveTimer = window.setTimeout(() => {
+    freeformDotsLeaving.value = false
+  }, ms)
+}
+
+/** Dot grid waits until a freeform arrival has settled, then fades in. */
+watch([showFreeform, viewFlipBusy, isFlipping], () => {
+  if (freeformDotsSuppress.value) return
+  if (showFreeform.value && !viewFlipBusy.value && !isFlipping.value) {
+    window.clearTimeout(freeformDotsLeaveTimer)
+    freeformDotsLeaving.value = false
+    freeformDotsOn.value = true
+    return
+  }
+  if (showFreeform.value || !freeformDotsOn.value || freeformDotsLeaving.value) return
+  beginFreeformDotsLeave(200)
+}, { immediate: true })
+
+const FREEFORM_KEY = 'sba-cart-freeform'
+const FREEFORM_VERSION_KEY = 'sba-cart-freeform-v'
+const FREEFORM_LAYOUT_VERSION = '4'
+/** Freeform layout box is the picture. Older saves stored the 17% padded card. */
+const FREEFORM_PAD = STACK_CELL_PAD_PCT / 100
+const FREEFORM_INNER = 1 - FREEFORM_PAD * 2
+
+/**
+ * Pile cards are squares; the picture sits centered in the inner 66%.
+ * The Flip target has to stay a square of that same proportion, or scale
+ * stretches the picture. Centered on the freeform image, the painted pixels meet it.
+ */
+const freeformPileBox = (rect: DOMRect) => {
+  const side = Math.max(rect.width, rect.height) / FREEFORM_INNER
+  return {
+    left: rect.left + rect.width / 2 - side / 2,
+    top: rect.top + rect.height / 2 - side / 2,
+    width: side,
+    height: side,
+  }
+}
+type FreeformPlace = { x: number; y: number; w: number; z: number; image?: boolean }
+type FreeformCorner = 'tl' | 'tr' | 'bl' | 'br'
+const freeformCorners: FreeformCorner[] = ['tl', 'tr', 'bl', 'br']
+
+const readFreeformLayouts = (): Record<string, Record<string, FreeformPlace>> => {
+  if (!import.meta.client) return {}
+  try {
+    const raw = localStorage.getItem(FREEFORM_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, Record<string, FreeformPlace>>
+    if (!parsed || typeof parsed !== 'object') return {}
+    if (localStorage.getItem(FREEFORM_VERSION_KEY) !== FREEFORM_LAYOUT_VERSION) {
+      for (const board of Object.values(parsed)) {
+        if (!board || typeof board !== 'object') continue
+        for (const place of Object.values(board)) {
+          if (!place || typeof place.w !== 'number' || place.w <= 0.19) continue
+          place.w = Math.min(0.62, Math.max(0.08, place.w * 0.66))
+        }
+      }
+      try {
+        localStorage.setItem(FREEFORM_KEY, JSON.stringify(parsed))
+        localStorage.setItem(FREEFORM_VERSION_KEY, FREEFORM_LAYOUT_VERSION)
+      } catch {
+        /* ignore quota */
+      }
+    }
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+const freeformLayouts = ref(readFreeformLayouts())
+const freeformAspects = ref<Record<string, number>>({})
+const freeformBounds = ref({ w: 1200, h: 800 })
+const freeformPlane = ref<HTMLElement | null>(null)
+let freeformRo: ResizeObserver | null = null
+let suppressFreeClick = false
+
+type FreeformGesture =
+  | {
+      kind: 'drag'
+      id: string
+      px: number
+      py: number
+      x: number
+      y: number
+      moved: boolean
+    }
+  | {
+      kind: 'resize'
+      id: string
+      corner: FreeformCorner
+      px: number
+      py: number
+      x: number
+      y: number
+      w: number
+      h: number
+    }
+
+let freeformGesture: FreeformGesture | null = null
+/** Keeps corner anchors visible while a resize leaves the card. */
+const freeformHandleId = ref<string | null>(null)
+
+const hash01 = (id: string, salt: number) => {
+  let h = salt + 1
+  for (let i = 0; i < id.length; i += 1) h = (h * 33 + id.charCodeAt(i)) | 0
+  return ((h >>> 0) % 10000) / 10000
+}
+
+const scatterPlace = (id: string, z: number): FreeformPlace => {
+  const cardW = 0.13 + hash01(id, 3) * 0.05
+  const cardX = 0.36 + (hash01(id, 1) - 0.5) * 0.34 - cardW / 2
+  const cardY = 0.26 + (hash01(id, 2) - 0.5) * 0.3
+  const w = cardW * FREEFORM_INNER
+  return {
+    x: Math.min(0.7, Math.max(0.04, cardX + cardW * FREEFORM_PAD)),
+    y: Math.min(0.62, Math.max(0.04, cardY)),
+    w,
+    z,
+    image: true,
+  }
+}
+
+const persistFreeformLayouts = () => {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(FREEFORM_KEY, JSON.stringify(freeformLayouts.value))
+  } catch {
+    /* ignore quota */
+  }
+}
+
+const freeformBoardId = () => activeMoodboardId.value || 'default'
+
+const syncFreeformPlacements = () => {
+  if (!import.meta.client || !activeMoodboardId.value) return
+  const boardId = freeformBoardId()
+  const current = { ...(freeformLayouts.value[boardId] || {}) }
+  const ids = selectionEntries.value.map((entry) => entry.item.id)
+  const idSet = new Set(ids)
+  let maxZ = 0
+  for (const place of Object.values(current)) maxZ = Math.max(maxZ, place.z || 0)
+  let changed = false
+  for (const id of Object.keys(current)) {
+    if (!idSet.has(id)) {
+      delete current[id]
+      changed = true
+    }
+  }
+  for (const id of ids) {
+    if (!current[id]) {
+      maxZ += 1
+      current[id] = scatterPlace(id, maxZ)
+      changed = true
+    }
+  }
+  if (!changed) return
+  freeformLayouts.value = { ...freeformLayouts.value, [boardId]: current }
+  persistFreeformLayouts()
+}
+
+const raiseFreeform = (id: string) => {
+  const boardId = freeformBoardId()
+  const current = freeformLayouts.value[boardId]
+  const place = current?.[id]
+  if (!current || !place) return
+  const maxZ = Math.max(0, ...Object.values(current).map((entry) => entry.z || 0))
+  if (place.z === maxZ) return
+  current[id] = { ...place, z: maxZ + 1 }
+  freeformLayouts.value = { ...freeformLayouts.value, [boardId]: { ...current } }
+}
+
+const patchFreeform = (id: string, next: Partial<FreeformPlace>) => {
+  const boardId = freeformBoardId()
+  const current = freeformLayouts.value[boardId]
+  const place = current?.[id]
+  if (!current || !place) return
+  current[id] = { ...place, ...next }
+  freeformLayouts.value = { ...freeformLayouts.value, [boardId]: { ...current } }
+}
+
+/** Older places describe the padded card. Return the picture's own box. */
+const toImagePlace = (
+  place: FreeformPlace,
+  aspect: number,
+  sw: number,
+  sh: number,
+): FreeformPlace => {
+  if (place.image) return place
+  const cardW = place.w * sw
+  const cardH = cardW / aspect
+  return {
+    x: (place.x * sw + cardW * FREEFORM_PAD) / sw,
+    y: (place.y * sh + cardH * FREEFORM_PAD) / sh,
+    w: (cardW * FREEFORM_INNER) / sw,
+    z: place.z,
+    image: true,
+  }
+}
+
+const freeformStyle = (id: string) => {
+  const place = freeformLayouts.value[freeformBoardId()]?.[id]
+  if (!place) return undefined
+  const sw = freeformBounds.value.w
+  const sh = freeformBounds.value.h
+  const aspect = freeformAspects.value[id] || 1.15
+  const shown =
+    place.image || sw < 2 || sh < 2 ? place : toImagePlace(place, aspect, sw, sh)
+  const width = shown.w * sw
+  const height = width / aspect
+  return {
+    left: `${shown.x * sw}px`,
+    top: `${shown.y * sh}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+    zIndex: shown.z,
+  }
+}
+
+const noteFreeformAspect = (id: string, aspect: number) => {
+  if (!id || !Number.isFinite(aspect) || aspect <= 0) return false
+  if (freeformAspects.value[id] === aspect) return false
+  freeformAspects.value = { ...freeformAspects.value, [id]: aspect }
+  return true
+}
+
+const onFreeImageLoad = (id: string, event: Event) => {
+  if (isFlipping.value || viewFlipBusy.value) return
+  const img = event.target
+  if (!(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+  noteFreeformAspect(id, img.naturalWidth / img.naturalHeight)
+}
+
+/** Pile images are already decoded — size the freeform cards before Flip measures them. */
+const seedFreeformAspects = () => {
+  const pile = pileRef.value
+  if (!pile) return
+  const next = { ...freeformAspects.value }
+  let changed = false
+  for (const img of pile.querySelectorAll<HTMLImageElement>('.stack__pile-image')) {
+    const id = img.closest('[data-item-id]')?.getAttribute('data-item-id') || ''
+    if (!id || !img.naturalWidth || !img.naturalHeight) continue
+    const aspect = img.naturalWidth / img.naturalHeight
+    if (next[id] === aspect) continue
+    next[id] = aspect
+    changed = true
+  }
+  if (changed) freeformAspects.value = next
+}
+
+const freeformBoundsReady = ref(false)
+
+const measureFreeformPlane = () => {
+  const plane = freeformPlane.value
+  if (!plane) return
+  const rect = plane.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return
+  freeformBounds.value = { w: rect.width, h: rect.height }
+  freeformBoundsReady.value = true
+}
+
+/** Rewrite padded-card saves as the picture box once aspect and plane are known. */
+const migrateFreeformImageBoxes = () => {
+  if (!freeformBoundsReady.value) return
+  const sw = freeformBounds.value.w
+  const sh = freeformBounds.value.h
+  const boardId = freeformBoardId()
+  const current = freeformLayouts.value[boardId]
+  if (!current || sw < 2 || sh < 2) return
+  let changed = false
+  const next = { ...current }
+  for (const [id, place] of Object.entries(current)) {
+    if (place.image) continue
+    const aspect = freeformAspects.value[id]
+    if (!aspect) continue
+    next[id] = toImagePlace(place, aspect, sw, sh)
+    changed = true
+  }
+  if (!changed) return
+  freeformLayouts.value = { ...freeformLayouts.value, [boardId]: next }
+  persistFreeformLayouts()
+}
+
+const commitImagePlace = (id: string) => {
+  const boardId = freeformBoardId()
+  const place = freeformLayouts.value[boardId]?.[id]
+  if (!place || place.image) return place
+  const sw = freeformBounds.value.w
+  const sh = freeformBounds.value.h
+  if (sw < 2 || sh < 2) return place
+  const aspect = freeformAspects.value[id] || 1.15
+  patchFreeform(id, toImagePlace(place, aspect, sw, sh))
+  return freeformLayouts.value[boardId]?.[id]
+}
+
+const resizeCursorFor = (corner: FreeformCorner) =>
+  corner === 'tl' || corner === 'br' ? 'nwse' : 'nesw'
+
+const armResizeCursor = (corner: FreeformCorner) => {
+  if (!import.meta.client) return
+  document.documentElement.dataset.resizeCursor = resizeCursorFor(corner)
+}
+
+const clearResizeCursor = () => {
+  if (!import.meta.client || freeformGesture?.kind === 'resize') return
+  delete document.documentElement.dataset.resizeCursor
+}
+
+const endFreeformGesture = () => {
+  window.removeEventListener('pointermove', onFreeformPointerMove)
+  window.removeEventListener('pointerup', onFreeformPointerUp)
+  window.removeEventListener('pointercancel', onFreeformPointerUp)
+  if (freeformGesture?.kind === 'drag' && freeformGesture.moved) suppressFreeClick = true
+  freeformGesture = null
+  freeformHandleId.value = null
+  document.documentElement.classList.remove('stack-freeform-dragging')
+  clearResizeCursor()
+  persistFreeformLayouts()
+}
+
+const onFreeformPointerMove = (event: PointerEvent) => {
+  const gesture = freeformGesture
+  if (!gesture) return
+  const sw = freeformBounds.value.w
+  const sh = freeformBounds.value.h
+  if (gesture.kind === 'drag') {
+    const dx = (event.clientX - gesture.px) / sw
+    const dy = (event.clientY - gesture.py) / sh
+    if (!gesture.moved && Math.hypot(event.clientX - gesture.px, event.clientY - gesture.py) > 4) {
+      gesture.moved = true
+      raiseFreeform(gesture.id)
+    }
+    patchFreeform(gesture.id, {
+      x: Math.min(0.92, Math.max(-0.2, gesture.x + dx)),
+      y: Math.min(0.92, Math.max(-0.08, gesture.y + dy)),
+    })
+    return
+  }
+  if (sw < 2 || sh < 2 || !gesture.corner) return
+  const aspect = freeformAspects.value[gesture.id] || 1.15
+  const fromLeft = gesture.corner === 'tl' || gesture.corner === 'bl'
+  const fromTop = gesture.corner === 'tl' || gesture.corner === 'tr'
+  const alongX = (fromLeft ? -1 : 1) * (event.clientX - gesture.px)
+  const alongY = (fromTop ? -1 : 1) * (event.clientY - gesture.py)
+  const fromX = alongX
+  const fromY = alongY * aspect
+  const deltaW = Math.abs(fromY) > Math.abs(fromX) ? fromY : fromX
+  const imageW = gesture.w * sw
+  const imageH = imageW / aspect
+  const imageX = gesture.x * sw
+  const imageY = gesture.y * sh
+  const nextW = Math.min(
+    0.62 * sw * FREEFORM_INNER,
+    Math.max(0.08 * sw * FREEFORM_INNER, imageW + deltaW),
+  )
+  const nextH = nextW / aspect
+  const fixX = fromLeft ? imageX + imageW : imageX
+  const fixY = fromTop ? imageY + imageH : imageY
+  patchFreeform(gesture.id, {
+    x: (fromLeft ? fixX - nextW : fixX) / sw,
+    y: (fromTop ? fixY - nextH : fixY) / sh,
+    w: nextW / sw,
+    image: true,
+  })
+}
+
+const onFreeformPointerUp = () => {
+  endFreeformGesture()
+}
+
+const bindFreeformGesture = (gesture: FreeformGesture) => {
+  freeformGesture = gesture
+  document.documentElement.classList.toggle('stack-freeform-dragging', gesture.kind === 'drag')
+  window.addEventListener('pointermove', onFreeformPointerMove)
+  window.addEventListener('pointerup', onFreeformPointerUp)
+  window.addEventListener('pointercancel', onFreeformPointerUp)
+}
+
+const onFreePointerDown = (event: PointerEvent, id: string) => {
+  if (event.button !== 0) return
+  const target = event.target
+  if (
+    target instanceof Element &&
+    target.closest('.stack__cell-ctrl, .stack__free-handle, .add-btn')
+  ) {
+    return
+  }
+  const place = commitImagePlace(id)
+  if (!place) return
+  bindFreeformGesture({
+    kind: 'drag',
+    id,
+    px: event.clientX,
+    py: event.clientY,
+    x: place.x,
+    y: place.y,
+    moved: false,
+  })
+}
+
+const onFreeResizeDown = (event: PointerEvent, id: string, corner: FreeformCorner) => {
+  if (event.button !== 0) return
+  event.preventDefault()
+  const place = commitImagePlace(id)
+  if (!place) return
+  raiseFreeform(id)
+  freeformHandleId.value = id
+  const next = freeformLayouts.value[freeformBoardId()]?.[id] || place
+  armResizeCursor(corner)
+  const aspect = freeformAspects.value[id] || 1.15
+  bindFreeformGesture({
+    kind: 'resize',
+    id,
+    corner,
+    px: event.clientX,
+    py: event.clientY,
+    x: next.x,
+    y: next.y,
+    w: next.w,
+    h: (next.w * freeformBounds.value.w) / aspect,
+  })
+}
+
+const onFreeClick = (item: BucketItem, event: MouseEvent) => {
+  if (suppressFreeClick) {
+    suppressFreeClick = false
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+  void openProduct(item, event)
+}
+
+watch(
+  () =>
+    [
+      activeMoodboardId.value,
+      ...selectionEntries.value.map((entry) => entry.item.id),
+    ].join('|'),
+  () => syncFreeformPlacements(),
+  { immediate: true },
+)
+
+watch([freeformBounds, freeformAspects, freeformBoundsReady], () => {
+  migrateFreeformImageBoxes()
+})
+
+watch(
+  showFreeform,
+  (show) => {
+    if (!import.meta.client) return
+    if (!show) {
+      freeformRo?.disconnect()
+      freeformRo = null
+      return
+    }
+    const plane = freeformPlane.value
+    if (!plane) return
+    const measure = () => {
+      if (isFlipping.value || viewFlipBusy.value) return
+      const rect = plane.getBoundingClientRect()
+      if (rect.width < 2 || rect.height < 2) return
+      freeformBounds.value = { w: rect.width, h: rect.height }
+      freeformBoundsReady.value = true
+    }
+    measure()
+    freeformRo?.disconnect()
+    freeformRo = new ResizeObserver(measure)
+    freeformRo.observe(plane)
+  },
+  { flush: 'post' },
+)
+
+watch(cartIsFreeform, async (freeform) => {
+  if (freeform || !import.meta.client || viewFlipBusy.value) return
+  await nextTick()
+  syncCellSize()
+})
+
 const showBoardsGrid = computed(
   () =>
     stagePresent.value &&
@@ -2280,7 +3107,10 @@ const gridDims = computed(() => {
     const rows = Math.ceil((n * cellsPerBoard) / cols) || span.rows
     return { cols, rows }
   }
-  const n = Math.max(selectionEntries.value.length, 1)
+  const n = Math.max(
+    (cartIsFreeform.value ? selectionEntries.value : orderEntries.value).length,
+    1,
+  )
   const cols = stackCols.value
   const rows = Math.ceil(n / cols)
   return { cols, rows }
@@ -3516,15 +4346,31 @@ const pileCardStyle = (id: string, cards: StackPileCard[], boardId?: string) => 
   const y = (0.5 - t) * 6
   // Real stack top (and the card currently landing) — match flyer landRot
   const stackTopId = cards[cards.length - 1]?.id
+  const layoutForTop = freeformLayouts.value[boardId || freeformBoardId()]
+  let topId = stackTopId
+  if (layoutForTop) {
+    let best = -Infinity
+    for (const card of cards) {
+      const z = layoutForTop[card.id]?.z
+      if (typeof z === 'number' && z >= best) {
+        best = z
+        topId = card.id
+      }
+    }
+  }
   const isTop =
-    id === stackTopId || id === landing || (poseIndex < 0 && flying.includes(id))
+    id === topId || id === landing || (poseIndex < 0 && flying.includes(id))
   const rot = isTop ? hashAngle(id) : hashAngle(id, committedPileSalt.value)
   const fan = pileFanOffset(id, index, total)
   const hoverX = fan ? x + fan.x : x
   const hoverY = fan ? y + fan.y : y
   const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
   const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
-  const zIndex = cards.findIndex((card) => card.id === id) + 1
+  const layout = freeformLayouts.value[boardId || freeformBoardId()]
+  const placeZ = layout?.[id]?.z
+  const zIndex = Number.isFinite(placeZ)
+    ? placeZ
+    : cards.findIndex((card) => card.id === id) + 1
   const inSpread = !!boardId && spreadBoardId.value === boardId
 
   return {
@@ -3585,8 +4431,7 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   const flipSrc = urls[index] || item.imageUrl || null
   if (flipSrc) void prefetchImage(flipSrc)
 
-  // Hold flyer until cart UI has faded; product fetch runs in parallel
-  beginFlipOpenGate()
+  // Flyer leaves on the click. Cart chrome fades alongside it.
   pdpFocusItemId.value = item.id
   pdpOpenedFromCart.value = true
   controlsVisible.value = false
@@ -3609,9 +4454,6 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
     flipSrc,
     bucketItemId: item.id,
   })
-
-  await wait(PDP_CART_FADE_MS)
-  releaseFlipOpenGate()
 }
 
 watch(returnImage, (value) => {
@@ -3644,6 +4486,7 @@ watch(cellsReady, (ready) => {
     panelTab.value === 'selections' &&
     !productOverlayOpen.value
   ) {
+    controlsVisible.value = true
     enquiryVisible.value = true
     return
   }
@@ -3959,6 +4802,8 @@ const runFlip = (
     boardStagger?: boolean
     ids?: string[]
     scale?: boolean
+    /** false keeps each card's own z-index. A number flattens every card to it. */
+    zIndex?: number | false
   },
 ) =>
   new Promise<void>((resolve) => {
@@ -3980,8 +4825,9 @@ const runFlip = (
       fade: false,
       // Selection open/close may use scale; boards keep scale:false for crisp 1px borders
       scale: opts?.scale ?? false,
-      // Above cream stage while gathering / dispersing
-      zIndex: 260,
+      // Above cream stage while gathering / dispersing. Freeform close passes false
+      // so each picture keeps its own stack order.
+      zIndex: opts?.zIndex === false ? false : opts?.zIndex ?? 260,
       clearProps:
         'transform,top,left,right,bottom,width,height,position,margin,maxWidth,maxHeight',
       onComplete: () => resolve(),
@@ -4024,16 +4870,37 @@ const fitPileCardsToCells = (opts?: {
         ? staggerDelayForBoardIndex(index, 'open')
         : staggerDelayForIndex(index, 'open')
 
-      // Pile and grid share --stack-cell-pad, so the inset needs no tween —
-      // Flip.fit scales the percentage padding along with the card.
-      Flip.fit(card, media, {
+      // Freeform's box is the picture. Fit the square pile card to the square
+      // around that picture so the painted pixels meet without stretching.
+      let proxy: HTMLElement | null = null
+      let target: HTMLElement = media
+      if (cartIsFreeform.value && !opts?.boardStagger) {
+        const box = freeformPileBox(media.getBoundingClientRect())
+        proxy = document.createElement('div')
+        proxy.setAttribute('aria-hidden', 'true')
+        Object.assign(proxy.style, {
+          position: 'fixed',
+          pointerEvents: 'none',
+          visibility: 'hidden',
+          left: `${box.left}px`,
+          top: `${box.top}px`,
+          width: `${box.width}px`,
+          height: `${box.height}px`,
+        })
+        document.body.appendChild(proxy)
+        target = proxy
+      }
+      Flip.fit(card, target, {
         absolute: true,
         // Boards keep scale:false for crisp 1px borders (same as close)
         scale: !opts?.boardStagger,
         duration: FLIP_DURATION,
         delay,
         ease: 'power3.inOut',
-        onComplete: done,
+        onComplete: () => {
+          proxy?.remove()
+          done()
+        },
       })
     })
 
@@ -4102,6 +4969,7 @@ const scheduleControlsFadeIn = () => {
 
 const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
+  freeformDotsSuppress.value = false
   // Hide name tip for the whole open → close cycle (re-arms on mouse-out after close)
   pileTipLocked.value = true
   railAnimToken += 1
@@ -4127,6 +4995,11 @@ const openFromPile = async () => {
   await nextTick()
   // Grid mounts on the first flush; cell size lands on the second.
   await nextTick()
+  if (cartIsFreeform.value) {
+    seedFreeformAspects()
+    measureFreeformPlane()
+    await nextTick()
+  }
   syncCellSize()
   await fitPileCardsToCells()
   await backdrop
@@ -4608,6 +5481,10 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   controlsVisible.value = false
   enquiryVisible.value = false
   gridLinesVisible.value = false
+  if (cartIsFreeform.value) {
+    freeformDotsSuppress.value = true
+    beginFreeformDotsLeave(GRID_LINES_MS)
+  }
 
   // Only undo placeholders left — they fade with the backdrop
   if (!hasFlipContent) {
@@ -4623,7 +5500,29 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
 
   syncCellSize()
   const medias = gridRef.value?.querySelectorAll('.stack__cell-media[data-flip-id]')
+  // Freeform media is the picture. Record the padded pile-card box around it
+  // so the close flight's painted pixels start on the image.
+  const freeformFlipStyles: Array<{ el: HTMLElement; style: string | null }> = []
+  if (cartIsFreeform.value && medias?.length) {
+    for (const node of medias) {
+      if (!(node instanceof HTMLElement)) continue
+      const box = freeformPileBox(node.getBoundingClientRect())
+      freeformFlipStyles.push({ el: node, style: node.getAttribute('style') })
+      Object.assign(node.style, {
+        position: 'fixed',
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+        margin: '0',
+      })
+    }
+  }
   const state = medias?.length ? Flip.getState(medias) : null
+  for (const item of freeformFlipStyles) {
+    if (item.style == null) item.el.removeAttribute('style')
+    else item.el.setAttribute('style', item.style)
+  }
   isFlipping.value = true
   cellsReady.value = false
   // Hand flip ids to pile and remount the rail (hidden while cart is open)
@@ -4636,12 +5535,24 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
   if (state && cards?.length) {
-    // 2) Items gather back to the pile
-    await runFlip(state, cards, { mode: 'close' })
+    // 2) Items gather back to the pile. Freeform keeps each picture's own z-index;
+    // Flip's shared z-index would flatten that order on the first frame.
+    await runFlip(state, cards, {
+      mode: 'close',
+      zIndex: cartIsFreeform.value ? false : undefined,
+    })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, {
       clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
     })
+    if (cartIsFreeform.value) {
+      for (const node of cards) {
+        if (!(node instanceof HTMLElement)) continue
+        const id = node.getAttribute('data-flip-id') || ''
+        const z = freeformLayouts.value[freeformBoardId()]?.[id]?.z
+        if (Number.isFinite(z)) node.style.zIndex = String(z)
+      }
+    }
     void pileRef.value?.offsetHeight
   }
   // Re-enable CSS transitions before backdrop fade — otherwise a hover during
@@ -4664,6 +5575,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
 
 const requestClose = () => {
   void closeToPile()
+}
+
+/** Freeform only closes from the corner button — the canvas is for moving pieces. */
+const onBackdropClick = () => {
+  if (cartIsFreeform.value && panelTab.value === 'selections') return
+  requestClose()
 }
 
 /** Empty cart surface — not a product, board, or its controls. */
@@ -4708,37 +5625,27 @@ const onCartKeydown = (event: KeyboardEvent) => {
 type FlyPayload = NonNullable<ReturnType<typeof consumePendingFly>>
 
 const flyIntoPile = async (payload: FlyPayload) => {
+  let settled = false
+  const finishFly = () => {
+    if (settled) return
+    settled = true
+    notePileFly('done')
+  }
+  try {
   if (!import.meta.client) {
     clearArriving(payload.itemId)
     pileLandingId.value = null
     return
   }
-  measurePileAnchor()
-  const dest = pileAnchor.value
-  if (!dest) {
-    clearArriving(payload.itemId)
-    pileLandingId.value = null
-    if (payload.source) {
-      payload.source.style.removeProperty('opacity')
-      payload.source.style.removeProperty('transition')
-      payload.source.removeAttribute('data-bucket-fly')
-      clearCycleControl(payload.source)
-    }
-    return
-  }
 
   const source = payload.source
-  // Keep original hidden instantly (no fade-out) while the flyer travels
-  if (source) {
-    source.setAttribute('data-bucket-fly', payload.itemId)
-    source.style.setProperty('transition', 'none')
-    source.style.setProperty('opacity', '0')
-    hideCycleControl(source)
-  }
-
   // Match source crop (grid cover / PDP contain) so the first frame doesn’t pop
   const sourceFit =
     (source && getComputedStyle(source).objectFit) || 'cover'
+  const flySrc =
+    source instanceof HTMLImageElement && (source.currentSrc || source.src)
+      ? source.currentSrc || source.src
+      : payload.imageUrl
 
   const wrap = document.createElement('div')
   Object.assign(wrap.style, {
@@ -4753,9 +5660,10 @@ const flyIntoPile = async (payload: FlyPayload) => {
     overflow: 'hidden',
     transformOrigin: 'center center',
     boxSizing: 'border-box',
+    visibility: 'hidden',
   })
   const flyerImg = document.createElement('img')
-  flyerImg.src = payload.imageUrl
+  flyerImg.src = flySrc
   flyerImg.alt = ''
   flyerImg.setAttribute('aria-hidden', 'true')
   Object.assign(flyerImg.style, {
@@ -4772,12 +5680,50 @@ const flyIntoPile = async (payload: FlyPayload) => {
   wrap.appendChild(flyerImg)
   document.body.appendChild(wrap)
 
+  if (!flyerImg.complete || !flyerImg.naturalWidth) {
+    await new Promise<void>((resolve) => {
+      const finish = () => resolve()
+      flyerImg.addEventListener('load', finish, { once: true })
+      flyerImg.addEventListener('error', finish, { once: true })
+      window.setTimeout(finish, 800)
+    })
+  }
+
+  // Original stays up until this frame, then the flyer takes its place.
+  wrap.style.visibility = 'visible'
+  if (source) {
+    source.setAttribute('data-bucket-fly', payload.itemId)
+    source.style.setProperty('transition', 'none')
+    source.style.setProperty('opacity', '0')
+    hideCycleControl(source)
+  }
+  notePileFly('shown', payload.itemId)
+
+  await nextTick()
+  measurePileAnchor()
+  const dest = pileAnchor.value
+  if (!dest) {
+    wrap.remove()
+    clearArriving(payload.itemId)
+    pileLandingId.value = null
+    if (source) {
+      source.style.removeProperty('opacity')
+      source.style.removeProperty('transition')
+      source.removeAttribute('data-bucket-fly')
+      clearCycleControl(source)
+    }
+    return
+  }
+
   const destSize = Math.min(dest.width, dest.height)
   const destLeft = dest.left
   const destTop = dest.top
 
   // Natural content box inside the square pile cell (same as return-to-pile)
-  const natural = await readImageNaturalSize(flyerImg, payload.imageUrl)
+  const natural =
+    flyerImg.naturalWidth && flyerImg.naturalHeight
+      ? { w: flyerImg.naturalWidth, h: flyerImg.naturalHeight }
+      : await readImageNaturalSize(flyerImg, flySrc)
   const fitted = fitStackContentSize(natural.w, natural.h, destSize)
 
   // Playful arch: rise, overshoot into the pile, then settle with inertia
@@ -4829,6 +5775,7 @@ const flyIntoPile = async (payload: FlyPayload) => {
   const landLeft = destLeft + (topT - 0.5) * 10 + (destSize - fitted.width) / 2
   const landTop = destTop + (0.5 - topT) * 6 + (destSize - fitted.height) / 2
 
+  await new Promise<void>((resolve) => {
   gsap
     .timeline({
       onComplete: async () => {
@@ -4839,6 +5786,7 @@ const flyIntoPile = async (payload: FlyPayload) => {
         pileLandingId.value = null
         wrap.remove()
         fadeSourceBack()
+        resolve()
       },
     })
     .to(wrap, {
@@ -4881,6 +5829,10 @@ const flyIntoPile = async (payload: FlyPayload) => {
       duration: 0.48,
       ease: 'power3.out',
     })
+  })
+  } finally {
+    finishFly()
+  }
 }
 
 watch(
@@ -4890,7 +5842,7 @@ watch(
     const next = consumePendingFly()
     if (!next) return
     markArriving(next.itemId)
-    nextTick(() => flyIntoPile(next))
+    void flyIntoPile(next)
   },
 )
 
@@ -5004,7 +5956,7 @@ watch(
   () =>
     panelTab.value === 'boards'
       ? boardsGridEntries.value.length
-      : selectionEntries.value.length,
+      : (cartIsFreeform.value ? selectionEntries.value : orderEntries.value).length,
   async () => {
     if (!import.meta.client || !gridLenis) return
     await nextTick()
@@ -5255,6 +6207,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearViewFlyers()
+  window.clearTimeout(freeformDotsLeaveTimer)
   registerAnimatedClose(null)
   registerAnimatedOpen(null)
   registerSelectionStackHover(null)
@@ -5265,6 +6219,9 @@ onBeforeUnmount(() => {
   registerMoodboardCloseReturn(null)
   cellRo?.disconnect()
   cellRo = null
+  freeformRo?.disconnect()
+  freeformRo = null
+  endFreeformGesture()
   destroyGridLenis()
   clearColumnPointerListeners()
   destroyColumnGhost()
@@ -5689,17 +6646,18 @@ onBeforeUnmount(() => {
   z-index: 4;
   flex: 0 0 auto;
   width: var(--stack-cell-size);
-  height: auto;
+  height: 0 !important;
   margin: 0;
-  padding: 0 0 16px;
+  padding: 0 !important;
   box-sizing: border-box;
   border: 0;
   background: transparent;
   cursor: pointer;
-  pointer-events: none;
+  pointer-events: none !important;
   display: grid;
   place-items: center;
-  overflow: visible;
+  overflow: hidden;
+  opacity: 0 !important;
 }
 
 .stack__create--visible,
@@ -6528,7 +7486,8 @@ onBeforeUnmount(() => {
 .stack__cell--scaled-in .stack__cell-ctrl,
 .stack__cell--scale-out .stack__board-actions,
 .stack__cell--scale-in .stack__board-actions,
-.stack__cell--scaled-in .stack__board-actions {
+.stack__cell--scaled-in .stack__board-actions,
+.stack__cell--scale-out .stack__free-handle {
   opacity: 0 !important;
   pointer-events: none !important;
   transition: none;
@@ -6613,6 +7572,8 @@ onBeforeUnmount(() => {
   max-height: 100%;
   padding: 0;
   border: 0;
+  border-radius: 2px;
+  overflow: hidden;
   background: transparent;
   cursor: pointer;
   line-height: 0;
@@ -6641,19 +7602,14 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
-.stack__cell-ctrl--clone {
+.stack__cell-ctrl--remove {
   top: var(--thumb-ctrl-inset, 4px);
   left: var(--thumb-ctrl-inset, 4px);
 }
 
-.stack__cell-ctrl--remove {
+.stack__cell-ctrl--cycle {
   top: var(--thumb-ctrl-inset, 4px);
   right: var(--thumb-ctrl-inset, 4px);
-}
-
-.stack__cell-ctrl--cycle {
-  right: var(--thumb-ctrl-inset, 4px);
-  bottom: var(--thumb-ctrl-inset, 4px);
 }
 
 /* Header / non-Flip opens only — never re-run after Flip settles */
@@ -6913,25 +7869,26 @@ onBeforeUnmount(() => {
 
 .stack__toolbar-create {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: -1px;
+  top: 50%;
+  right: 14px;
+  bottom: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0;
-  padding: 0 50px;
+  padding: 0.7rem 1.25rem;
   border: 0;
-  background: var(--blue);
+  background: var(--red);
   font-size: var(--text-xs);
   color: #fff;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
+  transform: translateY(-50%);
 }
 
 .stack__toolbar-create:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--blue) 88%, #000);
+  background: color-mix(in srgb, var(--red) 82%, #000);
   color: #fff;
 }
 
@@ -6939,6 +7896,248 @@ onBeforeUnmount(() => {
   opacity: 0.4;
   cursor: default;
   text-decoration: none;
+}
+
+.stack__view-toggle {
+  position: fixed;
+  left: 50%;
+  bottom: 60px;
+  z-index: 430;
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateX(-50%) translateY(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+}
+
+.stack__view-toggle--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.stack__view-toggle button {
+  margin: 0;
+  padding: 0.45rem 1.05rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--charcoal);
+  cursor: pointer;
+}
+
+.stack__view-toggle button.is-active {
+  background: var(--charcoal);
+  color: var(--cream);
+}
+
+.stack__undo-global,
+.stack__close-global {
+  position: fixed;
+  bottom: 60px;
+  z-index: 430;
+  margin: 0;
+  padding: 0.45rem 1.05rem;
+  border: 1px solid color-mix(in srgb, currentColor 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--charcoal);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease,
+    border-color 0.2s ease;
+}
+
+.stack__undo-global {
+  right: 60px;
+}
+
+.stack__close-global {
+  left: 60px;
+  color: var(--text-color);
+}
+
+.stack__undo-global--visible,
+.stack__close-global--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.stack__undo-global:hover,
+.stack__close-global:hover {
+  color: var(--text-color);
+  border-color: currentColor;
+}
+
+.stack--view-flip [data-stack-id] {
+  opacity: 0 !important;
+  transition: none !important;
+}
+
+:global(.stack__view-flyer) {
+  position: fixed;
+  margin: 0;
+  object-fit: contain;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.stack__freeform-dots {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: color-mix(in srgb, var(--charcoal) 22%, transparent);
+  -webkit-mask-image:
+    repeating-linear-gradient(#000 0, #000 2px, transparent 2px, transparent 48px),
+    repeating-linear-gradient(
+      90deg,
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    repeating-linear-gradient(#000 0, #000 2px, transparent 2px, transparent 48px),
+    repeating-linear-gradient(
+      90deg,
+      #000 0,
+      #000 2px,
+      transparent 2px,
+      transparent 48px
+    );
+  mask-composite: intersect;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.stack__freeform-dots--on {
+  opacity: 1;
+}
+
+.stack__freeform-dots--leaving {
+  opacity: 0;
+  transition-duration: 0.2s;
+}
+
+.stack__freeform {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: var(--header-height) 28px 120px;
+  box-sizing: border-box;
+}
+
+.stack__freeform-plane {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.stack__free-card.stack__cell {
+  position: absolute;
+  aspect-ratio: auto;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.stack__free-card .stack__cell-frame {
+  inset: 0;
+  overflow: visible;
+}
+
+.stack__free-card .stack__cell-figure,
+.stack__free-card .stack__cell-hit,
+.stack__free-card .stack__cell-image {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+.stack__free-card .stack__cell-hit,
+.stack__free-card .stack__cell-image {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.stack__free-card .stack__cell-hit {
+  cursor: grab;
+  cursor: -webkit-grab;
+}
+
+.stack__free-card .stack__cell-image {
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.stack__free-handle {
+  position: absolute;
+  z-index: 4;
+  width: 10px;
+  height: 10px;
+  background: var(--elevated-bg);
+  border: 0.05em solid var(--charcoal);
+  border-radius: 0;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  transition: opacity 0.12s ease;
+  border-radius:10px;
+}
+
+.stack__free-handle::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+
+.stack__free-card:hover .stack__free-handle,
+.stack__free-card--handles .stack__free-handle {
+  opacity: 1;
+}
+
+.stack__free-handle--tl {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.stack__free-handle--tr {
+  top: 0;
+  left: 100%;
+  cursor: nesw-resize;
+}
+
+.stack__free-handle--bl {
+  top: 100%;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.stack__free-handle--br {
+  top: 100%;
+  left: 100%;
+  cursor: nwse-resize;
 }
 
 /* Full-width enquiry — rises after disperse */

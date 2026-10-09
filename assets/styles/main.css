@@ -29,7 +29,7 @@
 
   /* Thumbnail overlay controls ([+], [−], clone, cycle) */
   --thumb-ctrl-inset: 8px;
-  --thumb-ctrl-size: 28px;
+  --thumb-ctrl-size: 16px;
   --thumb-ctrl-color: var(--charcoal);
   --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
@@ -162,6 +162,24 @@ img {
   html.custom-cursor-on [data-cursor='pointer'] * {
     cursor: pointer !important;
   }
+
+  html.custom-cursor-on [data-cursor='grab'] {
+    cursor: grab !important;
+    cursor: -webkit-grab !important;
+  }
+
+  html.custom-cursor-on.stack-freeform-dragging,
+  html.custom-cursor-on.stack-freeform-dragging * {
+    cursor: grabbing !important;
+    cursor: -webkit-grabbing !important;
+  }
+}
+
+/* Freeform drag hides the custom cursor, so the closed hand has to win on its own. */
+html.stack-freeform-dragging,
+html.stack-freeform-dragging * {
+  cursor: grabbing !important;
+  cursor: -webkit-grabbing !important;
 }
 
 #app {
