@@ -222,9 +222,18 @@ onMounted(async () => {
     if (raw && raw !== 'transparent' && raw !== 'rgba(0, 0, 0, 0)') pageClear.setStyle(raw)
   }
 
+  let listenersOn = !reduced
+  const releasePointer = () => {
+    if (!listenersOn) return
+    listenersOn = false
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerleave', onLeave)
+    active = false
+  }
+
   const animate = () => {
     if (disposed) return
-    raf = requestAnimationFrame(animate)
+    if (props.toPage) releasePointer()
     theme += ((props.dark ? 1 : 0) - theme) * (reduced ? 1 : 0.08)
     const flatTarget = props.flatten ? 1 : 0
     const rising = flatTarget < flat
@@ -257,7 +266,7 @@ onMounted(async () => {
       camera.position.z = framed
       camera.updateProjectionMatrix()
     }
-    if (!reduced && flat < 0.98) {
+    if (!reduced && !props.toPage && flat < 0.98) {
       raycaster.setFromCamera(mouse, camera)
       const hit = model ? raycaster.intersectObject(model, true)[0] : undefined
       if (hit) target.copy(hit.point)
@@ -274,6 +283,9 @@ onMounted(async () => {
       shader.uniforms.uFlat!.value = flat
     }
     renderer.render(scene, camera)
+    const leavingSettled = props.toPage && flat > 0.995 && pageBlend > 0.995
+    if (leavingSettled) return
+    raf = requestAnimationFrame(animate)
   }
   animate()
 

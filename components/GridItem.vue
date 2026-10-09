@@ -9,14 +9,14 @@
       v-bind="linkProps"
       class="grid-item__media"
       data-cursor="plus"
-      :class="{ 'grid-item__media--image': Boolean(activeImage) }"
+      :class="{ 'grid-item__media--image': hasImage }"
       :aria-label="item.title"
       @pointerenter="prefetchActiveHero"
       @focusin="prefetchActiveHero"
       @click="onOpen"
     >
       <img
-        v-if="activeImage"
+        v-if="hasImage"
         ref="imageRef"
         class="grid-item__image"
         :src="activeImage"
@@ -24,8 +24,11 @@
         loading="lazy"
         draggable="false"
         @load="onImageLoad"
+        @error="imageBroken = true"
       />
-      <span v-else class="grid-item__type-label">{{ typeLabel }}</span>
+      <span v-else class="grid-item__placeholder">
+        <span class="grid-item__type-label">{{ typeLabel }}</span>
+      </span>
       <AddButton
         class="grid-item__add"
         :active="saved"
@@ -169,6 +172,11 @@ const heroImages = computed(() =>
 const activeImage = computed(
   () => projectImages.value[imageIndex.value] || props.imageUrl || '',
 )
+const imageBroken = ref(false)
+watch(activeImage, () => {
+  imageBroken.value = false
+})
+const hasImage = computed(() => Boolean(activeImage.value) && !imageBroken.value)
 
 const activeHeroImage = computed(
   () => heroImages.value[imageIndex.value] || activeImage.value || '',
@@ -339,19 +347,25 @@ onMounted(() => {
   transition: opacity 0.35s ease, filter 0.35s ease;
 }
 
-.grid-item__type-label {
-  font-size: 15cqi;
-  line-height: 0.95;
-  letter-spacing: -0.02em;
-  color: var(--charcoal);
-  text-transform: lowercase;
-  transition: color 0.3s ease;
-  opacity: 0.4;
-  /* Text-only tiles keep a readable square footprint */
-  aspect-ratio: 1;
+.grid-item__placeholder {
   display: grid;
   place-items: center;
   width: 100%;
+  aspect-ratio: 1;
+  background: var(--sand);
+  border: 1px solid var(--grid-line);
+}
+
+.grid-item__type-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.125em;
+  text-transform: uppercase;
+  color: var(--charcoal);
+  transition: color 0.3s ease;
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .grid-item:hover .grid-item__type-label {

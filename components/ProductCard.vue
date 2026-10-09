@@ -7,7 +7,7 @@
         class="product-card__media"
         data-cursor="default"
         :class="{
-          'product-card__media--image': Boolean(activeImage),
+          'product-card__media--image': hasImage,
           'product-card__media--link': Boolean(href),
         }"
         :aria-label="item.title"
@@ -16,15 +16,18 @@
         @click="onOpen"
       >
         <img
-          v-if="activeImage"
+          v-if="hasImage"
           class="product-card__image"
           :class="{ 'product-card__image--cover': imageIndex > 0 }"
           :src="activeImage"
           :alt="item.title"
           loading="lazy"
           draggable="false"
+          @error="imageBroken = true"
         />
-        <span v-else class="product-card__type-label">{{ typeLabel }}</span>
+        <span v-else class="product-card__placeholder">
+          <span class="product-card__type-label">{{ typeLabel }}</span>
+        </span>
 
         <AddButton
           class="product-card__add"
@@ -184,6 +187,11 @@ const heroImages = computed(() =>
 const activeImage = computed(
   () => projectImages.value[imageIndex.value] || props.imageUrl || '',
 )
+const imageBroken = ref(false)
+watch(activeImage, () => {
+  imageBroken.value = false
+})
+const hasImage = computed(() => Boolean(activeImage.value) && !imageBroken.value)
 
 const activeHeroImage = computed(
   () => heroImages.value[imageIndex.value] || activeImage.value || '',
@@ -328,12 +336,23 @@ const onToggle = (event?: MouseEvent) => {
   object-position: center center;
 }
 
+.product-card__placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--sand);
+  border: 1px solid var(--grid-line);
+  border-radius: inherit;
+}
+
 .product-card__type-label {
-  font-size: 15cqi;
-  line-height: 0.95;
-  letter-spacing: -0.02em;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0.125em;
+  text-transform: uppercase;
   color: var(--charcoal);
-  text-transform: lowercase;
   transition: color 0.3s ease;
   opacity: 0.4;
   pointer-events: none;
@@ -372,7 +391,7 @@ const onToggle = (event?: MouseEvent) => {
 
 @media (hover: hover) and (pointer: fine) {
   .product-card--saved .product-card__image,
-  .product-card--saved .product-card__type-label {
+  .product-card--saved .product-card__placeholder {
     opacity: 0.1;
     filter: grayscale(100%);
     transition: opacity 0.45s ease;
@@ -380,8 +399,8 @@ const onToggle = (event?: MouseEvent) => {
 
   .product-card--saved:hover .product-card__image,
   .product-card--saved:focus-within .product-card__image,
-  .product-card--saved:hover .product-card__type-label,
-  .product-card--saved:focus-within .product-card__type-label {
+  .product-card--saved:hover .product-card__placeholder,
+  .product-card--saved:focus-within .product-card__placeholder {
     opacity: 1;
     filter: grayscale(0%);
   }

@@ -49,6 +49,7 @@
                 v-for="item in previewItems"
                 :key="item.id"
                 class="enquiry__grid-item"
+                :class="{ 'enquiry__grid-item--swatch': item.kind !== 'image' }"
                 :data-enquiry-id="item.id"
                 :title="item.title"
               >
@@ -56,6 +57,7 @@
                   v-if="item.kind === 'image' && item.imageUrl"
                   :src="item.imageUrl"
                   :alt="item.title"
+                  :style="item.aspectRatio ? { aspectRatio: String(item.aspectRatio) } : undefined"
                 />
                 <span
                   v-else-if="item.kind === 'colour' && item.colour"
@@ -249,9 +251,16 @@ const returnToStack = async (id: number) => {
     await nextTick()
     if (id !== runId) return
     const ids = enquiryFlyImages().map((img) => img.dataset.flyId || '')
-    const sample = measureGrid().values().next().value
+    const grid = measureGrid()
+    const sample = grid.values().next().value
     const size = sample?.width || 120
-    await tweenEnquiryFlyers(pileBoxes(ids.length, size), SPREAD_S)
+    const sources = ids.map((itemId) => {
+      const box = grid.get(itemId)
+      return box
+        ? { width: box.width, height: box.height }
+        : { width: size, height: size }
+    })
+    await tweenEnquiryFlyers(pileBoxes(sources, size), SPREAD_S)
     if (id !== runId) return
   }
 
@@ -279,12 +288,12 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
     return
   }
 
-  const ids = origins.map((origin) => origin.id)
   const grid = measureGrid()
   const sample = grid.values().next().value
   const size = sample?.width || 120
+  const ids = origins.map((origin) => origin.id)
 
-  await tweenEnquiryFlyers(pileBoxes(ids.length, size), GATHER_S)
+  await tweenEnquiryFlyers(pileBoxes(origins, size), GATHER_S)
   if (id !== runId) return
 
   phase = 'covered'
@@ -488,17 +497,22 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--bucket-thumb-width), 1fr));
   gap: 20px;
+  align-items: start;
 }
 
 .enquiry__grid-item {
+  min-width: 0;
+}
+
+.enquiry__grid-item--swatch {
   aspect-ratio: 1;
-  overflow: hidden;
 }
 
 .enquiry__grid-item img {
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  object-fit: contain;
 }
 
 .enquiry__colour {

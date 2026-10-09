@@ -35,7 +35,7 @@ export const mountEnquiryFlyers = (
       `top:${box.top}px`,
       `width:${box.width}px`,
       `height:${box.height}px`,
-      'object-fit:cover',
+      'object-fit:contain',
       'pointer-events:none',
     ].join(';')
     root.appendChild(img)
@@ -92,16 +92,25 @@ export const tweenEnquiryFlyers = (
     })
   })
 
-export const pileBoxes = (count: number, size: number): EnquiryFlyBox[] => {
+/** Center pile. Longest side is `maxSize`; each box keeps its source ratio. */
+export const pileBoxes = (
+  sources: Array<{ width: number; height: number }>,
+  maxSize: number,
+): EnquiryFlyBox[] => {
   const cx = window.innerWidth / 2
   const cy = window.innerHeight / 2
-  return Array.from({ length: count }, (_, index) => {
+  return sources.map((source, index) => {
+    const w = Math.max(source.width, 1)
+    const h = Math.max(source.height, 1)
+    const scale = maxSize / Math.max(w, h)
+    const width = w * scale
+    const height = h * scale
     const shift = Math.min(index, 12) * 1.25
     return {
-      left: cx - size / 2 + shift,
-      top: cy - size / 2 + shift,
-      width: size,
-      height: size,
+      left: cx - width / 2 + shift,
+      top: cy - height / 2 + shift,
+      width,
+      height,
     }
   })
 }

@@ -8,6 +8,8 @@ export type EnquiryPreviewItem = {
   imageUrl?: string
   colour?: string
   text?: string
+  /** width / height, so the preview can lay out before the file decodes. */
+  aspectRatio?: number
 }
 
 export type EnquirySource = 'bucket' | 'moodboard' | 'product' | 'enquire-page'
@@ -109,12 +111,22 @@ export const useEnquiryForm = () => {
     source.value = 'bucket'
     compositionImage.value = null
     flyOrigins.value = options?.origins?.length ? options.origins : null
-    const preview: EnquiryPreviewItem[] = items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      kind: 'image' as const,
-      imageUrl: item.imageUrl,
-    }))
+    const ratios = new Map(
+      (options?.origins || []).map((origin) => [
+        origin.id,
+        origin.height > 0 ? origin.width / origin.height : 0,
+      ]),
+    )
+    const preview: EnquiryPreviewItem[] = items.map((item) => {
+      const aspectRatio = ratios.get(item.id)
+      return {
+        id: item.id,
+        title: item.title,
+        kind: 'image' as const,
+        imageUrl: item.imageUrl,
+        aspectRatio: aspectRatio && aspectRatio > 0 ? aspectRatio : undefined,
+      }
+    })
     const colour = String(options?.colour || '').trim()
     if (colour) {
       const hex = colour.startsWith('#') ? colour.toUpperCase() : `#${colour.toUpperCase()}`

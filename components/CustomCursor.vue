@@ -465,12 +465,20 @@ const parkLabel = () => {
 }
 
 const noteMotion = () => {
-  if (reduceMotion.value) return
+  if (reduceMotion.value || !isAdvance.value) return
   labelStill.value = false
   parkLabel()
 }
 
 if (import.meta.client) {
+  watch(isAdvance, (on) => {
+    if (on) return
+    window.clearTimeout(restTimer)
+    window.clearTimeout(revealTimer)
+    restTimer = 0
+    revealTimer = 0
+    labelStill.value = true
+  })
   watch(cursorLabel, (text) => {
     syncLabel(text)
   }, { immediate: true })
@@ -940,6 +948,11 @@ html.dark.homepage-intro .site-cursor--on-slider .site-cursor__chev {
 .site-cursor--advance .site-cursor__hint.is-traveling {
   padding: 0 58px 0 18px;
   translate: calc(-100% + 24px) -50%;
+}
+
+.site-cursor--advance .site-cursor__hint.is-traveling {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .site-cursor__hint.is-fading,

@@ -859,6 +859,8 @@ const keepPileForFlip = ref(false)
 const pileFanned = ref(false)
 /** Open selection laid out as a bottom row instead of the cart grid. */
 const spreadBoardId = ref<string | null>(null)
+/** Skip the row fan when the full-page cart is about to take over. */
+const cartOpening = ref(false)
 /** Fan-out / line-up flight — kills the pile card’s CSS transform tween. */
 const spreadingBoardId = ref<string | null>(null)
 
@@ -1063,6 +1065,10 @@ watch(spreadBoardId, async (id, prev) => {
 
   gsap.killTweensOf(spreadCardsOf(pile))
   clearSpreadCardProps(pile)
+  if (cartOpening.value) {
+    spreadingBoardId.value = null
+    return
+  }
   if (id) bindDock(pile)
 
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -3352,6 +3358,20 @@ const restackBoard = async (boardId: string) => {
   if (restackingBoardId.value === boardId) restackingBoardId.value = null
 }
 
+/** Drop the dock row without its fan, so the cart Flip starts from the pile. */
+const closeSpreadForCart = async () => {
+  if (!spreadBoardId.value) return
+  cartOpening.value = true
+  spreadBoardId.value = null
+  await nextTick()
+  spreadFlipTween?.kill()
+  spreadFlipTween = null
+  spreadingBoardId.value = null
+  const pile = pileEls.value[activeMoodboardId.value || '']
+  if (pile) clearSpreadCardProps(pile)
+  cartOpening.value = false
+}
+
 const onPileClick = async (boardId: string) => {
   const board = moodboards.value.find((entry) => entry.id === boardId)
   const wasActive = boardId === activeMoodboardId.value
@@ -3376,7 +3396,8 @@ const onPileClick = async (boardId: string) => {
     }
     return
   }
-  spreadBoardId.value = spreadBoardId.value === boardId ? null : boardId
+  await closeSpreadForCart()
+  void openFromPile()
 }
 
 const railSwitchBusy = ref(false)
@@ -3954,7 +3975,8 @@ const runFlip = (
           boardStagger: opts?.boardStagger,
           ids: opts?.ids,
         }),
-      ease: 'power3.inOut',
+      // Close leaves on the click — power3.inOut holds still before it moves.
+      ease: 'power3.out',
       fade: false,
       // Selection open/close may use scale; boards keep scale:false for crisp 1px borders
       scale: opts?.scale ?? false,
@@ -3966,7 +3988,7 @@ const runFlip = (
     })
   })
 
-/** Open: fly pile cards (free, unclipped) into each cell — mirrors close. */
+/** Open: fly pile cards into each cell — same Flip as close, stagger reversed. */
 const fitPileCardsToCells = (opts?: {
   pile?: HTMLElement | null
   ids?: string[]
@@ -4098,14 +4120,16 @@ const openFromPile = async () => {
   controlsVisible.value = false
   gridLinesVisible.value = false
   scheduleControlsFadeIn()
-  // 1) Backdrop fade in — other stacks drop away on the same beat
+  // Backdrop fades in alongside the flight — it must not hold the cards.
   shelveInactiveRail()
-  await revealStage()
-  // 2) Items disperse into cells over plain backdrop
   openDrawer('selections')
+  const backdrop = revealStage()
+  await nextTick()
+  // Grid mounts on the first flush; cell size lands on the second.
   await nextTick()
   syncCellSize()
   await fitPileCardsToCells()
+  await backdrop
   // 3) Reveal cell media, hide Flip faces in the same beat, then unmount the
   // pile before rebinding flip ids. Ending isFlipping while cards are still
   // visible lets the rail's pile pose flash before the grid takes over.
@@ -5136,7 +5160,7 @@ const openSelectionStackFromNav = () => {
         pileRef.value = pileEls.value[id] || pileRef.value
         const board = moodboards.value.find((entry) => entry.id === id)
         if (board?.items.length) {
-          spreadBoardId.value = id
+          void openFromPile()
           return
         }
       }
@@ -5150,7 +5174,7 @@ const openSelectionStackFromNav = () => {
     pileRef.value = pileEls.value[id] || pileRef.value
     const board = moodboards.value.find((entry) => entry.id === id)
     if (board?.items.length) {
-      spreadBoardId.value = spreadBoardId.value === id ? null : id
+      void closeSpreadForCart().then(() => openFromPile())
       return
     }
   }

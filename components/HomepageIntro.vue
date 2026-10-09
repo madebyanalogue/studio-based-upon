@@ -672,9 +672,8 @@ const onProduct = async () => {
 
 const onFieldClick = (event: MouseEvent) => {
   const target = event.target
-  if (target instanceof Element && target.closest('button')) return
+  if (target instanceof Element && target.closest('button, a, .homepage-intro__theme')) return
   if (finished || leaving.value) return
-  if (!awaitingClick.value || frameIndex.value < CLICK_FROM) return
   if (frameIndex.value >= FRAMES.length - 1) onEnter()
   else advanceSlide()
 }
@@ -693,6 +692,8 @@ const onKey = (event: KeyboardEvent) => {
 const pathState = { t: 0 }
 let pathTween: gsap.core.Tween | null = null
 let pathDest: number | null = null
+/** Slide a click is already sending us to. Further clicks wait until it arrives. */
+let userSkip: number | null = null
 let pathArrive: (() => void) | undefined
 let playGeneration = 0
 
@@ -766,12 +767,14 @@ const settleSlide = () => {
 }
 
 const advanceSlide = () => {
-  if (!awaitingClick.value || finished) return
+  if (finished || leaving.value) return
   const next = frameIndex.value + 1
   if (next >= FRAMES.length) {
     onEnter()
     return
   }
+  if (userSkip === next) return
+  userSkip = next
   awaitingClick.value = false
   clearNextCursor()
   dismissProduct()
@@ -780,7 +783,10 @@ const advanceSlide = () => {
     pathState.t = leaveAt
     paint(pathState.t)
   }
-  playTo(arrivedT(next), settleSlide, next)
+  playTo(arrivedT(next), () => {
+    userSkip = null
+    settleSlide()
+  }, next)
 }
 
 const play = async () => {
@@ -838,6 +844,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPath?.()
+  if (rootEl.value) gsap.killTweensOf(rootEl.value)
   window.removeEventListener('keydown', onKey)
   if (fadeVeil) document.removeEventListener('homepage-columns-opening', fadeVeil)
   window.clearTimeout(veilTimer)
