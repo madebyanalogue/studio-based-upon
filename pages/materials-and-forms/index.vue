@@ -2052,9 +2052,10 @@ useHead(() => ({
 .products__header {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: 0;
   padding-bottom: 110px;
   max-width: none;
+  pointer-events: none;
 }
 
 /* Above the product overlay (320) and below the flying thumb (500). */
@@ -2425,6 +2426,8 @@ useHead(() => ({
 }
 
 .products__grid-wrap {
+  position: relative;
+  z-index: 1;
   padding-top: 1.5rem;
   padding-bottom: calc(7.5rem + var(--bucket-push, 0px));
 }

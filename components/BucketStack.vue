@@ -754,15 +754,34 @@
         >
           Close
         </button>
-        <button
-          v-if="cartIsFreeform && latestPendingRemoval"
-          type="button"
-          class="stack__undo-global interface"
-          :class="{ 'stack__undo-global--visible': controlsVisible && !enquiryFormOpen }"
-          @click="onGlobalUndo"
+        <div
+          class="stack__corner"
+          :class="{ 'stack__corner--visible': controlsVisible && !enquiryFormOpen }"
         >
-          Undo
-        </button>
+          <button
+            v-if="cartIsFreeform && latestPendingRemoval"
+            type="button"
+            class="stack__undo-global interface"
+            @click="onGlobalUndo"
+          >
+            Undo
+          </button>
+          <label class="stack__upload-global interface" data-cursor="default">
+            <input
+              type="file"
+              class="stack__upload-input"
+              accept="image/*"
+              multiple
+              @change="onCartUpload"
+            />
+            <span>Upload</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M12 16V5" />
+              <path d="M8 9l4-4 4 4" />
+              <path d="M5 19h14" />
+            </svg>
+          </label>
+        </div>
       </template>
 
       <div
@@ -1407,6 +1426,66 @@ const onGlobalUndo = () => {
   const pending = latestPendingRemoval.value
   if (!pending) return
   void onUndoClick(pending.key, pending.item)
+}
+
+const UPLOAD_MAX_EDGE = 1600
+
+const fileToCartImage = (file: File) =>
+  new Promise<{ url: string; aspect: number; title: string }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const aspect = img.naturalWidth / img.naturalHeight || 1
+      const scale = Math.min(1, UPLOAD_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight, 1))
+      const width = Math.max(1, Math.round(img.naturalWidth * scale))
+      const height = Math.max(1, Math.round(img.naturalHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl)
+        reject(new Error('canvas'))
+        return
+      }
+      ctx.drawImage(img, 0, 0, width, height)
+      const url = canvas.toDataURL('image/jpeg', 0.82)
+      URL.revokeObjectURL(objectUrl)
+      const title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Upload'
+      resolve({ url, aspect, title })
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('image'))
+    }
+    img.src = objectUrl
+  })
+
+const onCartUpload = async (event: Event) => {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  const files = [...(input.files ?? [])]
+  input.value = ''
+  const boardId = activeMoodboardId.value
+  if (!boardId || !files.length) return
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue
+    try {
+      const { url, aspect, title } = await fileToCartImage(file)
+      const id = `upload-${crypto.randomUUID()}`
+      noteFreeformAspect(id, aspect)
+      addItemToMoodboard(boardId, {
+        id,
+        title,
+        imageUrl: url,
+        itemType: 'Upload',
+        imageUrls: [url],
+        imageIndex: 0,
+      })
+    } catch {
+      /* skip a file that can't be read */
+    }
+  }
 }
 
 const onDeleteSelection = async () => {
@@ -8185,10 +8264,10 @@ onBeforeUnmount(() => {
   color: var(--cream);
 }
 
-.stack__undo-global,
 .stack__close-global {
   position: fixed;
   bottom: 60px;
+  left: 60px;
   z-index: 430;
   margin: 0;
   padding: 0.45rem 1.05rem;
@@ -8197,7 +8276,7 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  color: var(--charcoal);
+  color: var(--text-color);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
@@ -8208,16 +8287,65 @@ onBeforeUnmount(() => {
     border-color 0.2s ease;
 }
 
-.stack__undo-global {
+.stack__corner {
+  position: fixed;
   right: 60px;
+  bottom: 60px;
+  z-index: 430;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
 }
 
-.stack__close-global {
-  left: 60px;
+.stack__corner--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.stack__undo-global,
+.stack__upload-global {
+  margin: 0;
+  padding: 0.45rem 1.05rem;
+  border: 1px solid color-mix(in srgb, currentColor 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.stack__undo-global {
+  color: var(--charcoal);
+}
+
+.stack__upload-global {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   color: var(--text-color);
 }
 
-.stack__undo-global--visible,
+.stack__upload-global svg {
+  margin-right: -5px;
+}
+
+.stack__upload-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 .stack__close-global--visible {
   opacity: 1;
   pointer-events: auto;
@@ -8225,6 +8353,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__undo-global:hover,
+.stack__upload-global:hover,
 .stack__close-global:hover {
   color: var(--text-color);
   border-color: currentColor;
