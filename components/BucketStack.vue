@@ -7364,13 +7364,20 @@ const flyIntoPile = async (payload: FlyPayload) => {
         handed = true
         el.style.removeProperty('transition')
         const card = el.closest('.product-card, .grid-item')
-        // Pointer is still on the heart, and hover would otherwise fade a
-        // gathered thumb back to 1. Hold the dim value until it leaves.
-        if (card && card.matches(':hover') && target !== '1') {
+        // Hover and the focused heart both paint a gathered thumb at full
+        // opacity. Hold the dim value until the pointer and focus have left.
+        if (card && target !== '1' && (card.matches(':hover') || card.matches(':focus-within'))) {
           el.style.setProperty('opacity', target)
-          card.addEventListener('pointerleave', () => releaseGatheredThumb(el), {
-            once: true,
-          })
+          const releaseIfCool = () => {
+            requestAnimationFrame(() => {
+              if (card.matches(':hover') || card.matches(':focus-within')) return
+              card.removeEventListener('pointerleave', releaseIfCool)
+              card.removeEventListener('focusout', releaseIfCool)
+              releaseGatheredThumb(el)
+            })
+          }
+          card.addEventListener('pointerleave', releaseIfCool)
+          card.addEventListener('focusout', releaseIfCool)
           return
         }
         releaseGatheredThumb(el)

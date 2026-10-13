@@ -176,6 +176,8 @@ const TITLE_BLUR_MAX = 75
 const TITLE_GOOEY_IN_DUR = 2.6
 const TITLE_GOOEY_OUT_DUR = 0.85
 const STAGE_FADE_MS = 700
+/** Start the form while the title is still melting in. */
+const STAGE_REVEAL_AT = 0.42
 
 type LocalAttachment = {
   id: string
@@ -418,6 +420,7 @@ const playTitleGooeyIn = async () => {
 
   await new Promise<void>((resolve) => {
     const clock = { t: 0 }
+    let stageArmed = false
     titleTween = gsap.to(clock, {
       t: 1,
       duration: TITLE_GOOEY_IN_DUR,
@@ -425,6 +428,10 @@ const playTitleGooeyIn = async () => {
       onUpdate: () => {
         if (gen !== titleGen) return
         applyIn(clock.t)
+        if (!stageArmed && clock.t >= STAGE_REVEAL_AT) {
+          stageArmed = true
+          revealStage()
+        }
       },
       onComplete: () => resolve(),
     })
