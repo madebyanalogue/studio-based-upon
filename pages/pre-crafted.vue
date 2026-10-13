@@ -358,10 +358,27 @@
           fill="none"
           stroke="currentColor"
           stroke-width="1"
-          opacity="0.28"
+          opacity="0"
+        />
+        <line
+          x1="22"
+          y1="23"
+          x2="22"
+          y2="12"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
         />
         <g :transform="`rotate(${dialTurns} 22 22)`">
-          <circle cx="22" cy="2.5" r="1.75" fill="currentColor" />
+          <line
+            x1="22"
+            y1="24"
+            x2="22"
+            y2="6"
+            stroke="currentColor"
+            stroke-width="1.1"
+            stroke-linecap="round"
+          />
         </g>
       </svg>
     </div>

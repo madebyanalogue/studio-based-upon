@@ -438,7 +438,7 @@
           @pointerdown="onLightboxPointerDown"
           @click.capture="onLightboxClick"
         >
-          <p class="stack__lightbox-name">{{ lightboxActiveTitle }}</p>
+          <p class="stack__lightbox-name h6">{{ lightboxActiveTitle }}</p>
           <div
             v-for="copy in lightboxCopies"
             :key="copy.key"
@@ -477,7 +477,7 @@
               </div>
             </div>
           </div>
-          <p class="stack__lightbox-count">{{ lightboxCountLabel }}</p>
+          <LightboxEdgeGlass v-if="lightboxGlass" ref="lightboxGlassRef" />
         </div>
 
         <!-- Boards cart — same square grid; boards span 1×1 (<1000) or 3×2 (≥1000 / 6-col) -->
@@ -783,15 +783,6 @@
           :model-value="cartView"
           @update:model-value="setCartView($event as CartLayout)"
         />
-        <SlidingPill
-          v-if="showLightbox"
-          class="stack__gap-toggle"
-          :class="{ 'stack__gap-toggle--visible': controlsVisible && !enquiryFormOpen }"
-          label="Scroll gaps"
-          :options="lightboxGapOptions"
-          :model-value="lightboxGaps ? 'widen' : 'fixed'"
-          @update:model-value="lightboxGaps = $event === 'widen'"
-        />
         <button
           type="button"
           class="stack__close-global interface"
@@ -827,6 +818,14 @@
               <path d="M11 7l-5 5 5 5" />
             </svg>
           </button>
+          <SlidingPill
+            v-if="showLightbox"
+            class="stack__glass-toggle"
+            label="Edge glass"
+            :options="lightboxGlassOptions"
+            :model-value="lightboxGlass ? 'on' : 'off'"
+            @update:model-value="lightboxGlass = $event === 'on'"
+          />
           <label class="stack__upload-global interface" data-cursor="default">
             <input
               type="file"
@@ -2070,6 +2069,11 @@ const collapseRail = async () => {
 
 const setPileRef = (id: string, el: unknown) => {
   const html = el instanceof HTMLElement ? el : null
+  if (!html) {
+    const magnet = pileMagnets.get(id)
+    if (magnet?.raf) cancelAnimationFrame(magnet.raf)
+    if (magnet) magnet.raf = 0
+  }
   pileEls.value[id] = html
   if (id === activeMoodboardId.value) pileRef.value = html
 }
@@ -2409,9 +2413,9 @@ const cartLayoutOptions = [
   { id: 'grid', label: 'Grid' },
   { id: 'lightbox', label: 'Lightbox' },
 ] as const
-const lightboxGapOptions = [
-  { id: 'fixed', label: 'Fixed' },
-  { id: 'widen', label: 'Widen' },
+const lightboxGlassOptions = [
+  { id: 'off', label: 'Off' },
+  { id: 'on', label: 'Glass' },
 ] as const
 type CartLayout = (typeof cartLayoutOptions)[number]['id']
 
@@ -2432,18 +2436,19 @@ const cartView = computed({
   },
 })
 const cartIsFreeform = computed(() => cartView.value === 'freeform')
-const lightboxGapsStored = useCookie<string>('sba-lightbox-gaps', {
-  default: () => 'fixed',
+const lightboxGlassStored = useCookie<string>('sba-lightbox-glass', {
+  default: () => 'on',
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
-/** Scroll can shrink the pictures and open the gaps. Fixed keeps the row still. */
-const lightboxGaps = computed({
-  get: () => lightboxGapsStored.value === 'widen',
-  set: (widen: boolean) => {
-    lightboxGapsStored.value = widen ? 'widen' : 'fixed'
+/** Edge refraction. Same fraction of the screen on every device. */
+const lightboxGlass = computed({
+  get: () => lightboxGlassStored.value !== 'off',
+  set: (on: boolean) => {
+    lightboxGlassStored.value = on ? 'on' : 'off'
   },
 })
+const lightboxGlassRef = ref<{ paint: () => void } | null>(null)
 const showOrderGrid = computed(() => showSelectionGrid.value && cartView.value === 'grid')
 const showLightbox = computed(() => showSelectionGrid.value && cartView.value === 'lightbox')
 const showFreeform = computed(() => showSelectionGrid.value && cartIsFreeform.value)
@@ -3077,8 +3082,6 @@ const LB_EASE = 0.09
 const LB_WHEEL = 1.4
 const LB_DRAG = 1.6
 const LB_FRICTION = 0.865
-const LB_SHRINK_MAX = 60
-const LB_SHRINK_ATTACK = 0.25
 const LB_SHRINK_DECAY = 0.06
 const LB_REPEATS = 4
 const LB_MID_REP = Math.floor(LB_REPEATS / 2)
@@ -3258,12 +3261,6 @@ const lightboxCopies = computed(() => {
 const lightboxActiveTitle = computed(
   () => freeformEntries.value[lightboxIndex.value]?.item.title ?? '',
 )
-const lightboxCountLabel = computed(() => {
-  const total = freeformEntries.value.length
-  if (!total) return ''
-  const index = ((lightboxIndex.value % total) + total) % total
-  return `${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`
-})
 
 let lbScroll = 0
 let lbTarget = 0
@@ -3312,17 +3309,15 @@ const lightboxMetrics = () => {
     const top = el.getBoundingClientRect().top - stageBox.top
     return top > 8 ? top : Infinity
   }
-  // Pictures fill the screen between the toolbar and the toggle row.
+  // The row is centred in the band between the toolbar and the toggles.
   const footerTop = Math.min(
     chromeTop('.stack__view-toggle'),
-    chromeTop('.stack__gap-toggle'),
-    chromeTop('.stack__lightbox-count'),
+    chromeTop('.stack__glass-toggle'),
   )
-  const nameBand = 72
-  const frameTop = toolbarBottom + nameBand
-  const frameBottom = Number.isFinite(footerTop) ? footerTop - 20 : stage.clientHeight - 148
+  const frameTop = toolbarBottom + 20
+  const frameBottom = Number.isFinite(footerTop) ? footerTop - 60 : stage.clientHeight - 188
   const frameH = Math.max(160, frameBottom - frameTop)
-  const panelH = frameH
+  const panelH = Math.max(160, frameH * 0.72)
   const slotW = aspects.map((aspect) => aspect * panelH + LB_GAP)
   const offsets: number[] = []
   let total = 0
@@ -3381,6 +3376,7 @@ const lightboxMetrics = () => {
     loops,
     frameTop,
     frameH,
+    footerTop,
     bounds: { min: minScroll, max: maxScroll },
   }
 }
@@ -3388,7 +3384,7 @@ const lightboxMetrics = () => {
 const layoutLightbox = () => {
   const metrics = lightboxMetrics()
   if (!metrics || !showLightbox.value) return
-  const { stage, n, panelH, aspects, slotW, offsets, total, centerIndex, loops, frameTop, frameH } =
+  const { stage, n, panelH, aspects, slotW, offsets, total, centerIndex, loops, frameTop, frameH, footerTop } =
     metrics
   const arriving = !!(lbArrive && lbArrive.phase !== 'align' && !lbIntroOn)
   const rowLoops = loops && !lbIntroOn && !arriving
@@ -3425,13 +3421,10 @@ const layoutLightbox = () => {
     lbEnergy = 0
   }
   const rowTop = frameTop + (frameH - rowH) / 2
-  const toolbar = stage.ownerDocument.querySelector('.stack__toolbar')
-  const toolbarBottom = toolbar
-    ? toolbar.getBoundingClientRect().bottom - stage.getBoundingClientRect().top
-    : 0
-  // Resting picture top, so scroll-shrink doesn't drag the title with the row.
-  const restTop = frameTop + (frameH - panelH) / 2
-  const nameMid = toolbarBottom + Math.max(0, restTop - toolbarBottom) / 2
+  // Resting picture bottom, so scroll-shrink doesn't drag the title with the row.
+  const restBottom = frameTop + (frameH - panelH) / 2 + panelH
+  const toggleTop = Number.isFinite(footerTop) ? footerTop : restBottom + 88
+  const nameMid = restBottom + Math.max(0, toggleTop - restBottom) / 2
   stage.style.setProperty('--lb-name-top', `${nameMid}px`)
   const nodes = stage.querySelectorAll<HTMLElement>('.stack__lightbox-item')
   const nearestKey = new Array<string>(n).fill('')
@@ -3531,6 +3524,7 @@ const layoutLightbox = () => {
     if (active !== lightboxIndex.value) lightboxIndex.value = active
   }
   if (lbShift && shiftU >= 1) lbShift = null
+  lightboxGlassRef.value?.paint()
 }
 
 const resetLightboxScroll = () => {
@@ -3588,16 +3582,9 @@ const tickLightbox = () => {
   }
   const follow = reduce ? 1 : lbDragging && lbDragType !== 'mouse' ? LB_TOUCH_EASE : LB_EASE
   lbScroll += (lbTarget - lbScroll) * follow
-  const raw = lbScroll - lbPrevScroll
   lbPrevScroll = lbScroll
-  if (reduce || !lightboxGaps.value) {
-    lbEnergy += (0 - lbEnergy) * LB_SHRINK_DECAY
-    if (lbEnergy < 0.01) lbEnergy = 0
-  } else {
-    const norm = Math.min(1, Math.abs(raw) / LB_SHRINK_MAX)
-    const k = norm > lbEnergy ? LB_SHRINK_ATTACK : LB_SHRINK_DECAY
-    lbEnergy += (norm - lbEnergy) * k
-  }
+  lbEnergy += (0 - lbEnergy) * LB_SHRINK_DECAY
+  if (lbEnergy < 0.01) lbEnergy = 0
   layoutLightbox()
   lbRaf = requestAnimationFrame(tickLightbox)
 }
@@ -4779,7 +4766,13 @@ const pileMagnets = new Map<
 const paintPileMagnet = (boardId: string) => {
   const magnet = pileMagnets.get(boardId)
   const pile = pileEls.value[boardId]
-  if (!magnet || !pile) return
+  if (!magnet) return
+  // Cart open unmounts the corner pile. A finished frame id is truthy, so
+  // leaving it set stops the lean from ever starting again after close.
+  if (!pile?.isConnected) {
+    magnet.raf = 0
+    return
+  }
   const goal = magnet.active ? 1 : 0
   magnet.blend += (goal - magnet.blend) * (magnet.active ? 0.16 : 0.22)
   if (!magnet.active && magnet.blend < 0.012) {
@@ -9610,23 +9603,9 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
-.stack__gap-toggle {
-  position: fixed;
-  left: 50%;
-  bottom: 116px;
-  z-index: 430;
-  transform: translateX(-50%) translateY(8px);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.4s ease,
-    transform 0.4s ease;
-}
-
-.stack__gap-toggle--visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(-50%);
+.stack__glass-toggle {
+  position: relative;
+  flex: none;
 }
 
 .stack__lightbox {
@@ -9638,13 +9617,14 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.stack__lightbox-name,
-.stack__lightbox-count {
+.stack__lightbox-name {
   position: absolute;
+  top: var(--lb-name-top, calc(100% - 120px));
   left: 50%;
   z-index: 3;
+  width: min(70vw, 640px);
   margin: 0;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   pointer-events: none;
   text-align: center;
   color: var(--charcoal);
@@ -9652,31 +9632,12 @@ onBeforeUnmount(() => {
   transition: opacity 0.55s ease;
 }
 
-.stack__lightbox--settled .stack__lightbox-name,
-.stack__lightbox--settled .stack__lightbox-count {
+.stack__lightbox--settled .stack__lightbox-name {
   opacity: 1;
 }
 
-.stack__lightbox-name {
-  top: var(--lb-name-top, calc(var(--header-height) + 48px));
-  max-width: min(70vw, 640px);
-  font-family: var(--mono);
-  font-size: 1.05rem;
-  letter-spacing: 0.04em;
-  line-height: 1.3;
-  transform: translate(-50%, -50%);
-}
-
-.stack__lightbox-count {
-  bottom: 176px;
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.12em;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .stack__lightbox-name,
-  .stack__lightbox-count {
+  .stack__lightbox-name {
     transition: none;
   }
 }

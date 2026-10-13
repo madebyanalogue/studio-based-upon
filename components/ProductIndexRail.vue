@@ -107,20 +107,18 @@
         type="button"
         class="pdp-index__reveal interface"
         :class="{ 'pdp-index__reveal--muted': !canFilter && !relatedRailVisible }"
-        :aria-label="
-          relatedRailVisible ? 'Hide more like this' : 'Show more like this'
-        "
+        aria-label="Related"
         :aria-pressed="relatedRailVisible"
         :disabled="!canFilter && !relatedRailVisible"
         @click="toggleRelatedMode"
       >
-        {{ relatedRailVisible ? 'Hide Related' : 'More like this' }}
+        Related
       </button>
     </div>
 
     <div
       class="pdp-index__rail pdp-index__rail--right"
-      aria-label="More like this"
+      aria-label="Related"
       :aria-hidden="!relatedRailVisible ? 'true' : undefined"
     >
       <div
@@ -181,7 +179,7 @@
     <button
       type="button"
       class="pdp-index__edge-close pdp-index__edge-close--right"
-      aria-label="Hide related"
+      aria-label="Related"
       :tabindex="relatedRailVisible && pdpChromeVisible ? undefined : -1"
       :aria-hidden="!relatedRailVisible || !pdpChromeVisible ? 'true' : undefined"
       @click="toggleRelatedMode"

@@ -161,12 +161,10 @@
             type="button"
             class="pdp__rail-btn"
             :aria-pressed="relatedRailVisible"
-            :aria-label="
-              relatedRailVisible ? 'Hide more like this' : 'Show more like this'
-            "
+            aria-label="Related"
             @click="requestRelatedToggle"
           >
-            {{ relatedRailVisible ? 'Hide Related' : 'More like this' }}
+            Related
           </button>
           <button
             v-if="galleryEntries.some((entry) => entry.kind === 'image')"

@@ -45,6 +45,8 @@ const loupeBitmaps = new Map<string, HTMLImageElement>()
 const loupeTextureSrc = (url: string) =>
   url.includes('cdn.sanity.io/') ? `/api/image-proxy?url=${encodeURIComponent(url)}` : url
 
+export const loupeBitmap = (url: string) => loupeBitmaps.get(url)
+
 export const preloadLoupeBitmaps = (urls: string[]) => {
   if (!import.meta.client) return
   for (const url of urls) {
