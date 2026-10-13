@@ -34,33 +34,13 @@
     </section>
 
     <div class="products__dock">
-      <div
+      <SlidingPill
         class="products__mode"
-        role="tablist"
-        aria-label="Grid layout"
-        data-cursor="default"
-      >
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="!evenGrid"
-          :class="{ 'is-active': !evenGrid }"
-          @click="setGridMode(false)"
-        >
-          Organic
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="evenGrid"
-          :class="{ 'is-active': evenGrid }"
-          @click="setGridMode(true)"
-        >
-          Uniform
-        </button>
-      </div>
+        label="Grid layout"
+        :options="gridModeOptions"
+        :model-value="evenGrid ? 'uniform' : 'organic'"
+        @update:model-value="setGridMode($event === 'uniform')"
+      />
       <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
       <div
         ref="filtersEl"
@@ -250,6 +230,8 @@ const CLIP_OUT_DUR = 0.85
 const CLIP_IN_DUR = 0.95
 /** Title gooey-in — slower than clip so the melt reads clearly. */
 const TITLE_GOOEY_IN_DUR = 1.85
+/** PDP open at the top — quicker than the filter-swap melt. */
+const TITLE_PDP_GOOEY_OUT_DUR = 0.4
 /** Beat after paint before intro clip/title starts. */
 const INTRO_START_DELAY_MS = 100
 /** Title gooeys in shortly after thumbnails begin. */
@@ -642,6 +624,8 @@ let titleSwapLock = false
 /** Product overlay owns the title until it has melted back in. */
 let titleHeldForProduct = false
 let titleRestoreStarted = false
+/** Bumps when a product melt starts, so a late restore cannot clear it. */
+let titleProductGen = 0
 let titleSwapGen = 0
 let titleSwapTween: gsap.core.Tween | null = null
 let titleSwapAbort: (() => void) | null = null
@@ -725,7 +709,7 @@ const scrollTitleEffect = () =>
   titleGooeyTrigger ? 1 - titleGooeyTrigger.progress : 1
 
 /** Gooey-melt the current page title out (text stays until titleGooeyIn). */
-const titleGooeyOut = async () => {
+const titleGooeyOut = async (duration = CLIP_OUT_DUR, ease = 'power2.in') => {
   if (!import.meta.client || !titleEl.value || !titleGooeyBooted) return
   if (prefersReducedMotion()) {
     applyTitleGooey(0)
@@ -742,8 +726,8 @@ const titleGooeyOut = async () => {
   await gooeyTween(outTarget, {
     filter: outWords.length ? `blur(${TITLE_BLUR_MAX}px)` : undefined,
     opacity: 0,
-    duration: CLIP_OUT_DUR,
-    ease: 'power2.in',
+    duration,
+    ease,
   })
 
   if (gen !== titleSwapGen) return
@@ -802,20 +786,41 @@ const titleGooeyIn = async (next: string, forcedEffect?: number) => {
   applyTitleGooey(targetEffect)
 }
 
+/** Put the title back to sharp type so the next melt can gooey, not just fade. */
+const parkTitleSharp = () => {
+  const words = Array.from(titleWords())
+  if (words.length && !prefersReducedMotion()) {
+    gsap.set(words, { filter: 'blur(0px)', opacity: 1 })
+    return
+  }
+  if (titleEl.value) gsap.set(titleEl.value, { opacity: 1 })
+}
+
 /** Melt the archive title away while a product is open, then back on close. */
 const meltTitleForProduct = async () => {
   if (!titleGooeyBooted) return
+  const gen = ++titleProductGen
   titleHeldForProduct = true
+  titleRestoreStarted = false
   titleFront.value = true
-  await titleGooeyOut()
+  // A quick close leaves the gooey mid-flight. Snap back to type first,
+  // otherwise the next out only has opacity left to fade.
+  const interrupted = Boolean(titleSwapTween) || titleSwapLock
+  abortTitleSwapTween()
+  titleSwapGen += 1
+  if (interrupted) parkTitleSharp()
+  await titleGooeyOut(TITLE_PDP_GOOEY_OUT_DUR, 'power2.out')
+  if (gen !== titleProductGen) return
   if (!titleRestoreStarted) titleFront.value = false
 }
 
 const restoreTitleAfterProduct = async () => {
   if (!titleHeldForProduct || titleRestoreStarted) return
+  const gen = titleProductGen
   titleRestoreStarted = true
   titleFront.value = true
   await playTitleGooeyIn()
+  if (gen !== titleProductGen) return
   titleFront.value = false
   titleHeldForProduct = false
   titleRestoreStarted = false
@@ -1212,6 +1217,10 @@ const gridMode = useCookie<'organic' | 'uniform'>('sba-materials-grid', {
   sameSite: 'lax',
 })
 const evenGrid = ref(gridMode.value === 'uniform')
+const gridModeOptions = [
+  { id: 'organic', label: 'Organic' },
+  { id: 'uniform', label: 'Uniform' },
+]
 const gridEl = ref<HTMLElement | null>(null)
 const gridAnimating = ref(false)
 let gridModeGen = 0
@@ -2112,32 +2121,8 @@ useHead(() => ({
   position: absolute;
   left: 50%;
   bottom: 0;
-  display: flex;
-  gap: 2px;
-  margin: 0;
-  padding: 4px;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   transform: translateX(-50%);
   pointer-events: auto;
-}
-
-.products__mode button {
-  margin: 0;
-  padding: 0.45rem 1.05rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--charcoal);
-  cursor: pointer;
-}
-
-.products__mode button.is-active {
-  background: var(--charcoal);
-  color: var(--cream);
 }
 
 .products__filter-tool {

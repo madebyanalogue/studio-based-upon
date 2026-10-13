@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import Lenis from 'lenis'
 
 /** Matches the particle-gallery export: still cloud, soft fog, varied planes. */
 const PARTICLE_COUNT = 113
@@ -12,6 +13,14 @@ const FOG_NEAR = 20
 const FOG_FAR = 150
 const GROW_SECONDS = 2
 const MORPH_SECONDS = 0.9
+/** Rest on the full grid before the fixed zoom, so the whole layout reads. */
+const CONTROL_HOLD_SECONDS = 0.4
+const CONTROL_ZOOM_SECONDS = 0.85
+/** Rows in view once control has zoomed in. Same distance every time. */
+const CONTROL_ZOOM_ROWS = 2.7
+/** Same glide as the page scroller, so a wheel eases in and settles into the edges. */
+const CONTROL_LENIS_DURATION = 1.2
+const controlLenisEase = (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t))
 const GRID_CELL = 4.8
 const GRID_GAP = 0.65
 /** Pan travels further than the pointer, then a fast release keeps sliding. */
@@ -139,7 +148,14 @@ export const createD2Canvas = (
   let mode: D2Mode = 'surrender'
   let drag: D2Drag = 'pan'
   let morphT = 1
+  /** Grid flight, hold on the full layout, zoom to the fixed distance, then live. */
+  let phase: 'morph' | 'hold' | 'zoom' | 'live' = 'live'
+  let phaseT = 0
+  let introZoom = false
   let navigationHeld = false
+  const zoomFrom = new THREE.Vector3()
+  const zoomTo = new THREE.Vector3()
+  const zoomOffset = new THREE.Vector3()
   let panLimitX = 8
   let panLimitY = 8
   let gridW = GRID_CELL
@@ -147,6 +163,8 @@ export const createD2Canvas = (
   let layoutCols = 1
   let layoutRows = 1
   let framingCamera = false
+  let panPointer = false
+  let panScrollKey = ''
   const surrenderCam = camera.position.clone()
   const surrenderTgt = controls.target.clone()
   const camFrom = new THREE.Vector3()
@@ -159,6 +177,44 @@ export const createD2Canvas = (
   const clock = new THREE.Clock()
   const loader = new THREE.TextureLoader()
   loader.setCrossOrigin('anonymous')
+  renderer.domElement.setAttribute('data-lenis-prevent', '')
+
+  const makePanLenis = (orientation: 'vertical' | 'horizontal') => {
+    const wrapper = document.createElement('div')
+    const content = document.createElement('div')
+    wrapper.appendChild(content)
+    wrapper.setAttribute('aria-hidden', 'true')
+    wrapper.setAttribute('data-lenis-prevent', '')
+    Object.assign(wrapper.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      width: '8px',
+      height: '8px',
+      overflow: 'scroll',
+      scrollbarWidth: 'none',
+      pointerEvents: 'none',
+      opacity: '0',
+    })
+    container.appendChild(wrapper)
+    const lenis = new Lenis({
+      wrapper,
+      content,
+      eventsTarget: wrapper,
+      orientation,
+      gestureOrientation: orientation,
+      smoothWheel: true,
+      duration: CONTROL_LENIS_DURATION,
+      easing: controlLenisEase,
+      overscroll: false,
+      autoRaf: false,
+      naiveDimensions: true,
+    })
+    return { wrapper, content, lenis }
+  }
+
+  const panY = makePanLenis('vertical')
+  const panX = makePanLenis('horizontal')
 
   const textureCache = new Map<string, THREE.Texture>()
   const mediaById = new Map<string, D2MediaItem>()
@@ -192,8 +248,12 @@ export const createD2Canvas = (
       if (!particle.concealed) visible.add(particle.productId)
     }
     const next = gridShape(visible.size, camera.aspect)
-    if (next.cols !== layoutCols || next.rows !== layoutRows) beginMorph('control')
-    else frameControl(gridW, gridH, false)
+    if (next.cols !== layoutCols || next.rows !== layoutRows) {
+      const intro = phase !== 'live'
+      beginMorph('control', intro, intro)
+    } else if (phase === 'live') {
+      frameControl(gridW, gridH, false)
+    }
   }
 
   const clearParticles = () => {
@@ -376,6 +436,41 @@ export const createD2Canvas = (
     updatePanLimits()
   }
 
+  /** Camera distance that frames the same number of rows on every grid. */
+  const controlZoomDistance = () => {
+    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+    const visible = CONTROL_ZOOM_ROWS * (GRID_CELL + GRID_GAP)
+    return visible / (2 * Math.max(tan, 0.001))
+  }
+
+  const setCanvasInput = (locked: boolean) => {
+    container.style.pointerEvents = locked ? 'none' : ''
+  }
+
+  const goLive = () => {
+    phase = 'live'
+    introZoom = false
+    settleControls()
+    if (mode === 'control') syncPanScrollRange(true)
+    controls.enabled = !navigationHeld
+    setCanvasInput(false)
+  }
+
+  const beginZoomIn = () => {
+    const offset = zoomOffset.copy(camera.position).sub(controls.target)
+    const current = offset.length() || 1
+    const dest = Math.min(current, Math.max(controls.minDistance, controlZoomDistance()))
+    zoomFrom.copy(camera.position)
+    if (current - dest < 0.2) {
+      goLive()
+      return
+    }
+    zoomTo.copy(controls.target).addScaledVector(offset.normalize(), dest)
+    phase = 'zoom'
+    phaseT = 0
+    controls.enabled = false
+  }
+
   const updatePanLimits = () => {
     const distance = Math.max(0.001, camera.position.distanceTo(controls.target))
     const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
@@ -384,6 +479,55 @@ export const createD2Canvas = (
     const slack = (GRID_CELL + GRID_GAP) * 0.45
     panLimitX = Math.max(slack, gridW / 2 - halfW + slack)
     panLimitY = Math.max(slack, gridH / 2 - halfH + slack)
+  }
+
+  const worldUnitsPerPixel = () => {
+    const height = Math.max(1, renderer.domElement.clientHeight)
+    const distance = Math.max(0.001, camera.position.distanceTo(controls.target))
+    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+    return (2 * distance * tan) / height
+  }
+
+  const writeLenisFromCamera = () => {
+    const worldPerPx = worldUnitsPerPixel()
+    panY.lenis.scrollTo((panLimitY - controls.target.y) / worldPerPx, { immediate: true, force: true })
+    panX.lenis.scrollTo((controls.target.x + panLimitX) / worldPerPx, { immediate: true, force: true })
+  }
+
+  /** Keep the hidden Lenis range matched to how far the grid can pan. */
+  const syncPanScrollRange = (fromCamera = false) => {
+    updatePanLimits()
+    const worldPerPx = worldUnitsPerPixel()
+    const key = `${panLimitX.toFixed(2)}|${panLimitY.toFixed(2)}|${worldPerPx.toFixed(5)}`
+    if (key !== panScrollKey) {
+      const wrapY = Math.max(1, panY.wrapper.clientHeight)
+      const wrapX = Math.max(1, panX.wrapper.clientWidth)
+      panY.content.style.height = `${(panLimitY * 2) / worldPerPx + wrapY}px`
+      panX.content.style.width = `${(panLimitX * 2) / worldPerPx + wrapX}px`
+      panY.lenis.resize()
+      panX.lenis.resize()
+      if (panY.lenis.limit < 1 && panX.lenis.limit < 1) return
+      fromCamera = true
+    }
+    panScrollKey = key
+    if (fromCamera) writeLenisFromCamera()
+  }
+
+  const applyLenisToCamera = () => {
+    const worldPerPx = worldUnitsPerPixel()
+    const x = panX.lenis.limit > 1
+      ? -panLimitX + panX.lenis.animatedScroll * worldPerPx
+      : controls.target.x
+    const y = panY.lenis.limit > 1
+      ? panLimitY - panY.lenis.animatedScroll * worldPerPx
+      : controls.target.y
+    const dx = x - controls.target.x
+    const dy = y - controls.target.y
+    if (!dx && !dy) return
+    controls.target.x = x
+    controls.target.y = y
+    camera.position.x += dx
+    camera.position.y += dy
   }
 
   /** Columns and rows whose footprint matches the viewport, with a reasonably full last row. */
@@ -533,6 +677,12 @@ export const createD2Canvas = (
 
   const onPanPointerDown = () => {
     panSamples.length = 0
+    panPointer = true
+  }
+
+  const onPanPointerUp = () => {
+    panPointer = false
+    releasePanFlick()
   }
 
   const applyDrag = () => {
@@ -549,11 +699,36 @@ export const createD2Canvas = (
   const applyModeControls = () => {
     applyDrag()
     applyAtmosphere()
+    controls.enableZoom = mode !== 'control'
   }
 
-  const beginMorph = (next: D2Mode, frameCamera = true) => {
+  const wheelScale = (event: WheelEvent) => {
+    const line = 16
+    const page = Math.max(1, renderer.domElement.clientHeight)
+    const unit = event.deltaMode === 1 ? line : event.deltaMode === 2 ? page : 1
+    return unit
+  }
+
+  const onControlWheel = (event: WheelEvent) => {
+    if (mode !== 'control') return
+    event.preventDefault()
+    if (phase !== 'live' || !controls.enabled) return
+    const unit = wheelScale(event)
+    const dx = event.deltaX * unit
+    const dy = event.deltaY * unit
+    if (!dx && !dy) return
+    syncPanScrollRange()
+    const glide = { programmatic: false, duration: CONTROL_LENIS_DURATION, easing: controlLenisEase }
+    if (dy) panY.lenis.scrollTo(panY.lenis.targetScroll + dy, glide)
+    if (dx) panX.lenis.scrollTo(panX.lenis.targetScroll + dx, glide)
+  }
+
+  const beginMorph = (next: D2Mode, frameCamera = true, intro = false) => {
     mode = next
     clearPanFlick()
+    introZoom = intro && next === 'control'
+    phase = 'morph'
+    phaseT = 0
     framingCamera = frameCamera && next === 'control'
     for (const particle of particles) {
       if (next === 'control') particle.age = GROW_SECONDS
@@ -579,6 +754,9 @@ export const createD2Canvas = (
     applyModeControls()
     morphT = 0
     controls.enabled = false
+    setCanvasInput(true)
+    panY.lenis.scrollTo(panY.lenis.scroll, { immediate: true, force: true })
+    panX.lenis.scrollTo(panX.lenis.scroll, { immediate: true, force: true })
   }
 
   const applyMorph = (t: number) => {
@@ -641,17 +819,29 @@ export const createD2Canvas = (
     if (disposed) return
     raf = requestAnimationFrame(animate)
     const delta = Math.min(clock.getDelta(), 0.05)
-    const morphing = morphT < 1
-    if (morphing) {
+    if (phase === 'morph') {
       morphT = Math.min(1, morphT + delta / MORPH_SECONDS)
       applyMorph(easeInOut(morphT))
       if (morphT >= 1) {
         if (mode === 'control') {
           for (const particle of particles) particle.mesh.renderOrder = particle.goalOrder
         }
-        settleControls()
-        controls.enabled = !navigationHeld
+        if (introZoom && mode === 'control') {
+          phase = 'hold'
+          phaseT = 0
+          controls.enabled = false
+        } else {
+          goLive()
+        }
       }
+    } else if (phase === 'hold') {
+      phaseT += delta
+      if (phaseT >= CONTROL_HOLD_SECONDS) beginZoomIn()
+    } else if (phase === 'zoom') {
+      phaseT = Math.min(1, phaseT + delta / CONTROL_ZOOM_SECONDS)
+      camera.position.lerpVectors(zoomFrom, zoomTo, easeInOut(phaseT))
+      camera.lookAt(controls.target)
+      if (phaseT >= 1) goLive()
     } else if (mode === 'surrender') {
       for (const particle of particles) {
         if (particle.concealed) continue
@@ -663,7 +853,7 @@ export const createD2Canvas = (
       }
     }
     if (controls.enabled) controls.update()
-    if (drag === 'pan' && morphT >= 1) {
+    if (drag === 'pan' && phase === 'live') {
       applyPanFlick(delta)
       clampPan()
       if (Math.abs(controls.target.x) >= panLimitX - 0.001 && Math.sign(panFlick.x) === Math.sign(controls.target.x)) {
@@ -673,6 +863,14 @@ export const createD2Canvas = (
         panFlick.y = 0
       }
     }
+    if (mode === 'control' && phase === 'live') {
+      const now = performance.now()
+      panY.lenis.raf(now)
+      panX.lenis.raf(now)
+      const gliding = panY.lenis.isScrolling === 'smooth' || panX.lenis.isScrolling === 'smooth'
+      if (gliding && !panPointer) applyLenisToCamera()
+      else writeLenisFromCamera()
+    }
     renderer.render(scene, camera)
   }
 
@@ -680,8 +878,9 @@ export const createD2Canvas = (
   observer.observe(container)
   renderer.domElement.addEventListener('pointerdown', onPanPointerDown)
   renderer.domElement.addEventListener('pointermove', rememberPanSample)
-  renderer.domElement.addEventListener('pointerup', releasePanFlick)
-  renderer.domElement.addEventListener('pointercancel', releasePanFlick)
+  renderer.domElement.addEventListener('pointerup', onPanPointerUp)
+  renderer.domElement.addEventListener('pointercancel', onPanPointerUp)
+  renderer.domElement.addEventListener('wheel', onControlWheel, { passive: false })
   resize()
   applyDrag()
   applyAtmosphere()
@@ -714,7 +913,7 @@ export const createD2Canvas = (
         surrenderCam.set(0, 0, CAMERA_DISTANCE)
         surrenderTgt.set(0, 0, 0)
       }
-      beginMorph(next)
+      beginMorph(next, true, next === 'control')
     },
     setDrag: (next) => {
       if (next === drag) return
@@ -724,10 +923,11 @@ export const createD2Canvas = (
     },
     setNavigation: (enabled) => {
       navigationHeld = !enabled
-      controls.enabled = enabled && morphT >= 1
+      controls.enabled = enabled && phase === 'live'
       if (!enabled) clearPanFlick()
     },
     pick: (clientX, clientY) => {
+      if (phase !== 'live') return null
       const bounds = renderer.domElement.getBoundingClientRect()
       if (!bounds.width || !bounds.height) return null
       pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1
@@ -768,8 +968,13 @@ export const createD2Canvas = (
       observer.disconnect()
       renderer.domElement.removeEventListener('pointerdown', onPanPointerDown)
       renderer.domElement.removeEventListener('pointermove', rememberPanSample)
-      renderer.domElement.removeEventListener('pointerup', releasePanFlick)
-      renderer.domElement.removeEventListener('pointercancel', releasePanFlick)
+      renderer.domElement.removeEventListener('pointerup', onPanPointerUp)
+      renderer.domElement.removeEventListener('pointercancel', onPanPointerUp)
+      renderer.domElement.removeEventListener('wheel', onControlWheel)
+      panY.lenis.destroy()
+      panX.lenis.destroy()
+      panY.wrapper.remove()
+      panX.wrapper.remove()
       controls.dispose()
       clearParticles()
       for (const tex of textureCache.values()) tex.dispose()

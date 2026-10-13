@@ -4,6 +4,7 @@
     :class="{
       'header--product-page': isProductPage,
       'header--scroll-hidden': headerScrollHidden,
+      'header--on-dark': onDarkStage,
     }"
   >
     <div class="header__inner">
@@ -54,31 +55,17 @@
             @click="onThemeClick"
             @mouseleave="clearTooltipHide('theme')"
           >
-            <!-- Both icons in DOM; visibility follows html.dark so SSR/hydration match -->
             <svg
-              class="header__icon header__icon--sun"
+              class="header__icon header__icon--theme"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+              stroke-width="1"
               aria-hidden="true"
             >
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06" />
-            </svg>
-            <svg
-              class="header__icon header__icon--moon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M21 13.5A8.5 8.5 0 1 1 10.5 3 6.5 6.5 0 0 0 21 13.5Z" />
+              <path d="M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z" />
+              <path d="M5 20L19 5" stroke-linejoin="round" />
+              <path d="M16 9L22 13.8528M12.4128 12.4059L19.3601 18.3634M8 15.6672L15 21.5" stroke-linejoin="round" />
             </svg>
             <span
               v-if="frozenThemeTooltip"
@@ -149,6 +136,11 @@ const isProductPage = computed(
   () =>
     productOverlayOpen.value ||
     /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
+)
+
+/** Pairings stays a dark stage, so the header keeps dark-mode type on it. */
+const onDarkStage = computed(
+  () => route.path === '/curate' || route.path === '/curate/',
 )
 
 /** Archive index only — fade nav out on scroll down, back in on scroll up. */
@@ -288,6 +280,16 @@ const onSelectionsClick = () => {
 </script>
 
 <style scoped>
+.header--on-dark {
+  --charcoal: var(--text-light);
+  --black: var(--text-light);
+  --muted: color-mix(in srgb, var(--text-light) 45%, transparent);
+  --cream: var(--bg-dark);
+  --elevated-bg: #2a2621;
+  --ui-border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-light);
+}
+
 .header {
   position: fixed;
   top: 0;
@@ -548,21 +550,11 @@ const onSelectionsClick = () => {
   grid-area: 1 / 1;
 }
 
-.header__icon--sun {
-  display: none;
-}
-
-.header__icon--moon {
-  display: block;
-}
-
-/* Full :global(...) — `:global(html.dark) .x` compiles to `html.dark { … }` and blanks the page */
-:global(html.dark .header__icon--sun) {
-  display: block;
-}
-
-:global(html.dark .header__icon--moon) {
-  display: none;
+.header__icon--theme {
+  width: 15px;
+  height: 15px;
+  transform: rotate(-45deg);
+  stroke-width: 1 !important;
 }
 
 .header__tooltip--to-light {

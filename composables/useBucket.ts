@@ -42,8 +42,8 @@ export type PendingRemoval = {
   item: BucketItem
   index: number
   seq: number
-  /** Cart layout the item was removed from. Freeform undos stay off the ordered grid. */
-  surface?: 'freeform' | 'order'
+  /** Cart layout the item was removed from. Freeform undos stay off the ordered grid. `all` is a Remove-all batch restored from the toolbar. */
+  surface?: 'freeform' | 'order' | 'all'
 }
 
 /** Selection items lent to the board canvas — restored to the cart on board close. */
@@ -537,7 +537,7 @@ export const useBucket = () => {
   }
 
   /** Soft-remove many items at once, keeping each visual slot for undo. */
-  const removeItems = (ids: string[]) => {
+  const removeItems = (ids: string[], surface?: PendingRemoval['surface']) => {
     ensureActive()
     const boardId = activeMoodboardId.value!
     const idSet = new Set(ids)
@@ -556,6 +556,7 @@ export const useBucket = () => {
           item,
           index,
           seq: ++removalSeq,
+          surface,
         } satisfies PendingRemoval,
       ]
     })
@@ -584,6 +585,35 @@ export const useBucket = () => {
         )
       }
     }
+  }
+
+  /** Put a Remove-all batch back, leaving single-item undos in place. */
+  const undoBulkClear = () => {
+    ensureActive()
+    const boardId = activeMoodboardId.value!
+    const bulk = pendingRemovals.value
+      .filter((pending) => pending.moodboardId === boardId && pending.surface === 'all')
+      .sort((a, b) => a.index - b.index || a.seq - b.seq)
+    if (!bulk.length) return
+
+    for (const pending of bulk) clearRemovalTimer(pending.key)
+
+    moodboards.value = moodboards.value.map((board) => {
+      if (board.id !== boardId) return board
+      const next = [...board.items]
+      const have = new Set(next.map((item) => item.id))
+      for (const pending of bulk) {
+        if (have.has(pending.item.id)) continue
+        const at = Math.min(Math.max(pending.index, 0), next.length)
+        next.splice(at, 0, pending.item)
+        have.add(pending.item.id)
+      }
+      return { ...board, items: next }
+    })
+    persist()
+    pendingRemovals.value = pendingRemovals.value.filter(
+      (pending) => !(pending.moodboardId === boardId && pending.surface === 'all'),
+    )
   }
 
   /** Restore every pending removal on the active board (keeps visual order). */
@@ -1244,6 +1274,7 @@ export const useBucket = () => {
     removeItems,
     undoRemove,
     undoAllRemovals,
+    undoBulkClear,
     clearPendingRemovals,
     cloneItem,
     cycleItemImage,

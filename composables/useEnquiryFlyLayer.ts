@@ -97,9 +97,10 @@ export const tweenEnquiryFlyers = (
 export const pileBoxes = (
   sources: Array<{ width: number; height: number }>,
   maxSize: number,
+  center?: { x: number; y: number },
 ): EnquiryFlyBox[] => {
-  const cx = window.innerWidth / 2
-  const cy = window.innerHeight / 2
+  const cx = center?.x ?? window.innerWidth / 2
+  const cy = center?.y ?? window.innerHeight / 2
   return sources.map((source, index) => {
     const w = Math.max(source.width, 1)
     const h = Math.max(source.height, 1)

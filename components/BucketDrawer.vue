@@ -759,7 +759,7 @@ watch(activeMoodboardId, () => {
   align-items: center;
   padding: 0 var(--gutter);
   font-size: var(--text-sm);
-  color: var(--slate);
+  color: var(--muted);
   white-space: nowrap;
   transition: color var(--theme-ms) var(--theme-ease);
 }
@@ -780,7 +780,7 @@ watch(activeMoodboardId, () => {
   padding: 0 0.75rem;
   font-size: 1.15rem;
   line-height: 1;
-  color: var(--slate);
+  color: var(--muted);
   transition: color var(--theme-ms) var(--theme-ease);
 }
 

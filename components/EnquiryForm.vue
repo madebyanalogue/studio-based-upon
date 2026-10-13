@@ -201,6 +201,18 @@ const frames = (count = 2) =>
     step(count)
   })
 
+/** Pile sits on the media column, which is the left half of the form. */
+const mediaColumnCenter = () => {
+  const column = document.querySelector('.enquiry__preview')
+  if (!column) return undefined
+  const rect = column.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return undefined
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  }
+}
+
 const measureGrid = () => {
   const map = new Map<string, { left: number; top: number; width: number; height: number }>()
   for (const el of document.querySelectorAll<HTMLElement>('[data-enquiry-id]')) {
@@ -260,14 +272,13 @@ const returnToStack = async (id: number) => {
         ? { width: box.width, height: box.height }
         : { width: size, height: size }
     })
-    await tweenEnquiryFlyers(pileBoxes(sources, size), SPREAD_S)
+    await tweenEnquiryFlyers(pileBoxes(sources, size, mediaColumnCenter()), SPREAD_S)
     if (id !== runId) return
   }
 
   if (formShown.value || phase === 'covered' || leavingGrid) {
-    // Leaving the grid: keep the pile in front so it stays visible while the
-    // form fades. Still behind the form (covered): fade the form off the pile.
-    if (!leavingGrid) setEnquiryFlyFront(false)
+    // Keep the pile in front so the form fades out from underneath it.
+    setEnquiryFlyFront(true)
     formShown.value = false
     await wait(FORM_FADE_MS)
     if (id !== runId) return
@@ -293,16 +304,17 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   const size = sample?.width || 120
   const ids = origins.map((origin) => origin.id)
 
-  await tweenEnquiryFlyers(pileBoxes(origins, size), GATHER_S)
+  await tweenEnquiryFlyers(pileBoxes(origins, size, mediaColumnCenter()), GATHER_S)
   if (id !== runId) return
 
   phase = 'covered'
+  // Form fades in under the pile. The layer starts behind the dialog.
+  setEnquiryFlyFront(true)
   formShown.value = true
   await wait(FORM_FADE_MS)
   if (id !== runId) return
 
   phase = 'spread'
-  setEnquiryFlyFront(true)
   await tweenEnquiryFlyers(boxesFor(ids, measureGrid()), SPREAD_S)
   if (id !== runId) return
 
@@ -445,7 +457,8 @@ onUnmounted(() => {
 
 .enquiry__title {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: 25px;
+  font-family: var(--mono);
 }
 
 .enquiry__subtitle {

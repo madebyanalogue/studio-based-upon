@@ -69,6 +69,10 @@ const heartCursor = computed(() => {
 </script>
 
 <style scoped>
+.add-btn--add {
+  --thumb-ctrl-size: 20px;
+}
+
 .add-btn {
   --_size: var(--thumb-ctrl-size, 23px);
   --_face: var(--_size);

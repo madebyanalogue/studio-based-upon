@@ -213,12 +213,31 @@ const pageLenis = () =>
   useNuxtApp().$lenis as
     | {
         scroll: number
+        /** Lenis only watches the viewport box, so a growing row leaves its limit stale. */
+        resize: () => void
         scrollTo: (
           target: number,
-          options?: { immediate?: boolean; duration?: number; onComplete?: () => void },
+          options?: {
+            immediate?: boolean
+            duration?: number
+            force?: boolean
+            onComplete?: () => void
+          },
         ) => void
       }
     | undefined
+
+/** Pull the row's vertical center onto the viewport midline, past a stale scroll limit. */
+const pinRowCenter = () => {
+  const rail = railEl.value
+  const lenis = pageLenis()
+  if (!rail || !lenis) return
+  lenis.resize()
+  const rect = rail.getBoundingClientRect()
+  const delta = rect.top + rect.height / 2 - window.innerHeight / 2
+  if (Math.abs(delta) <= 0.5) return
+  lenis.scrollTo(lenis.scroll + delta, { immediate: true, force: true })
+}
 
 const applyRailScroll = (value: number) => {
   const wrapper = scrollerEl.value
@@ -273,6 +292,7 @@ const centerRowVertically = () =>
       resolve()
       return
     }
+    lenis?.resize()
     const rect = rail.getBoundingClientRect()
     const delta = rect.top + rect.height / 2 - window.innerHeight / 2
     if (Math.abs(delta) < 2) {
@@ -311,20 +331,13 @@ const holdRowCentered = (ms: number) =>
     const finish = () => {
       if (settled) return
       settled = true
+      pinRowCenter()
       resolve()
     }
     const start = performance.now()
     const step = (now: number) => {
       if (settled) return
-      const rail = railEl.value
-      const lenis = pageLenis()
-      if (rail && lenis) {
-        const rect = rail.getBoundingClientRect()
-        const delta = rect.top + rect.height / 2 - window.innerHeight / 2
-        if (Math.abs(delta) > 0.5) {
-          lenis.scrollTo(lenis.scroll + delta, { immediate: true })
-        }
-      }
+      pinRowCenter()
       alignClickedCard()
       if (now - start < ms) requestAnimationFrame(step)
       else finish()

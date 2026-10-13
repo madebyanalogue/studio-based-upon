@@ -7,23 +7,33 @@
       :class="{ 'precrafted-h--single': !scrollEnabled }"
     >
       <div ref="pinRef" class="precrafted-h__pin">
-        <div ref="trackRef" class="precrafted-h__track">
-          <div ref="itemsRef" class="precrafted-h__items">
-            <template v-for="section in trackSections" :key="section.id">
+        <div
+          ref="trackRef"
+          class="precrafted-h__track"
+          :class="{ 'precrafted-h__track--loop': galleryCopies.length > 1 }"
+        >
+          <div
+            v-for="copy in galleryCopies"
+            :key="copy"
+            :ref="(el) => setItemsRef(copy, el)"
+            class="precrafted-h__items"
+            :aria-hidden="copy === 'loop' ? 'true' : undefined"
+          >
+            <template v-for="section in trackSections" :key="`${copy}-${section.id}`">
               <figure
                 v-if="section.kind === 'video'"
                 class="precrafted-h__item precrafted-h__item--media"
                 :class="`precrafted-h__item--align-${section.align}`"
-                :data-scrub-id="section.id"
+                :data-scrub-id="copy === 'main' ? section.id : undefined"
                 :style="mediaStyle(section)"
               >
                 <PrecraftedScrubGallery
                   :entries="[section.entry]"
-                  :progress="itemProgress(section.id)"
-                  :scrub-active="isDesktop && activeScrubId === section.id"
-                  :loaded-src="isDesktop ? loadedSrcById[section.id] : null"
-                  :load-progress="loadProgressById[section.id] ?? 0"
-                  :is-loading="isDesktop && loadingVideoId === section.id"
+                  :progress="copy === 'main' ? itemProgress(section.id) : 0"
+                  :scrub-active="copy === 'main' && isDesktop && activeScrubId === section.id"
+                  :loaded-src="copy === 'main' && isDesktop ? loadedSrcById[section.id] : null"
+                  :load-progress="copy === 'main' ? (loadProgressById[section.id] ?? 0) : 0"
+                  :is-loading="copy === 'main' && isDesktop && loadingVideoId === section.id"
                 />
                 <figcaption
                   v-if="section.caption"
@@ -157,44 +167,18 @@
                 class="precrafted-h__item precrafted-h__item--text precrafted-h__item--info"
               >
                 <div class="precrafted-h__text-inner">
-                  <h2 class="precrafted__heading">{{ section.title }}</h2>
-
-                  <div class="precrafted__info-block">
-                    <h3 class="precrafted__subheading interface">
-                      {{ section.pricingHeading }}
-                    </h3>
-                    <p v-if="section.pricingIntro">{{ section.pricingIntro }}</p>
-                    <ul class="precrafted__pricing">
-                      <li v-for="(panel, i) in panelSizes" :key="i">
-                        <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
-                        <span class="precrafted__price">{{ panel.price }}</span>
-                      </li>
-                    </ul>
-                    <p
-                      v-for="(note, i) in section.pricingNotes"
-                      :key="`note-${i}`"
-                      class="precrafted__note"
-                    >
-                      {{ note }}
-                    </p>
-                  </div>
-
-                  <div class="precrafted__info-block">
-                    <h3 class="precrafted__subheading interface">
-                      {{ section.leadTimesHeading }}
-                    </h3>
-                    <p>{{ section.leadTimes }}</p>
-                  </div>
-
-                  <div class="precrafted__info-block">
-                    <h3 class="precrafted__subheading interface">
-                      {{ section.installHeading }}
-                    </h3>
-                    <SanityContent
-                      v-if="section.installNotes?.length"
-                      :blocks="section.installNotes"
-                    />
-                  </div>
+                  <PrecraftedInfo
+                    :title="section.title"
+                    :pricing-heading="section.pricingHeading"
+                    :pricing-intro="section.pricingIntro"
+                    :pricing-notes="section.pricingNotes"
+                    :lead-times-heading="section.leadTimesHeading"
+                    :lead-times="section.leadTimes"
+                    :install-heading="section.installHeading"
+                    :install-notes="section.installNotes"
+                    :panel-sizes="panelSizes"
+                    :spec-sheet-url="section.specSheetUrl"
+                  />
                 </div>
               </section>
             </template>
@@ -348,41 +332,38 @@
           class="precrafted-m__text precrafted-m__text--info"
         >
           <div class="precrafted-m__text-inner">
-            <h2 class="precrafted__heading">{{ section.title }}</h2>
-
-            <div class="precrafted__info-block">
-              <h3 class="precrafted__subheading interface">{{ section.pricingHeading }}</h3>
-              <p v-if="section.pricingIntro">{{ section.pricingIntro }}</p>
-              <ul class="precrafted__pricing">
-                <li v-for="(panel, i) in panelSizes" :key="i">
-                  <span class="precrafted__dimensions">{{ panel.dimensions }}</span>
-                  <span class="precrafted__price">{{ panel.price }}</span>
-                </li>
-              </ul>
-              <p
-                v-for="(note, i) in section.pricingNotes"
-                :key="`m-note-${i}`"
-                class="precrafted__note"
-              >
-                {{ note }}
-              </p>
-            </div>
-
-            <div class="precrafted__info-block">
-              <h3 class="precrafted__subheading interface">{{ section.leadTimesHeading }}</h3>
-              <p>{{ section.leadTimes }}</p>
-            </div>
-
-            <div class="precrafted__info-block">
-              <h3 class="precrafted__subheading interface">{{ section.installHeading }}</h3>
-              <SanityContent
-                v-if="section.installNotes?.length"
-                :blocks="section.installNotes"
-              />
-            </div>
+            <PrecraftedInfo
+              :title="section.title"
+              :pricing-heading="section.pricingHeading"
+              :pricing-intro="section.pricingIntro"
+              :pricing-notes="section.pricingNotes"
+              :lead-times-heading="section.leadTimesHeading"
+              :lead-times="section.leadTimes"
+              :install-heading="section.installHeading"
+              :install-notes="section.installNotes"
+              :panel-sizes="panelSizes"
+              :spec-sheet-url="section.specSheetUrl"
+            />
           </div>
         </section>
       </template>
+    </div>
+
+    <div v-show="scrollEnabled" class="precrafted-dial" aria-hidden="true">
+      <svg viewBox="0 0 44 44">
+        <circle
+          cx="22"
+          cy="22"
+          r="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1"
+          opacity="0.28"
+        />
+        <g :transform="`rotate(${dialTurns} 22 22)`">
+          <circle cx="22" cy="2.5" r="1.75" fill="currentColor" />
+        </g>
+      </svg>
     </div>
   </article>
 </template>
@@ -473,6 +454,7 @@ type InfoTrackSection = {
   leadTimes: string
   installHeading: string
   installNotes: PortableBlock[]
+  specSheetUrl?: string
 }
 
 type TrackSection =
@@ -611,6 +593,7 @@ const query = `*[_type == "preCraftedPage"][0] {
     leadTimes,
     installHeading,
     installNotes,
+    specSheet { asset->{ url, originalFilename } },
     heightPercent,
     align,
     caption,
@@ -647,7 +630,7 @@ const query = `*[_type == "preCraftedPage"][0] {
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v10',
+  'preCraftedPage-v11',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -786,6 +769,16 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
           longestCaption,
         }
       }
+      if (item?._type === 'precraftedLargeTitleSection') {
+        if (!item.title) return null
+        return {
+          id,
+          kind: 'text',
+          title: item.title,
+          body: Array.isArray(item.body) ? item.body : [],
+          variant: 'intro',
+        }
+      }
       if (item?._type === 'precraftedTextSection') {
         if (!item.title) return null
         return {
@@ -842,6 +835,8 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
           leadTimes: item.leadTimes || '',
           installHeading: item.installHeading || 'Install',
           installNotes: Array.isArray(item.installNotes) ? item.installNotes : [],
+          specSheetUrl:
+            typeof item.specSheet?.asset?.url === 'string' ? item.specSheet.asset.url : undefined,
         }
       }
       return null
@@ -989,6 +984,11 @@ const pinRef = ref<HTMLElement | null>(null)
 const trackRef = ref<HTMLElement | null>(null)
 const itemsRef = ref<HTMLElement | null>(null)
 
+function setItemsRef(copy: string, el: unknown) {
+  if (copy !== 'main' || !(el instanceof HTMLElement)) return
+  itemsRef.value = el
+}
+
 const scrubProgressById = ref<Record<string, number>>({})
 /**
  * Raw progress when each clip was first measured. Videos already on-screen at
@@ -1099,6 +1099,9 @@ function syncDesktop() {
 }
 
 const scrollEnabled = computed(() => isDesktop.value)
+const galleryCopies = computed(() => (scrollEnabled.value ? ['main', 'loop'] : ['main']))
+const loopProgress = ref(0)
+const dialTurns = computed(() => loopProgress.value * 360)
 
 const { refresh: refreshHorizontalScroll } = useHorizontalGalleryScroll({
   sectionRef,
@@ -1107,7 +1110,9 @@ const { refresh: refreshHorizontalScroll } = useHorizontalGalleryScroll({
   itemsRef,
   hasTitle: computed(() => false),
   enabled: scrollEnabled,
-  onProgress: () => {
+  loop: scrollEnabled,
+  onProgress: (progress) => {
+    loopProgress.value = progress
     syncScrubProgresses()
   },
 })
@@ -1197,11 +1202,36 @@ useHead(() => ({
 }))
 </script>
 
+<style>
+html.precrafted-loop-lock,
+html.precrafted-loop-lock body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+</style>
+
 <style scoped>
 .precrafted {
   --precrafted-gap: calc(var(--gutter) * 2.5);
   --precrafted-track-height: 100dvh;
   --text-base:15px;
+}
+
+.precrafted-dial {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  z-index: 40;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  color: currentColor;
+}
+
+.precrafted-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* —— Desktop horizontal —— */
@@ -1247,6 +1277,11 @@ useHead(() => ({
   height: 100%;
   min-height: 0;
   padding-right: var(--gutter);
+}
+
+/* The duplicate set sits one gap away, matching the space between panels. */
+.precrafted-h__track--loop .precrafted-h__items {
+  padding-right: 0;
 }
 
 .precrafted-h__item {
@@ -1429,20 +1464,13 @@ useHead(() => ({
 }
 
 .precrafted-h__item--text :deep(.prose),
-.precrafted-h__item--text .precrafted__finishes,
-.precrafted-h__item--text .precrafted__info-block {
+.precrafted-h__item--text .precrafted__finishes {
   margin-inline: auto;
 }
 
 .precrafted-h__item--text .precrafted__finishes {
   grid-template-columns: 1fr;
   max-width: 16rem;
-}
-
-.precrafted-h__item--text .precrafted__pricing li {
-  justify-content: center;
-  flex-direction: column;
-  text-align: left;
 }
 
 /* —— Mobile vertical —— */
@@ -1555,11 +1583,6 @@ useHead(() => ({
   font-family: var(--mono);
 }
 
-.precrafted__subheading {
-  font-size: var(--text-lg);
-  margin: 0 0 0.75rem;
-}
-
 .precrafted__finishes {
   list-style: none;
   margin: 0;
@@ -1591,44 +1614,6 @@ useHead(() => ({
 .precrafted__finish-name {
   display: block;
   padding: 1rem 1rem;
-}
-
-.precrafted__info-block {
-  max-width: 44rem;
-  margin-bottom: 2.5rem;
-  color: var(--muted);
-}
-
-.precrafted__info-block:last-child {
-  margin-bottom: 0;
-}
-
-.precrafted__info-block p {
-  margin: 0 0 1rem;
-}
-
-.precrafted__pricing {
-  list-style: none;
-  margin: 0 0 1.25rem;
-  padding: 0;
-}
-
-.precrafted__pricing li {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--grid-line);
-  color: var(--charcoal);
-}
-
-.precrafted__dimensions {
-  font-family: var(--font-serif);
-}
-
-.precrafted__note {
-  font-size: var(--text-sm);
 }
 
 .precrafted__link {

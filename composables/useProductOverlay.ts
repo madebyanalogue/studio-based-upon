@@ -345,9 +345,16 @@ export const useProductOverlay = () => {
   const flipSourceIsCart = () =>
     !!(import.meta.client && flipSourceEl && flipSourceEl.closest('.stack'))
 
+  /** True when the Flip shell is a Curate column image */
+  const flipSourceIsCurate = () =>
+    !!(import.meta.client && flipSourceEl && flipSourceEl.closest('.showcase'))
+
   /** Skip cream/chrome holds — Flip starts as soon as the flyer is ready */
   const flipSourceStartsImmediately = () =>
-    flipSourceIsArchiveGrid() || flipSourceIsDiscoveryKebab() || flipSourceIsCart()
+    flipSourceIsArchiveGrid() ||
+    flipSourceIsDiscoveryKebab() ||
+    flipSourceIsCart() ||
+    flipSourceIsCurate()
 
   /** Hero-tier URL preferred for the Flip flyer when prefetched */
   const getFlipImageUrl = () => flipImageUrl
@@ -503,6 +510,7 @@ export const useProductOverlay = () => {
     flipSourceIsArchiveGrid,
     flipSourceIsDiscoveryKebab,
     flipSourceIsCart,
+    flipSourceIsCurate,
     flipSourceStartsImmediately,
     getFlipImageUrl,
     clearPendingFlip,

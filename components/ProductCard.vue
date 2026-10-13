@@ -327,7 +327,7 @@ const onToggle = (event?: MouseEvent) => {
   object-position: bottom center;
   display: block;
   pointer-events: none;
-  transition: opacity 0.7s ease, filter 0.7s ease;
+  transition: opacity 0.7s ease, filter 0.2s ease;
 }
 
 /* Later gallery frames fill the silhouette set by the first image */
@@ -398,7 +398,7 @@ const onToggle = (event?: MouseEvent) => {
   .product-card--saved .product-card__placeholder {
     opacity: var(--gathered-thumb-opacity);
     filter: grayscale(100%);
-    transition: opacity 0.45s ease;
+    transition: opacity 0.45s ease, filter 0.2s ease;
   }
 
   .product-card--saved:hover .product-card__image,

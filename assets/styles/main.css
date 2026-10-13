@@ -1,27 +1,39 @@
 :root {
-  /* Colour palette — dark is the default so first paint is never light */
-  --cream: #111111;
-  --warm-white: #1f1c18;
-  --sand: #2a2621;
-  --stone: #6b635a;
-  --charcoal: #eee;
-  --black: #faf7f2;
-  --slate: #c8c0b6;
-  --white: #ffffff;
-  --blue: #3b5fd1;
-  --bronze: #a3946d;
-  --putty: #f1ede4;
-  /* Derived from current text colour so light/dark stay in sync */
-  --muted: color-mix(in srgb, var(--charcoal) 45%, transparent);
-  --accent: #c4a574;
-  --red: #e64c1a;
-  --grid-line: rgba(255, 255, 255, 0.1);
-  --handwritten-color: var(--charcoal);
-  --ui-border-color: rgba(255, 255, 255, 0.14);
+  --gutter: 16px;
+  --header-height: 56px;
+  --filter-bar-height: 72px;
+  /* PDP side columns */
+  --side-column-width: 320px;
+  --bucket-rail-width: 2.15rem;
+  --bucket-close-ms: 0.4s;
+  /* Shared light/dark surface fade (header, PDP, overlay).
+     0 until html.theme-ready so hard-load / stored dark mode doesn't animate in. */
+  --theme-ms: 0s;
+  --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Bottom cart: panel height = header + list pad (top+bottom) + item row */
+  --bucket-item-height: 150px;
+  --bucket-list-pad: 1em;
+  /* Matches toolbar: 1rem pad top/bottom + .interface line-height + border */
+  --bucket-header-height: calc(2rem + (12px * 1.3) + 1px);
+  --bucket-height: calc(
+    var(--bucket-header-height) + (var(--bucket-list-pad) * 2) + var(--bucket-item-height)
+  );
+  /* 0 when closed; set to cart footprint when open (pushes page content) */
+  --bucket-push: 0px;
+  --boards-rail-push: 0px;
+  --selections-panel-width: 0px;
+  /* Board builder left rail — matches ProductIndexRail */
+  --boards-panel-open-width: min(18vw, 280px);
+  --boards-panel-width: 0px;
+  /* PDP side rails — one animated length each drives gallery pad + rail slide + stack */
+  --pdp-rail-open-width: min(14vw, 250px);
+  --pdp-index-rail-width: var(--pdp-rail-open-width);
+  --pdp-related-rail-open-width: var(--pdp-rail-open-width);
+  --pdp-related-rail-width: 0px;
+  /* Shared by gallery inset, index/related rails, and stack push */
+  --pdp-rail-motion: 0.35s ease-in-out;
+
   --ui-border-radius: 2px;
-  --panel-bg: rgba(31, 28, 24, 0.88);
-  --elevated-bg: #2a2621;
-  --shadow-color: rgba(0, 0, 0, 0.45);
 
   --bucket-thumb-width: 130px;
   --dock-gutter: 0px;
@@ -30,8 +42,6 @@
   /* Thumbnail overlay controls ([+], [−], clone, cycle) */
   --thumb-ctrl-inset: 8px;
   --thumb-ctrl-size: 16px;
-  --thumb-ctrl-color: var(--charcoal);
-  --thumb-ctrl-bg: var(--cream);
   --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
   --thumb-radius: 3px;
@@ -45,6 +55,11 @@
   --products-grid-gap: 25px;
   --products-grid-gap: 60px;
 
+  --pdp-aside-left: 30px;
+  --pdp-aside-top: 30px;
+
+  --pdp-gallery-gap: 60px;
+
 
   --card-pad: 0;
   --card-gap: 20px;
@@ -52,14 +67,71 @@
   --product-card-aspect-ratio: 0.8;
 
 
-  color-scheme: dark;
 }
 
-@supports (color: color(display-p3 1 0 0)) {
+@media (min-width: 768px) {
   :root {
-    /* Same hue as rgb(230, 76, 26), wider gamut on P3 displays */
-    --red: color(display-p3 0.851 0.349 0.157);
+    --gutter: 20px;
+    --header-height: 64px;
   }
+}
+
+/* Single source of motion: html transitions these; gallery/rails/stack only read them */
+@property --pdp-index-rail-width {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --pdp-related-rail-width {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+/* Typology row open amount. 0 at rest, 1 when the row is open. */
+@property --rail-open {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+html.selections-panel-hidden {
+  --selections-panel-width: 0px;
+}
+
+html.boards-panel-open {
+  --boards-panel-width: var(--boards-panel-open-width);
+}
+
+html.pdp-index-rail-closed {
+  --pdp-index-rail-width: 0px;
+}
+
+html.pdp-related-rail-open {
+  --pdp-related-rail-width: var(--pdp-related-rail-open-width);
+}
+
+/* Armed after ProductIndexRail syncs open/closed classes — avoids open→closed FOUC tween */
+html.pdp-rail-motion-ready {
+  transition:
+    --pdp-index-rail-width var(--pdp-rail-motion),
+    --pdp-related-rail-width var(--pdp-rail-motion);
+}
+
+@media (max-width: 999px) {
+  html.boards-panel-open {
+    --boards-panel-width: 0px;
+  }
+}
+
+html.bucket-push {
+  --bucket-push: var(--bucket-height);
+}
+
+/* Enable theme color transitions only after initial theme is applied */
+html.theme-ready {
+  --theme-ms: 0.4s;
 }
 
 *,

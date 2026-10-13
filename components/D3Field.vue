@@ -12,33 +12,12 @@
     </div>
 
     <div v-show="!showLoader" class="d3-field__toggles">
-      <div
-        class="d3-field__mode"
-        role="tablist"
-        aria-label="Field mode"
-        data-cursor="default"
-      >
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="mode === 'control'"
-          :class="{ 'is-active': mode === 'control' }"
-          @click="setMode('control')"
-        >
-          Control
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="mode === 'surrender'"
-          :class="{ 'is-active': mode === 'surrender' }"
-          @click="setMode('surrender')"
-        >
-          Surrender
-        </button>
-      </div>
+      <SlidingPill
+        label="Field mode"
+        :options="modeOptions"
+        :model-value="mode"
+        @update:model-value="setMode($event === 'control' ? 'control' : 'surrender')"
+      />
       <label class="d3-field__presence interface" data-cursor="default">
         <span>Visibility</span>
         <input
@@ -67,7 +46,7 @@ import {
 } from '~/lib/d3-canvas/createD3Canvas'
 import type { DiscoveryMediaItem } from '~/lib/infinite-canvas/types'
 import { productPath, productSlug } from '~/composables/useProductCatalog'
-import { productGalleryFrames } from '~/composables/productImages'
+import { productCoverFrame } from '~/composables/productImages'
 
 type DiscoveryItem = {
   _id: string
@@ -106,6 +85,10 @@ const props = defineProps<{
 const { imageUrl, getImageSrc } = useSanityImage()
 const { requestSave, items: pileItems, registerPileFly } = useBucket()
 const mode = ref<'control' | 'surrender'>('surrender')
+const modeOptions = [
+  { id: 'control', label: 'Control' },
+  { id: 'surrender', label: 'Surrender' },
+]
 const presence = useCookie<number>('sba-discovery-presence', {
   default: () => 60,
   maxAge: 60 * 60 * 24 * 365,
@@ -300,54 +283,32 @@ const toCanvasTextureUrl = (remoteUrl: string) => {
   return `/api/image-proxy?url=${encodeURIComponent(remoteUrl)}`
 }
 
-const frameAsset = (
-  entry:
-    | { _type?: string; asset?: { url?: string; _id?: string }; poster?: { asset?: { url?: string; _id?: string } } }
-    | undefined,
-) => {
-  if (!entry) return undefined
-  if (entry._type === 'spiritVideo') return entry.poster?.asset
-  return entry.asset
-}
-
 const toMedia = (items: DiscoveryItem[]): DiscoveryMediaItem[] => {
   const media: DiscoveryMediaItem[] = []
   let order = 0
   for (const item of items) {
     const slug = productSlug(item) || item.slug?.current || item._id
     if (!slug) continue
-    const frames: { asset?: { url?: string; _id?: string } }[] = []
-    const seen = new Set<string>()
-    const push = (asset?: { url?: string; _id?: string }) => {
-      if (!asset) return
-      const key = String(asset._id || asset.url || '')
-      if (!key || seen.has(key)) return
-      seen.add(key)
-      frames.push({ asset })
-    }
-    for (const frame of productGalleryFrames(item)) push(frame.asset)
-    for (const entry of item.spiritGallery || []) push(frameAsset(entry))
-    frames.forEach((frame, imageIndex) => {
-      const remote =
-        imageUrl(frame, 1400) ||
-        (frame.asset ? getImageSrc(frame.asset) : '') ||
-        ''
-      const url = toCanvasTextureUrl(remote)
-      if (!url || !remote) return
-      const dims = parseDimensions(frame.asset)
-      media.push({
-        url,
-        displayUrl: remote,
-        width: dims.width,
-        height: dims.height,
-        slug,
-        title: item.title,
-        productId: item._id,
-        frameId: `${item._id}::${imageIndex}`,
-        imageIndex,
-        order: order++,
-        itemType: item.category || item.type || '',
-      })
+    const cover = productCoverFrame(item)
+    const remote =
+      (cover ? imageUrl(cover, 1400) : '') ||
+      (cover?.asset ? getImageSrc(cover.asset) : '') ||
+      ''
+    const url = toCanvasTextureUrl(remote)
+    if (!url || !remote) continue
+    const dims = parseDimensions(cover?.asset)
+    media.push({
+      url,
+      displayUrl: remote,
+      width: dims.width,
+      height: dims.height,
+      slug,
+      title: item.title,
+      productId: item._id,
+      frameId: `${item._id}::0`,
+      imageIndex: 0,
+      order: order++,
+      itemType: item.category || item.type || '',
     })
   }
   return media
@@ -1100,32 +1061,6 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
-.d3-field__mode {
-  display: flex;
-  gap: 2px;
-  margin: 0;
-  padding: 4px;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-
-.d3-field__mode button {
-  margin: 0;
-  padding: 0.45rem 1.05rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--charcoal);
-  cursor: pointer;
-}
-
-.d3-field__mode button.is-active {
-  background: var(--charcoal);
-  color: var(--cream);
-}
 
 .d3-gather {
   --pile-max: min(15vh, 21vw);

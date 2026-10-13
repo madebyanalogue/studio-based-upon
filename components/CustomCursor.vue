@@ -214,10 +214,18 @@ const chevRef = ref<HTMLElement | null>(null)
 const labelRef = ref<HTMLElement | null>(null)
 
 const SCROLL_HINT = 'Scroll to explore'
-const TYPOLOGY_ARRIVAL = 'What are you making?'
+const TYPOLOGY_ARRIVAL = 'Design your space'
+const TYPOLOGY_ARRIVAL_MS = 3000
+const typologyArrivalOn = ref(false)
+let typologyArrivalTimer = 0
 const onTypology = computed(
   () => route.path === '/typology' || route.path === '/typology/',
 )
+
+const clearTypologyArrival = () => {
+  window.clearTimeout(typologyArrivalTimer)
+  typologyArrivalTimer = 0
+}
 /** Cart stage covers the typology page, including the close fade. */
 const cartCoversPage = computed(
   () =>
@@ -236,6 +244,7 @@ const cursorLabel = computed(() => {
   if (tip) return tip
   if (bare.value) return ''
   if (
+    typologyArrivalOn.value &&
     onTypology.value &&
     !cartCoversPage.value &&
     !typologyRowsLocked.value &&
@@ -507,6 +516,22 @@ if (import.meta.client) {
     if (locked || !onTypology.value) return
     nextTick(() => resolveFromPoint(x, y))
   })
+  watch(
+    onTypology,
+    (on) => {
+      clearTypologyArrival()
+      if (!on) {
+        typologyArrivalOn.value = false
+        return
+      }
+      typologyArrivalOn.value = true
+      typologyArrivalTimer = window.setTimeout(() => {
+        typologyArrivalTimer = 0
+        typologyArrivalOn.value = false
+      }, TYPOLOGY_ARRIVAL_MS)
+    },
+    { immediate: true },
+  )
 }
 
 const active = computed(() => fine.value && inside.value && !native.value)
@@ -646,6 +671,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.cancelAnimationFrame(markRaf)
   window.cancelAnimationFrame(trailRaf)
+  clearTypologyArrival()
   clearLabelTimer()
   window.clearTimeout(restTimer)
   window.clearTimeout(revealTimer)

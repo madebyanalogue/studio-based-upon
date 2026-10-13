@@ -15,11 +15,12 @@
       'pdp--gallery': galleryVisible,
       'pdp--closing': closingFlip,
       'pdp--singularity': isSpiritOrOrigin,
+      'pdp--curate': flipSourceIsCurate(),
     }"
   >
     <aside class="pdp__col pdp__col--left" data-cursor="default">
       <div class="pdp__toolbar">
-        <button type="button" class="pdp__close interface" @click="$emit('close')">Close</button>
+        <button type="button" class="pdp__close interface" @click="requestPdpClose">Close</button>
         <div
           class="pdp__meta interface pdp__pane-fade"
           :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
@@ -54,7 +55,7 @@
           <div class="pdp__spec pdp__spec--toggle">
             <button
               type="button"
-              class="pdp__disclosure"
+              class="pdp__disclosure pdp__spec-item"
               :aria-expanded="showSpecs"
               @click="showSpecs = !showSpecs"
             >
@@ -69,23 +70,23 @@
             </button>
             <div class="pdp__spec-panel" :class="{ 'is-open': showSpecs }">
               <div class="pdp__spec-panel-clip" :inert="!showSpecs">
-              <div class="pdp__spec">
+              <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Year</dt>
                 <dd>{{ product.year || '2024' }}</dd>
               </div>
-              <div class="pdp__spec">
+              <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Client</dt>
                 <dd>{{ product.client || 'Private Client' }}</dd>
               </div>
-              <div class="pdp__spec">
+              <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Location</dt>
                 <dd>{{ product.location || 'London, UK' }}</dd>
               </div>
-              <div class="pdp__spec">
+              <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Dimensions</dt>
                 <dd>{{ product.dimensions || '3200mm W × 1200mm H × 20mm D' }}</dd>
               </div>
-              <div class="pdp__spec">
+              <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Materiality</dt>
                 <dd>
                   <ul v-if="materials.length" class="pdp__options">
@@ -94,15 +95,15 @@
                   <template v-else>Tramazite, Camona Gold</template>
                 </dd>
               </div>
-              <div v-if="product.style" class="pdp__spec">
+              <div v-if="product.style" class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Style</dt>
                 <dd>{{ product.style }}</dd>
               </div>
-              <div v-if="product.comCol" class="pdp__spec">
+              <div v-if="product.comCol" class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">COM / COL</dt>
                 <dd>{{ product.comCol }}</dd>
               </div>
-              <div class="pdp__spec pdp__spec--download">
+              <div class="pdp__spec pdp__spec-item pdp__spec--download">
                 <dt class="serif-italic">Spec Sheet</dt>
                 <dd>
                   <button type="button" class="pdp__spec-download" @click="downloadSpec">
@@ -113,13 +114,13 @@
 
               <div
                 v-if="product.description || product.edition"
-                class="pdp__info-copy"
+                class="pdp__info-copy pdp__spec-item"
               >
                 <p v-if="product.description" class="pdp__info-text">{{ product.description }}</p>
                 <p v-if="product.edition" class="pdp__info-text">{{ product.edition }}</p>
               </div>
 
-              <ul v-if="product.finishes?.length" class="pdp__finishes">
+              <ul v-if="product.finishes?.length" class="pdp__finishes pdp__spec-item">
                 <li v-for="finish in product.finishes" :key="finish">{{ finish }}</li>
               </ul>
               </div>
@@ -150,6 +151,12 @@
           >
             {{ indexRailVisible ? 'Hide Index' : 'Product Index' }}
           </button>
+          <div
+            class="pdp__action-split"
+            :class="{
+              'pdp__action-split--pair': galleryEntries.some((entry) => entry.kind === 'image'),
+            }"
+          >
           <button
             type="button"
             class="pdp__rail-btn"
@@ -161,6 +168,17 @@
           >
             {{ relatedRailVisible ? 'Hide Related' : 'More like this' }}
           </button>
+          <button
+            v-if="galleryEntries.some((entry) => entry.kind === 'image')"
+            type="button"
+            class="pdp__rail-btn"
+            :aria-pressed="loupeOpen"
+            :aria-label="loupeOpen ? 'Close loupe' : 'Open loupe'"
+            @click="loupeOpen = !loupeOpen"
+          >
+            Loupe
+          </button>
+          </div>
         </div>
       </div>
     </aside>
@@ -268,6 +286,12 @@
         </p>
       </div>
     </div>
+    <Loupe
+      v-if="loupeOpen"
+      :src="activeEntry?.kind === 'image' ? activeEntry.zoomSrc || activeEntry.src : ''"
+      :closing="closingFlip || loupeClosing"
+      @close="loupeOpen = false"
+    />
   </article>
 
   <div v-else class="pdp pdp--missing">
@@ -283,6 +307,7 @@ import Lenis from 'lenis'
 import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
+import { preloadLoupeBitmaps } from '~/components/Loupe.vue'
 import {
   ARCHIVE_PDP_CLOSE_EASE,
   ARCHIVE_PDP_CLOSE_S,
@@ -323,6 +348,7 @@ const {
   getFlipSourceProductId,
   flipSourceIsArchiveGrid,
   flipSourceIsCart,
+  flipSourceIsCurate,
   flipSourceStartsImmediately,
   getFlipImageUrl,
   clearPendingFlip,
@@ -390,6 +416,8 @@ const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
 /** In-frame gallery zoom (stays inside the image footprint) */
 const imageExpanded = ref(false)
+const loupeOpen = ref(false)
+const loupeClosing = ref(false)
 const frameZoomHiRes = ref(false)
 const zoomOriginX = ref(50)
 const zoomOriginY = ref(50)
@@ -626,6 +654,13 @@ const activeEntry = computed(
   () => galleryEntries.value[selectedIndex.value] || galleryEntries.value[0] || null,
 )
 
+watch(
+  () => props.slug,
+  () => {
+    loupeOpen.value = false
+  },
+)
+
 // Prefetch the full gallery once the PDP is open so thumb clicks aren't cold
 watch(
   [galleryEntries, contentReady],
@@ -647,6 +682,9 @@ watch(
 )
 
 watch(galleryEntries, (entries) => {
+  preloadLoupeBitmaps(
+    entries.flatMap((entry) => (entry.kind === 'image' ? [entry.src, entry.zoomSrc] : [])),
+  )
   if (!entries.length) {
     selectedIndex.value = 0
     return
@@ -657,7 +695,7 @@ watch(galleryEntries, (entries) => {
     void prepareGalleryEntries(entries, 3)
   }
   nextTick(syncStripVideos)
-})
+}, { immediate: true })
 
 watch(selectedIndex, () => {
   nextTick(syncStripVideos)
@@ -876,6 +914,15 @@ const collapseImage = () => {
 const homeScrollHint = useHomeScrollHint()
 
 const onGalleryMediaClick = () => {
+  requestPdpClose()
+}
+
+const requestPdpClose = () => {
+  if (props.standalone && loupeOpen.value && !loupeClosing.value && !closingFlip.value) {
+    loupeClosing.value = true
+    window.setTimeout(() => emit('close'), 220)
+    return
+  }
   emit('close')
 }
 
@@ -883,11 +930,12 @@ const onGalleryMediaClick = () => {
 const onStageClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
-  if (target.closest('button, a, .pdp__hero-image, .pdp__hero-video')) return
+  if (target.closest('button, a, .pdp__hero-image, .pdp__hero-video, .loupe')) return
   onGalleryMediaClick()
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
+  if (loupeOpen.value) return
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -1635,6 +1683,8 @@ watch(
   --index-tabs-height: 2.25rem;
   --index-rail-width: var(--pdp-rail-open-width);
   --index-motion: var(--pdp-rail-motion);
+  --pdp-aside-padding: 17px;
+  --pdp-aside-spec-height: 40px;
 }
 
 .pdp--no-related {
@@ -1690,8 +1740,8 @@ watch(
 
 .pdp__col--left {
   position: absolute;
-  top: 30px;
-  left: 30px;
+  top: var(--pdp-aside-top);
+  left: var(--pdp-aside-left);
   right: auto;
   bottom: unset;
   z-index: 120; /* above header logo (100) and index rail (110) */
@@ -1714,6 +1764,24 @@ watch(
 
 .pdp--sides .pdp__col--left {
   transform: none;
+}
+
+/* Opened from Pairings — the info column stays dark-mode in either site theme. */
+.pdp--curate .pdp__col--left {
+  color-scheme: dark;
+  --cream: var(--bg-dark);
+  --warm-white: #1f1c18;
+  --sand: #2a2621;
+  --charcoal: var(--text-light);
+  --black: var(--text-light);
+  --muted: color-mix(in srgb, var(--text-light) 45%, transparent);
+  --grid-line: rgba(255, 255, 255, 0.1);
+  --ui-border-color: rgba(255, 255, 255, 0.14);
+  --panel-bg: rgba(31, 28, 24, 0.88);
+  --elevated-bg: #2a2621;
+  color: var(--text-light);
+  background: color-mix(in srgb, var(--bg-dark) 82%, transparent);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 /* Close: aside fades in place. The index-rail offset stays put. */
@@ -1801,7 +1869,7 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 70px;
+  gap: var(--pdp-gallery-gap);
   height: max-content;
   width: 100%;
   min-height: 100%;
@@ -1810,7 +1878,7 @@ watch(
      viewport, so the extra right padding keeps frames centred in the clear span. */
   padding: var(--pdp-gallery-padding);
   padding-right: calc(var(--pdp-related-rail-width) + var(--pdp-gallery-padding));
-  padding-left: 320px;
+  padding-left: calc(var(--side-column-width) + var(--pdp-gallery-padding) + calc(var(--pdp-aside-left) * 1));
 }
 
 .pdp__strip--single .pdp__strip-track {
@@ -1863,9 +1931,9 @@ watch(
   /* Width follows the ratio at the capped height, and clamps when the frame is wider than the clear span. */
   width: min(
     100%,
-    calc((100vh - (var(--pdp-gallery-padding) * 2) - 20px) * var(--pdp-ar, 1))
+    calc((100vh - (var(--pdp-gallery-gap) * 2)) * var(--pdp-ar, 1))
   );
-  max-height: calc(100vh - (var(--pdp-gallery-padding) * 2) - 20px);
+  max-height: calc(100vh - (var(--pdp-gallery-gap) * 2));
   aspect-ratio: var(--pdp-ar, 1);
   height: auto;
   flex: 0 0 auto;
@@ -2084,12 +2152,25 @@ watch(
 
 .pdp__title {
   margin: 0;
-  padding: 17px;
+  padding: var(--pdp-aside-padding);
   font-family: var(--mono);
   font-size: 18px;
   line-height: 1.15;
   font-weight: 400;
   color: var(--charcoal);
+}
+
+.pdp__action-split--pair {
+  display: flex;
+}
+
+.pdp__action-split--pair > .pdp__rail-btn {
+  flex: 1 1 50%;
+  width: 50%;
+}
+
+.pdp__action-split--pair > .pdp__rail-btn + .pdp__rail-btn {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.12);
 }
 
 .pdp__title-add {
@@ -2107,6 +2188,7 @@ watch(
 }
 
 .pdp__title-add :deep(.add-btn__icon) {
+  margin-right: -8px;
   background: transparent;
 }
 
@@ -2116,18 +2198,17 @@ watch(
 
 .pdp__spec {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 100px 1fr;
   align-items: baseline;
   gap: 0.75rem;
-  padding: 0.85rem 0;
+  padding: 0 0;
   /* border-top: 1px solid var(--grid-line); */
 }
 
 .pdp__spec--toggle {
   display: block;
-  padding: 0 17px;
-  /* border-top: 1px solid var(--grid-line); */
-  border-bottom: 1px solid var(--grid-line);
+  border-top: 1px solid var(--grid-line);
+  /* border-bottom: 1px solid var(--grid-line); */
 }
 
 .pdp__spec--toggle > .pdp__disclosure {
@@ -2136,15 +2217,29 @@ watch(
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.85rem 0;
+  padding: 14px var(--pdp-aside-padding);
+  font-family: var(--mono);
   text-align: left;
 }
+
+
+.pdp__spec-item {
+  padding: 14px 0;
+  border-top: 1px solid var(--grid-line);
+  min-height: var(--pdp-aside-spec-height);
+  font-size: var(--text-sm);
+}
+
 
 .pdp__spec-panel {
   display: grid;
   grid-template-rows: 0fr;
-  padding-bottom: 0;
+  padding: 0 var(--pdp-aside-padding);
   transition: grid-template-rows 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pdp__spec-panel-clip > .pdp__spec-item:last-child {
+  padding-bottom: 20px;
 }
 
 .pdp__spec-panel.is-open {
@@ -2162,9 +2257,7 @@ watch(
   opacity: 1;
 }
 
-.pdp__spec-panel-clip > .pdp__spec {
-  border-bottom: 0;
-}
+
 
 @media (prefers-reduced-motion: reduce) {
   .pdp__spec-panel,
@@ -2174,15 +2267,12 @@ watch(
 }
 
 .pdp__spec dt {
-  font-size: var(--text-sm);
   color: var(--charcoal);
+  opacity: 0.6;
 }
 
 .pdp__spec dd {
   margin: 0;
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  text-align: right;
 }
 
 .pdp__disclosure {
@@ -2190,15 +2280,12 @@ watch(
   align-items: center;
   gap: 0.5rem;
   margin: 0;
-  padding: 0;
   border: 0;
   background: none;
-  font-size: var(--text-sm);
   font-family: inherit;
   font-weight: inherit;
   letter-spacing: normal;
   text-transform: none;
-  color: var(--charcoal);
   cursor: pointer;
 }
 
@@ -2209,7 +2296,6 @@ watch(
   flex-shrink: 0;
   align-self: center;
   overflow: visible;
-  color: var(--muted);
 }
 
 .pdp__disclosure-mark path {
@@ -2237,14 +2323,14 @@ watch(
 .pdp__options {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: start;
   gap: 0.25rem;
   margin: 0;
   padding: 0;
   list-style: none;
   color: var(--charcoal);
   font-size: var(--text-sm);
-  text-align: right;
+  text-align: left;
 }
 
 .pdp__spec--download {
@@ -2259,10 +2345,10 @@ watch(
   padding: 0;
   border: 0;
   background: none;
-  font-size: var(--text-sm);
   color: var(--charcoal);
   cursor: pointer;
   transition: color 0.2s ease;
+  font-size:inherit;
 }
 
 .pdp__spec-download:hover {
@@ -2270,7 +2356,7 @@ watch(
 }
 
 .pdp__spec-download-arrow {
-  font-size: 0.85em;
+  font-size: 120%;
   line-height: 1;
 }
 
@@ -2391,12 +2477,10 @@ watch(
 
 .pdp__info-copy {
   margin: 0;
-  padding: 0.85rem 0 0;
 }
 
 .pdp__info-text {
   margin: 0 0 1rem;
-  font-size: var(--text-sm);
   line-height: 1.55;
   color: var(--charcoal);
 }

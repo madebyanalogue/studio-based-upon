@@ -43,7 +43,7 @@ defineEmits<{ 'zoom-in': []; 'zoom-out': [] }>()
 
 .zoom-controls__sep,
 .zoom-controls__bracket {
-  color: var(--stone);
+  color: var(--muted);
 }
 
 .zoom-controls__label {

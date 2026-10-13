@@ -16,61 +16,18 @@
     </div>
 
     <div v-show="!showLoader" class="d2-field__toggles">
-      <div
-        class="d2-field__mode"
-        role="tablist"
-        aria-label="Drag"
-        data-cursor="default"
-      >
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="drag === 'pan'"
-          :class="{ 'is-active': drag === 'pan' }"
-          @click="setDrag('pan')"
-        >
-          Pan
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="drag === 'rotate'"
-          :class="{ 'is-active': drag === 'rotate' }"
-          @click="setDrag('rotate')"
-        >
-          Rotate
-        </button>
-      </div>
-
-      <div
-        class="d2-field__mode"
-        role="tablist"
-        aria-label="Field mode"
-        data-cursor="default"
-      >
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="mode === 'control'"
-          :class="{ 'is-active': mode === 'control' }"
-          @click="setMode('control')"
-        >
-          Control
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="interface"
-          :aria-selected="mode === 'surrender'"
-          :class="{ 'is-active': mode === 'surrender' }"
-          @click="setMode('surrender')"
-        >
-          Surrender
-        </button>
-      </div>
+      <SlidingPill
+        label="Drag"
+        :options="dragOptions"
+        :model-value="drag"
+        @update:model-value="setDrag($event as D2Drag)"
+      />
+      <SlidingPill
+        label="Field mode"
+        :options="modeOptions"
+        :model-value="mode"
+        @update:model-value="setMode($event as D2Mode)"
+      />
     </div>
 
     <p class="d2-field__hint interface">{{ hint }}</p>
@@ -118,10 +75,18 @@ const loaderDone = ref(false)
 const hovering = ref(false)
 const mode = ref<D2Mode>('surrender')
 const drag = ref<D2Drag>('pan')
+const dragOptions = [
+  { id: 'pan', label: 'Pan' },
+  { id: 'rotate', label: 'Rotate' },
+]
+const modeOptions = [
+  { id: 'control', label: 'Control' },
+  { id: 'surrender', label: 'Surrender' },
+]
 
 const hint = computed(() => {
   const gesture = drag.value === 'pan' ? 'Drag or flick to move' : 'Drag to look'
-  const zoom = mode.value === 'control' ? ' · Scroll to zoom' : ''
+  const zoom = mode.value === 'control' ? ' · Scroll to pan' : ''
   return `${gesture}${zoom} · Click to gather`
 })
 
@@ -436,32 +401,6 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
-.d2-field__mode {
-  display: flex;
-  gap: 2px;
-  margin: 0;
-  padding: 4px;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-
-.d2-field__mode button {
-  margin: 0;
-  padding: 0.45rem 1.05rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--charcoal);
-  cursor: pointer;
-}
-
-.d2-field__mode button.is-active {
-  background: var(--charcoal);
-  color: var(--cream);
-}
 
 .d2-field__hint {
   position: fixed;

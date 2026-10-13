@@ -139,7 +139,7 @@
       data-cursor="default"
       @click.stop="onSkip"
     >
-      Skip
+      [ SKIP ]
     </button>
   </div>
 </template>

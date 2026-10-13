@@ -14,6 +14,9 @@
         'stack--boards-handoff': boardsGridHandoff,
         'stack--boards-cart': stagePresent && panelTab === 'boards',
         'stack--freeform': cartIsFreeform && panelTab === 'selections',
+        'stack--lightbox': showLightbox,
+        'stack--lb-handoff': lightboxHandoff,
+        'stack--lb-return': lbReturnFlush,
         'stack--view-flip': viewFlipBusy,
         'stack--above-pdp':
           (productOverlayOpen ||
@@ -105,6 +108,7 @@
             :aria-label="board.name"
             :data-cursor="selectionPileCursor"
             :data-lenis-prevent="spreadBoardId === board.id ? '' : undefined"
+            @pointermove="onPilePointerMove(board.id, $event)"
             @wheel="onSpreadWheel"
             @click="onPileClick(board.id)"
           >
@@ -122,13 +126,15 @@
                 "
                 :style="pileCardStyle(card.id, stackPileCards(board), board.id)"
               >
-                <img
-                  v-if="card.imageUrl"
-                  :src="card.imageUrl"
-                  :alt="card.title"
-                  class="stack__pile-image"
-                  draggable="false"
-                />
+                <span class="stack__pile-lean">
+                  <img
+                    v-if="card.imageUrl"
+                    :src="card.imageUrl"
+                    :alt="card.title"
+                    class="stack__pile-image"
+                    draggable="false"
+                  />
+                </span>
               </span>
             </span>
           </button>
@@ -422,6 +428,58 @@
           </div>
         </div>
 
+        <div
+          v-if="showLightbox"
+          ref="gridRef"
+          class="stack__lightbox"
+          :class="{ 'stack__lightbox--settled': lightboxSettled }"
+          data-cursor="default"
+          data-lenis-prevent
+          @pointerdown="onLightboxPointerDown"
+          @click.capture="onLightboxClick"
+        >
+          <p class="stack__lightbox-name">{{ lightboxActiveTitle }}</p>
+          <div
+            v-for="copy in lightboxCopies"
+            :key="copy.key"
+            class="stack__lightbox-item stack__cell"
+            :data-lb-rep="copy.rep"
+            :data-lb-index="copy.index"
+            :data-lb-id="copy.entry.item.id"
+          >
+            <div class="stack__cell-media">
+              <div class="stack__cell-frame">
+                <div class="stack__cell-figure">
+                  <button
+                    type="button"
+                    class="stack__cell-hit"
+                    data-cursor="default"
+                    :aria-label="`Open ${copy.entry.item.title}`"
+                    @click="openProduct(copy.entry.item, $event)"
+                  >
+                    <img
+                      v-if="copy.entry.item.imageUrl"
+                      :src="copy.entry.item.imageUrl"
+                      :alt="copy.entry.item.title"
+                      class="stack__cell-image"
+                      draggable="false"
+                      @load="onFreeImageLoad(copy.entry.item.id, $event)"
+                    />
+                  </button>
+                  <AddButton
+                    class="stack__cell-ctrl stack__cell-ctrl--remove"
+                    variant="remove"
+                    cursor="pointer"
+                    :label="`Remove ${copy.entry.item.title}`"
+                    @click.stop="onRemoveClick(copy.entry.item)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="stack__lightbox-count">{{ lightboxCountLabel }}</p>
+        </div>
+
         <!-- Boards cart — same square grid; boards span 1×1 (<1000) or 3×2 (≥1000 / 6-col) -->
         <div
           v-if="showBoardsGrid"
@@ -700,10 +758,10 @@
               type="button"
               class="stack__toolbar-clear interface"
               data-cursor="default"
-              :disabled="!items.length && !activePendingRemovals.length"
-              @click="clearActiveItems()"
+              :disabled="!bulkClearPending && !items.length"
+              @click="bulkClearPending ? onUndoBulkClear() : onRemoveAll()"
             >
-              Remove all
+              {{ bulkClearPending ? 'Undo' : 'Remove all' }}
             </button>
             <button
               type="button"
@@ -717,34 +775,23 @@
           </div>
         </header>
 
-        <div
+        <SlidingPill
           class="stack__view-toggle"
           :class="{ 'stack__view-toggle--visible': controlsVisible && !enquiryFormOpen }"
-          role="tablist"
-          aria-label="Selection layout"
-          data-cursor="default"
-        >
-          <button
-            type="button"
-            role="tab"
-            class="interface"
-            :aria-selected="cartIsFreeform"
-            :class="{ 'is-active': cartIsFreeform }"
-            @click="setCartView('freeform')"
-          >
-            Freeform
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="interface"
-            :aria-selected="!cartIsFreeform"
-            :class="{ 'is-active': !cartIsFreeform }"
-            @click="setCartView('order')"
-          >
-            Ordered
-          </button>
-        </div>
+          label="Selection layout"
+          :options="cartLayoutOptions"
+          :model-value="cartView"
+          @update:model-value="setCartView($event as CartLayout)"
+        />
+        <SlidingPill
+          v-if="showLightbox"
+          class="stack__gap-toggle"
+          :class="{ 'stack__gap-toggle--visible': controlsVisible && !enquiryFormOpen }"
+          label="Scroll gaps"
+          :options="lightboxGapOptions"
+          :model-value="lightboxGaps ? 'widen' : 'fixed'"
+          @update:model-value="lightboxGaps = $event === 'widen'"
+        />
         <button
           type="button"
           class="stack__close-global interface"
@@ -759,12 +806,26 @@
           :class="{ 'stack__corner--visible': controlsVisible && !enquiryFormOpen }"
         >
           <button
-            v-if="cartIsFreeform && latestPendingRemoval"
+            v-if="(cartIsFreeform || showLightbox) && latestPendingRemoval"
             type="button"
             class="stack__undo-global interface"
+            aria-label="Undo"
             @click="onGlobalUndo"
           >
-            Undo
+            <span class="stack__undo-global-label">Undo</span>
+            <svg
+              class="stack__undo-global-icon"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path d="M19 12H6" />
+              <path d="M11 7l-5 5 5 5" />
+            </svg>
           </button>
           <label class="stack__upload-global interface" data-cursor="default">
             <input
@@ -920,9 +981,10 @@ const {
   setActiveMoodboard,
   renameMoodboard,
   removeItem,
-  clearActiveItems,
+  removeItems,
   undoRemove,
   undoAllRemovals,
+  undoBulkClear,
   clearPendingRemovals,
   cloneItem,
   cycleItemImage,
@@ -1278,6 +1340,10 @@ const cellsReady = ref(false)
 const softEnter = ref(false)
 /** Per-cell remove/undo animation phase (keyed by item id or undo key). */
 const cellPhase = ref<Record<string, CellPhase>>({})
+/** Uploads pinned to the end of the ordered grid for this visit. */
+const gridTailIds = ref<string[]>([])
+/** New grid cell: borders start clear, then fade to the grid line. */
+const linePhase = ref<Record<string, 'in' | 'on'>>({})
 const confirmingDelete = ref(false)
 
 const BACKDROP_OPEN_MS = 350
@@ -1303,6 +1369,8 @@ const STACK_CELL_PAD_PCT = 17
 const STACK_CELL_PAD = `${STACK_CELL_PAD_PCT}%`
 const CELL_SCALE_MS = 280
 const UNDO_FADE_MS = 220
+/** Matches the grid border-color transition. */
+const GRID_LINE_MS = 320
 /** Pause after scale-out before Undo appears */
 const UNDO_ENTER_DELAY_MS = 350
 /** Fixed column count — cell = pile = viewport / cols, square */
@@ -1348,6 +1416,17 @@ const clearAllCellPhases = () => {
   cellPhase.value = {}
 }
 
+const setLinePhase = (id: string, phase: 'in' | 'on') => {
+  linePhase.value = { ...linePhase.value, [id]: phase }
+}
+
+const clearLinePhase = (id: string) => {
+  if (!(id in linePhase.value)) return
+  const next = { ...linePhase.value }
+  delete next[id]
+  linePhase.value = next
+}
+
 const cellClass = (entry: SelectionEntry) => {
   if (entry.kind === 'undo') {
     const phase = cellPhase.value[entry.key]
@@ -1358,10 +1437,13 @@ const cellClass = (entry: SelectionEntry) => {
     }
   }
   const phase = cellPhase.value[entry.item.id]
+  const lines = linePhase.value[entry.item.id]
   return {
     'stack__cell--scale-out': phase === 'scale-out',
     'stack__cell--scale-in': phase === 'scale-in',
     'stack__cell--scaled-in': phase === 'scaled-in',
+    'stack__cell--line-in': lines === 'in' || lines === 'on',
+    'stack__cell--line-on': lines === 'on',
     'stack__cell--pdp-focus': pdpFocusItemId.value === entry.item.id,
   }
 }
@@ -1378,9 +1460,12 @@ const onRemoveClick = async (item: BucketItem) => {
   if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
   if (freeformHandleId.value === id) freeformHandleId.value = null
   const undoKey = `${activeMoodboardId.value}::${id}`
-  setCellPhase(id, 'scale-out')
-  await wait(CELL_SCALE_MS)
-  if (cellPhase.value[id] !== 'scale-out') return
+  // Lightbox has no scale-out pose. Drop the picture now so the row can close the gap.
+  if (!showLightbox.value) {
+    setCellPhase(id, 'scale-out')
+    await wait(CELL_SCALE_MS)
+    if (cellPhase.value[id] !== 'scale-out') return
+  }
   removeItem(id, cartIsFreeform.value ? 'freeform' : 'order')
   clearCellPhase(id)
   await nextTick()
@@ -1417,7 +1502,7 @@ const onUndoClick = async (key: string, item: BucketItem) => {
 }
 
 const latestPendingRemoval = computed(() => {
-  const list = activePendingRemovals.value
+  const list = activePendingRemovals.value.filter((entry) => entry.surface !== 'all')
   if (!list.length) return null
   return list.reduce((latest, entry) => (entry.seq > latest.seq ? entry : latest))
 })
@@ -1474,18 +1559,62 @@ const onCartUpload = async (event: Event) => {
       const { url, aspect, title } = await fileToCartImage(file)
       const id = `upload-${crypto.randomUUID()}`
       noteFreeformAspect(id, aspect)
-      addItemToMoodboard(boardId, {
+      const uploaded = {
         id,
         title,
         imageUrl: url,
         itemType: 'Upload',
         imageUrls: [url],
         imageIndex: 0,
-      })
+      }
+      if (showLightbox.value) {
+        await playLightboxUpload(boardId, uploaded)
+        continue
+      }
+      const inGrid = showOrderGrid.value
+      if (inGrid) gridTailIds.value = [...gridTailIds.value, id]
+      addItemToMoodboard(boardId, uploaded)
+      const reduce =
+        import.meta.client &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (inGrid && !reduce) await playGridUploadEnter(id)
     } catch {
       /* skip a file that can't be read */
     }
   }
+}
+
+/** Empty cell lines fade in at the end of the grid, then the image scales in. */
+const playGridUploadEnter = async (id: string) => {
+  setLinePhase(id, 'in')
+  setCellPhase(id, 'scale-in')
+  await nextTick()
+  await waitFrames(2)
+  revealGridCell(id)
+  setLinePhase(id, 'on')
+  await wait(GRID_LINE_MS)
+  setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  clearCellPhase(id)
+  clearLinePhase(id)
+}
+
+const revealGridCell = (id: string) => {
+  const root = gridRef.value
+  if (!root) return
+  const node = root.querySelector(`[data-stack-id="${CSS.escape(id)}"]`)
+  const cell = node?.closest('.stack__cell')
+  if (!(cell instanceof HTMLElement)) return
+  const gridRect = root.getBoundingClientRect()
+  const cellRect = cell.getBoundingClientRect()
+  const view = gridLenis?.animatedScroll ?? root.scrollTop
+  let delta = 0
+  if (cellRect.bottom > gridRect.bottom - 8) delta = cellRect.bottom - gridRect.bottom + 8
+  else if (cellRect.top < gridRect.top + 8) delta = cellRect.top - gridRect.top - 8
+  if (Math.abs(delta) < 1) return
+  const dest = Math.max(0, view + delta)
+  if (gridLenis) gridLenis.scrollTo(dest, { duration: 0.45 })
+  else root.scrollTop = dest
 }
 
 const onDeleteSelection = async () => {
@@ -1524,6 +1653,46 @@ const onDeleteSelection = async () => {
   } finally {
     bulkBusy.value = false
   }
+}
+
+const onRemoveAll = async () => {
+  if (bulkBusy.value || !items.value.length || !activeMoodboardId.value) return
+  bulkBusy.value = true
+  const ids = items.value.map((item) => item.id)
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  for (const id of ids) setCellPhase(id, 'scale-out')
+  if (!reduce && ids.length) await wait(CELL_SCALE_MS)
+  removeItems(ids, 'all')
+  for (const id of ids) clearCellPhase(id)
+  bulkBusy.value = false
+}
+
+const bulkClearPending = computed(() =>
+  activePendingRemovals.value.some((pending) => pending.surface === 'all'),
+)
+
+const onUndoBulkClear = async () => {
+  if (bulkBusy.value || !bulkClearPending.value) return
+  bulkBusy.value = true
+  const ids = activePendingRemovals.value
+    .filter((pending) => pending.surface === 'all')
+    .map((pending) => pending.item.id)
+  undoBulkClear()
+  await nextTick()
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce) {
+    bulkBusy.value = false
+    return
+  }
+  await waitFrames(2)
+  for (const id of ids) setCellPhase(id, 'scale-in')
+  await waitFrames(2)
+  for (const id of ids) setCellPhase(id, 'scaled-in')
+  await wait(CELL_SCALE_MS)
+  for (const id of ids) {
+    if (cellPhase.value[id] === 'scaled-in') clearCellPhase(id)
+  }
+  bulkBusy.value = false
 }
 
 const onUndoAll = async () => {
@@ -2235,30 +2404,79 @@ const showSelectionGrid = computed(
     selectionEntries.value.length > 0,
 )
 
-const cartView = useCookie<'freeform' | 'order'>('sba-cart-view', {
+const cartLayoutOptions = [
+  { id: 'freeform', label: 'Freeform' },
+  { id: 'grid', label: 'Grid' },
+  { id: 'lightbox', label: 'Lightbox' },
+] as const
+const lightboxGapOptions = [
+  { id: 'fixed', label: 'Fixed' },
+  { id: 'widen', label: 'Widen' },
+] as const
+type CartLayout = (typeof cartLayoutOptions)[number]['id']
+
+const cartViewStored = useCookie<string>('sba-cart-view', {
   default: () => 'freeform',
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
 })
-const cartIsFreeform = computed(() => cartView.value !== 'order')
-const showOrderGrid = computed(() => showSelectionGrid.value && !cartIsFreeform.value)
+const normalizeCartView = (value: string | null | undefined): CartLayout => {
+  if (value === 'grid' || value === 'order') return 'grid'
+  if (value === 'lightbox') return 'lightbox'
+  return 'freeform'
+}
+const cartView = computed({
+  get: () => normalizeCartView(cartViewStored.value),
+  set: (view: CartLayout) => {
+    cartViewStored.value = view
+  },
+})
+const cartIsFreeform = computed(() => cartView.value === 'freeform')
+const lightboxGapsStored = useCookie<string>('sba-lightbox-gaps', {
+  default: () => 'fixed',
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: 'lax',
+})
+/** Scroll can shrink the pictures and open the gaps. Fixed keeps the row still. */
+const lightboxGaps = computed({
+  get: () => lightboxGapsStored.value === 'widen',
+  set: (widen: boolean) => {
+    lightboxGapsStored.value = widen ? 'widen' : 'fixed'
+  },
+})
+const showOrderGrid = computed(() => showSelectionGrid.value && cartView.value === 'grid')
+const showLightbox = computed(() => showSelectionGrid.value && cartView.value === 'lightbox')
 const showFreeform = computed(() => showSelectionGrid.value && cartIsFreeform.value)
+
 const freeformEntries = computed(() =>
   selectionEntries.value.filter(
     (entry): entry is Extract<SelectionEntry, { kind: 'item' }> => entry.kind === 'item',
   ),
 )
 /** Ordered grid keeps its own undos. Removals made in freeform stay on the freeform Undo control. */
-const orderEntries = computed(() =>
-  selectionEntries.value.filter((entry) => {
+const orderEntries = computed(() => {
+  const entries = selectionEntries.value.filter((entry) => {
     if (entry.kind !== 'undo') return true
     return !activePendingRemovals.value.some(
-      (pending) => pending.key === entry.key && pending.surface === 'freeform',
+      (pending) =>
+        pending.key === entry.key &&
+        (pending.surface === 'freeform' || pending.surface === 'all'),
     )
-  }),
-)
-const setCartView = (view: 'freeform' | 'order') => {
-  if ((view === 'freeform') === cartIsFreeform.value) return
+  })
+  const tailSet = new Set(gridTailIds.value)
+  if (!tailSet.size) return entries
+  const tail = gridTailIds.value.flatMap((id) => {
+    const entry = entries.find((item) => item.kind === 'item' && item.item.id === id)
+    return entry ? [entry] : []
+  })
+  if (!tail.length) return entries
+  const head = entries.filter(
+    (entry) => entry.kind === 'undo' || !tailSet.has(entry.item.id),
+  )
+  return [...head, ...tail]
+})
+const setCartView = (view: CartLayout) => {
+  if (view === cartView.value) return
   if (!import.meta.client) {
     cartView.value = view
     return
@@ -2284,17 +2502,35 @@ const clearViewFlyers = () => {
 }
 
 /** Move each piece from the layout it’s in to the other one. */
-const animateCartView = async (view: 'freeform' | 'order') => {
+const animateCartView = async (view: CartLayout) => {
   const token = ++viewFlipToken
   clearViewFlyers()
-  const outgoing = gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []
+  const leavingLightbox = cartView.value === 'lightbox'
+  const outgoing = leavingLightbox
+    ? lightboxOutgoing(gridRef.value)
+    : stackMediaById(gridRef.value)
   const flyers = new Map<string, HTMLImageElement>()
   for (const media of outgoing) {
-    const id = media.dataset.stackId
+    const id = media.dataset.stackId || media.dataset.lbId
     const img = media.querySelector<HTMLImageElement>('.stack__cell-image')
     if (!id || !img) continue
-    const from = img.getBoundingClientRect()
+    const painted = img.getBoundingClientRect()
+    const host = media.getBoundingClientRect()
+    const from = painted.width >= 2 && painted.height >= 2 ? painted : host
     if (from.width < 2 || from.height < 2) continue
+    // Pictures fully outside the window start just inside the nearest edge,
+    // so they fly with the rest instead of appearing once the row has landed.
+    let left = from.left
+    let top = from.top
+    if (leavingLightbox) {
+      const peek = Math.min(from.width, from.height) * 0.28
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      if (from.right <= 8) left = -from.width + peek
+      else if (from.left >= vw - 8) left = vw - peek
+      if (from.bottom <= 8) top = -from.height + peek
+      else if (from.top >= vh - 8) top = vh - peek
+    }
     const flyer = img.cloneNode(true) as HTMLImageElement
     flyer.className = 'stack__view-flyer'
     flyer.alt = ''
@@ -2304,9 +2540,11 @@ const animateCartView = async (view: 'freeform' | 'order') => {
       margin: '0',
       pointerEvents: 'none',
       objectFit: 'contain',
+      visibility: 'visible',
+      opacity: '1',
       borderRadius: '2px',
-      left: `${from.left}px`,
-      top: `${from.top}px`,
+      left: `${left}px`,
+      top: `${top}px`,
       width: `${from.width}px`,
       height: `${from.height}px`,
     })
@@ -2333,13 +2571,15 @@ const animateCartView = async (view: 'freeform' | 'order') => {
     heldZ.set(b, bz)
     return az - bz || (a < b ? -1 : a > b ? 1 : 0)
   })
-  stackedIds.forEach((id, index) => {
+  let visibleRank = 0
+  stackedIds.forEach((id) => {
     const flyer = flyers.get(id)
     if (!flyer) return
     if (!heldZ.has(id)) heldZ.set(id, stackZ(id))
-    // Above the cart (280) and the toolbar (420); chrome buttons stay at 430.
-    // DOM order matches this too, so a tie still paints in freeform order.
-    flyer.style.setProperty('z-index', String(Math.min(421 + index, 429)), 'important')
+    // Stay above the cart (280) and the toolbar (420) for the whole flight.
+    const z = Math.min(421 + visibleRank, 429)
+    visibleRank += 1
+    flyer.style.setProperty('z-index', String(z), 'important')
     document.body.appendChild(flyer)
   })
   const releaseOrderStack = () => {
@@ -2353,12 +2593,13 @@ const animateCartView = async (view: 'freeform' | 'order') => {
     return
   }
   // Order lines wait until the pieces have landed, then fade in.
-  if (view === 'order') gridLinesVisible.value = false
+  if (view === 'grid') gridLinesVisible.value = false
   viewFlipBusy.value = true
+  if (view === 'lightbox') armLightboxIntro()
   cartView.value = view
   await nextTick()
   if (token !== viewFlipToken) return
-  if (view === 'order') {
+  if (view === 'grid') {
     syncCellSize()
     // Grid cells keep the freeform stack until the flight ends, then drop it.
     for (const media of gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []) {
@@ -2366,6 +2607,22 @@ const animateCartView = async (view: 'freeform' | 'order') => {
       const z = heldZ.get(media.dataset.stackId || '')
       if (cell && z != null) cell.style.zIndex = String(z)
     }
+  } else if (view === 'lightbox') {
+    seedFreeformAspects()
+    await nextTick()
+    if (token !== viewFlipToken) return
+    const imgs = [
+      ...(gridRef.value?.querySelectorAll<HTMLImageElement>('.stack__cell-image') ?? []),
+    ]
+    await Promise.all(imgs.map((img) => img.decode?.().catch(() => undefined)))
+    if (token !== viewFlipToken) return
+    for (const img of imgs) {
+      const id = img.closest('[data-stack-id]')?.getAttribute('data-stack-id') || ''
+      if (!img.naturalWidth || !img.naturalHeight) continue
+      noteFreeformAspect(id, img.naturalWidth / img.naturalHeight)
+    }
+    resetLightboxScroll()
+    layoutLightbox()
   } else {
     seedFreeformAspects()
     measureFreeformPlane()
@@ -2385,19 +2642,20 @@ const animateCartView = async (view: 'freeform' | 'order') => {
   }
   await nextTick()
   if (token !== viewFlipToken) {
-    if (view === 'order') releaseOrderStack()
+    if (view === 'grid') releaseOrderStack()
     return
   }
-  const incoming = gridRef.value?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []
+  const incoming = stackMediaById(gridRef.value)
   const tl = gsap.timeline({
     onComplete: () => {
       if (token !== viewFlipToken) return
       viewFlipTween = null
       viewFlipBusy.value = false
-      if (view === 'order') {
+      if (view === 'grid') {
         releaseOrderStack()
         gridLinesVisible.value = true
       }
+      if (view === 'lightbox') playLightboxGrow()
       requestAnimationFrame(() => {
         if (token !== viewFlipToken) return
         for (const flyer of viewFlyers) flyer.remove()
@@ -2429,10 +2687,11 @@ const animateCartView = async (view: 'freeform' | 'order') => {
   if (!index) {
     clearViewFlyers()
     viewFlipBusy.value = false
-    if (view === 'order') {
+    if (view === 'grid') {
       releaseOrderStack()
       gridLinesVisible.value = true
     }
+    if (view === 'lightbox') playLightboxGrow()
     return
   }
   viewFlipTween = tl
@@ -2490,7 +2749,16 @@ const freeformPileBox = (rect: DOMRect) => {
     height: side,
   }
 }
-type FreeformPlace = { x: number; y: number; w: number; z: number; image?: boolean; fitted?: boolean }
+type FreeformPlace = {
+  x: number
+  y: number
+  w: number
+  z: number
+  image?: boolean
+  fitted?: boolean
+  /** Every 5th arrival starts one cell larger than the usual four. */
+  accent?: boolean
+}
 type FreeformCorner = 'tl' | 'tr' | 'bl' | 'br'
 const freeformCorners: FreeformCorner[] = ['tl', 'tr', 'bl', 'br']
 
@@ -2562,9 +2830,10 @@ const hash01 = (id: string, salt: number) => {
   return ((h >>> 0) % 10000) / 10000
 }
 
-/** Same pitch as `.stack__freeform-dots`. Arrival width is four cells. */
+/** Same pitch as `.stack__freeform-dots`. Arrival width is four cells; every 5th is five. */
 const MATRIX_DOT = 48
-const MATRIX_CAP = MATRIX_DOT * 4
+const ARRIVAL_CELLS = 4
+const ACCENT_CELLS = 5
 const FREEFORM_SPREAD_VERSION = '5'
 
 const planeExtent = () => {
@@ -2582,9 +2851,9 @@ const planeExtent = () => {
   return freeformBounds.value
 }
 
-const cappedWidthFraction = (_aspect: number, sw: number, _sh: number) => {
+const cappedWidthFraction = (_aspect: number, sw: number, _sh: number, cells = ARRIVAL_CELLS) => {
   const maxW = Math.max(32, sw - MATRIX_DOT)
-  const width = Math.min(MATRIX_CAP, maxW)
+  const width = Math.min(MATRIX_DOT * cells, maxW)
   return width / Math.max(sw, 1)
 }
 
@@ -2592,10 +2861,11 @@ const scatterPlace = (
   id: string,
   z: number,
   taken: Record<string, FreeformPlace>,
+  accent = false,
 ): FreeformPlace => {
   const { w: sw, h: sh } = planeExtent()
   const aspect = freeformAspects.value[id] || 1
-  const wf = cappedWidthFraction(aspect, sw, sh)
+  const wf = cappedWidthFraction(aspect, sw, sh, accent ? ACCENT_CELLS : ARRIVAL_CELLS)
   const width = wf * sw
   const height = width / aspect
   const gap = MATRIX_DOT
@@ -2652,6 +2922,7 @@ const scatterPlace = (
     z,
     image: true,
     fitted: true,
+    ...(accent ? { accent: true } : {}),
   }
 }
 
@@ -2681,10 +2952,41 @@ const syncFreeformPlacements = () => {
       changed = true
     }
   }
-  for (const id of ids) {
-    if (!current[id]) {
-      maxZ += 1
-      current[id] = scatterPlace(id, maxZ, current)
+  ids.forEach((id, index) => {
+    if (current[id]) return
+    // Uploads stay at the end of the grid, so they sit under the pile too.
+    let z = maxZ + 1
+    if (id.startsWith('upload-')) {
+      let minZ = Infinity
+      for (const place of Object.values(current)) {
+        if (typeof place.z === 'number') minZ = Math.min(minZ, place.z)
+      }
+      z = (Number.isFinite(minZ) ? minZ : 1) - 1
+    } else {
+      maxZ = z
+    }
+    // Selection order is newest-first, so the 5th added sits at the end of each group of five.
+    const addedOrder = ids.length - index
+    current[id] = scatterPlace(id, z, current, addedOrder % 5 === 0)
+    changed = true
+  })
+  // An upload used to be stacked on top. Drop those under the other cards.
+  let productMin = Infinity
+  let productMax = -Infinity
+  for (const [id, place] of Object.entries(current)) {
+    if (id.startsWith('upload-') || typeof place.z !== 'number') continue
+    productMin = Math.min(productMin, place.z)
+    productMax = Math.max(productMax, place.z)
+  }
+  if (Number.isFinite(productMin)) {
+    const raised = Object.keys(current)
+      .filter((id) => id.startsWith('upload-') && (current[id]?.z ?? -Infinity) > productMax)
+      .sort((a, b) => (current[a]?.z ?? 0) - (current[b]?.z ?? 0))
+    for (const id of raised) {
+      const place = current[id]
+      if (!place) continue
+      productMin -= 1
+      current[id] = { ...place, z: productMin }
       changed = true
     }
   }
@@ -2730,6 +3032,890 @@ const toImagePlace = (
     z: place.z,
     image: true,
   }
+}
+
+/** Every lightbox picture, including ones parked outside the viewport. */
+const lightboxOutgoing = (root: ParentNode | null | undefined) => {
+  const best = new Map<string, { el: HTMLElement; score: number }>()
+  const mid = window.innerWidth / 2
+  for (const node of root?.querySelectorAll<HTMLElement>('.stack__lightbox-item[data-lb-id]') ?? []) {
+    const id = node.dataset.lbId || ''
+    if (!id) continue
+    const rect = node.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) continue
+    const onScreen = node.style.visibility !== 'hidden'
+    const score = (onScreen ? 1_000_000 : 0) - Math.abs(rect.left + rect.width / 2 - mid)
+    const prev = best.get(id)
+    if (!prev || score > prev.score) best.set(id, { el: node, score })
+  }
+  return [...best.values()].map((entry) => entry.el)
+}
+
+const stackMediaById = (root: ParentNode | null | undefined) => {
+  const best = new Map<string, { el: HTMLElement; d: number }>()
+  const cx = window.innerWidth / 2
+  const cy = window.innerHeight / 2
+  for (const media of root?.querySelectorAll<HTMLElement>('[data-stack-id]') ?? []) {
+    const id = media.dataset.stackId
+    if (!id) continue
+    const rect = media.getBoundingClientRect()
+    if (rect.width < 2 || rect.height < 2) continue
+    const dx = rect.left + rect.width / 2 - cx
+    const dy = rect.top + rect.height / 2 - cy
+    const d = dx * dx + dy * dy
+    const prev = best.get(id)
+    if (!prev || d < prev.d) best.set(id, { el: media, d })
+  }
+  return [...best.values()].map((entry) => entry.el)
+}
+
+// Lightbox row — same scroll model as the carousel demo: a target the wheel
+// and drag yank around, and a scroll that lerps after it. A flick coasts to
+// a stop where it is. Copies of the set wrap so the line never runs out.
+const LB_GAP = 12
+const LB_EASE = 0.09
+const LB_WHEEL = 1.4
+const LB_DRAG = 1.6
+const LB_FRICTION = 0.865
+const LB_SHRINK_MAX = 60
+const LB_SHRINK_ATTACK = 0.25
+const LB_SHRINK_DECAY = 0.06
+const LB_REPEATS = 4
+const LB_MID_REP = Math.floor(LB_REPEATS / 2)
+/** Below this, the row is a single strip. A short loop just teleports the same pieces. */
+const LB_LOOP_MIN = 4
+const LB_SIDE_INSET = 16
+const LB_CLICK_SLOP = 6
+const LB_TOUCH_SLOP = 12
+const LB_TOUCH_DRAG = 1
+const LB_TOUCH_EASE = 0.22
+const LB_FLICK_IDLE_MS = 90
+/** Collected line, before the row scales up to the stage. */
+const LB_INTRO_H = 80
+const LB_DROP_MS = 700
+
+const lightboxIndex = ref(0)
+const lightboxSettled = ref(false)
+const lightboxHandoff = ref(false)
+/** Pile pictures stay flush while the lightbox row hands them back for the return flight. */
+const lbReturnFlush = ref(false)
+let lightboxSettleTimer = 0
+let lbIntroOn = false
+let lbIntro = 1
+/** Close shrink. Keeps the current scroll so the row scales down where it is. */
+let lbShrinkOn = false
+let lbShrink = 0
+let lbCloseLock = false
+let lbGrowTween: gsap.core.Tween | null = null
+let lbShift: {
+  at: number
+  from: Map<string, { left: number; top: number; w: number; h: number }>
+} | null = null
+/** Holds the just-uploaded picture on the viewport center until the user scrolls. */
+let lbPinScroll: number | null = null
+let lbArriveGen = 0
+let lbArriveTimer = 0
+let lbArrive: {
+  id: string
+  phase: 'align' | 'open' | 'scale'
+  t: number
+  alignScroll: number
+  pinScroll: number
+  from: Map<string, { left: number; top: number; w: number; h: number }>
+} | null = null
+
+const queueLightboxSettle = () => {
+  if (!import.meta.client) return
+  lightboxSettled.value = false
+  if (lightboxSettleTimer) window.clearTimeout(lightboxSettleTimer)
+  lightboxSettleTimer = 0
+  if (!showLightbox.value || isFlipping.value || viewFlipBusy.value || lbIntroOn) return
+  lightboxSettleTimer = window.setTimeout(() => {
+    lightboxSettleTimer = 0
+    if (!showLightbox.value || isFlipping.value || viewFlipBusy.value || lbIntroOn) return
+    lightboxSettled.value = true
+  }, 280)
+}
+
+/** Same stack order the resting pile paints, so the return flight does not reshuffle. */
+const restingPileZ = (
+  id: string,
+  cards: Array<{ id: string }>,
+  boardId = activeMoodboardId.value || '',
+) => {
+  const placeZ = freeformLayouts.value[boardId]?.[id]?.z
+  if (typeof placeZ === 'number' && Number.isFinite(placeZ)) return placeZ
+  const index = cards.findIndex((card) => card.id === id)
+  return index >= 0 ? index + 1 : Math.max(cards.length, 1)
+}
+
+const pileStackZ = (id: string) => {
+  const boardId = activeMoodboardId.value || ''
+  const board = moodboards.value.find((entry) => entry.id === boardId)
+  return restingPileZ(id, board ? stackPileCards(board) : [])
+}
+
+const armLightboxIntro = () => {
+  lbGrowTween?.kill()
+  lbGrowTween = null
+  lbShrinkOn = false
+  lbShrink = 0
+  lbIntroOn = true
+  lbIntro = 0
+  lightboxSettled.value = false
+}
+
+const playLightboxGrow = () => {
+  if (!lbIntroOn) return
+  lbGrowTween?.kill()
+  const state = { t: lbIntro }
+  lbGrowTween = gsap.to(state, {
+    t: 1,
+    duration: 1.15,
+    delay: 0.22,
+    ease: 'expo.inOut',
+    onUpdate: () => {
+      lbIntro = state.t
+    },
+    onComplete: () => {
+      lbIntro = 1
+      lbIntroOn = false
+      lbGrowTween = null
+      const metrics = lightboxMetrics()
+      if (metrics) {
+        const span = Math.max(0, metrics.total - LB_GAP)
+        lbScroll = span / 2
+        lbTarget = lbScroll
+        lbPrevScroll = lbScroll
+      }
+      layoutLightbox()
+      queueLightboxSettle()
+    },
+  })
+}
+
+/** Reverse of the open grow: the row shrinks in place, then the pile flight starts. */
+const playLightboxShrink = () =>
+  new Promise<void>((resolve) => {
+    if (!showLightbox.value) {
+      resolve()
+      return
+    }
+    lightboxSettled.value = false
+    stopLightbox()
+    const metrics = lightboxMetrics()
+    const panelH = metrics?.panelH ?? 0
+    const currentH = lbIntroOn
+      ? LB_INTRO_H + (panelH - LB_INTRO_H) * lbIntro
+      : panelH * (1 - 0.25 * lbEnergy)
+    const span = LB_INTRO_H - panelH
+    const from = !panelH || Math.abs(span) < 1 ? 1 : (currentH - panelH) / span
+    // Stay on the resting row (same scroll, same gaps) and only scale the pictures.
+    // Switching into the centered intro line first is what made the row jump.
+    lbIntroOn = false
+    lbEnergy = 0
+    lbShrinkOn = true
+    lbShrink = Math.min(1, Math.max(0, from))
+    layoutLightbox()
+    if (lbShrink >= 0.999) {
+      resolve()
+      return
+    }
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const state = { t: lbShrink }
+    lbGrowTween?.kill()
+    lbGrowTween = gsap.to(state, {
+      t: 1,
+      duration: reduce ? 0 : Math.max(0.35, 0.9 * (1 - lbShrink)),
+      ease: 'expo.inOut',
+      onUpdate: () => {
+        lbShrink = state.t
+        layoutLightbox()
+      },
+      onComplete: () => {
+        lbShrink = 1
+        lbGrowTween = null
+        layoutLightbox()
+        resolve()
+      },
+    })
+  })
+const lightboxCopies = computed(() => {
+  const copies: Array<{
+    key: string
+    rep: number
+    index: number
+    entry: (typeof freeformEntries.value)[number]
+  }> = []
+  const repeats = freeformEntries.value.length >= LB_LOOP_MIN ? LB_REPEATS : 1
+  freeformEntries.value.forEach((entry, index) => {
+    for (let rep = 0; rep < repeats; rep++) {
+      copies.push({ key: `${rep}:${entry.item.id}`, rep, index, entry })
+    }
+  })
+  return copies
+})
+const lightboxActiveTitle = computed(
+  () => freeformEntries.value[lightboxIndex.value]?.item.title ?? '',
+)
+const lightboxCountLabel = computed(() => {
+  const total = freeformEntries.value.length
+  if (!total) return ''
+  const index = ((lightboxIndex.value % total) + total) % total
+  return `${String(index + 1).padStart(2, '0')}/${String(total).padStart(2, '0')}`
+})
+
+let lbScroll = 0
+let lbTarget = 0
+let lbVelocity = 0
+let lbPrevScroll = 0
+let lbEnergy = 0
+let lbRaf = 0
+let lbLoopOn = false
+let lbDragging = false
+let lbPointerId = -1
+let lbDragType = 'mouse'
+let lbDragLastX = 0
+let lbDragDist = 0
+let lbDragVel = 0
+let lbDragMoveT = 0
+let lbSuppressClick = false
+
+const lightboxMetrics = () => {
+  const stage = gridRef.value
+  const items = freeformEntries.value
+  const n = items.length
+  if (!stage || !n) return null
+  const header =
+    Number.parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--header-height'),
+    ) || 0
+  const aspects = items.map((entry, index) => {
+    const sample = stage.querySelector<HTMLImageElement>(
+      `.stack__lightbox-item[data-lb-index="${index}"] img`,
+    )
+    if (sample?.naturalWidth && sample.naturalHeight) {
+      return sample.naturalWidth / sample.naturalHeight
+    }
+    const stored = freeformAspects.value[entry.item.id]
+    return stored && stored > 0 ? stored : 0
+  })
+  const stageW = stage.clientWidth
+  const stageBox = stage.getBoundingClientRect()
+  const toolbarEl = stage.ownerDocument.querySelector('.stack__toolbar')
+  const toolbarBottom = toolbarEl
+    ? toolbarEl.getBoundingClientRect().bottom - stageBox.top
+    : header
+  const chromeTop = (selector: string) => {
+    const el = stage.ownerDocument.querySelector(selector)
+    if (!el) return Infinity
+    const top = el.getBoundingClientRect().top - stageBox.top
+    return top > 8 ? top : Infinity
+  }
+  // Pictures fill the screen between the toolbar and the toggle row.
+  const footerTop = Math.min(
+    chromeTop('.stack__view-toggle'),
+    chromeTop('.stack__gap-toggle'),
+    chromeTop('.stack__lightbox-count'),
+  )
+  const nameBand = 72
+  const frameTop = toolbarBottom + nameBand
+  const frameBottom = Number.isFinite(footerTop) ? footerTop - 20 : stage.clientHeight - 148
+  const frameH = Math.max(160, frameBottom - frameTop)
+  const panelH = frameH
+  const slotW = aspects.map((aspect) => aspect * panelH + LB_GAP)
+  const offsets: number[] = []
+  let total = 0
+  for (const width of slotW) {
+    offsets.push(total)
+    total += width
+  }
+  const loops = n >= LB_LOOP_MIN && total > stageW
+  const centerFor = (idx: number) => {
+    const loop = Math.floor(idx / n)
+    const source = ((idx % n) + n) % n
+    return offsets[source] + slotW[source] / 2 - LB_GAP / 2 + loop * total
+  }
+  const nearest = (value: number) => {
+    let best = 0
+    let bestDist = Infinity
+    for (let i = 0; i < n; i++) {
+      const center = offsets[i] + slotW[i] / 2 - LB_GAP / 2
+      const k = Math.round((value - center) / total)
+      const dist = Math.abs(center + k * total - value)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = i + k * n
+      }
+    }
+    return best
+  }
+  const centerIndex = (value: number) => ((nearest(value) % n) + n) % n
+  const half = stageW / 2
+  const edgeW = (index: number) =>
+    aspects[index] > 0 ? aspects[index] * panelH : Math.max(1, slotW[index] - LB_GAP)
+  const firstCenter = offsets[0] + slotW[0] / 2 - LB_GAP / 2
+  const last = n - 1
+  const lastCenter = offsets[last] + slotW[last] / 2 - LB_GAP / 2
+  const contentW = total - LB_GAP
+  let minScroll = contentW / 2
+  let maxScroll = contentW / 2
+  if (contentW > stageW - LB_SIDE_INSET * 2) {
+    const scrollAtStart = half + firstCenter - edgeW(0) / 2 - LB_SIDE_INSET
+    const scrollAtEnd = half + lastCenter + edgeW(last) / 2 - (stageW - LB_SIDE_INSET)
+    minScroll = Math.min(scrollAtStart, scrollAtEnd)
+    maxScroll = Math.max(scrollAtStart, scrollAtEnd)
+  }
+  return {
+    stage,
+    n,
+    panelH,
+    aspects,
+    slotW,
+    offsets,
+    total,
+    header,
+    centerFor,
+    nearest,
+    centerIndex,
+    loops,
+    frameTop,
+    frameH,
+    bounds: { min: minScroll, max: maxScroll },
+  }
+}
+
+const layoutLightbox = () => {
+  const metrics = lightboxMetrics()
+  if (!metrics || !showLightbox.value) return
+  const { stage, n, panelH, aspects, slotW, offsets, total, centerIndex, loops, frameTop, frameH } =
+    metrics
+  const arriving = !!(lbArrive && lbArrive.phase !== 'align' && !lbIntroOn)
+  const rowLoops = loops && !lbIntroOn && !arriving
+  const shrink = lbIntroOn ? 1 : 1 - 0.25 * lbEnergy
+  const half = stage.clientWidth / 2
+  const buffer = panelH
+  const rowH = lbShrinkOn
+    ? panelH + (LB_INTRO_H - panelH) * lbShrink
+    : lbIntroOn
+      ? LB_INTRO_H + (panelH - LB_INTRO_H) * lbIntro
+      : panelH * shrink
+  let rowSlotW = slotW
+  let rowOffsets = offsets
+  let rowTotal = total
+  let rowScroll = lbScroll
+  if (lbIntroOn) {
+    rowSlotW = aspects.map((aspect) => aspect * rowH + LB_GAP)
+    rowOffsets = []
+    rowTotal = 0
+    for (const width of rowSlotW) {
+      rowOffsets.push(rowTotal)
+      rowTotal += width
+    }
+    rowScroll = Math.max(0, rowTotal - LB_GAP) / 2
+  }
+  if (arriving && lbArrive) {
+    rowScroll = lbArrive.pinScroll
+    const grow = lbArrive.phase === 'open' ? lbArrive.t : 1
+    const shown = lbArrive.alignScroll + (lbArrive.pinScroll - lbArrive.alignScroll) * grow
+    lbScroll = shown
+    lbTarget = shown
+    lbPrevScroll = shown
+    lbVelocity = 0
+    lbEnergy = 0
+  }
+  const rowTop = frameTop + (frameH - rowH) / 2
+  const toolbar = stage.ownerDocument.querySelector('.stack__toolbar')
+  const toolbarBottom = toolbar
+    ? toolbar.getBoundingClientRect().bottom - stage.getBoundingClientRect().top
+    : 0
+  // Resting picture top, so scroll-shrink doesn't drag the title with the row.
+  const restTop = frameTop + (frameH - panelH) / 2
+  const nameMid = toolbarBottom + Math.max(0, restTop - toolbarBottom) / 2
+  stage.style.setProperty('--lb-name-top', `${nameMid}px`)
+  const nodes = stage.querySelectorAll<HTMLElement>('.stack__lightbox-item')
+  const nearestKey = new Array<string>(n).fill('')
+  const nearestDist = new Array<number>(n).fill(Infinity)
+  const shiftU = lbShift ? Math.min(1, (performance.now() - lbShift.at) / LB_DROP_MS) : 1
+  const shiftEase = shiftU >= 1 ? 1 : 1 - (1 - shiftU) ** 3
+  nodes.forEach((node) => {
+    const index = Number(node.dataset.lbIndex)
+    const rep = Number(node.dataset.lbRep)
+    if (!Number.isFinite(index) || !Number.isFinite(rep) || !aspects[index] || (!rowLoops && rep !== 0)) {
+      node.style.visibility = 'hidden'
+      node.dataset.lbHidden = '1'
+      node.dataset.lbInside = ''
+      return
+    }
+    const slotCenter = rowOffsets[index] + rowSlotW[index] / 2 - LB_GAP / 2
+    let x = slotCenter - rowScroll
+    if (rowLoops) {
+      x = ((x % rowTotal) + rowTotal) % rowTotal
+      x += (rep - LB_MID_REP) * rowTotal
+      if (x > half + rowTotal) x -= rowTotal * LB_REPEATS
+    }
+    const h = rowH
+    const w = aspects[index] * h
+    let left = half + x - w / 2
+    let top = rowTop
+    let drawW = w
+    let drawH = h
+    const shiftKey = `${rep}:${node.dataset.lbId || ''}`
+    const from = shiftEase < 1 ? lbShift?.from.get(shiftKey) : undefined
+    if (from) {
+      left = from.left + (left - from.left) * shiftEase
+      top = from.top + (top - from.top) * shiftEase
+      drawW = from.w + (w - from.w) * shiftEase
+      drawH = from.h + (h - from.h) * shiftEase
+    }
+    const nodeId = node.dataset.lbId || ''
+    const isArrive = arriving && !!lbArrive && nodeId === lbArrive.id
+    let pop = 1
+    if (arriving && lbArrive && !isArrive && lbArrive.phase === 'open') {
+      const start = lbArrive.from.get(nodeId)
+      if (start) {
+        const u = lbArrive.t
+        left = start.left + (left - start.left) * u
+        top = start.top + (top - start.top) * u
+        drawW = start.w + (drawW - start.w) * u
+        drawH = start.h + (drawH - start.h) * u
+      }
+    }
+    if (isArrive && lbArrive) pop = lbArrive.phase === 'scale' ? lbArrive.t : 0
+    const hidden = from || (arriving && !isArrive)
+      ? left < -half - buffer || left > half + buffer
+      : x < -half - buffer || x > half + buffer
+    node.dataset.lbHidden = hidden ? '1' : ''
+    node.dataset.lbInside = left >= -1 && left + drawW <= stage.clientWidth + 1 ? '1' : ''
+    node.style.width = `${drawW}px`
+    node.style.height = `${drawH}px`
+    node.style.transformOrigin = 'center center'
+    node.style.pointerEvents = isArrive && pop < 0.98 ? 'none' : ''
+    node.style.transform =
+      pop === 1 ? `translate3d(${left}px, ${top}px, 0)` : `translate3d(${left}px, ${top}px, 0) scale(${pop})`
+    if (!hidden && Math.abs(x) < nearestDist[index]) {
+      nearestDist[index] = Math.abs(x)
+      nearestKey[index] = `${rep}:${index}`
+    }
+  })
+  const moving = lbDragging || Math.abs(lbTarget - lbScroll) > 0.8
+  nodes.forEach((node) => {
+    const index = Number(node.dataset.lbIndex)
+    const rep = Number(node.dataset.lbRep)
+    const id = freeformEntries.value[index]?.item.id
+    const media = node.querySelector<HTMLElement>('.stack__cell-media')
+    const canonical = `${rep}:${index}` === nearestKey[index]
+    const hidden = node.dataset.lbHidden === '1'
+    const fullyInside = node.dataset.lbInside === '1'
+    // The copy in front stays visible even when it hangs off the stage.
+    // Extra copies stay hidden at rest so a sliced duplicate never sits in the margin.
+    node.style.visibility =
+      hidden || (!canonical && !fullyInside && !moving) ? 'hidden' : 'visible'
+    if (!id || !media) return
+    if (canonical) {
+      node.dataset.stackId = id
+      node.style.zIndex = String(pileStackZ(id))
+      if (flipSurface.value === 'cells') media.dataset.flipId = id
+      else delete media.dataset.flipId
+    } else {
+      delete node.dataset.stackId
+      delete media.dataset.flipId
+    }
+    if (arriving && lbArrive && node.dataset.lbId === lbArrive.id && rep === 0) {
+      node.style.visibility = 'visible'
+      node.style.zIndex = '40'
+    }
+  })
+  if (!(lbArrive && lbArrive.phase === 'open')) {
+    const active = centerIndex(lbScroll)
+    if (active !== lightboxIndex.value) lightboxIndex.value = active
+  }
+  if (lbShift && shiftU >= 1) lbShift = null
+}
+
+const resetLightboxScroll = () => {
+  const metrics = lightboxMetrics()
+  lbVelocity = 0
+  lbEnergy = 0
+  lbDragging = false
+  if (!metrics) {
+    lbScroll = 0
+    lbTarget = 0
+    lightboxIndex.value = 0
+    return
+  }
+  const span = metrics.total - LB_GAP
+  lbScroll =
+    !metrics.loops && span <= metrics.stage.clientWidth
+      ? span / 2
+      : metrics.centerFor(0)
+  if (!metrics.loops) {
+    lbScroll = Math.min(metrics.bounds.max, Math.max(metrics.bounds.min, lbScroll))
+  }
+  lbTarget = lbScroll
+  lbPrevScroll = lbScroll
+  lightboxIndex.value = 0
+}
+
+const tickLightbox = () => {
+  if (!lbLoopOn) return
+  if (lbArrive) {
+    layoutLightbox()
+    lbRaf = requestAnimationFrame(tickLightbox)
+    return
+  }
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!lbDragging) {
+    lbTarget += lbVelocity
+    lbVelocity *= LB_FRICTION
+    if (Math.abs(lbVelocity) < 0.05) lbVelocity = 0
+  }
+  const metrics = lightboxMetrics()
+  if (metrics && !metrics.loops) {
+    let { min, max } = metrics.bounds
+    if (lbPinScroll != null) {
+      min = Math.min(min, lbPinScroll)
+      max = Math.max(max, lbPinScroll)
+    }
+    if (lbTarget < min || lbTarget > max) {
+      lbTarget = Math.min(max, Math.max(min, lbTarget))
+      lbVelocity = 0
+    }
+    if (lbScroll < min || lbScroll > max) {
+      lbScroll = Math.min(max, Math.max(min, lbScroll))
+      lbPrevScroll = lbScroll
+    }
+  }
+  const follow = reduce ? 1 : lbDragging && lbDragType !== 'mouse' ? LB_TOUCH_EASE : LB_EASE
+  lbScroll += (lbTarget - lbScroll) * follow
+  const raw = lbScroll - lbPrevScroll
+  lbPrevScroll = lbScroll
+  if (reduce || !lightboxGaps.value) {
+    lbEnergy += (0 - lbEnergy) * LB_SHRINK_DECAY
+    if (lbEnergy < 0.01) lbEnergy = 0
+  } else {
+    const norm = Math.min(1, Math.abs(raw) / LB_SHRINK_MAX)
+    const k = norm > lbEnergy ? LB_SHRINK_ATTACK : LB_SHRINK_DECAY
+    lbEnergy += (norm - lbEnergy) * k
+  }
+  layoutLightbox()
+  lbRaf = requestAnimationFrame(tickLightbox)
+}
+
+const onLightboxWheel = (event: WheelEvent) => {
+  if (!showLightbox.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (lbIntroOn || lbArrive) return
+  lbPinScroll = null
+  const metrics = lightboxMetrics()
+  if (metrics && !metrics.loops && metrics.bounds.min === metrics.bounds.max) return
+  lbTarget += (event.deltaY || event.deltaX) * LB_WHEEL
+  lbVelocity = 0
+}
+
+const startLightbox = () => {
+  const stage = gridRef.value
+  if (lbLoopOn || !stage) return
+  lbLoopOn = true
+  stage.addEventListener('wheel', onLightboxWheel, { passive: false })
+  lbRaf = requestAnimationFrame(tickLightbox)
+}
+
+const stopLightbox = () => {
+  lbArriveGen += 1
+  if (lbArriveTimer) window.clearTimeout(lbArriveTimer)
+  lbArriveTimer = 0
+  lbArrive = null
+  lbPinScroll = null
+  lbLoopOn = false
+  lbDragging = false
+  if (lbRaf) cancelAnimationFrame(lbRaf)
+  lbRaf = 0
+  if (lightboxSettleTimer) window.clearTimeout(lightboxSettleTimer)
+  lightboxSettleTimer = 0
+  lightboxSettled.value = false
+  gridRef.value?.removeEventListener('wheel', onLightboxWheel)
+  window.removeEventListener('pointermove', onLightboxPointerMove)
+  window.removeEventListener('pointerup', onLightboxPointerUp)
+  window.removeEventListener('pointercancel', onLightboxPointerUp)
+}
+
+const onLightboxPointerDown = (event: PointerEvent) => {
+  if (lbIntroOn || lbArrive) return
+  if (event.button !== 0 && event.pointerType === 'mouse') return
+  if (lbDragging) return
+  lbSuppressClick = false
+  lbDragging = true
+  lbPointerId = event.pointerId
+  lbDragType = event.pointerType || 'mouse'
+  lbDragLastX = event.clientX
+  lbDragDist = 0
+  lbDragVel = 0
+  lbVelocity = 0
+  lbDragMoveT = performance.now()
+  window.addEventListener('pointermove', onLightboxPointerMove)
+  window.addEventListener('pointerup', onLightboxPointerUp)
+  window.addEventListener('pointercancel', onLightboxPointerUp)
+}
+
+const onLightboxPointerMove = (event: PointerEvent) => {
+  if (!lbDragging || event.pointerId !== lbPointerId) return
+  const sens = lbDragType === 'mouse' ? LB_DRAG : LB_TOUCH_DRAG
+  const dx = event.clientX - lbDragLastX
+  lbDragLastX = event.clientX
+  if (lbPinScroll != null && dx !== 0) lbPinScroll = null
+  lbDragDist += Math.abs(dx)
+  lbTarget -= dx * sens
+  lbDragVel = lbDragVel * 0.6 + -dx * sens * 0.4
+  lbDragMoveT = performance.now()
+}
+
+const onLightboxPointerUp = (event: PointerEvent) => {
+  if (!lbDragging || event.pointerId !== lbPointerId) return
+  lbDragging = false
+  window.removeEventListener('pointermove', onLightboxPointerMove)
+  window.removeEventListener('pointerup', onLightboxPointerUp)
+  window.removeEventListener('pointercancel', onLightboxPointerUp)
+  lbVelocity = performance.now() - lbDragMoveT > LB_FLICK_IDLE_MS ? 0 : lbDragVel
+  lbDragVel = 0
+  const slop = lbDragType === 'mouse' ? LB_CLICK_SLOP : LB_TOUCH_SLOP
+  lbSuppressClick = lbDragDist > slop
+}
+
+const onLightboxClick = (event: MouseEvent) => {
+  if (!lbSuppressClick) return
+  lbSuppressClick = false
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+watch(showLightbox, async (on) => {
+  stopLightbox()
+  if (!on || !import.meta.client) return
+  await nextTick()
+  // Open lays the row out itself and starts the loop once the pile has landed.
+  if (isFlipping.value) return
+  resetLightboxScroll()
+  layoutLightbox()
+  startLightbox()
+  queueLightboxSettle()
+})
+
+watch([isFlipping, viewFlipBusy], () => {
+  if (!showLightbox.value) return
+  queueLightboxSettle()
+})
+
+watch(
+  () => freeformEntries.value.map((entry) => entry.item.id).join('\n'),
+  async (now, prev) => {
+    if (!showLightbox.value || !import.meta.client || isFlipping.value || lbIntroOn) return
+    const prevIds = new Set((prev || '').split('\n').filter(Boolean))
+    const nowIds = new Set(now.split('\n').filter(Boolean))
+    const removed = [...prevIds].some((id) => !nowIds.has(id))
+    const from = new Map<string, { left: number; top: number; w: number; h: number }>()
+    const stage = gridRef.value
+    if (removed && stage) {
+      const stageBox = stage.getBoundingClientRect()
+      for (const node of stage.querySelectorAll<HTMLElement>('.stack__lightbox-item')) {
+        const id = node.dataset.lbId || ''
+        if (!id || !nowIds.has(id) || node.style.visibility === 'hidden') continue
+        const match = /translate3d\(\s*([-\d.]+)px,\s*([-\d.]+)px/.exec(node.style.transform)
+        const rect = node.getBoundingClientRect()
+        from.set(`${node.dataset.lbRep || '0'}:${id}`, {
+          left: match ? Number(match[1]) : rect.left - stageBox.left,
+          top: match ? Number(match[2]) : rect.top - stageBox.top,
+          w: rect.width,
+          h: rect.height,
+        })
+      }
+    }
+    await nextTick()
+    if (lbArrive) {
+      layoutLightbox()
+      return
+    }
+    if (from.size) lbShift = { at: performance.now(), from }
+    layoutLightbox()
+  },
+  { flush: 'pre' },
+)
+
+const tweenLightboxStep = (duration: number, ease: string, apply: (t: number) => void) =>
+  new Promise<void>((resolve) => {
+    if (lbArriveTimer) window.clearTimeout(lbArriveTimer)
+    const easeFn = gsap.parseEase(ease)
+    const total = duration * 1000
+    let elapsed = 0
+    let last = performance.now()
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (lbArriveTimer) window.clearTimeout(lbArriveTimer)
+      lbArriveTimer = 0
+      resolve()
+    }
+    const frame = () => {
+      if (settled || !lbArrive) {
+        finish()
+        return
+      }
+      const now = performance.now()
+      elapsed += Math.max(0, now - last)
+      last = now
+      const u = total > 0 ? Math.min(1, elapsed / total) : 1
+      apply(easeFn(u))
+      if (u >= 1 || !lbArrive) {
+        finish()
+        return
+      }
+      lbArriveTimer = window.setTimeout(frame, 16)
+    }
+    frame()
+  })
+
+const lightboxGroupScroll = () => {
+  const metrics = lightboxMetrics()
+  if (!metrics) return lbScroll
+  const mid = Math.max(0, metrics.total - LB_GAP) / 2
+  if (metrics.loops) return mid
+  return Math.min(metrics.bounds.max, Math.max(metrics.bounds.min, mid))
+}
+
+const snapshotLightboxBoxes = () => {
+  const from = new Map<string, { left: number; top: number; w: number; h: number }>()
+  const stage = gridRef.value
+  if (!stage) return from
+  const half = stage.clientWidth / 2
+  const best = new Map<string, number>()
+  for (const node of stage.querySelectorAll<HTMLElement>('.stack__lightbox-item')) {
+    if (node.style.visibility === 'hidden') continue
+    const id = node.dataset.lbId || ''
+    if (!id) continue
+    const match = /translate3d\(\s*([-\d.]+)px,\s*([-\d.]+)px/.exec(node.style.transform)
+    const rect = node.getBoundingClientRect()
+    const stageBox = stage.getBoundingClientRect()
+    const left = match ? Number(match[1]) : rect.left - stageBox.left
+    const top = match ? Number(match[2]) : rect.top - stageBox.top
+    const w = Number.parseFloat(node.style.width) || rect.width
+    const h = Number.parseFloat(node.style.height) || rect.height
+    const dist = Math.abs(left + w / 2 - half)
+    if ((best.get(id) ?? Infinity) <= dist) continue
+    best.set(id, dist)
+    from.set(id, { left, top, w, h })
+  }
+  return from
+}
+
+const pinLightboxItem = (id: string) => {
+  const metrics = lightboxMetrics()
+  const index = freeformEntries.value.findIndex((entry) => entry.item.id === id)
+  if (!metrics || index < 0) return lbScroll
+  return metrics.offsets[index] + metrics.slotW[index] / 2 - LB_GAP / 2
+}
+
+/** Align the row, open a gap at the viewport center, then scale the upload into it. */
+const playLightboxUpload = async (boardId: string, item: BucketItem) => {
+  const reduce =
+    import.meta.client && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const gen = ++lbArriveGen
+  if (lbArriveTimer) window.clearTimeout(lbArriveTimer)
+  lbArriveTimer = 0
+  let added = false
+  const commit = () => {
+    if (added) return
+    added = true
+    addItemToMoodboard(boardId, item)
+  }
+  const still = () => gen === lbArriveGen && showLightbox.value && lbArrive
+  if (reduce || lbIntroOn || isFlipping.value || viewFlipBusy.value) {
+    commit()
+    await nextTick()
+    if (gen !== lbArriveGen || !showLightbox.value) return
+    const center = pinLightboxItem(item.id)
+    lbVelocity = 0
+    lbEnergy = 0
+    lbScroll = lbTarget = lbPrevScroll = center
+    lbPinScroll = center
+    layoutLightbox()
+    return
+  }
+
+  lbShift = null
+  lbVelocity = 0
+  lbEnergy = 0
+  lbArrive = {
+    id: item.id,
+    phase: 'align',
+    t: 0,
+    alignScroll: lbScroll,
+    pinScroll: lbScroll,
+    from: new Map(),
+  }
+  const dest = lightboxGroupScroll()
+  const fromScroll = lbScroll
+  if (Math.abs(dest - fromScroll) > 1 && freeformEntries.value.length) {
+    await tweenLightboxStep(0.48, 'power2.inOut', (t) => {
+      if (!lbArrive || lbArrive.phase !== 'align') return
+      const s = fromScroll + (dest - fromScroll) * t
+      lbScroll = lbTarget = lbPrevScroll = s
+      lbVelocity = 0
+      layoutLightbox()
+    })
+  } else {
+    lbScroll = lbTarget = lbPrevScroll = dest
+    layoutLightbox()
+  }
+  if (gen !== lbArriveGen || !showLightbox.value) {
+    if (!added) commit()
+    return
+  }
+
+  const from = snapshotLightboxBoxes()
+  const heldIndex = lightboxIndex.value + 1
+  lbArrive.from = from
+  lbArrive.alignScroll = lbScroll
+  lbArrive.pinScroll = lbScroll
+  lbArrive.phase = 'open'
+  lbArrive.t = 0
+  commit()
+  if (from.size) lightboxIndex.value = heldIndex
+  await nextTick()
+  if (!still()) return
+  lbArrive.pinScroll = pinLightboxItem(item.id)
+  layoutLightbox()
+
+  if (from.size) {
+    await tweenLightboxStep(0.62, 'power2.inOut', (t) => {
+      if (!lbArrive || lbArrive.phase !== 'open') return
+      lbArrive.t = t
+      layoutLightbox()
+    })
+    if (!still()) return
+    await wait(90)
+    if (!still()) return
+  }
+
+  lbArrive.phase = 'scale'
+  lbArrive.t = 0
+  lbScroll = lbTarget = lbPrevScroll = lbArrive.pinScroll
+  layoutLightbox()
+  await tweenLightboxStep(0.5, 'power3.out', (t) => {
+    if (!lbArrive || lbArrive.phase !== 'scale') return
+    lbArrive.t = t
+    layoutLightbox()
+  })
+  if (gen !== lbArriveGen) return
+  const pin = lbArrive?.pinScroll ?? lbScroll
+  lbArrive = null
+  if (!showLightbox.value) return
+  lbVelocity = 0
+  lbEnergy = 0
+  lbScroll = lbTarget = lbPrevScroll = pin
+  lbPinScroll = pin
+  layoutLightbox()
 }
 
 const freeformStyle = (id: string) => {
@@ -2811,7 +3997,7 @@ const refitFittedPlace = (id: string) => {
   const { w: sw, h: sh } = planeExtent()
   if (sw < 2 || sh < 2) return false
   const aspect = freeformAspects.value[id] || 1
-  const wf = cappedWidthFraction(aspect, sw, sh)
+  const wf = cappedWidthFraction(aspect, sw, sh, place.accent ? ACCENT_CELLS : ARRIVAL_CELLS)
   if (Math.abs(wf - place.w) < 0.004) return false
   patchFreeform(id, { w: wf })
   return true
@@ -2847,7 +4033,9 @@ const spreadStoredFreeform = () => {
     if (!board) continue
     const ids = Object.keys(board).sort((a, b) => (board[a]?.z || 0) - (board[b]?.z || 0))
     const next: Record<string, FreeformPlace> = {}
-    for (const id of ids) next[id] = scatterPlace(id, board[id]?.z || 0, next)
+    ids.forEach((id, index) => {
+      next[id] = scatterPlace(id, board[id]?.z || 0, next, (index + 1) % 5 === 0)
+    })
     layouts[boardId] = next
   }
   freeformLayouts.value = layouts
@@ -3582,9 +4770,69 @@ const onPileMouseEnter = (boardId: string) => {
   }
 }
 
+/** 0 at rest, 1 once the lean has caught the pointer. Entry eases this in. */
+const pileMagnets = new Map<
+  string,
+  { tx: number; ty: number; blend: number; raf: number; active: boolean }
+>()
+
+const paintPileMagnet = (boardId: string) => {
+  const magnet = pileMagnets.get(boardId)
+  const pile = pileEls.value[boardId]
+  if (!magnet || !pile) return
+  const goal = magnet.active ? 1 : 0
+  magnet.blend += (goal - magnet.blend) * (magnet.active ? 0.16 : 0.22)
+  if (!magnet.active && magnet.blend < 0.012) {
+    magnet.raf = 0
+    pile.style.removeProperty('--pile-mx')
+    pile.style.removeProperty('--pile-my')
+    pileMagnets.delete(boardId)
+    return
+  }
+  if (magnet.blend > 0.995) magnet.blend = 1
+  pile.style.setProperty('--pile-mx', (magnet.tx * magnet.blend).toFixed(3))
+  pile.style.setProperty('--pile-my', (magnet.ty * magnet.blend).toFixed(3))
+  magnet.raf = requestAnimationFrame(() => paintPileMagnet(boardId))
+}
+
+const clearPileMagnet = (boardId: string) => {
+  const magnet = pileMagnets.get(boardId)
+  const pile = pileEls.value[boardId]
+  if (!magnet) {
+    pile?.style.removeProperty('--pile-mx')
+    pile?.style.removeProperty('--pile-my')
+    return
+  }
+  magnet.active = false
+  if (!magnet.raf) magnet.raf = requestAnimationFrame(() => paintPileMagnet(boardId))
+}
+
+/** Lean the fanned stack toward the pointer. Deeper cards travel less. */
+const onPilePointerMove = (boardId: string, event: PointerEvent) => {
+  if (pileFannedId.value !== boardId) return
+  if (spreadBoardId.value === boardId || isFlipping.value || isOpen.value) return
+  const pile = event.currentTarget
+  if (!(pile instanceof HTMLElement)) return
+  const rect = pile.getBoundingClientRect()
+  if (rect.width < 2 || rect.height < 2) return
+  const nx = Math.min(1, Math.max(-1, ((event.clientX - rect.left) / rect.width) * 2 - 1))
+  const ny = Math.min(1, Math.max(-1, ((event.clientY - rect.top) / rect.height) * 2 - 1))
+  let magnet = pileMagnets.get(boardId)
+  if (!magnet) {
+    magnet = { tx: nx, ty: ny, blend: 0, raf: 0, active: true }
+    pileMagnets.set(boardId, magnet)
+  } else {
+    magnet.tx = nx
+    magnet.ty = ny
+    magnet.active = true
+  }
+  if (!magnet.raf) magnet.raf = requestAnimationFrame(() => paintPileMagnet(boardId))
+}
+
 const onPileMouseLeave = (boardId: string) => {
   // Keep fanned pose while opening so Flip reads the spread positions
   if (isFlipping.value || keepPileForFlip.value) return
+  clearPileMagnet(boardId)
   if (pileFannedId.value === boardId) {
     pileFannedId.value = null
     pileFanned.value = false
@@ -4610,15 +5858,11 @@ const pileCardStyle = (id: string, cards: StackPileCard[], boardId?: string) => 
     id === topId || id === landing || (poseIndex < 0 && flying.includes(id))
   const rot = isTop ? hashAngle(id) : hashAngle(id, committedPileSalt.value)
   const fan = pileFanOffset(id, index, total)
+  const depth = total <= 1 ? 1 : 0.32 + (index / (total - 1)) * 0.68
   const hoverX = fan ? x + fan.x : x
   const hoverY = fan ? y + fan.y : y
   const hoverExtra = rot === 0 ? -2 : Math.sign(rot) * 2
   const hoverRot = isTop ? rot + hoverExtra : fan ? rot + fan.r : rot
-  const layout = freeformLayouts.value[boardId || freeformBoardId()]
-  const placeZ = layout?.[id]?.z
-  const zIndex = Number.isFinite(placeZ)
-    ? placeZ
-    : cards.findIndex((card) => card.id === id) + 1
   const inSpread = !!boardId && spreadBoardId.value === boardId
 
   return {
@@ -4628,8 +5872,10 @@ const pileCardStyle = (id: string, cards: StackPileCard[], boardId?: string) => 
     '--pile-hover-x': `${hoverX}px`,
     '--pile-hover-y': `${hoverY}px`,
     '--pile-hover-r': `${hoverRot}deg`,
+    '--pile-depth': depth.toFixed(3),
     // Dock writes z-index while the row is open; Vue must not overwrite it.
-    ...(inSpread ? {} : { zIndex: zIndex > 0 ? zIndex : cards.length }),
+    // Keep a low upload z. Treating it as missing used to lift that card to the top.
+    ...(inSpread ? {} : { zIndex: restingPileZ(id, cards, boardId || freeformBoardId()) }),
     // Spread row reads left → right from the top card; deeper cards follow.
     order: Math.max(cards.length - 1 - cards.findIndex((card) => card.id === id), 0),
   }
@@ -5105,6 +6351,18 @@ const runFlip = (
     })
   })
 
+/** Pad eases out on the way into the lightbox row, and back in on the way home. */
+const tweenLightboxPilePad = (img: HTMLElement, padding: number | string, flightDelay: number) => {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  gsap.to(img, {
+    padding,
+    delay: flightDelay + FLIP_DURATION * 0.34,
+    duration: reduce ? 0 : FLIP_DURATION * 0.36,
+    ease: 'power2.inOut',
+    overwrite: 'auto',
+  })
+}
+
 /** Open: fly pile cards into each cell — same Flip as close, stagger reversed. */
 const fitPileCardsToCells = (opts?: {
   pile?: HTMLElement | null
@@ -5161,10 +6419,18 @@ const fitPileCardsToCells = (opts?: {
         document.body.appendChild(proxy)
         target = proxy
       }
+      const pileZ = Number.parseInt(getComputedStyle(card).zIndex, 10)
+      if (cartView.value === 'lightbox' && !opts?.boardStagger) {
+        const img = card.querySelector<HTMLElement>('.stack__pile-image')
+        if (img) tweenLightboxPilePad(img, 0, delay)
+      }
       Flip.fit(card, target, {
         absolute: true,
-        // Boards keep scale:false for crisp 1px borders (same as close)
-        scale: !opts?.boardStagger,
+        // Boards keep scale:false for crisp borders. Lightbox does too, so the
+        // square pile card changes width and height and the picture stays whole.
+        scale: cartView.value === 'lightbox' ? false : !opts?.boardStagger,
+        // Keep the pile's own stacking. Flip's default z-index flattens the fan.
+        ...(cartView.value === 'lightbox' && Number.isFinite(pileZ) ? { zIndex: pileZ } : {}),
         duration: FLIP_DURATION,
         delay,
         ease: 'power3.inOut',
@@ -5195,6 +6461,7 @@ const fadeOutStage = async () => {
   await wait(BACKDROP_CLOSE_MS)
   keepPileForFlip.value = false
   stagePresent.value = false
+  lightboxHandoff.value = false
   await nextTick()
   // Clear cart-shelve leftovers, then re-park so multi-rail stays collapsed
   resetShelvedRail()
@@ -5242,6 +6509,7 @@ const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
   freeformDotsSuppress.value = false
   // Hide name tip for the whole open → close cycle (re-arms on mouse-out after close)
+  lightboxHandoff.value = false
   pileTipLocked.value = true
   railAnimToken += 1
   railExpanded.value = false
@@ -5266,7 +6534,14 @@ const openFromPile = async () => {
   await nextTick()
   // Grid mounts on the first flush; cell size lands on the second.
   await nextTick()
-  if (cartIsFreeform.value) {
+  if (cartView.value === 'lightbox') {
+    seedFreeformAspects()
+    await nextTick()
+    armLightboxIntro()
+    resetLightboxScroll()
+    layoutLightbox()
+    stopLightbox()
+  } else if (cartIsFreeform.value) {
     seedFreeformAspects()
     measureFreeformPlane()
     await nextTick()
@@ -5280,12 +6555,27 @@ const openFromPile = async () => {
   cellsReady.value = true
   await nextTick()
   const landed = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
-  if (landed?.length) gsap.set(landed, { autoAlpha: 0 })
+  if (landed?.length) {
+    gsap.set(landed, { autoAlpha: 0 })
+    if (cartView.value === 'lightbox') {
+      landed.forEach((card) => {
+        const img = card.querySelector<HTMLElement>('.stack__pile-image')
+        if (!img) return
+        gsap.killTweensOf(img, 'padding')
+        gsap.set(img, { clearProps: 'padding' })
+      })
+    }
+  }
   keepPileForFlip.value = false
   pileFanned.value = false
   await nextTick()
   flipSurface.value = 'cells'
+  if (cartView.value === 'lightbox') layoutLightbox()
   isFlipping.value = false
+  if (cartView.value === 'lightbox') {
+    startLightbox()
+    playLightboxGrow()
+  }
   await fadeGridLinesIn()
 }
 
@@ -5638,6 +6928,7 @@ const finishClose = async () => {
 }
 
 const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
+  if (lbCloseLock) return
   const handoff = !!opts?.handoffBackdrop
   const hasFlipContent = items.value.length > 0
 
@@ -5770,6 +7061,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   }
 
   syncCellSize()
+  if (cartView.value === 'lightbox') {
+    lbCloseLock = true
+    await playLightboxShrink()
+    layoutLightbox()
+    stopLightbox()
+  }
   const medias = gridRef.value?.querySelectorAll('.stack__cell-media[data-flip-id]')
   // Freeform media is the picture. Record the padded pile-card box around it
   // so the close flight's painted pixels start on the image.
@@ -5795,6 +7092,12 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     else item.el.setAttribute('style', item.style)
   }
   isFlipping.value = true
+  if (cartView.value === 'lightbox') {
+    lightboxHandoff.value = true
+    lbReturnFlush.value = true
+    lbShrinkOn = false
+    lbShrink = 0
+  }
   cellsReady.value = false
   // Hand flip ids to pile and remount the rail (hidden while cart is open)
   flipSurface.value = 'pile'
@@ -5805,17 +7108,41 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   parkInactiveRail()
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
+  if (cards?.length) {
+    for (const node of cards) {
+      if (!(node instanceof HTMLElement)) continue
+      const id = node.getAttribute('data-flip-id') || ''
+      // Stamp the resting stack order before Flip. A shared z-index during the
+      // flight is what reshuffled the pile the moment the cards landed.
+      node.style.zIndex = String(pileStackZ(id))
+      if (cartView.value !== 'lightbox') continue
+      const img = node.querySelector<HTMLElement>('.stack__pile-image')
+      if (!img) continue
+      gsap.set(img, { padding: 0 })
+      tweenLightboxPilePad(img, STACK_CELL_PAD, staggerDelayForEl(node, 'close'))
+    }
+    if (cartView.value === 'lightbox') lbReturnFlush.value = false
+  }
+  lbCloseLock = false
   if (state && cards?.length) {
-    // 2) Items gather back to the pile. Freeform keeps each picture's own z-index;
-    // Flip's shared z-index would flatten that order on the first frame.
+    // 2) Items gather back to the pile in the same stack order they land in.
     await runFlip(state, cards, {
       mode: 'close',
-      zIndex: cartIsFreeform.value ? false : undefined,
+      zIndex: false,
     })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, {
       clearProps: 'transform,top,left,right,bottom,width,height,position,margin',
     })
+    if (cartView.value === 'lightbox') {
+      for (const node of cards) {
+        const img = node.querySelector<HTMLElement>('.stack__pile-image')
+        if (!img) continue
+        gsap.killTweensOf(img, 'padding')
+        gsap.set(img, { clearProps: 'padding' })
+      }
+      lbReturnFlush.value = false
+    }
     if (cartIsFreeform.value) {
       for (const node of cards) {
         if (!(node instanceof HTMLElement)) continue
@@ -6353,6 +7680,7 @@ watch(
 const onWinResize = () => {
   syncCellSize()
   syncAllColumnLayouts()
+  if (showLightbox.value) layoutLightbox()
 }
 
 watch(
@@ -6507,6 +7835,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopLightbox()
   clearViewFlyers()
   window.clearTimeout(freeformDotsLeaveTimer)
   registerAnimatedClose(null)
@@ -7290,8 +8619,29 @@ onBeforeUnmount(() => {
 }
 
 .stack__pile--fanned .stack__pile-card--fan {
-  transform: translate(var(--pile-hover-x), var(--pile-hover-y))
-    rotate(var(--pile-hover-r)) scale(var(--pile-hover-scale, 1));
+  transform: translate(var(--pile-hover-x), var(--pile-hover-y)) rotate(var(--pile-hover-r))
+    scale(var(--pile-hover-scale, 1));
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Pointer lean is separate so it doesn't restart the fan's transform ease.
+   The amount eases in from JS, so this transform has no transition of its own. */
+.stack__pile-lean {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+  pointer-events: none;
+  transform: translate(
+      calc(var(--pile-mx, 0) * (5px + var(--pile-depth, 0.5) * 9px)),
+      calc(var(--pile-my, 0) * (4px + var(--pile-depth, 0.5) * 7px))
+    )
+    rotate(
+      calc(
+        var(--pile-mx, 0) * var(--pile-depth, 0.5) * -2.2deg +
+          var(--pile-my, 0) * var(--pile-depth, 0.5) * 1.4deg
+      )
+    );
 }
 
 .stack__pile-fan {
@@ -7353,6 +8703,11 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+.stack__pile--spread .stack__pile-lean,
+.stack__pile--spread.stack__pile--fanned .stack__pile-lean {
+  transform: none;
+}
+
 .stack__pile--spread .stack__pile-card,
 .stack__pile--spread.stack__pile--fanned .stack__pile-card--fan {
   position: relative;
@@ -7399,6 +8754,10 @@ onBeforeUnmount(() => {
   object-fit: contain;
   object-position: center;
   pointer-events: none;
+}
+
+.stack--lb-return .stack__pile-image {
+  padding: 0;
 }
 
 .stack__pile-tip {
@@ -7704,6 +9063,17 @@ onBeforeUnmount(() => {
 }
 
 .stack__grid--lines .stack__cell {
+  border-right-color: var(--grid-line);
+  border-bottom-color: var(--grid-line);
+}
+
+/* Upload: the new cell's lines fade in before the image scales. */
+.stack__grid--lines .stack__cell.stack__cell--line-in:not(.stack__cell--line-on) {
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.stack__grid--lines .stack__cell.stack__cell--line-on {
   border-right-color: var(--grid-line);
   border-bottom-color: var(--grid-line);
 }
@@ -8226,15 +9596,6 @@ onBeforeUnmount(() => {
   left: 50%;
   bottom: 60px;
   z-index: 430;
-  display: flex;
-  gap: 2px;
-  margin: 0;
-  padding: 4px;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   transform: translateX(-50%) translateY(8px);
   opacity: 0;
   pointer-events: none;
@@ -8249,19 +9610,120 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
-.stack__view-toggle button {
-  margin: 0;
-  padding: 0.45rem 1.05rem;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--charcoal);
-  cursor: pointer;
+.stack__gap-toggle {
+  position: fixed;
+  left: 50%;
+  bottom: 116px;
+  z-index: 430;
+  transform: translateX(-50%) translateY(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
 }
 
-.stack__view-toggle button.is-active {
-  background: var(--charcoal);
-  color: var(--cream);
+.stack__gap-toggle--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.stack__lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.stack__lightbox-name,
+.stack__lightbox-count {
+  position: absolute;
+  left: 50%;
+  z-index: 3;
+  margin: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+  color: var(--charcoal);
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+
+.stack__lightbox--settled .stack__lightbox-name,
+.stack__lightbox--settled .stack__lightbox-count {
+  opacity: 1;
+}
+
+.stack__lightbox-name {
+  top: var(--lb-name-top, calc(var(--header-height) + 48px));
+  max-width: min(70vw, 640px);
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  transform: translate(-50%, -50%);
+}
+
+.stack__lightbox-count {
+  bottom: 176px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stack__lightbox-name,
+  .stack__lightbox-count {
+    transition: none;
+  }
+}
+
+.stack__lightbox-item.stack__cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  visibility: hidden;
+  transition: none;
+  will-change: transform;
+}
+
+.stack--view-flip .stack__lightbox-item,
+.stack--flipping .stack__lightbox-item,
+.stack--lb-handoff .stack__lightbox-item {
+  opacity: 0 !important;
+  transition: none !important;
+}
+
+.stack__lightbox-item .stack__cell-frame,
+.stack__lightbox-item .stack__cell-hit {
+  overflow: visible;
+}
+
+.stack__lightbox-item .stack__cell-frame {
+  inset: 0;
+}
+
+.stack__lightbox-item .stack__cell-figure,
+.stack__lightbox-item .stack__cell-hit,
+.stack__lightbox-item .stack__cell-image {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+.stack__lightbox-item .stack__cell-image {
+  object-fit: contain;
 }
 
 .stack__close-global {
@@ -8323,7 +9785,13 @@ onBeforeUnmount(() => {
 }
 
 .stack__undo-global {
+  display: inline-flex;
+  align-items: center;
   color: var(--charcoal);
+}
+
+.stack__undo-global-icon {
+  display: none;
 }
 
 .stack__upload-global {
@@ -8721,6 +10189,18 @@ onBeforeUnmount(() => {
 
   .stack__toolbar-center {
     max-width: min(16rem, 52vw);
+  }
+
+  .stack__undo-global {
+    padding: 0.55rem;
+  }
+
+  .stack__undo-global-label {
+    display: none;
+  }
+
+  .stack__undo-global-icon {
+    display: block;
   }
 }
 </style>

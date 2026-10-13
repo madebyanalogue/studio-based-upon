@@ -153,16 +153,16 @@
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { SplitText } from 'gsap/SplitText'
-import { productCoverFrame } from '~/composables/productImages'
+import { productGalleryFrames } from '~/composables/productImages'
 import { productPath, productSlug } from '~/composables/useProductCatalog'
-import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+import { IMAGE_WIDTH, imageAssetKey } from '~/composables/useSanityImage'
 
 definePageMeta({
   pageTransition: false,
 })
 
 let runPlanLeave = () => Promise.resolve()
-const { open: openProduct } = useProductOverlay()
+const { open: openProduct, returnImage } = useProductOverlay()
 onBeforeRouteLeave((to, from) => {
   // Closing a product calls history.back() onto this same page. That popstate
   // must not play the about outro.
@@ -493,33 +493,6 @@ const bindReveal = (
   )
 }
 
-/** Melt a title out in the band below the viewport top, and back in on the way down. */
-const bindTitleExit = (block: TitleBlock) => {
-  const paint = (melted: number) => {
-    gsap.killTweensOf(block.words)
-    gsap.set(block.words, {
-      opacity: 1 - melted,
-      filter: `blur(${TITLE_BLUR_MAX * melted}px)`,
-    })
-  }
-  scrollTriggers.push(
-    ScrollTrigger.create({
-      trigger: block.el,
-      start: 'top top+=240',
-      end: 'top top+=72',
-      scrub: true,
-      onUpdate: (self) => {
-        if (self.progress <= 0 || !block.words.length) return
-        paint(self.progress)
-      },
-      onLeaveBack: () => {
-        if (!block.words.length) return
-        paint(0)
-      },
-    }),
-  )
-}
-
 const playPlanEnter = async () => {
   if (!import.meta.client || !planEl.value) return
   if (prefersReducedMotion()) {
@@ -561,7 +534,6 @@ const playPlanEnter = async () => {
 
   titles.forEach((block) => {
     bindReveal(block.el, () => playTitle(block))
-    bindTitleExit(block)
   })
   copies.forEach((block) => bindReveal(block.root, () => playCopy(titles, block)))
   images.forEach((el) => {
@@ -715,12 +687,36 @@ const planThumbSlots: {
   { slug: 'deco-pit', place: 'about-plan__figure--fifth' },
 ]
 
+/** Gallery frame each thumbnail shows after a product closes. */
+const thumbImageIndex = ref<Record<string, number>>({})
+
+watch(returnImage, (value) => {
+  if (!value?.productId) return
+  const item = libraryItems.value.find((entry) => entry._id === value.productId)
+  if (!item) return
+  const frames = productGalleryFrames(item)
+  if (!frames.length) return
+  let index = -1
+  if (value.src) {
+    const key = imageAssetKey(value.src)
+    index = frames.findIndex(
+      (frame) => imageAssetKey(imageUrl(frame, IMAGE_WIDTH.hero)) === key,
+    )
+  }
+  if (index < 0 && value.index >= 0 && value.index < frames.length) index = value.index
+  if (index < 0 || thumbImageIndex.value[item._id] === index) return
+  thumbImageIndex.value = { ...thumbImageIndex.value, [item._id]: index }
+})
+
 const planThumbs = computed(() =>
   planThumbSlots.flatMap((slot) => {
     const item = libraryItems.value.find((entry) => productSlug(entry) === slot.slug)
     if (!item) return []
-    const cover = productCoverFrame(item)
-    const src = cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
+    const frames = productGalleryFrames(item)
+    const stored = thumbImageIndex.value[item._id] ?? 0
+    const index = frames.length ? Math.min(stored, frames.length - 1) : 0
+    const frame = frames[index]
+    const src = frame ? imageUrl(frame, IMAGE_WIDTH.thumb) : ''
     if (!src) return []
     return [{
       slug: slot.slug,
@@ -732,7 +728,8 @@ const planThumbs = computed(() =>
       title: item.title,
       detail: item.feature || '',
       src,
-      flipSrc: imageUrl(cover, IMAGE_WIDTH.hero) || src,
+      flipSrc: imageUrl(frame, IMAGE_WIDTH.hero) || src,
+      imageIndex: index,
     }]
   }),
 )
@@ -741,7 +738,7 @@ const litFigures = ref<Record<string, true>>({})
 
 const onPlanThumbOpen = (
   event: MouseEvent,
-  thumb: { slug: string; id: string; flipSrc: string },
+  thumb: { slug: string; id: string; flipSrc: string; imageIndex: number },
 ) => {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
   event.preventDefault()
@@ -751,6 +748,7 @@ const onPlanThumbOpen = (
   if (thumb.flipSrc) void prefetchImage(thumb.flipSrc)
   openProduct(thumb.slug, {
     source: source instanceof HTMLElement ? source : null,
+    imageIndex: thumb.imageIndex,
     flipSrc: thumb.flipSrc || null,
     productId: thumb.id,
   })

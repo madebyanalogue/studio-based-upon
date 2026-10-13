@@ -114,9 +114,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   place-items: center;
   font-size: 0.75rem;
   line-height: 1;
-  border: 1px solid var(--stone, #c9c3b6);
+  border: 1px solid var(--muted);
   border-radius: 999px;
-  color: var(--stone, #c9c3b6);
+  color: var(--muted);
   background: transparent;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
