@@ -360,15 +360,17 @@
           stroke-width="1"
           opacity="0"
         />
-        <line
-          x1="22"
-          y1="23"
-          x2="22"
-          y2="12"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-        />
+        <g :transform="`rotate(${hourHandAngle} 22 22)`">
+          <line
+            x1="22"
+            y1="23"
+            x2="22"
+            y2="12"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </g>
         <g :transform="`rotate(${dialTurns} 22 22)`">
           <line
             x1="22"
@@ -1119,6 +1121,48 @@ const scrollEnabled = computed(() => isDesktop.value)
 const galleryCopies = computed(() => (scrollEnabled.value ? ['main', 'loop'] : ['main']))
 const loopProgress = ref(0)
 const dialTurns = computed(() => loopProgress.value * 360)
+const HOUR_KEY = 'sba-precrafted-hour'
+const HOUR_PER_TURN = 30
+/** Set true to let the hour hand advance with scroll and restore its cached angle. */
+const hourHandEnabled = false
+const hourTurns = ref(0)
+const hourHandAngle = computed(() => (hourHandEnabled ? hourTurns.value : 0))
+let hourReady = false
+let lastDialProgress = 0
+let hourSaveTimer = 0
+
+const readCachedHour = () => {
+  if (!import.meta.client) return 0
+  const raw = Number.parseFloat(window.localStorage.getItem(HOUR_KEY) || '')
+  return Number.isFinite(raw) ? raw : 0
+}
+
+const persistHour = () => {
+  if (!import.meta.client) return
+  window.clearTimeout(hourSaveTimer)
+  hourSaveTimer = window.setTimeout(() => {
+    window.localStorage.setItem(HOUR_KEY, String(hourTurns.value))
+  }, 200)
+}
+
+/** One full gallery loop moves the minute hand once, and the hour hand one hour. */
+const advanceHour = (progress: number) => {
+  if (!hourReady) {
+    hourReady = true
+    lastDialProgress = progress
+    hourTurns.value = readCachedHour()
+    return
+  }
+  let delta = progress - lastDialProgress
+  if (delta > 0.5) delta -= 1
+  else if (delta < -0.5) delta += 1
+  lastDialProgress = progress
+  if (!delta) return
+  hourTurns.value += delta * HOUR_PER_TURN
+  persistHour()
+}
+
+if (import.meta.client) hourTurns.value = readCachedHour()
 
 const { refresh: refreshHorizontalScroll } = useHorizontalGalleryScroll({
   sectionRef,
@@ -1130,6 +1174,7 @@ const { refresh: refreshHorizontalScroll } = useHorizontalGalleryScroll({
   loop: scrollEnabled,
   onProgress: (progress) => {
     loopProgress.value = progress
+    if (hourHandEnabled) advanceHour(progress)
     syncScrubProgresses()
   },
 })
@@ -1207,6 +1252,10 @@ watch(trackSections, () => {
 
 onUnmounted(() => {
   loadQueueToken += 1
+  window.clearTimeout(hourSaveTimer)
+  if (hourHandEnabled && import.meta.client) {
+    window.localStorage.setItem(HOUR_KEY, String(hourTurns.value))
+  }
   desktopMediaQuery?.removeEventListener('change', syncDesktop)
   mobileScrollTrigger?.kill()
   mobileScrollTrigger = null
