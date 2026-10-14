@@ -743,7 +743,7 @@
                 class="stack__selection-option stack__selection-option--new interface"
                 @click="onNewSelection"
               >
-                New Selection
+                New Selection +
               </button>
               <button
                 type="button"
@@ -757,24 +757,36 @@
           </div>
 
           <div class="stack__toolbar-actions">
-            <button
-              type="button"
-              class="stack__toolbar-clear interface"
-              data-cursor="default"
-              :disabled="!bulkClearPending && !items.length"
-              @click="bulkClearPending ? onUndoBulkClear() : onRemoveAll()"
-            >
-              {{ bulkClearPending ? 'Undo' : 'Remove all' }}
-            </button>
-            <button
-              type="button"
-              class="stack__toolbar-create interface"
-              data-cursor="default"
-              :disabled="!items.length"
-              @click="sendEnquiry"
-            >
-              Send as Enquiry
-            </button>
+            <div class="stack__toolbar-edits">
+              <button
+                type="button"
+                class="stack__toolbar-clear interface"
+                data-cursor="default"
+                @click="startEdit"
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                class="stack__toolbar-clear interface"
+                data-cursor="default"
+                :disabled="!bulkClearPending && !items.length"
+                @click="bulkClearPending ? onUndoBulkClear() : onRemoveAll()"
+              >
+                {{ bulkClearPending ? 'Undo' : 'Remove all' }}
+              </button>
+            </div>
+            <div class="stack__toolbar-send">
+              <button
+                type="button"
+                class="stack__toolbar-create interface"
+                data-cursor="default"
+                :disabled="!items.length"
+                @click="sendEnquiry"
+              >
+                Send as Enquiry
+              </button>
+            </div>
           </div>
         </header>
 
@@ -986,6 +998,7 @@ const {
   registerAnimatedClose,
   registerAnimatedOpen,
   registerSelectionStackHover,
+  registerSelectionSwitch,
   openDrawer,
   openMoodboard,
   createMoodboard,
@@ -1092,6 +1105,9 @@ const controlsVisible = ref(false)
 const enquiryVisible = ref(false)
 /** Stack thumbs hidden while their clones fly into / out of the enquiry form. */
 const enquiryParked = ref(false)
+watch(enquiryParked, () => {
+  nextTick(() => lightboxGlassRef.value?.paint())
+})
 /** Which surface currently owns data-flip-id (never both). */
 const flipSurface = ref<'pile' | 'cells'>('pile')
 /** Keep pile mounted during open Flip so cards can fly free (not clipped by cells). */
@@ -3426,8 +3442,9 @@ const playLightboxShrink = () =>
       : panelH * (1 - 0.25 * lbEnergy)
     const span = LB_INTRO_H - panelH
     const from = !panelH || Math.abs(span) < 1 ? 1 : (currentH - panelH) / span
-    // Stay on the resting row (same scroll, same gaps) and only scale the pictures.
-    // Switching into the centered intro line first is what made the row jump.
+    // Keep the picture under the viewport centre where it is. The row packs
+    // around it as it shrinks, so off-screen items slide in instead of staying
+    // on their full-size centres.
     lbIntroOn = false
     lbEnergy = 0
     lbShrinkOn = true
@@ -3518,9 +3535,17 @@ const lightboxMetrics = () => {
     : header
   const chromeTop = (selector: string) => {
     const el = stage.ownerDocument.querySelector(selector)
-    if (!el) return Infinity
+    if (!(el instanceof HTMLElement)) return Infinity
     const top = el.getBoundingClientRect().top - stageBox.top
-    return top > 8 ? top : Infinity
+    // Controls enter 8px low. Measure where they rest so the row doesn't
+    // jump when that slide finishes after the pile has landed.
+    const corner = el.closest('.stack__corner')
+    const entering =
+      (el.classList.contains('stack__view-toggle') &&
+        !el.classList.contains('stack__view-toggle--visible')) ||
+      (corner && !corner.classList.contains('stack__corner--visible'))
+    const settled = entering ? top - 8 : top
+    return settled > 8 ? settled : Infinity
   }
   // The row is centred in the band between the toolbar and the toggles.
   const footerTop = Math.min(
@@ -3597,8 +3622,23 @@ const lightboxMetrics = () => {
 const layoutLightbox = () => {
   const metrics = lightboxMetrics()
   if (!metrics || !showLightbox.value) return
-  const { stage, n, panelH, aspects, slotW, offsets, total, centerIndex, loops, frameTop, frameH, footerTop } =
-    metrics
+  const {
+    stage,
+    n,
+    panelH,
+    aspects,
+    slotW,
+    offsets,
+    total,
+    centerFor,
+    nearest,
+    centerIndex,
+    loops,
+    frameTop,
+    frameH,
+    footerTop,
+  } = metrics
+  stage.classList.toggle('stack__lightbox--compact', lbIntroOn || lbShrinkOn)
   const arriving = !!(lbArrive && lbArrive.phase !== 'align' && !lbIntroOn)
   const rowLoops = loops && !lbIntroOn && !arriving
   const shrink = lbIntroOn ? 1 : 1 - 0.25 * lbEnergy
@@ -3622,6 +3662,28 @@ const layoutLightbox = () => {
       rowTotal += width
     }
     rowScroll = Math.max(0, rowTotal - LB_GAP) / 2
+  }
+  if (lbShrinkOn) {
+    rowSlotW = aspects.map((aspect) => aspect * rowH + LB_GAP)
+    rowOffsets = []
+    rowTotal = 0
+    for (const width of rowSlotW) {
+      rowOffsets.push(rowTotal)
+      rowTotal += width
+    }
+    const packedSpan = Math.max(0, rowTotal - LB_GAP)
+    const restingFits = !loops && total - LB_GAP <= stage.clientWidth - LB_SIDE_INSET * 2
+    if (restingFits) {
+      rowScroll = packedSpan / 2
+    } else {
+      const focusAbs = nearest(lbScroll)
+      const source = ((focusAbs % n) + n) % n
+      const loop = Math.floor(focusAbs / n)
+      const oldX = centerFor(focusAbs) - lbScroll
+      const newCenter =
+        rowOffsets[source] + rowSlotW[source] / 2 - LB_GAP / 2 + loop * rowTotal
+      rowScroll = newCenter - oldX
+    }
   }
   if (arriving && lbArrive) {
     rowScroll = lbArrive.pinScroll
@@ -3688,9 +3750,11 @@ const layoutLightbox = () => {
       }
     }
     if (isArrive && lbArrive) pop = lbArrive.phase === 'scale' ? lbArrive.t : 0
-    const hidden = from || (arriving && !isArrive)
-      ? left < -half - buffer || left > half + buffer
-      : x < -half - buffer || x > half + buffer
+    const hidden = lbShrinkOn
+      ? false
+      : from || (arriving && !isArrive)
+        ? left < -half - buffer || left > half + buffer
+        : x < -half - buffer || x > half + buffer
     node.dataset.lbHidden = hidden ? '1' : ''
     node.dataset.lbInside = left >= -1 && left + drawW <= stage.clientWidth + 1 ? '1' : ''
     node.style.width = `${drawW}px`
@@ -3715,8 +3779,13 @@ const layoutLightbox = () => {
     const fullyInside = node.dataset.lbInside === '1'
     // The copy in front stays visible even when it hangs off the stage.
     // Extra copies stay hidden at rest so a sliced duplicate never sits in the margin.
-    node.style.visibility =
-      hidden || (!canonical && !fullyInside && !moving) ? 'hidden' : 'visible'
+    node.style.visibility = lbShrinkOn
+      ? canonical
+        ? 'visible'
+        : 'hidden'
+      : hidden || (!canonical && !fullyInside && !moving)
+        ? 'hidden'
+        : 'visible'
     if (!id || !media) return
     if (canonical) {
       node.dataset.stackId = id
@@ -4958,17 +5027,6 @@ const onPileMouseEnter = (boardId: string) => {
   pileFanSeed.value += 1
   pileFannedId.value = boardId
   pileFanned.value = true
-  // Multi-rail: hover the active corner stack to raise the others
-  // (cart + board composer — composer has no empties / no +)
-  if (
-    railBoards.value.length > 1 &&
-    boardId === activeMoodboardId.value &&
-    !railExpanded.value &&
-    !isOpen.value &&
-    !stagePresent.value
-  ) {
-    void expandRail()
-  }
 }
 
 /** 0 at rest, 1 once the lean has caught the pointer. Entry eases this in. */
@@ -6287,17 +6345,17 @@ const measureStackFlyRects = () => {
     z?: number
   }> = []
   const freeform = cartIsFreeform.value
+  const lightbox = showLightbox.value
   for (const item of items.value) {
     if (!item.imageUrl) continue
     const img = root.querySelector<HTMLImageElement>(
       `[data-stack-id="${CSS.escape(item.id)}"] img`,
     )
-    if (!img) continue
-    const rect = img.getBoundingClientRect()
-    if (rect.width < 2 || rect.height < 2) continue
+    const rect = img?.getBoundingClientRect()
+    if (!lightbox && (!rect || rect.width < 2 || rect.height < 2)) continue
     let z: number | undefined
     if (freeform) {
-      const card = img.closest<HTMLElement>('.stack__free-card')
+      const card = img?.closest<HTMLElement>('.stack__free-card')
       const painted = Number.parseInt(card ? getComputedStyle(card).zIndex : '', 10)
       const stored = freeformLayouts.value[freeformBoardId()]?.[item.id]?.z
       z = Number.isFinite(painted) ? painted : stored
@@ -6305,15 +6363,61 @@ const measureStackFlyRects = () => {
     rects.push({
       id: item.id,
       src: item.imageUrl,
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
+      left: rect?.left ?? -1,
+      top: rect?.top ?? -1,
+      width: rect?.width ?? 0,
+      height: rect?.height ?? 0,
       z,
     })
   }
   if (freeform) rects.sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-  return rects
+  return lightbox ? lightboxFlyStarts(rects) : rects
+}
+
+/** Off-screen lightbox items still join the gather, parked just inside the viewport. */
+const lightboxFlyStarts = (
+  rects: Array<{
+    id: string
+    src: string
+    left: number
+    top: number
+    width: number
+    height: number
+    z?: number
+  }>,
+) => {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const onScreen = (rect: (typeof rects)[number]) =>
+    rect.width >= 2 &&
+    rect.height >= 2 &&
+    rect.left < vw - 4 &&
+    rect.left + rect.width > 4 &&
+    rect.top < vh - 4 &&
+    rect.top + rect.height > 4
+  const visible = rects.filter(onScreen)
+  const hidden = rects.filter((rect) => !onScreen(rect))
+  if (!hidden.length) return rects
+  const rowMid = visible.length
+    ? visible.reduce((sum, rect) => sum + rect.top + rect.height / 2, 0) / visible.length
+    : vh / 2
+  const place = (group: typeof hidden, side: 'left' | 'right') => {
+    const size = Math.max(36, Math.min(72, (vh - 32) / Math.max(group.length, 1)))
+    const pitch =
+      group.length > 1 ? Math.min(size + 8, (vh - 32 - size) / (group.length - 1)) : 0
+    const span = pitch * Math.max(0, group.length - 1)
+    const top0 = Math.min(vh - size - 16, Math.max(16, rowMid - size / 2 - span / 2))
+    return group.map((rect, index) => ({
+      ...rect,
+      left: side === 'left' ? 16 : vw - size - 16,
+      top: top0 + index * pitch,
+      width: size,
+      height: size,
+    }))
+  }
+  const left = hidden.filter((rect) => rect.left + rect.width / 2 < vw / 2)
+  const right = hidden.filter((rect) => rect.left + rect.width / 2 >= vw / 2)
+  return [...visible, ...place(left, 'left'), ...place(right, 'right')]
 }
 
 const sendEnquiry = () => {
@@ -6570,32 +6674,41 @@ const tweenLightboxPilePad = (img: HTMLElement, padding: number | string, flight
   })
 }
 
-/** Pointer lean sits on an inner layer Flip does not move. Ease it back to rest with the flight. */
-const easePileLean = (card: HTMLElement, delay: number) => {
+/**
+ * Pointer lean is a CSS transform Flip never moves, so it used to stay put
+ * and snap off when the card landed. Freeze the magnet from the click, then
+ * ease it out before the card arrives so the row doesn't shift on handoff.
+ */
+const easePileLean = (card: HTMLElement, delay: number, settleEarly = false) => {
   const lean = card.querySelector<HTMLElement>('.stack__pile-lean')
   if (!lean) return
-  const raw = getComputedStyle(lean).transform
-  if (!raw || raw === 'none') return
-  const parsed = new DOMMatrix(raw)
-  const x = parsed.e
-  const y = parsed.f
-  const rotation = Math.atan2(parsed.b, parsed.a) * (180 / Math.PI)
-  if (Math.abs(x) < 0.4 && Math.abs(y) < 0.4 && Math.abs(rotation) < 0.15) return
+  const pile = lean.closest<HTMLElement>('.stack__pile')
+  const mx = pile ? getComputedStyle(pile).getPropertyValue('--pile-mx').trim() : ''
+  const my = pile ? getComputedStyle(pile).getPropertyValue('--pile-my').trim() : ''
+  if (mx) lean.style.setProperty('--pile-mx', mx)
+  if (my) lean.style.setProperty('--pile-my', my)
   gsap.killTweensOf(lean)
   gsap.fromTo(
     lean,
-    { x, y, rotation, transformOrigin: 'center center' },
+    { '--pile-lean': 1 },
     {
-      x: 0,
-      y: 0,
-      rotation: 0,
-      transformOrigin: 'center center',
+      '--pile-lean': 0,
       delay,
-      duration: FLIP_DURATION,
-      ease: 'power3.inOut',
+      duration: FLIP_DURATION * (settleEarly ? 0.72 : 1),
+      ease: settleEarly ? 'power2.inOut' : 'power3.inOut',
+      immediateRender: true,
       overwrite: 'auto',
     },
   )
+}
+
+const releasePileLean = (card: HTMLElement) => {
+  const lean = card.querySelector<HTMLElement>('.stack__pile-lean')
+  if (!lean) return
+  gsap.killTweensOf(lean)
+  lean.style.setProperty('--pile-lean', '0')
+  lean.style.setProperty('--pile-mx', '0')
+  lean.style.setProperty('--pile-my', '0')
 }
 
 /** Open: fly pile cards into each cell — same Flip as close, stagger reversed. */
@@ -6655,11 +6768,12 @@ const fitPileCardsToCells = (opts?: {
         target = proxy
       }
       const pileZ = Number.parseInt(getComputedStyle(card).zIndex, 10)
-      if (cartView.value === 'lightbox' && !opts?.boardStagger) {
+      const lightboxFlight = cartView.value === 'lightbox' && !opts?.boardStagger
+      if (lightboxFlight) {
         const img = card.querySelector<HTMLElement>('.stack__pile-image')
         if (img) tweenLightboxPilePad(img, 0, delay)
       }
-      easePileLean(card, delay)
+      easePileLean(card, delay, lightboxFlight)
       Flip.fit(card, target, {
         absolute: true,
         // Boards keep scale:false for crisp borders. Lightbox does too, so the
@@ -6671,6 +6785,7 @@ const fitPileCardsToCells = (opts?: {
         delay,
         ease: 'power3.inOut',
         onComplete: () => {
+          if (lightboxFlight) releasePileLean(card)
           proxy?.remove()
           done()
         },
@@ -6697,6 +6812,7 @@ const fadeOutStage = async () => {
   await wait(BACKDROP_CLOSE_MS)
   keepPileForFlip.value = false
   stagePresent.value = false
+  lightboxGlassRef.value?.paint()
   lightboxHandoff.value = false
   await nextTick()
   // Clear cart-shelve leftovers, then re-park so multi-rail stays collapsed
@@ -6793,12 +6909,7 @@ const openFromPile = async () => {
   const landed = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
   if (landed?.length) {
     gsap.set(landed, { autoAlpha: 0 })
-    landed.forEach((card) => {
-      const lean = card.querySelector<HTMLElement>('.stack__pile-lean')
-      if (!lean) return
-      gsap.killTweensOf(lean)
-      gsap.set(lean, { clearProps: 'transform' })
-    })
+    landed.forEach((card) => releasePileLean(card))
     if (cartView.value === 'lightbox') {
       landed.forEach((card) => {
         const img = card.querySelector<HTMLElement>('.stack__pile-image')
@@ -7347,6 +7458,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   dismissDrawer()
   await nextTick()
   await nextTick()
+  lightboxGlassRef.value?.paint()
   parkInactiveRail()
   pileRef.value = pileEls.value[activeMoodboardId.value || ''] || pileRef.value
   const cards = pileRef.value?.querySelectorAll('[data-flip-id]')
@@ -8010,6 +8122,137 @@ const openSelectionStackFromNav = () => {
   openDrawer('selections')
 }
 
+/**
+ * Header selection menu: the corner pile sinks under the screen, then the
+ * chosen pile rises from below into that same slot.
+ */
+let navSwitchToken = 0
+
+const switchPileFromNav = async (nextId: string) => {
+  if (nextId === activeMoodboardId.value) return
+  const token = ++navSwitchToken
+  const prevId = activeMoodboardId.value
+  const prevEl = prevId ? pileWrapEls.value[prevId] : null
+  const skipMotion =
+    !import.meta.client ||
+    !prevEl ||
+    isOpen.value ||
+    stagePresent.value ||
+    isFlipping.value ||
+    isMoodboard.value ||
+    railBoards.value.length <= 1 ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  const finishInstant = async () => {
+    setActiveMoodboard(nextId)
+    syncRailOrder(true)
+    await nextTick()
+    if (token !== navSwitchToken) return
+    const nextEl = pileWrapEls.value[nextId]
+    if (nextEl) {
+      gsap.killTweensOf(nextEl)
+      gsap.set(nextEl, {
+        clearProps: 'transform,x,y,xPercent,yPercent,height,minHeight,overflow',
+      })
+    }
+    parkInactiveRailBelow()
+    pileRef.value = pileEls.value[nextId] || null
+  }
+
+  if (skipMotion) {
+    await finishInstant()
+    return
+  }
+
+  railHoldOpen.value = true
+  clearRailLeaveTimer()
+  pileFannedId.value = null
+  pileFanned.value = false
+
+  const cell = Math.max(
+    prevEl.offsetHeight,
+    prevEl.offsetWidth,
+    railCellSize(),
+    cellSizePx.value,
+    120,
+  )
+
+  const dropY = cell + 28
+  const easeIn = (t: number) => t * t
+  const easeOut = (t: number) => 1 - (1 - t) ** 3
+  const playDrop = (
+    el: HTMLElement,
+    from: number,
+    to: number,
+    duration: number,
+    ease: (t: number) => number,
+  ) =>
+    new Promise<void>((resolve) => {
+      const start = performance.now()
+      const frame = (now: number) => {
+        if (token !== navSwitchToken) {
+          resolve()
+          return
+        }
+        const raw = Math.min(1, (now - start) / duration)
+        const y = from + (to - from) * ease(raw)
+        el.style.translate = `0px ${y}px`
+        if (raw < 1) requestAnimationFrame(frame)
+        else resolve()
+      }
+      requestAnimationFrame(frame)
+    })
+
+  try {
+    gsap.killTweensOf(prevEl)
+    gsap.set(prevEl, {
+      clearProps: 'transform,x,y,xPercent,yPercent,translate',
+      height: cell,
+      minHeight: cell,
+      overflow: 'visible',
+    })
+    await playDrop(prevEl, 0, dropY, 420, easeIn)
+    if (token !== navSwitchToken) return
+    prevEl.style.translate = ''
+    gsap.set(prevEl, {
+      height: 0,
+      minHeight: 0,
+      overflow: 'hidden',
+      y: 0,
+      yPercent: 110,
+    })
+
+    setActiveMoodboard(nextId)
+    syncRailOrder(true)
+    await nextTick()
+    if (token !== navSwitchToken) return
+
+    const nextEl = pileWrapEls.value[nextId]
+    if (!nextEl) {
+      parkInactiveRailBelow()
+      return
+    }
+
+    gsap.killTweensOf(nextEl)
+    gsap.set(nextEl, {
+      clearProps: 'transform,x,y,xPercent,yPercent,translate',
+      height: cell,
+      minHeight: cell,
+      overflow: 'visible',
+    })
+    await playDrop(nextEl, dropY, 0, 500, easeOut)
+    if (token !== navSwitchToken) return
+    nextEl.style.translate = ''
+    gsap.set(nextEl, {
+      clearProps: 'transform,x,y,xPercent,yPercent,height,minHeight,overflow,translate',
+    })
+    parkInactiveRailBelow()
+    pileRef.value = pileEls.value[nextId] || null
+  } finally {
+    if (token === navSwitchToken) railHoldOpen.value = false
+  }
+}
+
 /** Nav heart hover — fan the active pile (same pose Flip open starts from). */
 const onNavHeartEnter = () => {
   navHeartHot.value = true
@@ -8051,6 +8294,7 @@ onMounted(() => {
     enter: onNavHeartEnter,
     leave: onNavHeartLeave,
   })
+  registerSelectionSwitch((id) => switchPileFromNav(id))
   registerMoodboardRestack(async () => {
     const ids = [...expandedBoardIds.value]
     await Promise.all(ids.map((id) => restackBoard(id)))
@@ -8090,6 +8334,7 @@ onBeforeUnmount(() => {
   registerAnimatedClose(null)
   registerAnimatedOpen(null)
   registerSelectionStackHover(null)
+  registerSelectionSwitch(null)
   registerMoodboardRestack(null)
   registerMoodboardReturnToColumn(null)
   registerMoodboardStackExit(null)
@@ -8882,13 +9127,15 @@ onBeforeUnmount(() => {
   transform-origin: center center;
   pointer-events: none;
   transform: translate(
-      calc(var(--pile-mx, 0) * (5px + var(--pile-depth, 0.5) * 9px)),
-      calc(var(--pile-my, 0) * (4px + var(--pile-depth, 0.5) * 7px))
+      calc(var(--pile-mx, 0) * var(--pile-lean, 1) * (5px + var(--pile-depth, 0.5) * 9px)),
+      calc(var(--pile-my, 0) * var(--pile-lean, 1) * (4px + var(--pile-depth, 0.5) * 7px))
     )
     rotate(
       calc(
-        var(--pile-mx, 0) * var(--pile-depth, 0.5) * -2.2deg +
-          var(--pile-my, 0) * var(--pile-depth, 0.5) * 1.4deg
+        (
+            var(--pile-mx, 0) * var(--pile-depth, 0.5) * -2.2deg +
+              var(--pile-my, 0) * var(--pile-depth, 0.5) * 1.4deg
+          ) * var(--pile-lean, 1)
       )
     );
 }
@@ -9832,6 +10079,17 @@ onBeforeUnmount(() => {
   gap: 40px;
 }
 
+.stack__toolbar-edits {
+  display: flex;
+  align-items: center;
+  gap: 25px;
+}
+
+.stack__toolbar-send {
+  display: flex;
+  align-items: center;
+}
+
 .stack__toolbar-clear {
   margin: 0;
   padding: 0;
@@ -9933,8 +10191,14 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+.stack--enquiry-parked .stack__lightbox-name {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .stack__lightbox-name {
+  .stack__lightbox-name,
+  .stack--enquiry-parked .stack__lightbox-name {
     transition: none;
   }
 }
@@ -9960,6 +10224,14 @@ onBeforeUnmount(() => {
 .stack--lb-handoff .stack__lightbox-item {
   opacity: 0 !important;
   transition: none !important;
+}
+
+.stack__lightbox--compact :deep(.lb-edge-glass),
+.stack--view-flip :deep(.lb-edge-glass),
+.stack--flipping :deep(.lb-edge-glass),
+.stack--lb-handoff :deep(.lb-edge-glass),
+.stack--enquiry-parked :deep(.lb-edge-glass) {
+  visibility: hidden;
 }
 
 .stack__lightbox-item .stack__cell-frame,

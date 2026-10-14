@@ -137,8 +137,20 @@
 
               <section
                 v-else-if="section.kind === 'finishes'"
-                class="precrafted-h__item precrafted-h__item--text"
+                class="precrafted-h__item precrafted-h__item--text precrafted-h__item--finishes"
+                :class="{ 'is-finish-hover': finishHover?.sectionId === section.id }"
               >
+                <div class="precrafted-h__finish-stage" aria-hidden="true">
+                  <img
+                    v-for="finish in section.items"
+                    v-show="finish.hoverSrc || finish.imageSrc"
+                    :key="finish.id"
+                    class="precrafted-h__finish-bg"
+                    :class="{ 'is-active': isFinishActive(section.id, finish.id) }"
+                    :src="finish.hoverSrc || finish.imageSrc"
+                    alt=""
+                  />
+                </div>
                 <div class="precrafted-h__text-inner">
                   <h2 class="precrafted__heading">{{ section.title }}</h2>
                   <ul class="precrafted__finishes">
@@ -146,6 +158,8 @@
                       v-for="finish in section.items"
                       :key="finish.id"
                       class="precrafted__finish"
+                      :class="{ 'is-active': isFinishActive(section.id, finish.id) }"
+                      @click="toggleFinish(section.id, finish.id)"
                     >
                       <img
                         v-if="finish.imageSrc"
@@ -160,6 +174,27 @@
                     </li>
                   </ul>
                 </div>
+                <ul class="precrafted__finishes precrafted-h__finish-rail">
+                  <li
+                    v-for="finish in section.items"
+                    :key="finish.id"
+                    class="precrafted__finish"
+                    :class="{ 'is-active': isFinishActive(section.id, finish.id) }"
+                    :data-cursor-label="finish.name"
+                    @click="toggleFinish(section.id, finish.id)"
+                  >
+                    <img
+                      v-if="finish.imageSrc"
+                      class="precrafted__finish-image"
+                      :src="finish.imageSrc"
+                      :alt="finish.name"
+                      loading="lazy"
+                      decoding="async"
+                      draggable="false"
+                    />
+                    <span class="precrafted__finish-name">{{ finish.name }}</span>
+                  </li>
+                </ul>
               </section>
 
               <section
@@ -453,6 +488,7 @@ type FinishItem = {
   id: string
   name: string
   imageSrc?: string
+  hoverSrc?: string
 }
 
 type FinishesTrackSection = {
@@ -603,6 +639,13 @@ const query = `*[_type == "preCraftedPage"][0] {
           url,
           metadata { dimensions { width, height } }
         }
+      },
+      hoverImage {
+        asset->{
+          _id,
+          url,
+          metadata { dimensions { width, height } }
+        }
       }
     },
     pricingHeading,
@@ -649,7 +692,7 @@ const query = `*[_type == "preCraftedPage"][0] {
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v11',
+  'preCraftedPage-v12',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -660,6 +703,16 @@ const { data: page } = await useAsyncData(
 )
 
 const { imageUrl } = useSanityImage()
+
+const finishHover = ref<{ sectionId: string; finishId: string } | null>(null)
+
+function isFinishActive(sectionId: string, finishId: string) {
+  return finishHover.value?.sectionId === sectionId && finishHover.value?.finishId === finishId
+}
+
+function toggleFinish(sectionId: string, finishId: string) {
+  finishHover.value = isFinishActive(sectionId, finishId) ? null : { sectionId, finishId }
+}
 
 function resolveImageSrc(source: unknown, width: number) {
   if (!source || typeof source !== 'object') return ''
@@ -823,14 +876,17 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
               _key?: string
               name?: string
               image?: unknown
+              hoverImage?: unknown
             }
             const name = typeof row.name === 'string' ? row.name.trim() : ''
             if (!name) return null
             const imageSrc = resolveImageSrc(row.image, 600) || undefined
+            const hoverSrc = resolveImageSrc(row.hoverImage, 2000) || undefined
             return {
               id: row._key || `${id}-finish-${finishIndex}`,
               name,
               imageSrc,
+              hoverSrc,
             }
           })
           .filter((finish: FinishItem | null): finish is FinishItem => Boolean(finish))
@@ -1534,9 +1590,88 @@ html.precrafted-loop-lock body {
   margin-inline: auto;
 }
 
-.precrafted-h__item--text .precrafted__finishes {
+.precrafted-h__item--text .precrafted-h__text-inner .precrafted__finishes {
+  grid-template-columns: 1fr 1fr;
+}
+
+.precrafted-h__item--finishes {
+  position: relative;
+  overflow: hidden;
+}
+
+.precrafted-h__finish-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.precrafted-h__finish-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.precrafted-h__finish-bg.is-active {
+  opacity: 1;
+}
+
+.precrafted-h__item--finishes .precrafted-h__text-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.precrafted-h__item--finishes .precrafted__heading,
+.precrafted-h__item--finishes .precrafted-h__text-inner .precrafted__finish {
+  transition: opacity 0.4s ease;
+}
+
+.precrafted-h__item--finishes.is-finish-hover .precrafted__heading,
+.precrafted-h__item--finishes.is-finish-hover .precrafted-h__text-inner .precrafted__finish {
+  opacity: 0;
+}
+
+.precrafted-h__item--finishes.is-finish-hover .precrafted-h__text-inner .precrafted__finish.is-active {
+  opacity: 1;
+}
+
+.precrafted-h__item--finishes .precrafted-h__finish-rail {
+  display: none;
+  position: absolute;
+  right: 50px;
+  top: 50%;
+  z-index: 10;
+  width: 60px;
+  transform: translateY(-50%);
   grid-template-columns: 1fr;
-  max-width: 16rem;
+  gap: 30px;
+  max-width: none;
+  margin: 0;
+}
+
+.precrafted-h__finish-rail .precrafted__finish {
+  border: none;
+  cursor: pointer;
+}
+
+.precrafted-h__finish-rail .precrafted__finish.is-active {
+  border: 1px solid white;
+}
+
+.precrafted-h__finish-rail .precrafted__finish-name {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .precrafted-h__finish-bg,
+  .precrafted-h__item--finishes .precrafted__heading,
+  .precrafted-h__item--finishes .precrafted-h__text-inner .precrafted__finish {
+    transition: none;
+  }
 }
 
 /* —— Mobile vertical —— */
@@ -1644,7 +1779,7 @@ html.precrafted-loop-lock body {
 
 .precrafted__heading {
   font-size: var(--text-2xl);
-  margin: 0 0 1.25rem;
+  margin: 0 0 30px;
   text-transform: none;
   font-family: var(--mono);
 }
@@ -1655,8 +1790,8 @@ html.precrafted-loop-lock body {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  max-width: 42rem;
+  gap: 30px;
+  max-width: 50rem;
 }
 
 .precrafted__finish {

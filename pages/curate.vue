@@ -35,7 +35,7 @@ useHead(() => ({
 <style scoped>
 .curate-page {
   min-height: 100dvh;
-  background: var(--bg-dark);
+  background: var(--cream);
 }
 
 .curate-page__fallback {

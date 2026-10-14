@@ -15,69 +15,33 @@
             <div class="enquiry__backdrop" data-lenis-prevent @click="formShown && close()" />
 
       <div class="enquiry__panel">
-        <header class="enquiry__header" data-lenis-prevent>
-          <div>
-            <h2 class="enquiry__title  interface">Send enquiry</h2>
-            <p class="enquiry__subtitle">
-              {{
-                source === 'moodboard'
-                  ? 'Your board'
-                  : source === 'product'
-                    ? 'Product enquiry'
-                    : 'Your selection'
-              }}
-            </p>
-          </div>
-          <button type="button" class="enquiry__close" aria-label="Close" @click="close">×</button>
-        </header>
-
-        <div v-if="isSuccess" class="enquiry__success" data-lenis-prevent>
-          <p class="enquiry__success-title  interface">Thank you</p>
-          <p>Your enquiry has been sent. We will be in touch shortly.</p>
-          <button type="button" class="btn btn--filled" @click="close">Close</button>
-        </div>
-
-        <form v-else class="enquiry__body" @submit.prevent="submit">
-          <div
-            ref="previewRef"
-            class="enquiry__preview"
-            :class="{ 'enquiry__preview--pile': previewClipped }"
-            data-lenis-prevent
-          >
-            <div ref="previewScrollRef" class="enquiry__preview-scroll">
-            <figure v-if="compositionImage" class="enquiry__composition">
-              <img :src="compositionImage" alt="Moodboard composition" />
-              <figcaption>Board preview</figcaption>
-            </figure>
-
-            <div v-if="previewItems.length" class="enquiry__grid">
-              <div
-                v-for="item in previewItems"
-                :key="item.id"
-                class="enquiry__grid-item"
-                :class="{ 'enquiry__grid-item--swatch': item.kind !== 'image' }"
-                :data-enquiry-id="item.id"
-              >
-                <img
-                  v-if="item.kind === 'image' && item.imageUrl"
-                  :src="item.imageUrl"
-                  :alt="item.title"
-                  :style="item.aspectRatio ? { aspectRatio: String(item.aspectRatio) } : undefined"
-                />
-                <span
-                  v-else-if="item.kind === 'colour' && item.colour"
-                  class="enquiry__colour"
-                  :style="{ background: item.colour }"
-                />
-                <span v-else-if="item.kind === 'text'" class="enquiry__text  interface">
-                  {{ item.text || item.title }}
-                </span>
-              </div>
-            </div>
-            </div>
-          </div>
-
+        <div class="enquiry__body">
           <div class="enquiry__fields" data-lenis-prevent>
+            <header class="enquiry__header" data-lenis-prevent>
+              <div>
+                <h2 class="enquiry__title">Send enquiry</h2>
+                <p class="enquiry__subtitle">
+                  {{
+                    source === 'moodboard'
+                      ? 'Your board'
+                      : source === 'product'
+                        ? 'Product enquiry'
+                        : 'Your selection'
+                  }}
+                </p>
+              </div>
+              <button type="button" class="enquiry__close" aria-label="Close" @click="close">
+                <span class="enquiry__close-icon" aria-hidden="true" />
+              </button>
+            </header>
+
+            <div v-if="isSuccess" class="enquiry__success">
+              <p class="enquiry__success-title  interface">Thank you</p>
+              <p>Your enquiry has been sent. We will be in touch shortly.</p>
+              <button type="button" class="btn btn--filled" @click="close">Close</button>
+            </div>
+
+            <form v-else class="enquiry__form" @submit.prevent="submit">
             <label class="enquiry__field">
               <span class="enquiry__label">Name</span>
               <input
@@ -157,8 +121,52 @@
             <button type="submit" class="enquiry__send interface" :disabled="isSubmitting">
               {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
             </button>
+            </form>
           </div>
-        </form>
+
+          <div
+            ref="previewRef"
+            class="enquiry__preview"
+            :class="{ 'enquiry__preview--pile': previewClipped }"
+            data-lenis-prevent
+          >
+            <div ref="previewScrollRef" class="enquiry__preview-scroll">
+            <figure v-if="compositionImage" class="enquiry__composition">
+              <img :src="compositionImage" alt="Moodboard composition" />
+              <figcaption>Board preview</figcaption>
+            </figure>
+
+            <div
+              v-if="previewItems.length"
+              class="enquiry__grid"
+              :class="{ 'enquiry__grid--lines': gridLines }"
+            >
+              <div
+                v-for="item in previewItems"
+                :key="item.id"
+                class="enquiry__grid-item"
+                :class="{ 'enquiry__grid-item--swatch': item.kind !== 'image' }"
+                :data-enquiry-id="item.id"
+              >
+                <img
+                  v-if="item.kind === 'image' && item.imageUrl"
+                  :src="item.imageUrl"
+                  :alt="item.title"
+                  :style="item.aspectRatio ? { aspectRatio: String(item.aspectRatio) } : undefined"
+                />
+                <span
+                  v-else-if="item.kind === 'colour' && item.colour"
+                  class="enquiry__colour"
+                  :style="{ background: item.colour }"
+                />
+                <span v-else-if="item.kind === 'text'" class="enquiry__text  interface">
+                  {{ item.text || item.title }}
+                </span>
+              </div>
+            </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </Teleport>
@@ -190,8 +198,9 @@ const {
   submit,
 } = useEnquiryForm()
 
-const formShown = ref(true)
+const formShown = ref(false)
 const gridCover = ref(false)
+const gridLines = ref(false)
 /** Pile has landed in the media column — clip it to that box. */
 const previewClipped = ref(false)
 
@@ -324,6 +333,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   if (!enquiryFlyImages().length) {
     formShown.value = true
     gridCover.value = false
+    gridLines.value = true
     getEnquiryFlyBridge()?.setParked(false)
     phase = 'idle'
     return
@@ -334,6 +344,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   const size = sample?.width || 120
   const ids = origins.map((origin) => origin.id)
 
+  setEnquiryFlyFront(true)
   await tweenEnquiryFlyers(pileBoxes(origins, size, mediaColumnCenter()), GATHER_S)
   if (id !== runId) return
 
@@ -349,6 +360,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   await tweenEnquiryFlyers(boxesFor(ids, measureGrid()), SPREAD_S)
   if (id !== runId) return
 
+  gridLines.value = true
   gridCover.value = false
   await nextTick()
   await frames(1)
@@ -361,6 +373,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
 
 const close = async () => {
   if (!isOpen.value || closing.value) return
+  gridLines.value = false
   const flying = phase !== 'idle' || enquiryFlyImages().length > 0
   if (!flying) {
     closeEnquiry()
@@ -381,7 +394,7 @@ const close = async () => {
       gridCover.value = false
       closing.value = false
       closeEnquiry()
-      formShown.value = true
+      formShown.value = false
     }
   }
 }
@@ -456,26 +469,32 @@ watch(isOpen, async (open) => {
   if (!import.meta.client) return
   if (!open) {
     destroyPreviewLenis()
+    gridLines.value = false
     return
   }
-  await nextTick()
-  if (!previewRef.value) await nextTick()
-  initPreviewLenis()
   const origins = flyOrigins.value
+  gridLines.value = !origins?.length
   if (!origins?.length) {
     formShown.value = true
     gridCover.value = false
     phase = 'idle'
+    await nextTick()
+    if (!previewRef.value) await nextTick()
+    initPreviewLenis()
     return
   }
+  // Hide before the first paint. The form fades in only after the pile lands.
   const id = ++runId
   formShown.value = false
   gridCover.value = true
   phase = 'gather'
   await nextTick()
   if (id !== runId) return
+  if (!previewRef.value) await nextTick()
+  if (id !== runId) return
+  initPreviewLenis()
   await gatherIntoGrid(id, origins)
-})
+}, { flush: 'sync' })
 
 const fileInput = ref<HTMLInputElement | null>(null)
 
@@ -559,7 +578,7 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.25rem 1.5rem;
+  padding: 0 0 35px;
   border-bottom: 1px solid var(--grid-line);
 }
 
@@ -576,9 +595,48 @@ onUnmounted(() => {
 }
 
 .enquiry__close {
-  font-size: 1.75rem;
-  line-height: 1;
-  color: var(--muted);
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid currentColor;
+  background: var(--elevated-bg, #fff);
+  color: var(--charcoal);
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.enquiry__close:hover {
+  color: var(--accent, var(--charcoal));
+  border-color: currentColor;
+}
+
+.enquiry__close-icon {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+
+.enquiry__close-icon::before,
+.enquiry__close-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+}
+
+.enquiry__close-icon::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.enquiry__close-icon::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .enquiry__body {
@@ -593,7 +651,7 @@ onUnmounted(() => {
 .enquiry__preview {
   min-height: 0;
   padding: 0;
-  border-right: 1px solid var(--grid-line);
+  border-left: 1px solid var(--grid-line);
   background: var(--cream);
   overflow-x: hidden;
   overflow-y: auto;
@@ -636,7 +694,7 @@ onUnmounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(var(--bucket-thumb-width), 1fr));
   gap: 0;
   align-items: start;
-  /* Last column's right rule sits under the column divider. */
+  /* Last column's right rule sits under the panel edge. */
   width: calc(100% + 1px);
 }
 
@@ -648,8 +706,18 @@ onUnmounted(() => {
   aspect-ratio: 1;
   box-sizing: border-box;
   padding: 12%;
-  border-right: 1px solid var(--grid-line);
-  border-bottom: 1px solid var(--grid-line);
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.45s ease;
+}
+
+.enquiry__grid--lines .enquiry__grid-item {
+  border-right-color: var(--grid-line);
+  border-bottom-color: var(--grid-line);
+}
+
+.enquiry__grid:not(.enquiry__grid--lines) .enquiry__grid-item {
+  transition-duration: 0.2s;
 }
 
 .enquiry__grid-item--swatch {
@@ -686,19 +754,25 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 1rem;
   min-height: 0;
-  padding: 1.5rem;
+  padding: 40px;
   overflow: auto;
+}
+
+.enquiry__form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .enquiry__field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 13px;
 }
 
 .enquiry__label {
   font-size: var(--text-sm);
-  color: var(--muted);
+  font-family: var(--mono);
 }
 
 .enquiry__hint {
@@ -826,7 +900,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.75rem;
-  padding: 2.5rem 1.5rem;
+  padding: 0;
 }
 
 .enquiry__success-title {
@@ -845,8 +919,8 @@ onUnmounted(() => {
   }
 
   .enquiry__preview {
-    border-right: none;
-    border-bottom: 1px solid var(--grid-line);
+    border-left: none;
+    border-top: 1px solid var(--grid-line);
   }
 }
 </style>

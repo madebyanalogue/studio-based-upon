@@ -4,7 +4,6 @@
     :class="{
       'header--product-page': isProductPage,
       'header--scroll-hidden': headerScrollHidden,
-      'header--on-dark': onDarkStage,
     }"
   >
     <div class="header__inner">
@@ -84,17 +83,66 @@
             </template>
           </button>
 
-          <button
-            type="button"
-            class="header__version interface"
-            :class="{ 'header__version--active': isOpen && panelTab === 'selections' }"
-            :aria-label="selectionNavLabel"
-            @click="onSelectionsClick"
-            @mouseenter="onSelectionsHover(true)"
-            @mouseleave="onSelectionsHover(false)"
+          <div class="header__selection-group">
+          <div
+            ref="selectionMenuRef"
+            class="header__version header__selection interface"
+            :class="{
+              'header__version--active': isOpen && panelTab === 'selections',
+              'header__selection--open': selectionMenuOpen,
+            }"
           >
-            {{ selectionNavLabel }}
-          </button>
+            <button
+              type="button"
+              class="header__selection-name"
+              :aria-label="selectionNavLabel"
+              @click="onSelectionsClick"
+              @mouseenter="onSelectionsHover(true)"
+              @mouseleave="onSelectionsHover(false)"
+            >
+              {{ selectionNavLabel }}
+            </button>
+            <button
+              type="button"
+              class="header__selection-chevron"
+              aria-label="Switch selection"
+              :aria-expanded="selectionMenuOpen"
+              @click="toggleSelectionMenu"
+            >
+              <span class="header__selection-chevron-icon" aria-hidden="true" />
+            </button>
+            <div
+              v-if="selectionMenuOpen"
+              class="header__selection-menu"
+              role="listbox"
+              aria-label="Selections"
+            >
+              <button
+                v-for="board in moodboards"
+                :key="board.id"
+                type="button"
+                class="header__selection-option"
+                role="option"
+                :aria-selected="board.id === activeMoodboardId"
+                :class="{ 'header__selection-option--active': board.id === activeMoodboardId }"
+                @click="onPickSelection(board.id)"
+              >
+                {{ board.name?.trim() || 'My Selection' }}
+              </button>
+            </div>
+          </div>
+          <div class="header__plus-slot">
+            <button
+              type="button"
+              class="header__version header__new-selection interface"
+              aria-label="New Selection"
+              @click="onNewSelection"
+            >
+              <span class="header__pixel-plus" aria-hidden="true" />
+              <span class="header__tooltip interface" aria-hidden="true">New Selection</span>
+            </button>
+          </div>
+          </div>
         </div>
 
         <div class="header__cta" role="group" aria-label="Contact">
@@ -122,9 +170,13 @@ const {
   isOpen,
   panelTab,
   activeMoodboard,
+  activeMoodboardId,
+  moodboards,
   openSelectionStack,
   hoverSelectionStack,
   closeDrawer,
+  createMoodboard,
+  switchActiveMoodboard,
 } = useBucket()
 const { closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
@@ -136,11 +188,6 @@ const isProductPage = computed(
   () =>
     productOverlayOpen.value ||
     /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
-)
-
-/** Pairings stays a dark stage, so the header keeps dark-mode type on it. */
-const onDarkStage = computed(
-  () => route.path === '/curate' || route.path === '/curate/',
 )
 
 /** Archive index only — fade nav out on scroll down, back in on scroll up. */
@@ -224,6 +271,7 @@ onMounted(() => {
   bindLenisScroll()
   bindWindowScroll()
   document.addEventListener('basedupon:scroll-system-ready', bindLenisScroll)
+  document.addEventListener('pointerdown', onSelectionMenuPointerDown)
   syncHeaderScrollHidden()
 })
 
@@ -234,6 +282,7 @@ onBeforeUnmount(() => {
   windowScrollUnsub = null
   if (import.meta.client) {
     document.removeEventListener('basedupon:scroll-system-ready', bindLenisScroll)
+    document.removeEventListener('pointerdown', onSelectionMenuPointerDown)
     document.documentElement.classList.remove('header-scroll-hidden')
   }
 })
@@ -241,6 +290,24 @@ onBeforeUnmount(() => {
 const selectionNavLabel = computed(
   () => activeMoodboard.value?.name?.trim() || 'My Selection',
 )
+const selectionMenuOpen = ref(false)
+const selectionMenuRef = ref<HTMLElement | null>(null)
+
+const toggleSelectionMenu = () => {
+  selectionMenuOpen.value = !selectionMenuOpen.value
+}
+
+const onPickSelection = (id: string) => {
+  selectionMenuOpen.value = false
+  if (id === activeMoodboardId.value) return
+  void switchActiveMoodboard(id)
+}
+
+const onSelectionMenuPointerDown = (event: PointerEvent) => {
+  if (!selectionMenuOpen.value) return
+  const root = selectionMenuRef.value
+  if (root && !root.contains(event.target as Node)) selectionMenuOpen.value = false
+}
 
 type TooltipId = 'theme'
 const hiddenTooltip = ref<TooltipId | null>(null)
@@ -274,22 +341,18 @@ const onSelectionsHover = (hot: boolean) => {
 }
 
 const onSelectionsClick = () => {
+  selectionMenuOpen.value = false
   closeBoardsPanel()
   openSelectionStack()
+}
+
+const onNewSelection = () => {
+  closeBoardsPanel()
+  createMoodboard({ activate: true })
 }
 </script>
 
 <style scoped>
-.header--on-dark {
-  --charcoal: var(--text-light);
-  --black: var(--text-light);
-  --muted: color-mix(in srgb, var(--text-light) 45%, transparent);
-  --cream: var(--bg-dark);
-  --elevated-bg: #2a2621;
-  --ui-border-color: rgba(255, 255, 255, 0.14);
-  color: var(--text-light);
-}
-
 .header {
   position: fixed;
   top: 0;
@@ -421,14 +484,124 @@ const onSelectionsClick = () => {
 
 .header__version {
   margin-right: 0.15rem;
-  padding: 0.2rem 0.4rem;
+  padding: 0.35rem 0.7rem;
   font-size: var(--text-xs);
   color: var(--charcoal);
   border: 1px solid var(--grid-line);
   border-radius: 4px;
   background: transparent;
   opacity: 1;
+  white-space: nowrap;
   transition: color 0.2s ease, border-color 0.2s ease, opacity 0.45s ease;
+}
+
+.header__selection-group {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.header__selection {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.header__selection-name,
+.header__selection-chevron {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.header__selection-name {
+  align-self: center;
+}
+
+.header__selection-chevron {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: none;
+  width: auto;
+  height: auto;
+  margin: -0.35rem 0;
+  padding: 0 calc(0.6rem + 2px) 0 11px;
+  border-left: 0;
+}
+
+.header__selection-chevron::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 1px;
+  height: 0.7rem;
+  background: var(--grid-line);
+  transform: translateY(-50%);
+}
+
+.header__selection-chevron-icon {
+  display: block;
+  width: 0.38rem;
+  height: 0.38rem;
+  margin-left: 11px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-20%) rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.header__selection--open .header__selection-chevron-icon {
+  transform: translateY(15%) rotate(225deg);
+}
+
+.header__selection-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 5;
+  min-width: 100%;
+  max-width: 16rem;
+  max-height: min(60vh, 16rem);
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  background: var(--background-color, var(--cream));
+  border: 1px solid var(--grid-line);
+  border-radius: 4px;
+}
+
+.header__selection-option {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.header__selection-option:hover,
+.header__selection-option--active {
+  color: var(--charcoal);
 }
 
 .header__version:hover {
@@ -439,6 +612,61 @@ const onSelectionsClick = () => {
 .header__version--active {
   color: var(--charcoal);
   border-color: var(--charcoal);
+}
+
+.header__plus-slot {
+  display: flex;
+  align-self: stretch;
+  width: 24px;
+}
+
+.header__new-selection {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 1;
+  margin-right: 0;
+  padding: 0;
+}
+
+.header__pixel-plus {
+  position: relative;
+  width: 7px;
+  height: 7px;
+}
+
+.header__pixel-plus::before,
+.header__pixel-plus::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+}
+
+.header__pixel-plus::before {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.header__pixel-plus::after {
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.header__new-selection:hover .header__tooltip,
+.header__new-selection:focus-visible .header__tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .header__boards {

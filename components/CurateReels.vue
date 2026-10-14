@@ -3182,22 +3182,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100dvh;
   overflow: hidden;
-  /* Pairings stage stays dark-mode even when the site theme is light. */
-  color-scheme: dark;
-  --cream: var(--bg-dark);
-  --warm-white: #1f1c18;
-  --sand: #2a2621;
-  --charcoal: var(--text-light);
-  --black: var(--text-light);
-  --muted: color-mix(in srgb, var(--text-light) 45%, transparent);
-  --grid-line: rgba(255, 255, 255, 0.1);
-  --ui-border-color: rgba(255, 255, 255, 0.14);
-  --panel-bg: rgba(31, 28, 24, 0.88);
-  --elevated-bg: #2a2621;
-  --shadow-color: rgba(0, 0, 0, 0.45);
-  --showcase-ctrl-outline: color-mix(in srgb, var(--text-light) 15%, transparent);
-  --showcase-ctrl-border: 1px solid var(--showcase-ctrl-outline);
-  background: var(--bg-dark);
+  background: var(--cream);
 }
 
 .showcase__columns {
@@ -3431,7 +3416,7 @@ onBeforeUnmount(() => {
 }
 
 .showcase__remove-zone {
-  /* Lock / remove sit on the photograph and stay dark-mode in either theme. */
+  /* Sits on the photograph, so it stays dark-mode in either theme. */
   color-scheme: dark;
   --cream: var(--bg-dark);
   --charcoal: var(--text-light);

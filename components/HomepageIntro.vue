@@ -141,6 +141,13 @@
     >
       [ SKIP ]
     </button>
+
+    <div class="homepage-intro__load" aria-hidden="true">
+      <span
+        class="homepage-intro__load-fill"
+        :style="{ transform: `scaleX(${loadProgress})` }"
+      />
+    </div>
   </div>
 </template>
 
@@ -261,6 +268,11 @@ const ruleDrawn = ref(false)
 const showProgress = computed(
   () => frameIndex.value >= 1 && frameIndex.value < FRAMES.length - 1,
 )
+/** Opening slide stays empty. Each of the three slides after it fills another third. */
+const loadProgress = computed(() => {
+  const steps = FRAMES.length - 1
+  return Math.min(1, Math.max(0, frameIndex.value) / steps)
+})
 const leaving = ref(false)
 
 let started = false
@@ -1072,6 +1084,32 @@ onUnmounted(() => {
 
 .homepage-intro__progress.is-in {
   opacity: 1;
+}
+
+.homepage-intro__load {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  height: 2px;
+  pointer-events: none;
+}
+
+.homepage-intro__load-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homepage-intro__load-fill {
+    transition: none;
+  }
 }
 
 .homepage-intro__finale {

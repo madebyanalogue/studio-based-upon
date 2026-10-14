@@ -167,9 +167,13 @@ const hiddenByTransition = (stage: HTMLElement) => {
   return (
     stack.classList.contains('stack--view-flip') ||
     stack.classList.contains('stack--lb-handoff') ||
-    stack.classList.contains('stack--flipping')
+    stack.classList.contains('stack--flipping') ||
+    stack.classList.contains('stack--enquiry-parked')
   )
 }
+
+/** Intro and close use the short row. Glass on that size leaves a sliced edge after the flight. */
+const rowIsCompact = (stage: HTMLElement) => stage.classList.contains('stack__lightbox--compact')
 
 const paint = () => {
   const canvas = canvasRef.value
@@ -177,7 +181,7 @@ const paint = () => {
   if (!canvas || !stage || stage.clientWidth < 2 || stage.clientHeight < 2) return
   init()
   if (!gl || !program || !texture) return
-  if (hiddenByTransition(stage)) {
+  if (hiddenByTransition(stage) || rowIsCompact(stage)) {
     clearClips()
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clearColor(0, 0, 0, 0)

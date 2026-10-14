@@ -1764,24 +1764,6 @@ watch(
   transform: none;
 }
 
-/* Opened from Pairings — the info column stays dark-mode in either site theme. */
-.pdp--curate .pdp__col--left {
-  color-scheme: dark;
-  --cream: var(--bg-dark);
-  --warm-white: #1f1c18;
-  --sand: #2a2621;
-  --charcoal: var(--text-light);
-  --black: var(--text-light);
-  --muted: color-mix(in srgb, var(--text-light) 45%, transparent);
-  --grid-line: rgba(255, 255, 255, 0.1);
-  --ui-border-color: rgba(255, 255, 255, 0.14);
-  --panel-bg: rgba(31, 28, 24, 0.88);
-  --elevated-bg: #2a2621;
-  color: var(--text-light);
-  background: color-mix(in srgb, var(--bg-dark) 82%, transparent);
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
 /* Close: aside fades in place. The index-rail offset stays put. */
 .pdp--closing.pdp--sides .pdp__col--left {
   opacity: 0;

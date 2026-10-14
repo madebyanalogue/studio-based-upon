@@ -150,6 +150,7 @@ let moodboardStagedRevealHandler: (() => Promise<void>) | null = null
 let moodboardChromeEnterHandler: (() => Promise<void>) | null = null
 type PileFlyPhase = 'shown' | 'done'
 let pileFlyHandler: ((phase: PileFlyPhase, itemId?: string) => void) | null = null
+let selectionSwitchHandler: ((id: string) => void | Promise<void>) | null = null
 
 const createId = () => `moodboard-${Date.now()}-${Math.round(Math.random() * 1000)}`
 
@@ -1176,6 +1177,20 @@ export const useBucket = () => {
     else selectionStackHoverHandlers?.leave()
   }
 
+  const registerSelectionSwitch = (
+    handler: ((id: string) => void | Promise<void>) | null,
+  ) => {
+    selectionSwitchHandler = handler
+  }
+
+  /** Header menu — the corner stack animates the handoff when it can. */
+  const switchActiveMoodboard = (id: string) => {
+    if (!moodboards.value.some((board) => board.id === id)) return
+    if (id === activeMoodboardId.value) return
+    if (selectionSwitchHandler) return selectionSwitchHandler(id)
+    setActiveMoodboard(id)
+  }
+
   const openDrawer = (tab: 'selections' | 'boards' = 'selections') => {
     useStackChrome().setStackChromeVisible(true)
     panelTab.value = tab
@@ -1269,6 +1284,8 @@ export const useBucket = () => {
     deleteMoodboard,
     clearActiveItems,
     setActiveMoodboard,
+    switchActiveMoodboard,
+    registerSelectionSwitch,
     addItem,
     removeItem,
     removeItems,
