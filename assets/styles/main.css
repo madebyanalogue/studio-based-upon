@@ -20,6 +20,9 @@
   );
   /* 0 when closed; set to cart footprint when open (pushes page content) */
   --bucket-push: 0px;
+  /* Closed selection pile. Matches BucketStack column counts so page clicks clear it. */
+  --stack-cols: 2;
+  --stack-clearance: calc(100vw / var(--stack-cols));
   --boards-rail-push: 0px;
   --selections-panel-width: 0px;
   /* Board builder left rail — matches ProductIndexRail */
@@ -69,10 +72,40 @@
 
 }
 
+@media (min-width: 660px) {
+  :root {
+    --stack-cols: 3;
+  }
+}
+
 @media (min-width: 768px) {
   :root {
     --gutter: 20px;
     --header-height: 64px;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --stack-cols: 4;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --stack-cols: 5;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --stack-cols: 6;
+  }
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --stack-cols: 7;
   }
 }
 
@@ -129,6 +162,18 @@ html.bucket-push {
   --bucket-push: var(--bucket-height);
 }
 
+html.bucket-push #app {
+  padding-bottom: var(--bucket-push);
+}
+
+/* Full-bleed canvases stay viewport-locked. Their own controls clear the pile. */
+body.infinite-slider-active #app,
+body.discovery-active #app,
+body.d2-active #app,
+body:has(.curate-page) #app {
+  padding-bottom: var(--bucket-push);
+}
+
 /* Enable theme color transitions only after initial theme is applied */
 html.theme-ready {
   --theme-ms: 0.4s;
@@ -172,7 +217,9 @@ body {
 
 /* Overlays (cart, board composer, PDP, enquiry) — block page scroll underneath */
 html.page-scroll-locked,
-html.page-scroll-locked body {
+html.page-scroll-locked body,
+html.header-menu-open,
+html.header-menu-open body {
   overflow: hidden !important;
   overscroll-behavior: none;
 }
@@ -259,7 +306,8 @@ html.stack-freeform-dragging * {
   display: flex;
   flex-direction: column;
   padding-left: calc(var(--selections-panel-width) + var(--boards-panel-width));
-  padding-bottom: var(--bucket-push);
+  /* Closed pile sits on the page. Open cart replaces it with the cart bar. */
+  padding-bottom: var(--stack-clearance);
   transition:
     padding-left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     padding-bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);

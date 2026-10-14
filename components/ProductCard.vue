@@ -370,44 +370,17 @@ const onToggle = (event?: MouseEvent) => {
   transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-/* Wide: heart rides the hover; a saved heart stays readable */
-@media (min-width: 1000px) {
-  .product-card__add {
-    opacity: 0;
-    transform: translateY(4px);
-    pointer-events: none;
-  }
-
-  .product-card:hover .product-card__add,
-  .product-card--saved .product-card__add {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-  .product-card--saved:not(:hover) .product-card__add {
-    opacity: 0;
-  }
+/* Heart stays on the thumbnail, including pieces already in the stack. */
+.product-card__add {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
-.product-card--saved {
-  --gathered-thumb-opacity: 0.1;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .product-card--saved .product-card__image,
-  .product-card--saved .product-card__placeholder {
-    opacity: var(--gathered-thumb-opacity);
-    filter: grayscale(100%);
-    transition: opacity 0.45s ease, filter 0.2s ease;
-  }
-
-  .product-card--saved:hover .product-card__image,
-  .product-card--saved:focus-within .product-card__image,
-  .product-card--saved:hover .product-card__placeholder,
-  .product-card--saved:focus-within .product-card__placeholder {
-    opacity: 1;
-    filter: grayscale(0%);
-  }
+.product-card--saved .product-card__image,
+.product-card--saved .product-card__placeholder {
+  opacity: 1;
+  filter: none;
 }
 
 .product-card__meta {
@@ -453,6 +426,13 @@ const onToggle = (event?: MouseEvent) => {
     opacity: 1;
     transform: none;
     pointer-events: auto;
+  }
+}
+
+/* Tablet and phone: titles stay on the card. */
+@media (max-width: 1100px) {
+  .product-card__meta {
+    opacity: 1;
   }
 }
 

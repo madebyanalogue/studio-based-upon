@@ -109,6 +109,11 @@ onUnmounted(() => {
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Related sheet covers the page, including the stack (340) and the materials title (450). */
+html.pdp-related-rail-open .product-overlay {
+  z-index: 480;
+}
+
 .product-overlay__backdrop {
   position: absolute;
   inset: 0;

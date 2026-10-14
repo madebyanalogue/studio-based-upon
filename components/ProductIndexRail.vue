@@ -6,9 +6,17 @@
       'pdp-index--chrome-enter': chromeEnterMotion,
       'pdp-index--index-hidden': !indexRailVisible,
       'pdp-index--related-hidden': !relatedRailVisible,
+      'pdp-index--related-in': relatedEntered,
       'pdp-index--exiting': closingFlip,
     }"
   >
+    <button
+      type="button"
+      class="pdp-index__scrim"
+      aria-label="Close related"
+      :tabindex="relatedRailVisible ? undefined : -1"
+      @click="closeRelatedRail"
+    />
     <div
       class="pdp-index__rail pdp-index__rail--left"
       aria-label="Product index"
@@ -591,10 +599,25 @@ watch(relatedToggleRequest, (value, previous) => {
   toggleRelatedMode()
 })
 
+const relatedEntered = ref(false)
+let relatedEnterFrame = 0
+
 watch(
   relatedRailVisible,
-  () => {
+  (open) => {
     syncRelatedRailDom()
+    if (!import.meta.client) return
+    window.cancelAnimationFrame(relatedEnterFrame)
+    if (!open) {
+      relatedEntered.value = false
+      return
+    }
+    relatedEntered.value = false
+    relatedEnterFrame = window.requestAnimationFrame(() => {
+      relatedEnterFrame = window.requestAnimationFrame(() => {
+        if (relatedRailVisible.value) relatedEntered.value = true
+      })
+    })
   },
   { immediate: true },
 )
@@ -608,6 +631,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  if (import.meta.client) window.cancelAnimationFrame(relatedEnterFrame)
   destroyIndexLenis()
   // Only clear the document push when related was closed already, or when there
   // is no overlay session left. Avoid stripping the class while related is still
@@ -1051,9 +1075,68 @@ onMounted(() => {
   pointer-events: auto;
 }
 
+.pdp-index__scrim {
+  display: none;
+}
+
 @media (max-width: 1000px) {
   .pdp-index {
     display: none;
+  }
+
+  html.pdp-related-rail-open .pdp-index {
+    display: block;
+    position: fixed;
+    inset: 0;
+    /* Above the gallery (105), aside (120), stack (340) and materials title (450). */
+    z-index: 480;
+    pointer-events: auto;
+  }
+
+  html.pdp-related-rail-open .pdp-index__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    padding: 0;
+    border: 0;
+    background: color-mix(in srgb, var(--background-color) 72%, transparent);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--pdp-rail-motion);
+  }
+
+  html.pdp-related-rail-open .pdp-index--related-in .pdp-index__scrim {
+    opacity: 1;
+  }
+
+  html.pdp-related-rail-open .pdp-index__rail--left,
+  html.pdp-related-rail-open .pdp-index__reveals,
+  html.pdp-related-rail-open .pdp-index__edge-close {
+    display: none;
+  }
+
+  html.pdp-related-rail-open .pdp-index__rail--right,
+  html.pdp-related-rail-open .pdp-index--chrome-enter:not(.pdp-index--chrome) .pdp-index__rail--right,
+  html.pdp-related-rail-open .pdp-index--chrome .pdp-index__rail--right {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    z-index: 2;
+    width: min(86vw, 22rem);
+    transform: translateX(100%);
+    transition: transform var(--pdp-rail-motion);
+    animation: none;
+    pointer-events: auto;
+    padding-bottom: var(--stack-clearance);
+  }
+
+  html.pdp-related-rail-open .pdp-index--related-in .pdp-index__rail--right,
+  html.pdp-related-rail-open .pdp-index--related-in.pdp-index--chrome-enter:not(.pdp-index--chrome) .pdp-index__rail--right,
+  html.pdp-related-rail-open .pdp-index--related-in.pdp-index--chrome .pdp-index__rail--right {
+    transform: translateX(0);
   }
 }
 </style>

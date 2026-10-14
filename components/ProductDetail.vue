@@ -18,21 +18,20 @@
       'pdp--curate': flipSourceIsCurate(),
     }"
   >
-    <aside class="pdp__col pdp__col--left" data-cursor="default">
-      <div class="pdp__toolbar">
-        <button type="button" class="pdp__close interface" @click="requestPdpClose">Close</button>
-        <div
-          class="pdp__meta interface pdp__pane-fade"
-          :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
-        >
-          <span>{{ typeLabel }}</span>
-          <template v-if="orderLabel">
-            <span class="pdp__meta-sep" aria-hidden="true">/</span>
-            <span class="pdp__meta-order">{{ orderLabel }}</span>
-          </template>
-        </div>
+    <div class="pdp__toolbar">
+      <button type="button" class="pdp__close interface" @click="requestPdpClose">Close</button>
+      <div
+        class="pdp__meta interface pdp__pane-fade"
+        :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
+      >
+        <span>{{ typeLabel }}</span>
+        <template v-if="orderLabel">
+          <span class="pdp__meta-sep" aria-hidden="true">/</span>
+          <span class="pdp__meta-order">{{ orderLabel }}</span>
+        </template>
       </div>
-
+    </div>
+    <aside class="pdp__col pdp__col--left" data-cursor="default">
       <div
         class="pdp__body pdp__pane-fade"
         :class="{ 'pdp__pane-fade--out': !paneContentVisible }"
@@ -159,7 +158,7 @@
           >
           <button
             type="button"
-            class="pdp__rail-btn"
+            class="pdp__rail-btn pdp__rail-btn--related"
             :aria-pressed="relatedRailVisible"
             aria-label="Related"
             @click="requestRelatedToggle"
@@ -169,7 +168,7 @@
           <button
             v-if="galleryEntries.some((entry) => entry.kind === 'image')"
             type="button"
-            class="pdp__rail-btn"
+            class="pdp__rail-btn pdp__rail-btn--loupe"
             :aria-pressed="loupeOpen"
             :aria-label="loupeOpen ? 'Close loupe' : 'Open loupe'"
             @click="loupeOpen = !loupeOpen"
@@ -2135,7 +2134,7 @@ watch(
   padding: var(--pdp-aside-padding);
   font-family: var(--mono);
   font-size: 18px;
-  line-height: 1.15;
+  line-height: 1.45;
   font-weight: 400;
   color: var(--charcoal);
 }
@@ -2284,14 +2283,13 @@ watch(
   stroke-width: 1.5;
   stroke-linecap: butt;
   stroke-linejoin: miter;
-  /* Ends stay put. Only the middle vertex moves, so the chevron
-     folds from down to up instead of rotating. */
+  /* Ends and the tip trade Y, so the chevron flips in place. */
   d: path("M1 3 L7 9 L13 3");
   transition: d 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark path {
-  d: path("M1 3 L7 -3 L13 3");
+  d: path("M1 9 L7 3 L13 9");
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2504,12 +2502,11 @@ watch(
   .pdp--standalone {
     display: flex;
     flex-direction: column;
-    height: auto;
-    min-height: 100dvh;
-  }
-
-  .pdp--standalone {
-    min-height: 100dvh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: var(--stack-clearance);
+    -webkit-overflow-scrolling: touch;
   }
 
   .pdp__col {
@@ -2522,27 +2519,70 @@ watch(
     border: none;
   }
 
+  .pdp__toolbar {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    flex: 0 0 auto;
+    height: var(--toolbar-height);
+    min-height: var(--toolbar-height);
+    background: var(--background-color);
+  }
+
   .pdp__col--center {
-    order: -1;
+    order: 1;
     grid-column: auto;
     grid-row: auto;
+    flex: 0 0 auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   .pdp__stage {
-    min-height: 55dvh;
+    min-height: 0;
+    max-height: none;
+    padding: 0;
+    overflow: visible;
   }
 
   .pdp__strip {
     align-items: stretch;
+    height: auto;
+    max-height: none;
+    overflow: visible;
     transition: none;
   }
 
-  .pdp__strip-track {
-    padding: 0 1rem;
+  .pdp__strip-track,
+  .pdp--index-hidden .pdp__strip-track,
+  .pdp--related-hidden .pdp__strip-track {
+    align-items: stretch;
+    gap: 0;
+    padding: 0;
   }
 
-  .pdp--index-hidden .pdp__strip-track {
-    padding: 0 1rem;
+  .pdp__strip-item,
+  .pdp__strip--single .pdp__strip-item {
+    width: 100%;
+    height: auto;
+    max-height: none;
+  }
+
+  .pdp__strip-item .pdp__hero-frame,
+  .pdp__strip--single .pdp__strip-item .pdp__hero-frame {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .pdp__rail-btn--loupe,
+  .pdp__rail-btn--related,
+  .pdp__action-split {
+    display: none;
   }
 
   .pdp__col--left {
@@ -2551,12 +2591,18 @@ watch(
     left: auto;
     right: auto;
     bottom: auto;
+    flex: 0 0 auto;
     width: 100%;
+    height: auto;
+    min-height: auto;
     max-height: none;
+    overflow: visible;
     border-radius: 0;
     corner-shape: initial;
     border: none;
-    border-bottom: 1px solid var(--grid-line);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     z-index: auto;
     transform: none;
   }

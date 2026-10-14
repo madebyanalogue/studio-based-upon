@@ -827,6 +827,19 @@ onBeforeUnmount(() => {
   filter: grayscale(1);
 }
 
+@media (max-width: 899px) {
+  .discover-page__row-title {
+    top: calc(var(--header-height) + 0.75rem);
+    max-width: calc(100% - 2 * var(--gutter));
+    transform: none;
+    font-size: clamp(1.75rem, 8vw, 2.75rem);
+  }
+
+  .discover-page__content {
+    padding-top: 5.5rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .discover-page__content :deep(.collection-rail) {
     transition: none;

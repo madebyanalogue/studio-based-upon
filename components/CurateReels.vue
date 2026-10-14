@@ -3236,7 +3236,7 @@ onBeforeUnmount(() => {
 .showcase__column-title,
 .showcase__column-product {
   margin: 0;
-  font-size: clamp(8px, 1vw, 9.5px);
+  font-size: clamp(9px, 1vw, 9.5px);
   letter-spacing: 0.125em;
   line-height: 1.3;
   white-space: nowrap;
@@ -3958,12 +3958,8 @@ onBeforeUnmount(() => {
 
 .showcase__surrender {
   position: fixed;
-  left: calc(
-    var(--selections-panel-width) +
-      var(--boards-panel-width) +
-      (100vw - var(--selections-panel-width) - var(--boards-panel-width)) / 2
-  );
-  bottom: var(--showcase-bottom-inset, 60px);
+  left: 50%;
+  bottom: calc(60px + var(--bucket-push, 0px));
   z-index: 20;
   box-sizing: border-box;
   min-height: var(--showcase-ctrl-size);
@@ -3980,7 +3976,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transform: translateX(-50%);
   transition:
-    left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1),
     color 0.2s ease,
     background 0.2s ease,
     border-color 0.2s ease;
@@ -3995,5 +3991,21 @@ onBeforeUnmount(() => {
 .showcase__surrender:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+@media (max-width: 860px) {
+  .showcase__surrender {
+    bottom: calc(16px + var(--stack-clearance, 0px));
+  }
+
+  :global(html.bucket-push) .showcase__surrender {
+    bottom: calc(16px + var(--bucket-push, 0px));
+  }
+}
+
+@media (max-width: 767px) {
+  .showcase {
+    padding-bottom: var(--stack-clearance);
+  }
 }
 </style>

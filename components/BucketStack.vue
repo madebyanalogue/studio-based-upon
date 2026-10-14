@@ -784,20 +784,14 @@
                 :disabled="!items.length"
                 @click="sendEnquiry"
               >
-                Send as Enquiry
+                <span class="stack__toolbar-create-long">Send as Enquiry</span>
+                <span class="stack__toolbar-create-short">Enquire</span>
               </button>
             </div>
           </div>
         </header>
 
-        <SlidingPill
-          class="stack__view-toggle"
-          :class="{ 'stack__view-toggle--visible': controlsVisible && !enquiryFormOpen }"
-          label="Selection layout"
-          :options="cartLayoutOptions"
-          :model-value="cartView"
-          @update:model-value="setCartView($event as CartLayout)"
-        />
+        <div class="stack__dock">
         <button
           type="button"
           class="stack__close-global interface"
@@ -807,6 +801,14 @@
         >
           Close
         </button>
+        <SlidingPill
+          class="stack__view-toggle"
+          :class="{ 'stack__view-toggle--visible': controlsVisible && !enquiryFormOpen }"
+          label="Selection layout"
+          :options="cartLayoutOptions"
+          :model-value="cartView"
+          @update:model-value="setCartView($event as CartLayout)"
+        />
         <div
           class="stack__corner"
           :class="{ 'stack__corner--visible': controlsVisible && !enquiryFormOpen }"
@@ -851,7 +853,7 @@
           >
             Tidy
           </button>
-          <label class="stack__upload-global interface" data-cursor="default">
+          <label class="stack__upload-global interface" data-cursor="default" aria-label="Upload">
             <input
               type="file"
               class="stack__upload-input"
@@ -866,6 +868,7 @@
               <path d="M5 19h14" />
             </svg>
           </label>
+        </div>
         </div>
       </template>
 
@@ -2437,16 +2440,24 @@ const showSelectionGrid = computed(
     selectionEntries.value.length > 0,
 )
 
-const cartLayoutOptions = [
+const CART_LAYOUTS = [
   { id: 'freeform', label: 'Freeform' },
   { id: 'grid', label: 'Grid' },
   { id: 'lightbox', label: 'Lightbox' },
 ] as const
+const NARROW_CART_MQ = '(max-width: 767px)'
+const narrowCart = ref(false)
+if (import.meta.client) {
+  narrowCart.value = window.matchMedia(NARROW_CART_MQ).matches
+}
+const cartLayoutOptions = computed(() =>
+  narrowCart.value ? CART_LAYOUTS.filter((option) => option.id !== 'freeform') : CART_LAYOUTS,
+)
 const lightboxGlassOptions = [
   { id: 'off', label: 'Off' },
   { id: 'on', label: 'Glass' },
 ] as const
-type CartLayout = (typeof cartLayoutOptions)[number]['id']
+type CartLayout = (typeof CART_LAYOUTS)[number]['id']
 
 const cartViewStored = useCookie<string>('sba-cart-view', {
   default: () => 'freeform',
@@ -2459,7 +2470,12 @@ const normalizeCartView = (value: string | null | undefined): CartLayout => {
   return 'freeform'
 }
 const cartView = computed({
-  get: () => normalizeCartView(cartViewStored.value),
+  get: () => {
+    const view = normalizeCartView(cartViewStored.value)
+    // Phone keeps the desktop choice, but freeform is not offered there.
+    if (narrowCart.value && view === 'freeform') return 'grid'
+    return view
+  },
   set: (view: CartLayout) => {
     cartViewStored.value = view
   },
@@ -3536,16 +3552,26 @@ const lightboxMetrics = () => {
   const chromeTop = (selector: string) => {
     const el = stage.ownerDocument.querySelector(selector)
     if (!(el instanceof HTMLElement)) return Infinity
+    // The toggles slide 8px as they fade. Read the resting box so the row
+    // doesn't shift on the click that opens a product, or when it returns.
+    let node: HTMLElement | null = el
+    while (node) {
+      const style = getComputedStyle(node)
+      const bottom = Number.parseFloat(style.bottom)
+      if (
+        (style.position === 'fixed' || style.position === 'absolute') &&
+        Number.isFinite(bottom)
+      ) {
+        const nested =
+          node === el ? 0 : el.getBoundingClientRect().top - node.getBoundingClientRect().top
+        const viewportTop = window.innerHeight - bottom - node.offsetHeight + nested
+        const settled = viewportTop - stageBox.top
+        return settled > 8 ? settled : Infinity
+      }
+      node = node.offsetParent instanceof HTMLElement ? node.offsetParent : node.parentElement
+    }
     const top = el.getBoundingClientRect().top - stageBox.top
-    // Controls enter 8px low. Measure where they rest so the row doesn't
-    // jump when that slide finishes after the pile has landed.
-    const corner = el.closest('.stack__corner')
-    const entering =
-      (el.classList.contains('stack__view-toggle') &&
-        !el.classList.contains('stack__view-toggle--visible')) ||
-      (corner && !corner.classList.contains('stack__corner--visible'))
-    const settled = entering ? top - 8 : top
-    return settled > 8 ? settled : Infinity
+    return top > 8 ? top : Infinity
   }
   // The row is centred in the band between the toolbar and the toggles.
   const footerTop = Math.min(
@@ -3555,7 +3581,13 @@ const lightboxMetrics = () => {
   const frameTop = toolbarBottom + 20
   const frameBottom = Number.isFinite(footerTop) ? footerTop - 60 : stage.clientHeight - 188
   const frameH = Math.max(160, frameBottom - frameTop)
-  const panelH = Math.max(160, frameH * 0.72)
+  let panelH = Math.max(160, frameH * 0.72)
+  // On a phone the row is sized from height, so a landscape frame is wider than the screen.
+  if (stageW <= 767) {
+    const maxItemW = Math.max(64, stageW - LB_SIDE_INSET * 2)
+    const widest = aspects.reduce((max, aspect) => Math.max(max, aspect > 0 ? aspect : 0), 1)
+    panelH = Math.min(panelH, maxItemW / widest)
+  }
   const slotW = aspects.map((aspect) => aspect * panelH + LB_GAP)
   const offsets: number[] = []
   let total = 0
@@ -4195,10 +4227,20 @@ const freeformStyle = (id: string) => {
   const aspect = freeformAspects.value[id] || 1.15
   const shown =
     place.image || sw < 2 || sh < 2 ? place : toImagePlace(place, aspect, sw, sh)
-  const width = shown.w * sw
+  let width = shown.w * sw
+  let left = shown.x * sw
+  // Stored fractions come from a wide stage, so on a phone they are either tiny
+  // or, once resized, wider than the screen. Keep every card inside the plane.
+  if (sw >= 2 && sw <= 767) {
+    const maxW = Math.max(48, sw - 24)
+    const cells = place.accent ? ACCENT_CELLS : ARRIVAL_CELLS
+    const floor = Math.min(maxW, MATRIX_DOT * cells)
+    width = Math.min(maxW, Math.max(width, floor))
+    left = Math.min(Math.max(8, left), Math.max(8, sw - width - 8))
+  }
   const height = width / aspect
   return {
-    left: `${shown.x * sw}px`,
+    left: `${left}px`,
     top: `${shown.y * sh}px`,
     width: `${width}px`,
     height: `${height}px`,
@@ -8039,6 +8081,7 @@ watch(
 )
 
 const onWinResize = () => {
+  narrowCart.value = window.matchMedia(NARROW_CART_MQ).matches
   syncCellSize()
   syncAllColumnLayouts()
   if (showLightbox.value) layoutLightbox()
@@ -10139,6 +10182,15 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
+.stack__toolbar-create-short {
+  display: none;
+}
+
+/* Desktop: the wrapper disappears so Close, the view pill, and the corner stay fixed. */
+.stack__dock {
+  display: contents;
+}
+
 .stack__view-toggle {
   position: fixed;
   left: 50%;
@@ -10721,12 +10773,96 @@ onBeforeUnmount(() => {
   }
 
   .stack__toolbar {
-    --stack-toolbar-pad: calc(var(--gutter) * 0.75);
-    gap: 0.5rem;
+    --stack-toolbar-pad: var(--gutter);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.45rem;
   }
 
   .stack__toolbar-center {
-    max-width: min(16rem, 52vw);
+    justify-self: stretch;
+    max-width: none;
+  }
+
+  .stack__toolbar-actions {
+    gap: 0.55rem;
+  }
+
+  .stack__toolbar-edits {
+    gap: 0.55rem;
+  }
+
+  /* The name itself is editable, so the extra Rename control can go. */
+  .stack__toolbar-edits .stack__toolbar-clear:first-child {
+    display: none;
+  }
+
+  .stack__toolbar-create {
+    padding: 0.4rem 0.55rem;
+  }
+
+  .stack__toolbar-create-long {
+    display: none;
+  }
+
+  .stack__toolbar-create-short {
+    display: inline;
+  }
+
+  .stack__dock {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 430;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px var(--gutter) calc(8px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  .stack__dock > .stack__close-global,
+  .stack__dock > .stack__view-toggle,
+  .stack__dock > .stack__corner {
+    position: static;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform: none;
+  }
+
+  .stack__dock > .stack__close-global--visible,
+  .stack__dock > .stack__view-toggle--visible,
+  .stack__dock > .stack__corner--visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .stack__dock > .stack__corner {
+    gap: 6px;
+  }
+
+  .stack__dock .stack__close-global,
+  .stack__dock .stack__undo-global,
+  .stack__dock .stack__tidy-global,
+  .stack__dock .stack__upload-global {
+    padding: 0.35rem 0.6rem;
+  }
+
+  .stack__dock .stack__upload-global span {
+    display: none;
+  }
+
+  .stack__dock :deep(.sliding-pill button) {
+    padding: 0.35rem 0.55rem;
   }
 
   .stack__undo-global {

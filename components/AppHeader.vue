@@ -44,6 +44,15 @@
         class="header__actions"
         :aria-hidden="isProductPage ? 'true' : undefined"
       >
+        <button
+          type="button"
+          class="header__menu-btn interface"
+          :aria-expanded="menuOpen"
+          :aria-label="menuOpen ? 'Close menu' : 'Open menu'"
+          @click="toggleMenu"
+        >
+          <span class="header__menu-bars" :class="{ 'is-open': menuOpen }" aria-hidden="true" />
+        </button>
         <div class="header__tools" role="group" aria-label="Site tools">
           <button
             type="button"
@@ -147,7 +156,7 @@
 
         <div class="header__cta" role="group" aria-label="Contact">
           <a
-            class="interface"
+            class="header__phone interface"
             :href="`tel:${phoneTel}`"
           >
             {{ phone }}
@@ -156,6 +165,39 @@
             Enquire
           </NuxtLink>
         </div>
+      </div>
+    </div>
+
+    <div
+      v-show="menuOpen"
+      class="header__sheet"
+      :aria-hidden="menuOpen ? undefined : 'true'"
+    >
+      <nav class="header__sheet-nav" aria-label="Menu">
+        <NuxtLink
+          v-for="item in headerMenu.items"
+          :key="`sheet-${item._key}`"
+          :to="item.path"
+          class="header__sheet-link interface"
+          :class="{ 'header__sheet-link--active': isActive(item.path) }"
+          @click="menuOpen = false"
+        >
+          {{ item.text }}
+        </NuxtLink>
+      </nav>
+      <div class="header__sheet-tools">
+        <button type="button" class="header__sheet-link interface" @click="onThemeClick">
+          {{ isDark ? 'Light mode' : 'Dark mode' }}
+        </button>
+        <button type="button" class="header__sheet-link interface" @click="onSheetSelections">
+          {{ selectionNavLabel }}
+        </button>
+        <button type="button" class="header__sheet-link interface" @click="onSheetNewSelection">
+          New selection
+        </button>
+        <a class="header__sheet-link interface" :href="`tel:${phoneTel}`">
+          {{ phone }}
+        </a>
       </div>
     </div>
   </header>
@@ -197,6 +239,38 @@ const isMaterialsIndex = computed(
 )
 
 const headerScrollHidden = ref(false)
+const menuOpen = ref(false)
+
+const toggleMenu = () => {
+  menuOpen.value = !menuOpen.value
+  if (menuOpen.value) headerScrollHidden.value = false
+}
+
+const onSheetSelections = () => {
+  menuOpen.value = false
+  onSelectionsClick()
+}
+
+const onSheetNewSelection = () => {
+  menuOpen.value = false
+  onNewSelection()
+}
+
+watch(
+  () => route.fullPath,
+  () => {
+    menuOpen.value = false
+  },
+)
+
+watch(isProductPage, (hidden) => {
+  if (hidden) menuOpen.value = false
+})
+
+watch(menuOpen, (open) => {
+  if (!import.meta.client) return
+  document.documentElement.classList.toggle('header-menu-open', open)
+})
 const SCROLL_DELTA = 8
 const SHOW_AT_TOP = 48
 let lastScrollY = 0
@@ -284,6 +358,7 @@ onBeforeUnmount(() => {
     document.removeEventListener('basedupon:scroll-system-ready', bindLenisScroll)
     document.removeEventListener('pointerdown', onSelectionMenuPointerDown)
     document.documentElement.classList.remove('header-scroll-hidden')
+    document.documentElement.classList.remove('header-menu-open')
   }
 })
 
@@ -840,22 +915,132 @@ const onNewSelection = () => {
   transition: none;
 }
 
-@media (max-width: 767px) {
+.header__menu-btn {
+  display: none;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin: 0;
+  padding: 0;
+  color: var(--charcoal);
+}
+
+.header__menu-bars,
+.header__menu-bars::before,
+.header__menu-bars::after {
+  display: block;
+  width: 16px;
+  height: 1px;
+  background: currentColor;
+}
+
+.header__menu-bars {
+  position: relative;
+}
+
+.header__menu-bars::before,
+.header__menu-bars::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.header__menu-bars::before {
+  top: -5px;
+}
+
+.header__menu-bars::after {
+  top: 5px;
+}
+
+.header__menu-bars.is-open {
+  background: transparent;
+}
+
+.header__menu-bars.is-open::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.header__menu-bars.is-open::after {
+  top: 0;
+  transform: rotate(-45deg);
+}
+
+.header__sheet {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .header__menu-btn {
+    display: grid;
+  }
+
+  .header__nav,
+  .header__tools,
+  .header__phone {
+    display: none;
+  }
+
   .header__inner {
-    grid-template-columns: 1fr auto 1fr;
-    gap: 0.5rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .header__actions {
+    gap: 0.75rem;
   }
 
   .header__logo {
-    width: min(7.5rem, 34vw);
+    width: 72px;
   }
 
-  .header__nav {
-    gap: 0.5rem 0.75rem;
+  .header__logo-mark {
+    top: 16px;
+    width: 128px;
   }
 
-  .header__nav-link {
-    font-size: var(--text-xs);
+  .header__sheet {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: fixed;
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 99;
+    padding: 1.5rem var(--gutter) calc(1.5rem + var(--stack-clearance));
+    background: var(--background-color);
+    overflow: auto;
+  }
+
+  .header__sheet-nav,
+  .header__sheet-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .header__sheet-link {
+    padding: 0.55rem 0;
+    font-size: var(--text-sm);
+    color: var(--charcoal);
+  }
+
+  .header__sheet-link--active {
+    opacity: 0.45;
+  }
+}
+
+@media (max-width: 767px) {
+  .header__logo-mark {
+    width: 108px;
+  }
+
+  .header__enquire {
+    padding: 0.4rem 0.65rem;
   }
 }
 </style>

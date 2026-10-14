@@ -1101,6 +1101,51 @@ useHead(() => ({
   grid-area: 10 / 1 / 13 / 4;
 }
 
+@media (max-width: 899px) {
+  .about-plan {
+    padding-top: calc(var(--header-height) + 2.5rem);
+  }
+
+  .about-plan__section,
+  .about-plan__section--tall {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .about-plan__cell,
+  .about-plan__index {
+    display: none;
+  }
+
+  .about-plan__title,
+  .about-plan__title--next,
+  .about-plan__title--clients,
+  .about-plan__copy,
+  .about-plan__lead,
+  .about-plan__materials,
+  .about-plan__clients,
+  .about-plan__clients-names,
+  .about-plan__figure,
+  .about-plan__figure--landscape,
+  .about-plan__figure--second,
+  .about-plan__figure--after,
+  .about-plan__figure--third,
+  .about-plan__figure--fourth,
+  .about-plan__figure--fifth {
+    grid-area: auto;
+    grid-column: auto;
+    grid-row: auto;
+    width: 100%;
+    max-width: 36rem;
+  }
+
+  .about-plan__figure-meta {
+    position: static;
+    padding: 0.75rem 0 0;
+  }
+}
+
 @media (min-width: 1600px) {
   .about-plan__figure--second {
     grid-column: 3 / 6;

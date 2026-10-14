@@ -2417,6 +2417,12 @@ useHead(() => ({
   padding-bottom: calc(7.5rem + var(--bucket-push, 0px));
 }
 
+@media (max-width: 767px) {
+  .products {
+    --products-grid-gap: 15px;
+  }
+}
+
 .products__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2597,15 +2603,40 @@ useHead(() => ({
 }
 
 @media (max-width: 860px) {
+  .products__header {
+    padding-bottom: 4.5rem;
+  }
+
   .products__dock {
-    justify-content: space-between;
-    padding-left: var(--gutter, 16px);
+    left: var(--gutter, 16px);
+    right: var(--gutter, 16px);
+    bottom: calc(16px + var(--stack-clearance, 0px));
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0;
   }
 
   .products__mode {
     position: relative;
     left: auto;
+    align-self: flex-start;
     transform: none;
+  }
+
+  .products__filter-tool {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .products__filters {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  :global(html.bucket-push) .products__dock {
+    bottom: calc(16px + var(--bucket-push, 0px));
   }
 }
 </style>

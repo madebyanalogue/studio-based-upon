@@ -1296,6 +1296,20 @@ watch(
   color: inherit;
 }
 
+@media (max-width: 899px) {
+  .split-slider {
+    inset: calc(var(--header-height) + 0.75rem) var(--gutter) var(--stack-clearance);
+    width: auto;
+    height: auto;
+  }
+
+  .split-slider__title {
+    font-size: clamp(1.35rem, 7vw, 2.25rem);
+    width: 90%;
+    white-space: normal;
+  }
+}
+
 .split-slider__title--pending {
   visibility: hidden;
 }
