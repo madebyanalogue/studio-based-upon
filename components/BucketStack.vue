@@ -438,7 +438,18 @@
           @pointerdown="onLightboxPointerDown"
           @click.capture="onLightboxClick"
         >
-          <p class="stack__lightbox-name h6">{{ lightboxActiveTitle }}</p>
+          <div class="stack__lightbox-caption">
+            <p class="stack__lightbox-name h6">{{ lightboxActiveTitle }}</p>
+            <button
+              v-if="lightboxActiveItem"
+              type="button"
+              class="stack__lightbox-remove h6"
+              @pointerdown.stop
+              @click.stop="onRemoveClick(lightboxActiveItem)"
+            >
+              Remove
+            </button>
+          </div>
           <div
             v-for="copy in lightboxCopies"
             :key="copy.key"
@@ -3378,9 +3389,11 @@ const queueLightboxSettle = () => {
   if (lightboxSettleTimer) window.clearTimeout(lightboxSettleTimer)
   lightboxSettleTimer = 0
   if (!showLightbox.value || isFlipping.value || viewFlipBusy.value || lbIntroOn) return
+  if (productOverlayOpen.value || pdpCloseVeilActive.value) return
   lightboxSettleTimer = window.setTimeout(() => {
     lightboxSettleTimer = 0
     if (!showLightbox.value || isFlipping.value || viewFlipBusy.value || lbIntroOn) return
+    if (productOverlayOpen.value || pdpCloseVeilActive.value) return
     lightboxSettled.value = true
   }, 280)
 }
@@ -3506,6 +3519,9 @@ const lightboxCopies = computed(() => {
 })
 const lightboxActiveTitle = computed(
   () => freeformEntries.value[lightboxIndex.value]?.item.title ?? '',
+)
+const lightboxActiveItem = computed(
+  () => freeformEntries.value[lightboxIndex.value]?.item ?? null,
 )
 
 let lbScroll = 0
@@ -6233,6 +6249,11 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   if (flipSrc) void prefetchImage(flipSrc)
 
   // Flyer leaves on the click. Cart chrome fades alongside it.
+  if (showLightbox.value) {
+    lightboxSettled.value = false
+    if (lightboxSettleTimer) window.clearTimeout(lightboxSettleTimer)
+    lightboxSettleTimer = 0
+  }
   pdpFocusItemId.value = item.id
   pdpOpenedFromCart.value = true
   controlsVisible.value = false
@@ -6314,6 +6335,7 @@ watch(controlsVisible, (visible) => {
 watch([productOverlayOpen, pdpCloseVeilActive], ([on, veil]) => {
   if (on || veil) return
   pdpOpenedFromCart.value = false
+  if (showLightbox.value) queueLightboxSettle()
 })
 
 const selectionTitleLabel = () => activeMoodboard.value?.name || 'My Selection'
@@ -6664,6 +6686,25 @@ const staggerDelayForEl = (
   return staggerDelayForIndex(i, mode)
 }
 
+/** Lightbox row, by screen position. Open starts at the right; close starts at the left. */
+const lightboxRowDelays = (mode: 'open' | 'close') => {
+  const placed: { id: string; x: number }[] = []
+  gridRef.value
+    ?.querySelectorAll<HTMLElement>('.stack__lightbox-item[data-stack-id]')
+    .forEach((node) => {
+      const id = node.dataset.stackId || ''
+      if (!id) return
+      placed.push({ id, x: node.getBoundingClientRect().left })
+    })
+  placed.sort((a, b) => a.x - b.x)
+  const delays = new Map<string, number>()
+  placed.forEach((entry, index) => {
+    const step = mode === 'close' ? index : placed.length - 1 - index
+    delays.set(entry.id, step * FLIP_STAGGER)
+  })
+  return delays
+}
+
 const runFlip = (
   state: ReturnType<typeof Flip.getState>,
   targets: ArrayLike<Element>,
@@ -6674,6 +6715,7 @@ const runFlip = (
     scale?: boolean
     /** false keeps each card's own z-index. A number flattens every card to it. */
     zIndex?: number | false
+    lightboxDelays?: Map<string, number>
   },
 ) =>
   new Promise<void>((resolve) => {
@@ -6685,11 +6727,15 @@ const runFlip = (
       absolute: true,
       absoluteOnLeave: false,
       duration: FLIP_DURATION,
-      stagger: (_i: number, target: Element) =>
-        staggerDelayForEl(target, mode, {
+      stagger: (_i: number, target: Element) => {
+        const id = target.getAttribute('data-flip-id') || ''
+        const alongRow = opts?.lightboxDelays?.get(id)
+        if (alongRow != null) return alongRow
+        return staggerDelayForEl(target, mode, {
           boardStagger: opts?.boardStagger,
           ids: opts?.ids,
-        }),
+        })
+      },
       // Close leaves on the click — power3.inOut holds still before it moves.
       ease: 'power3.out',
       fade: false,
@@ -6771,6 +6817,8 @@ const fitPileCardsToCells = (opts?: {
     const cardById = new Map(
       Array.from(cards).map((el) => [el.getAttribute('data-flip-id') || '', el]),
     )
+    const lightboxDelays =
+      cartView.value === 'lightbox' && !opts?.boardStagger ? lightboxRowDelays('open') : null
 
     let pending = 0
     const done = () => {
@@ -6785,9 +6833,11 @@ const fitPileCardsToCells = (opts?: {
       )
       if (!card || !media) return
       pending += 1
-      const delay = opts?.boardStagger
-        ? staggerDelayForBoardIndex(index, 'open')
-        : staggerDelayForIndex(index, 'open')
+      const delay =
+        lightboxDelays?.get(id) ??
+        (opts?.boardStagger
+          ? staggerDelayForBoardIndex(index, 'open')
+          : staggerDelayForIndex(index, 'open'))
 
       // Freeform's box is the picture. Fit the square pile card to the square
       // around that picture so the painted pixels meet without stretching.
@@ -7456,11 +7506,13 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   }
 
   syncCellSize()
+  let lightboxDelays: Map<string, number> | null = null
   if (cartView.value === 'lightbox') {
     lbCloseLock = true
     await playLightboxShrink()
     layoutLightbox()
     stopLightbox()
+    lightboxDelays = lightboxRowDelays('close')
   }
   const medias = gridRef.value?.querySelectorAll('.stack__cell-media[data-flip-id]')
   // Freeform media is the picture. Record the padded pile-card box around it
@@ -7515,7 +7567,11 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
       const img = node.querySelector<HTMLElement>('.stack__pile-image')
       if (!img) continue
       gsap.set(img, { padding: 0 })
-      tweenLightboxPilePad(img, STACK_CELL_PAD, staggerDelayForEl(node, 'close'))
+      tweenLightboxPilePad(
+        img,
+        STACK_CELL_PAD,
+        lightboxDelays?.get(id) ?? staggerDelayForEl(node, 'close'),
+      )
     }
     if (cartView.value === 'lightbox') lbReturnFlush.value = false
   }
@@ -7525,6 +7581,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
     await runFlip(state, cards, {
       mode: 'close',
       zIndex: false,
+      lightboxDelays: lightboxDelays ?? undefined,
     })
     // Drop Flip inline transforms so CSS pile vars own the pose again
     gsap.set(cards, {
@@ -10224,7 +10281,7 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.stack__lightbox-name {
+.stack__lightbox-caption {
   position: absolute;
   top: var(--lb-name-top, calc(100% - 120px));
   left: 50%;
@@ -10234,23 +10291,31 @@ onBeforeUnmount(() => {
   transform: translate(-50%, -50%);
   pointer-events: none;
   text-align: center;
-  color: var(--charcoal);
   opacity: 0;
   transition: opacity 0.55s ease;
 }
 
-.stack__lightbox--settled .stack__lightbox-name {
+.stack__lightbox-name {
+  margin: 0;
+  color: var(--charcoal);
+}
+
+.stack__lightbox-remove {
+  display: none;
+}
+
+.stack__lightbox--settled .stack__lightbox-caption {
   opacity: 1;
 }
 
-.stack--enquiry-parked .stack__lightbox-name {
+.stack--enquiry-parked .stack__lightbox-caption {
   opacity: 0;
   transition: opacity 0.2s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stack__lightbox-name,
-  .stack--enquiry-parked .stack__lightbox-name {
+  .stack__lightbox-caption,
+  .stack--enquiry-parked .stack__lightbox-caption {
     transition: none;
   }
 }
@@ -10875,6 +10940,38 @@ onBeforeUnmount(() => {
 
   .stack__undo-global-icon {
     display: block;
+  }
+
+  .stack__lightbox-remove {
+    display: block;
+    position: absolute;
+    top: calc(100% + 0.7rem);
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--red);
+    cursor: pointer;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  .stack__lightbox--settled .stack__lightbox-remove {
+    pointer-events: auto;
+  }
+
+  .stack__lightbox-item .stack__cell-ctrl,
+  .stack__lightbox-item:hover .stack__cell-ctrl,
+  .stack__lightbox-item:focus-within .stack__cell-ctrl {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .stack__lightbox-item .stack__cell-hit,
+  .stack__lightbox-item .stack__cell-image {
+    cursor: default;
   }
 }
 </style>

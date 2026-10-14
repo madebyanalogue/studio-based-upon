@@ -159,3 +159,24 @@ html.pdp-related-rail-open .product-overlay {
   opacity: 0;
 }
 </style>
+
+<style>
+/* Pile is a fixed layer that the desktop PDP leaves visible. On a phone it drops off the bottom. */
+@media (max-width: 1000px) {
+  body:has(.product-overlay) .product-overlay {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+  }
+
+  body:has(.product-overlay) .stack.stack--above-pdp .stack__rail {
+    transform: translate3d(0, calc(100% + 24px), 0);
+    pointer-events: none;
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  body:has(.product-overlay) .stack.stack--above-pdp .stack__rail .stack__pile {
+    pointer-events: none;
+  }
+}
+</style>

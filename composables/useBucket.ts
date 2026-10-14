@@ -1,6 +1,7 @@
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey } from '~/composables/useSanityImage'
 import { lockPageScroll, unlockPageScroll } from '~/composables/usePageScrollLock'
+import { useBucketUi } from '~/composables/useBucketUi'
 
 export type BucketItem = {
   id: string
@@ -798,13 +799,17 @@ export const useBucket = () => {
     }
   }
 
-  const requestSave = (item: BucketItem, opts?: { source?: HTMLElement | null }) => {
+  const requestSave = (
+    item: BucketItem,
+    opts?: { source?: HTMLElement | null; fly?: boolean },
+  ) => {
     ensureActive()
     const normalized = normalizeBucketItem(item)
     const openOnAdd = bucketUiVersion.value === 'v1'
 
     // Multi-board without a fly source → picker. With a source, add to active + fly.
-    if (moodboards.value.length > 1 && !opts?.source) {
+    // fly: false still saves to the active board — it just skips the picker and the flyer.
+    if (moodboards.value.length > 1 && !opts?.source && opts?.fly !== false) {
       openPicker(normalized)
       isOpen.value = true
       return

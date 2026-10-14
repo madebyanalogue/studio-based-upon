@@ -13,6 +13,7 @@
       'pdp--index-hidden': !indexRailVisible,
       'pdp--related-hidden': !relatedRailVisible,
       'pdp--gallery': galleryVisible,
+      'pdp--specs-live': specsLive,
       'pdp--closing': closingFlip,
       'pdp--singularity': isSpiritOrOrigin,
       'pdp--curate': flipSourceIsCurate(),
@@ -55,8 +56,8 @@
             <button
               type="button"
               class="pdp__disclosure pdp__spec-item"
-              :aria-expanded="showSpecs"
-              @click="showSpecs = !showSpecs"
+              :aria-expanded="specsShown"
+              @click="toggleSpecs"
             >
               <span class="serif-italic">Specifications</span>
               <svg
@@ -67,8 +68,8 @@
                 <path d="M1 3 L7 9 L13 3" />
               </svg>
             </button>
-            <div class="pdp__spec-panel" :class="{ 'is-open': showSpecs }">
-              <div class="pdp__spec-panel-clip" :inert="!showSpecs">
+            <div class="pdp__spec-panel" :class="{ 'is-open': specsShown }">
+              <div class="pdp__spec-panel-clip" :inert="!specsShown">
               <div class="pdp__spec pdp__spec-item">
                 <dt class="serif-italic">Year</dt>
                 <dd>{{ product.year || '2024' }}</dd>
@@ -389,11 +390,43 @@ const { data: product, refresh } = await useAsyncData(
   },
 )
 
-/** Open by default. Closed state is remembered for the next product. */
-const showSpecs = useCookie<boolean>('sba-pdp-specs', {
+const PDP_NARROW_QUERY = '(max-width: 1000px)'
+
+const isNarrowPdp = () =>
+  import.meta.client && window.matchMedia(PDP_NARROW_QUERY).matches
+
+/** Open by default. Closed state is remembered for the next product on desktop. */
+const specsCookie = useCookie<boolean>('sba-pdp-specs', {
   default: () => true,
   maxAge: 60 * 60 * 24 * 365,
   sameSite: 'lax',
+})
+/**
+ * null follows the cookie. On a phone this is a session flag that starts closed
+ * for every product, so an open panel on the last PDP does not carry over.
+ */
+const specsOverride = ref<boolean | null>(null)
+/** Lets the first paint stay closed on mobile before this ref is applied. */
+const specsLive = ref(false)
+const specsShown = computed(() =>
+  specsOverride.value === null ? !!specsCookie.value : specsOverride.value,
+)
+
+const closeSpecsIfNarrow = () => {
+  if (isNarrowPdp()) specsOverride.value = false
+  else specsOverride.value = null
+}
+
+const toggleSpecs = () => {
+  if (specsOverride.value !== null) specsOverride.value = !specsOverride.value
+  else specsCookie.value = !specsCookie.value
+}
+
+let narrowPdpQuery: MediaQueryList | null = null
+const onNarrowPdpChange = () => closeSpecsIfNarrow()
+
+watch(() => props.slug, () => {
+  closeSpecsIfNarrow()
 })
 const heroRef = ref<HTMLImageElement | null>(null)
 const stageRef = ref<HTMLElement | null>(null)
@@ -846,6 +879,12 @@ const tickGalleryLenis = (time: number) => {
 
 const initGalleryLenis = () => {
   if (!import.meta.client) return
+  // The phone gallery is in normal flow and the page scrolls it. Lenis on the
+  // strip swallows the touch and leaves nothing to scroll.
+  if (isNarrowPdp()) {
+    destroyGalleryLenis()
+    return
+  }
   const wrapper = stripRef.value
   const content = stripTrackRef.value
   const stage = stageRef.value
@@ -949,6 +988,10 @@ const onGalleryKeydown = (event: KeyboardEvent) => {
 
 onMounted(() => {
   homeScrollHint.value = false
+  closeSpecsIfNarrow()
+  specsLive.value = true
+  narrowPdpQuery = window.matchMedia(PDP_NARROW_QUERY)
+  narrowPdpQuery.addEventListener('change', onNarrowPdpChange)
   nextTick(() => {
     initGalleryLenis()
     scrollGalleryInitial()
@@ -960,6 +1003,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   destroyGalleryLenis()
+  narrowPdpQuery?.removeEventListener('change', onNarrowPdpChange)
   window.removeEventListener('keydown', onGalleryKeydown)
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
@@ -1066,7 +1110,8 @@ const onAddFrame = (index: number) => {
       itemType: product.value.series || 'item',
       link: `/materials-and-forms/${product.value.slug}`,
     },
-    { source },
+    // Phone: toggle the heart only. A fly source hides the gallery frame.
+    isNarrowPdp() ? { fly: false } : { source },
   )
 }
 
@@ -2498,6 +2543,20 @@ watch(
 }
 
 @media (max-width: 1000px) {
+  /* First paint, before the phone override is applied: keep specs shut. */
+  .pdp:not(.pdp--specs-live) .pdp__spec-panel,
+  .pdp:not(.pdp--specs-live) .pdp__spec-panel.is-open {
+    grid-template-rows: 0fr;
+  }
+
+  .pdp:not(.pdp--specs-live) .pdp__spec-panel-clip {
+    opacity: 0;
+  }
+
+  .pdp:not(.pdp--specs-live) .pdp__disclosure[aria-expanded='true'] .pdp__disclosure-mark path {
+    d: path("M1 3 L7 9 L13 3");
+  }
+
   .pdp,
   .pdp--standalone {
     display: flex;
@@ -2505,7 +2564,7 @@ watch(
     height: 100dvh;
     min-height: 0;
     overflow: auto;
-    padding-bottom: var(--stack-clearance);
+    padding-bottom: 0;
     -webkit-overflow-scrolling: touch;
   }
 
@@ -2530,36 +2589,64 @@ watch(
     background: var(--background-color);
   }
 
+  /* Aside, body, and actions drop their boxes so Enquire can stick to the page. */
+  .pdp__col--left,
+  .pdp__body,
+  .pdp__actions {
+    display: contents;
+  }
+
   .pdp__col--center {
     order: 1;
+    position: relative;
     grid-column: auto;
     grid-row: auto;
     flex: 0 0 auto;
+    align-self: stretch;
     height: auto;
+    min-height: auto;
     max-height: none;
     overflow: visible;
+    z-index: auto;
   }
 
   .pdp__stage {
-    min-height: 0;
+    position: relative;
+    flex: none;
+    height: auto;
+    min-height: auto;
     max-height: none;
     padding: 0;
     overflow: visible;
   }
 
   .pdp__strip {
+    position: relative;
+    flex: none;
     align-items: stretch;
     height: auto;
+    min-height: auto;
     max-height: none;
     overflow: visible;
     transition: none;
   }
 
+  .pdp__inquire {
+    position: sticky;
+    top: var(--toolbar-height);
+    z-index: 25;
+    flex: 0 0 auto;
+  }
+
   .pdp__strip-track,
   .pdp--index-hidden .pdp__strip-track,
-  .pdp--related-hidden .pdp__strip-track {
+  .pdp--related-hidden .pdp__strip-track,
+  .pdp__strip--single .pdp__strip-track {
+    position: relative;
     align-items: stretch;
     gap: 0;
+    height: auto;
+    min-height: 0;
     padding: 0;
   }
 
