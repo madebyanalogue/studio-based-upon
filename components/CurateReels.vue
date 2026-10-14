@@ -355,7 +355,9 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import Lenis from 'lenis'
+import { productGalleryFrames, uniqueImageUrls } from '~/composables/productImages'
 import { bucketItemId, type BucketItem } from '~/composables/useBucket'
+import { imageAssetKey, IMAGE_WIDTH } from '~/composables/useSanityImage'
 import {
   demoShowcaseBuckets,
   SHOWCASE_DEFAULT_COLUMNS,
@@ -475,6 +477,8 @@ const props = defineProps<{
 const { open } = useProductOverlay()
 const { openFromBucket } = useEnquiryForm()
 const { addItem } = useBucket()
+const { fetchProduct } = useProductCatalog()
+const { imageUrl } = useSanityImage()
 
 const columns = ref<ShowcaseColumn[]>([])
 /** False until the opening layout is in place and the showcase can fade in. */
@@ -1127,20 +1131,27 @@ const resolveSnapTarget = (slotIndex: number) => {
 
 
 
+/** The snapped image in a column — the one currently in view. */
+const visibleReelImage = (slot: ShowcaseColumn, slotIndex: number) => {
+  let imageIndex = settledIndexes.value[slotIndex]
+  if (imageIndex == null || imageIndex < 0) {
+    const activeKey = activeKeys.value[slotIndex]
+    imageIndex = slot.images.findIndex(
+      (image) => cellKey(slotIndex, image.id) === activeKey,
+    )
+  }
+  if (imageIndex == null || imageIndex < 0) imageIndex = 0
+  const image = slot.images[imageIndex]
+  return image ? { image, imageIndex } : null
+}
+
 const selectedEnquiryItems = () => {
   // One selected (snapped) image from each visible column
   return columns.value
     .map((slot, slotIndex) => {
-      let imageIndex = settledIndexes.value[slotIndex]
-      if (imageIndex == null || imageIndex < 0) {
-        const activeKey = activeKeys.value[slotIndex]
-        imageIndex = slot.images.findIndex(
-          (image) => cellKey(slotIndex, image.id) === activeKey,
-        )
-      }
-      if (imageIndex == null || imageIndex < 0) imageIndex = 0
-      const image = slot.images[imageIndex]
-      if (!image) return null
+      const visible = visibleReelImage(slot, slotIndex)
+      if (!visible) return null
+      const { image, imageIndex } = visible
       const productId = image.productId || slot.productId
       const slug = image.slug || slot.slug
       return {
@@ -1162,10 +1173,62 @@ const sendEnquiry = () => {
   openFromBucket(items, { colour: washColour.value })
 }
 
-const saveSelection = () => {
-  const items = selectedEnquiryItems()
-  if (!items.length) return
-  items.forEach((item) => addItem(item))
+/** Cart item for the product linked to a reel image — not the column's bucket. */
+const productCartItem = async (
+  image: ShowcaseBucketImage,
+): Promise<BucketItem | null> => {
+  const slug = image.slug || image.productId
+  if (!slug) return null
+  const product = await fetchProduct(slug).catch(() => null)
+  if (!product?._id) {
+    if (!image.productId) return null
+    return {
+      id: image.productId,
+      title: image.productTitle || image.title || 'Product',
+      imageUrl: image.src,
+      itemType: 'product',
+      link: image.slug ? `/materials-and-forms/${image.slug}` : null,
+    }
+  }
+  const urls = uniqueImageUrls(
+    ...productGalleryFrames(product).map((frame) => imageUrl(frame, IMAGE_WIDTH.hero)),
+  )
+  const wanted = imageAssetKey(image.src)
+  let index = urls.findIndex((url) => imageAssetKey(url) === wanted)
+  if (index < 0) index = 0
+  const multi = urls.length > 1
+  return {
+    id: bucketItemId(product._id, multi ? index : undefined),
+    title: product.title,
+    imageUrl: urls[index] || image.src,
+    itemType: product.series || 'product',
+    link: product.slug ? `/materials-and-forms/${product.slug}` : null,
+    imageUrls: multi ? urls : undefined,
+    imageIndex: multi ? index : undefined,
+  }
+}
+
+let savingSelection = false
+
+const saveSelection = async () => {
+  if (savingSelection) return
+  const images = columns.value.flatMap((slot, slotIndex) => {
+    const visible = visibleReelImage(slot, slotIndex)
+    return visible?.image.productId || visible?.image.slug ? [visible.image] : []
+  })
+  if (!images.length) return
+  savingSelection = true
+  try {
+    const resolved = await Promise.all(images.map((image) => productCartItem(image)))
+    const seen = new Set<string>()
+    for (const item of resolved) {
+      if (!item || seen.has(item.id)) continue
+      seen.add(item.id)
+      addItem(item)
+    }
+  } finally {
+    savingSelection = false
+  }
 }
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))

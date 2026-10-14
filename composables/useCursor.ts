@@ -146,6 +146,13 @@ export const useCursor = () => {
           return
         }
       }
+      // The topmost element owns the pointer. Don't read Close labels or
+      // link titles from the page painted underneath a modal.
+      native.value = false
+      suppressLabel.value = false
+      bare.value = false
+      preset.value = null
+      return
     }
 
     native.value = false

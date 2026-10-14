@@ -10,12 +10,12 @@
       role="dialog"
       aria-modal="true"
       aria-label="Send enquiry"
-      data-lenis-prevent
+      data-cursor="default"
     >
-            <div class="enquiry__backdrop" @click="formShown && close()" />
+            <div class="enquiry__backdrop" data-lenis-prevent @click="formShown && close()" />
 
       <div class="enquiry__panel">
-        <header class="enquiry__header">
+        <header class="enquiry__header" data-lenis-prevent>
           <div>
             <h2 class="enquiry__title  interface">Send enquiry</h2>
             <p class="enquiry__subtitle">
@@ -31,14 +31,20 @@
           <button type="button" class="enquiry__close" aria-label="Close" @click="close">×</button>
         </header>
 
-        <div v-if="isSuccess" class="enquiry__success">
+        <div v-if="isSuccess" class="enquiry__success" data-lenis-prevent>
           <p class="enquiry__success-title  interface">Thank you</p>
           <p>Your enquiry has been sent. We will be in touch shortly.</p>
           <button type="button" class="btn btn--filled" @click="close">Close</button>
         </div>
 
         <form v-else class="enquiry__body" @submit.prevent="submit">
-          <div class="enquiry__preview">
+          <div
+            ref="previewRef"
+            class="enquiry__preview"
+            :class="{ 'enquiry__preview--pile': previewClipped }"
+            data-lenis-prevent
+          >
+            <div ref="previewScrollRef" class="enquiry__preview-scroll">
             <figure v-if="compositionImage" class="enquiry__composition">
               <img :src="compositionImage" alt="Moodboard composition" />
               <figcaption>Board preview</figcaption>
@@ -51,7 +57,6 @@
                 class="enquiry__grid-item"
                 :class="{ 'enquiry__grid-item--swatch': item.kind !== 'image' }"
                 :data-enquiry-id="item.id"
-                :title="item.title"
               >
                 <img
                   v-if="item.kind === 'image' && item.imageUrl"
@@ -69,9 +74,10 @@
                 </span>
               </div>
             </div>
+            </div>
           </div>
 
-          <div class="enquiry__fields">
+          <div class="enquiry__fields" data-lenis-prevent>
             <label class="enquiry__field">
               <span class="enquiry__label">Name</span>
               <input
@@ -160,6 +166,7 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
+import Lenis from 'lenis'
 import type { EnquiryFlyRect } from '~/composables/useEnquiryForm'
 
 const GATHER_S = 0.85
@@ -185,6 +192,27 @@ const {
 
 const formShown = ref(true)
 const gridCover = ref(false)
+/** Pile has landed in the media column — clip it to that box. */
+const previewClipped = ref(false)
+
+const clipFlyersToPreview = () => {
+  const root = enquiryFlyLayer()
+  const column = document.querySelector<HTMLElement>('.enquiry__preview')
+  if (!root || !column) return
+  const rect = column.getBoundingClientRect()
+  const top = rect.top
+  const right = window.innerWidth - rect.right
+  const bottom = window.innerHeight - rect.bottom
+  const left = rect.left
+  root.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px)`
+  previewClipped.value = true
+}
+
+const releasePreviewClip = () => {
+  const root = enquiryFlyLayer()
+  if (root) root.style.clipPath = ''
+  previewClipped.value = false
+}
 const closing = ref(false)
 let runId = 0
 type FlyPhase = 'idle' | 'gather' | 'covered' | 'spread' | 'settled'
@@ -237,6 +265,7 @@ const showFlyers = (visible: boolean) => {
 }
 
 const flyHome = async (id: number) => {
+  releasePreviewClip()
   const bridge = getEnquiryFlyBridge()
   const homes = bridge?.measure() ?? []
   const byId = new Map(homes.map((rect) => [rect.id, rect]))
@@ -274,6 +303,7 @@ const returnToStack = async (id: number) => {
     })
     await tweenEnquiryFlyers(pileBoxes(sources, size, mediaColumnCenter()), SPREAD_S)
     if (id !== runId) return
+    clipFlyersToPreview()
   }
 
   if (formShown.value || phase === 'covered' || leavingGrid) {
@@ -308,6 +338,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   if (id !== runId) return
 
   phase = 'covered'
+  clipFlyersToPreview()
   // Form fades in under the pile. The layer starts behind the dialog.
   setEnquiryFlyFront(true)
   formShown.value = true
@@ -324,6 +355,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   if (id !== runId) return
   showFlyers(false)
   setEnquiryFlyFront(false)
+  releasePreviewClip()
   phase = 'settled'
 }
 
@@ -344,6 +376,7 @@ const close = async () => {
     if (id === runId) {
       getEnquiryFlyBridge()?.setParked(false)
       clearEnquiryFlyers()
+      releasePreviewClip()
       phase = 'idle'
       gridCover.value = false
       closing.value = false
@@ -353,8 +386,81 @@ const close = async () => {
   }
 }
 
+const previewRef = ref<HTMLElement | null>(null)
+const previewScrollRef = ref<HTMLElement | null>(null)
+let previewLenis: Lenis | null = null
+let previewLenisRaf = 0
+let previewLenisRo: ResizeObserver | null = null
+
+const destroyPreviewLenis = () => {
+  previewLenisRo?.disconnect()
+  previewLenisRo = null
+  if (previewLenisRaf) {
+    cancelAnimationFrame(previewLenisRaf)
+    previewLenisRaf = 0
+  }
+  previewLenis?.destroy()
+  previewLenis = null
+}
+
+const tickPreviewLenis = (time: number) => {
+  previewLenis?.raf(time)
+  previewLenisRaf = requestAnimationFrame(tickPreviewLenis)
+}
+
+const initPreviewLenis = () => {
+  if (!import.meta.client) return
+  const wrapper = previewRef.value
+  const content = previewScrollRef.value
+  if (!wrapper || !content) return
+  destroyPreviewLenis()
+  previewLenis = new Lenis({
+    wrapper,
+    content,
+    orientation: 'vertical',
+    gestureOrientation: 'vertical',
+    smoothWheel: true,
+    syncTouch: true,
+    syncTouchLerp: 0.055,
+    touchInertiaExponent: 2.05,
+    touchMultiplier: 1.55,
+    wheelMultiplier: 1.4,
+    lerp: 0.07,
+    overscroll: false,
+    // The dialog already opts out of the page scroller.
+    prevent: () => false,
+  })
+  previewLenis.resize()
+  if (typeof ResizeObserver !== 'undefined') {
+    previewLenisRo = new ResizeObserver(() => {
+      const y = previewLenis?.animatedScroll ?? 0
+      previewLenis?.resize()
+      previewLenis?.scrollTo(y, { immediate: true })
+    })
+    previewLenisRo.observe(content)
+  }
+  previewLenisRaf = requestAnimationFrame(tickPreviewLenis)
+}
+
+watch(isSuccess, (success) => {
+  if (success) destroyPreviewLenis()
+})
+
+watch(previewClipped, (clipped) => {
+  if (!previewLenis) return
+  if (clipped) previewLenis.stop()
+  else previewLenis.start()
+})
+
 watch(isOpen, async (open) => {
-  if (!import.meta.client || !open) return
+  if (!import.meta.client) return
+  if (!open) {
+    destroyPreviewLenis()
+    return
+  }
+  await nextTick()
+  if (!previewRef.value) await nextTick()
+  initPreviewLenis()
   const origins = flyOrigins.value
   if (!origins?.length) {
     formShown.value = true
@@ -396,6 +502,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   runId += 1
+  releasePreviewClip()
+  destroyPreviewLenis()
   clearEnquiryFlyers()
   getEnquiryFlyBridge()?.setParked(false)
 })
@@ -437,7 +545,7 @@ onUnmounted(() => {
 
 .enquiry__panel {
   position: relative;
-  width: min(920px, 100%);
+  width: min(1080px, 100%);
   max-height: min(90dvh, 820px);
   display: flex;
   flex-direction: column;
@@ -477,19 +585,36 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   flex: 1;
 }
 
 .enquiry__preview {
-  padding: 1.5rem;
+  min-height: 0;
+  padding: 0;
   border-right: 1px solid var(--grid-line);
   background: var(--cream);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.enquiry__preview-scroll {
+  min-height: 100%;
+}
+
+.enquiry__preview::-webkit-scrollbar {
+  display: none;
+}
+
+.enquiry__preview--pile {
+  overflow: hidden;
 }
 
 .enquiry__composition {
-  margin: 0 0 1rem;
+  margin: 0;
+  padding: 1.5rem 1.5rem 0;
 }
 
 .enquiry__composition img {
@@ -506,15 +631,25 @@ onUnmounted(() => {
 }
 
 .enquiry__grid {
-  --bucket-thumb-width: 120px;
+  --bucket-thumb-width: 135px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--bucket-thumb-width), 1fr));
-  gap: 20px;
+  gap: 0;
   align-items: start;
+  /* Last column's right rule sits under the column divider. */
+  width: calc(100% + 1px);
 }
 
 .enquiry__grid-item {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  padding: 12%;
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
 }
 
 .enquiry__grid-item--swatch {
@@ -524,7 +659,7 @@ onUnmounted(() => {
 .enquiry__grid-item img {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: contain;
 }
 
@@ -550,6 +685,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 0;
   padding: 1.5rem;
   overflow: auto;
 }

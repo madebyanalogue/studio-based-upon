@@ -678,7 +678,10 @@
       <template v-else>
         <header
           class="stack__toolbar"
-          :class="{ 'stack__toolbar--visible': controlsVisible }"
+          :class="{
+            'stack__toolbar--visible': controlsVisible,
+            'stack__toolbar--lines': showOrderGrid && gridLinesVisible,
+          }"
           aria-label="Selection actions"
         >
           <button
@@ -826,6 +829,16 @@
             :model-value="lightboxGlass ? 'on' : 'off'"
             @update:model-value="lightboxGlass = $event === 'on'"
           />
+          <button
+            v-if="cartIsFreeform"
+            type="button"
+            class="stack__tidy-global interface"
+            data-cursor="default"
+            :disabled="!freeformEntries.length"
+            @click="tidyFreeform"
+          >
+            Tidy
+          </button>
           <label class="stack__upload-global interface" data-cursor="default">
             <input
               type="file"
@@ -2515,10 +2528,15 @@ const animateCartView = async (view: CartLayout) => {
     ? lightboxOutgoing(gridRef.value)
     : stackMediaById(gridRef.value)
   const flyers = new Map<string, HTMLImageElement>()
+  /** Pictures actually on the lightbox stage. Off-stage copies stay underneath them for the flight. */
+  const lightboxOnScreen = new Map<string, boolean>()
   for (const media of outgoing) {
     const id = media.dataset.stackId || media.dataset.lbId
     const img = media.querySelector<HTMLImageElement>('.stack__cell-image')
     if (!id || !img) continue
+    if (leavingLightbox) {
+      lightboxOnScreen.set(id, getComputedStyle(media).visibility !== 'hidden')
+    }
     const painted = img.getBoundingClientRect()
     const host = media.getBoundingClientRect()
     const from = painted.width >= 2 && painted.height >= 2 ? painted : host
@@ -2569,11 +2587,13 @@ const animateCartView = async (view: CartLayout) => {
     return freeformLayouts.value[freeformBoardId()]?.[id]?.z ?? 0
   }
   const heldZ = new Map<string, number>()
+  const leavingToGrid = leavingLightbox && view === 'grid'
+  for (const id of flyers.keys()) heldZ.set(id, stackZ(id))
   const stackedIds = [...flyers.keys()].sort((a, b) => {
-    const az = stackZ(a)
-    const bz = stackZ(b)
-    heldZ.set(a, az)
-    heldZ.set(b, bz)
+    const front = (id: string) =>
+      leavingToGrid && lightboxOnScreen.get(id) ? 100_000 : 0
+    const az = front(a) + (heldZ.get(a) ?? 0)
+    const bz = front(b) + (heldZ.get(b) ?? 0)
     return az - bz || (a < b ? -1 : a > b ? 1 : 0)
   })
   let visibleRank = 0
@@ -3018,6 +3038,199 @@ const patchFreeform = (id: string, next: Partial<FreeformPlace>) => {
   if (!current || !place) return
   current[id] = { ...place, ...next }
   freeformLayouts.value = { ...freeformLayouts.value, [boardId]: { ...current } }
+}
+
+const TIDY_GAP = 16
+const TIDY_MARGIN = 8
+let tidyTween: gsap.core.Tween | null = null
+
+const stopTidyMotion = (persist: boolean) => {
+  if (!tidyTween) return
+  tidyTween.kill()
+  tidyTween = null
+  if (persist) persistFreeformLayouts()
+}
+
+const tidyFrame = (
+  ids: string[],
+  aspects: Record<string, number>,
+  sw: number,
+  sh: number,
+  width: number,
+) => {
+  const gap = TIDY_GAP
+  const margin = TIDY_MARGIN
+  const innerW = sw - margin * 2
+  const innerH = sh - margin * 2
+  if (width < 8 || width > innerW + 0.5) return null
+
+  const specs = ids.map((id) => ({
+    id,
+    w: width,
+    h: width / Math.max(aspects[id] || 1, 0.05),
+  }))
+  if (specs.some((spec) => spec.h > innerH + 0.5)) return null
+
+  /** Take as many items as the edge can hold before moving to the next edge. */
+  const columnCount = (start: number) => {
+    let used = 0
+    let count = 0
+    for (let index = start; index < specs.length; index += 1) {
+      const next = used + (count ? gap : 0) + specs[index].h
+      if (next > innerH + 0.5) break
+      used = next
+      count += 1
+    }
+    return count
+  }
+  const leftCount = columnCount(0)
+  const rightCount = columnCount(leftCount)
+  const left = specs.slice(0, leftCount)
+  const right = specs.slice(leftCount, leftCount + rightCount)
+  let cursor = leftCount + rightCount
+
+  const leftStrip = left.length ? width + gap : 0
+  const rightStrip = right.length ? width + gap : 0
+  const rowAvail = innerW - leftStrip - rightStrip
+  const rowCount = (start: number) => {
+    if (start >= specs.length || rowAvail < width - 0.5) return 0
+    const maxByWidth = Math.floor((rowAvail + gap) / (width + gap))
+    return Math.max(0, Math.min(maxByWidth, specs.length - start))
+  }
+  const bottomCount = rowCount(cursor)
+  const bottom = specs.slice(cursor, cursor + bottomCount)
+  cursor += bottomCount
+  const topCount = rowCount(cursor)
+  const top = specs.slice(cursor, cursor + topCount)
+  cursor += topCount
+  if (cursor < specs.length) return null
+
+  const span = (items: typeof specs, along: 'w' | 'h') => {
+    if (!items.length) return 0
+    return items.reduce((total, item) => total + item[along], 0) + gap * (items.length - 1)
+  }
+
+  const topMax = top.reduce((max, item) => Math.max(max, item.h), 0)
+  const bottomMax = bottom.reduce((max, item) => Math.max(max, item.h), 0)
+  if (top.length && bottom.length && topMax + bottomMax + gap > innerH) return null
+  if (left.length && right.length && width * 2 + gap > innerW) return null
+  if (span(left, 'h') > innerH + 0.5 || span(right, 'h') > innerH + 0.5) return null
+
+  const rowX0 = margin + leftStrip
+  if (top.length && span(top, 'w') > rowAvail + 0.5) return null
+  if (bottom.length && span(bottom, 'w') > rowAvail + 0.5) return null
+
+  const placed: Record<string, { x: number; y: number }> = {}
+  const placeRow = (items: typeof specs, edge: 'top' | 'bottom') => {
+    const total = span(items, 'w')
+    let x = rowX0 + Math.max(0, (rowAvail - total) / 2)
+    for (const item of items) {
+      placed[item.id] = {
+        x,
+        y: edge === 'top' ? margin : sh - margin - item.h,
+      }
+      x += item.w + gap
+    }
+  }
+  const placeCol = (items: typeof specs, edge: 'left' | 'right') => {
+    const total = span(items, 'h')
+    let y = margin + Math.max(0, (innerH - total) / 2)
+    const x = edge === 'left' ? margin : sw - margin - width
+    for (const item of items) {
+      placed[item.id] = { x, y }
+      y += item.h + gap
+    }
+  }
+
+  if (top.length) placeRow(top, 'top')
+  if (right.length) placeCol(right, 'right')
+  if (bottom.length) placeRow(bottom, 'bottom')
+  if (left.length) placeCol(left, 'left')
+
+  for (let i = 0; i < specs.length; i += 1) {
+    const a = specs[i]
+    const aPos = placed[a.id]
+    if (!aPos) return null
+    if (aPos.x < margin - 0.5 || aPos.y < margin - 0.5) return null
+    if (aPos.x + a.w > sw - margin + 0.5 || aPos.y + a.h > sh - margin + 0.5) return null
+    for (let j = i + 1; j < specs.length; j += 1) {
+      const b = specs[j]
+      const bPos = placed[b.id]
+      if (!bPos) return null
+      const overlapX = Math.min(aPos.x + a.w, bPos.x + b.w) - Math.max(aPos.x, bPos.x)
+      const overlapY = Math.min(aPos.y + a.h, bPos.y + b.h) - Math.max(aPos.y, bPos.y)
+      if (overlapX > 0.5 && overlapY > 0.5) return null
+    }
+  }
+
+  return placed
+}
+
+const tidyFreeform = () => {
+  if (!import.meta.client || viewFlipBusy.value || isFlipping.value) return
+  stopTidyMotion(false)
+  const boardId = freeformBoardId()
+  const board = freeformLayouts.value[boardId]
+  if (!board) return
+  const { w: sw, h: sh } = planeExtent()
+  if (sw < 2 || sh < 2) return
+  const ids = freeformEntries.value.map((entry) => entry.item.id).filter((id) => board[id])
+  if (!ids.length) return
+  const aspects: Record<string, number> = {}
+  for (const id of ids) aspects[id] = freeformAspects.value[id] || 1
+
+  const margin = TIDY_MARGIN
+  const inner = Math.min(sw, sh) - margin * 2
+  const cap = Math.max(48, inner * 0.46)
+  let lo = 28
+  let hi = cap
+  let best: { width: number; placed: Record<string, { x: number; y: number }> } | null = null
+  for (let step = 0; step < 18; step += 1) {
+    const mid = (lo + hi) / 2
+    const placed = tidyFrame(ids, aspects, sw, sh, mid)
+    if (placed) {
+      best = { width: mid, placed }
+      lo = mid
+    } else {
+      hi = mid
+    }
+  }
+  if (!best) return
+
+  const start: Record<string, FreeformPlace> = {}
+  for (const id of ids) start[id] = { ...board[id] }
+  const apply = (t: number) => {
+    const current = freeformLayouts.value[boardId]
+    if (!current) return
+    const next = { ...current }
+    for (const id of ids) {
+      const from = start[id]
+      const pos = best.placed[id]
+      if (!from || !pos || !next[id]) continue
+      next[id] = {
+        ...next[id],
+        x: from.x + (pos.x / sw - from.x) * t,
+        y: from.y + (pos.y / sh - from.y) * t,
+        w: from.w + (best.width / sw - from.w) * t,
+        image: true,
+        fitted: false,
+      }
+    }
+    freeformLayouts.value = { ...freeformLayouts.value, [boardId]: next }
+  }
+
+  const proxy = { t: 0 }
+  tidyTween = gsap.to(proxy, {
+    t: 1,
+    duration: 0.65,
+    ease: 'power3.inOut',
+    onUpdate: () => apply(proxy.t),
+    onComplete: () => {
+      tidyTween = null
+      apply(1)
+      persistFreeformLayouts()
+    },
+  })
 }
 
 /** Older places describe the padded card. Return the picture's own box. */
@@ -4146,6 +4359,7 @@ const onFreeformPointerUp = () => {
 }
 
 const bindFreeformGesture = (gesture: FreeformGesture) => {
+  stopTidyMotion(true)
   freeformGesture = gesture
   document.documentElement.classList.toggle('stack-freeform-dragging', gesture.kind === 'drag')
   window.addEventListener('pointermove', onFreeformPointerMove)
@@ -6356,6 +6570,34 @@ const tweenLightboxPilePad = (img: HTMLElement, padding: number | string, flight
   })
 }
 
+/** Pointer lean sits on an inner layer Flip does not move. Ease it back to rest with the flight. */
+const easePileLean = (card: HTMLElement, delay: number) => {
+  const lean = card.querySelector<HTMLElement>('.stack__pile-lean')
+  if (!lean) return
+  const raw = getComputedStyle(lean).transform
+  if (!raw || raw === 'none') return
+  const parsed = new DOMMatrix(raw)
+  const x = parsed.e
+  const y = parsed.f
+  const rotation = Math.atan2(parsed.b, parsed.a) * (180 / Math.PI)
+  if (Math.abs(x) < 0.4 && Math.abs(y) < 0.4 && Math.abs(rotation) < 0.15) return
+  gsap.killTweensOf(lean)
+  gsap.fromTo(
+    lean,
+    { x, y, rotation, transformOrigin: 'center center' },
+    {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      transformOrigin: 'center center',
+      delay,
+      duration: FLIP_DURATION,
+      ease: 'power3.inOut',
+      overwrite: 'auto',
+    },
+  )
+}
+
 /** Open: fly pile cards into each cell — same Flip as close, stagger reversed. */
 const fitPileCardsToCells = (opts?: {
   pile?: HTMLElement | null
@@ -6417,6 +6659,7 @@ const fitPileCardsToCells = (opts?: {
         const img = card.querySelector<HTMLElement>('.stack__pile-image')
         if (img) tweenLightboxPilePad(img, 0, delay)
       }
+      easePileLean(card, delay)
       Flip.fit(card, target, {
         absolute: true,
         // Boards keep scale:false for crisp borders. Lightbox does too, so the
@@ -6550,6 +6793,12 @@ const openFromPile = async () => {
   const landed = pileRef.value?.querySelectorAll<HTMLElement>('[data-flip-id]')
   if (landed?.length) {
     gsap.set(landed, { autoAlpha: 0 })
+    landed.forEach((card) => {
+      const lean = card.querySelector<HTMLElement>('.stack__pile-lean')
+      if (!lean) return
+      gsap.killTweensOf(lean)
+      gsap.set(lean, { clearProps: 'transform' })
+    })
     if (cartView.value === 'lightbox') {
       landed.forEach((card) => {
         const img = card.querySelector<HTMLElement>('.stack__pile-image')
@@ -8871,6 +9120,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__grid-track {
+  position: relative;
   display: grid;
   align-content: start;
   align-items: stretch;
@@ -8879,6 +9129,47 @@ onBeforeUnmount(() => {
   width: 100%;
   min-height: 100%;
   box-sizing: border-box;
+}
+
+/* First-row top rule. The selection grid draws this on the toolbar instead. */
+.stack__grid-track::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 1px;
+  background: var(--grid-line);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.32s ease;
+}
+
+.stack__grid--lines .stack__grid-track::before {
+  opacity: 1;
+}
+
+.stack__grid:not(.stack__grid--boards) .stack__grid-track::before {
+  content: none;
+}
+
+.stack__toolbar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  height: 1px;
+  background: var(--grid-line);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.32s ease;
+}
+
+.stack__toolbar--lines::after {
+  opacity: 1;
 }
 
 .stack__grid::-webkit-scrollbar {
@@ -9413,7 +9704,6 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--grid-line);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.4s ease;
@@ -9740,6 +10030,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__undo-global,
+.stack__tidy-global,
 .stack__upload-global {
   margin: 0;
   padding: 0.45rem 1.05rem;
@@ -9762,11 +10053,17 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+.stack__tidy-global,
 .stack__upload-global {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   color: var(--text-color);
+}
+
+.stack__tidy-global:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .stack__upload-global svg {
@@ -9789,6 +10086,7 @@ onBeforeUnmount(() => {
 }
 
 .stack__undo-global:hover,
+.stack__tidy-global:hover:not(:disabled),
 .stack__upload-global:hover,
 .stack__close-global:hover {
   color: var(--text-color);

@@ -56,7 +56,7 @@ html:not(.dark) {
   color-scheme: light;
 
   --cream: var(--bg-light);
-  --warm-white: var(--bg-light);
+  --warm-white: #eee;
   --sand: #e8dfd2;
   --charcoal: var(--text-dark);
   --black: var(--text-dark);
@@ -77,12 +77,12 @@ html.dark {
   color-scheme: dark;
 
   --cream: var(--bg-dark);
-  --warm-white: var(--bg-dark);
+  --warm-white: rgb(30 31 34);
   --sand: #2a2621;
   --charcoal: var(--text-light);
   --black: var(--text-light);
   --accent: #c4a574;
-  --grid-line: rgba(255, 255, 255, 0.1);
+  --grid-line: #ffffff26;
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(255, 255, 255, 0.14);
   --panel-bg: rgba(31, 28, 24, 0.88);
