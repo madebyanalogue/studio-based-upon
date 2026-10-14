@@ -1,47 +1,78 @@
 <template>
   <article class="enquire">
-    <header class="enquire__header">
-      <svg class="enquire__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
-        <defs>
-          <filter
-            :id="titleFilterId"
-            x="-40%"
-            y="-40%"
-            width="180%"
-            height="180%"
-            color-interpolation-filters="sRGB"
-          >
-            <feColorMatrix
-              in="SourceGraphic"
-              type="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 255 -140"
-            />
-          </filter>
-        </defs>
-      </svg>
-      <h1
-        ref="titleEl"
-        class="h1 enquire__title"
-        :class="{ 'enquire__title--pending': !titlePaintReady }"
-        :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
-      >
-        {{ page?.heroTitle || 'Enquire' }}
-      </h1>
-    </header>
-
     <div
       class="enquire__stage"
       :class="{ 'enquire__stage--in': stageVisible }"
       :inert="!stageVisible"
     >
+      <div class="enquire__copy">
+      <header class="enquire__heading">
+        <svg class="enquire__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
+          <defs>
+            <filter
+              :id="titleFilterId"
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+              color-interpolation-filters="sRGB"
+            >
+              <feColorMatrix
+                in="SourceGraphic"
+                type="matrix"
+                values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 255 -140"
+              />
+            </filter>
+          </defs>
+        </svg>
+        <h1
+          ref="titleEl"
+          class="h1 enquire__title"
+          :class="{ 'enquire__title--pending': !titlePaintReady }"
+          :style="{ filter: titleBaseFilter, WebkitFilter: titleBaseFilter }"
+        >
+          {{ page?.heroTitle || 'Enquire' }}
+        </h1>
+      </header>
+
+      <aside class="enquire__aside">
+        <div class="enquire__aside-block flex flex-col gap-2">
+          <h2 class="h6 muted">Working with clients</h2>
+          <p class="mono-copy">
+            The client is a critical part of the process. We collaborate with designers
+            and architects to realise work for private residences, yachts, hotels,
+            restaurants and fashion houses.
+          </p>
+          <p class="mono-copy">
+            Share a selection, a drawing, or a few words about the project. We will be
+            in touch to talk through material, scale and how the work is made.
+          </p>
+        </div>
+
+        <div class="enquire__aside-block flex flex-col gap-2">
+          <h2 class="h6 muted">Contact</h2>
+          <p class="mono-copy enquire__aside-line">
+            Telephone <a :href="`tel:${phoneTel}`"><span class="enquire__aside-bracket">[</span>{{ phone }}<span class="enquire__aside-bracket">]</span></a>
+          </p>
+          <p class="mono-copy enquire__aside-line">
+            Email <a :href="`mailto:${enquiryEmail}`"><span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span></a>
+          </p>
+          <p v-if="studioAddress" class="mono-copy enquire__aside-line">
+            Address <span class="enquire__aside-bracket">[</span>{{ studioAddress }}<span class="enquire__aside-bracket">]</span>
+          </p>
+        </div>
+      </aside>
+      </div>
+
+      <div class="enquire__half">
       <div class="enquire__panel">
-    <p class="enquire__intro  interface">
+    <p class="enquire__intro mono-copy">
       {{ page?.heroSubtitle || 'Tell us about your project, or request a call back below.' }}
     </p>
 
     <div v-if="isSuccess" class="enquire__success">
-      <p class="enquire__success-title  interface">Thank you</p>
-      <p>Your enquiry has been sent. We will be in touch shortly.</p>
+      <p class="enquire__success-title h6 muted">Thank you</p>
+      <p class="mono-copy">Your enquiry has been sent. We will be in touch shortly.</p>
       <button type="button" class="btn btn--filled enquire__send" @click="resetForm">Send another enquiry</button>
     </div>
 
@@ -49,7 +80,7 @@
       <div class="enquire__moodboards">
         <p class="enquire__label">Include selections <span class="enquire__hint">optional</span></p>
 
-        <p v-if="!selectableMoodboards.length" class="enquire__empty">
+        <p v-if="!selectableMoodboards.length" class="enquire__empty mono-copy">
           You have no saved selections yet. Heart pieces across the site to build one.
         </p>
 
@@ -116,7 +147,14 @@
           <span class="enquire__label">
             Attachments <span class="enquire__hint">optional</span>
           </span>
-          <label class="enquire__upload">
+          <label
+            class="enquire__drop"
+            :class="{ 'enquire__drop--over': dropActive }"
+            @dragenter.prevent="onDragEnter"
+            @dragover.prevent="onDragOver"
+            @dragleave.prevent="onDragLeave"
+            @drop.prevent="onDrop"
+          >
             <input
               type="file"
               class="sr-only"
@@ -124,8 +162,8 @@
               accept="image/*,.pdf,.doc,.docx"
               @change="onFilesSelected"
             />
-            <span class="enquire__upload-btn">Upload files</span>
-            <span class="enquire__upload-note">Images, PDF or Word · up to 10MB each</span>
+            <span class="enquire__drop-title">Drop files here</span>
+            <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
           </label>
           <ul v-if="attachments.length" class="enquire__files">
             <li v-for="file in attachments" :key="file.id" class="enquire__file">
@@ -150,14 +188,10 @@
         <button type="submit" class="btn btn--filled enquire__send" :disabled="isSubmitting">
           {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
         </button>
-        <p class="enquire__or">
-          or email us at
-          <a :href="`mailto:${enquiryEmail}`" class="enquire__email  interface">{{ enquiryEmail }}</a>
-        </p>
       </div>
     </form>
 
-        <p v-if="page?.address" class="enquire__address">{{ page.address }}</p>
+      </div>
       </div>
     </div>
   </article>
@@ -187,7 +221,7 @@ type LocalAttachment = {
   type: string
 }
 
-const { enquiryEmail } = useSiteSettings()
+const { enquiryEmail, phone, phoneTel, addressDisplay } = useSiteSettings()
 const { moodboards } = useBucket()
 
 const query = `*[_type == "contactPage"][0] {
@@ -205,6 +239,11 @@ const { data: page } = await useAsyncData('contactPage', () =>
 )
 
 const selectableMoodboards = computed(() => moodboards.value.filter((b) => b.items.length))
+
+const studioAddress = computed(() => {
+  const fromPage = typeof page.value?.address === 'string' ? page.value.address.trim() : ''
+  return fromPage || addressDisplay.value
+})
 
 const form = reactive({
   name: '',
@@ -245,12 +284,9 @@ const fileToBase64 = (file: File) =>
     reader.readAsDataURL(file)
   })
 
-const onFilesSelected = (event: Event) => {
-  const input = event.target as HTMLInputElement
-  if (!input.files?.length) return
-
+const addFiles = (files: File[]) => {
   const next = [...attachments.value]
-  for (const file of Array.from(input.files)) {
+  for (const file of files) {
     if (next.length >= MAX_FILES) {
       error.value = `You can attach up to ${MAX_FILES} files.`
       break
@@ -259,6 +295,8 @@ const onFilesSelected = (event: Event) => {
       error.value = `"${file.name}" is larger than 10MB.`
       continue
     }
+    const duplicate = next.some((item) => item.name === file.name && item.size === file.size)
+    if (duplicate) continue
     next.push({
       id: `file-${Date.now()}-${Math.round(Math.random() * 1000)}`,
       file,
@@ -268,7 +306,38 @@ const onFilesSelected = (event: Event) => {
     })
   }
   attachments.value = next
+}
+
+const onFilesSelected = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  addFiles(Array.from(input.files))
   input.value = ''
+}
+
+const dropActive = ref(false)
+let dragDepth = 0
+
+const onDragEnter = () => {
+  dragDepth += 1
+  dropActive.value = true
+}
+
+const onDragOver = () => {
+  dropActive.value = true
+}
+
+const onDragLeave = () => {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dropActive.value = false
+}
+
+const onDrop = (event: DragEvent) => {
+  dragDepth = 0
+  dropActive.value = false
+  const files = event.dataTransfer?.files
+  if (!files?.length) return
+  addFiles(Array.from(files))
 }
 
 const removeAttachment = (id: string) => {
@@ -510,12 +579,6 @@ useHead(() => ({
   max-width: none;
 }
 
-.enquire__header {
-  position: relative;
-  max-width: none;
-  padding: calc(var(--header-height) + 4rem) var(--gutter) 0;
-}
-
 .enquire__title-filter {
   position: absolute;
   width: 0;
@@ -543,28 +606,89 @@ useHead(() => ({
 
 .enquire__stage {
   flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  padding: calc(var(--header-height) + 4rem) 0 4rem;
+}
+
+.enquire__copy {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  padding: 1.75rem var(--gutter) 4rem;
+  gap: 4.5rem;
+  min-width: 0;
+  padding-left: var(--gutter);
+  padding-right: clamp(2rem, 5vw, 4rem);
+}
+
+.enquire__heading {
+  position: relative;
+  min-width: 0;
+}
+
+.enquire__heading .enquire__title {
+  width: 100%;
+  max-width: 100%;
+  font-size: clamp(2.75rem, 4.8vw, 5.25rem);
+  transform: none;
+}
+
+.enquire__aside {
+  display: flex;
+  flex-direction: column;
+  gap: 110px;
+  max-width: 480px;
+  min-width: 0;
+}
+
+.enquire__aside-block,
+.enquire__panel {
   opacity: 0;
   transition: opacity 0.7s ease;
 }
 
-.enquire__stage--in {
+.enquire__stage--in .enquire__aside-block,
+.enquire__stage--in .enquire__panel {
   opacity: 1;
 }
 
+.enquire__aside .mono-copy,
+.enquire__intro.mono-copy,
+.enquire__empty.mono-copy,
+.enquire__success .mono-copy {
+  min-width: 0;
+}
+
+.enquire__aside-line a {
+  color: currentColor;
+  text-decoration: none;
+}
+
+.enquire__aside-bracket {
+  color: var(--muted);
+}
+
+.enquire__half {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding-left: clamp(2rem, 5vw, 4rem);
+  padding-right: var(--gutter);
+  border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
 .enquire__panel {
-  width: min(720px, 100%);
+  width: 100%;
+  max-width: 32rem;
+  min-width: 0;
+  border: 1px solid;
+  padding: 55px;
+  background: var(--background-color);
 }
 
 .enquire__intro {
   max-width: 40rem;
   margin: 0 0 2rem;
-  font-size: var(--text-lg);
-  color: var(--muted);
 }
 
 .enquire__form {
@@ -627,33 +751,41 @@ useHead(() => ({
   background: var(--warm-white);
 }
 
-.enquire__upload {
+.enquire__drop {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: 0.65rem 1rem;
-  cursor: pointer;
-}
-
-.enquire__upload-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--grid-line);
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 12.5rem;
+  padding: 2.25rem 1.5rem;
+  border: 1px dashed color-mix(in srgb, var(--charcoal) 45%, transparent);
   background: var(--cream);
-  font-size: var(--text-sm);
   color: var(--charcoal);
+  text-align: center;
+  cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
-.enquire__upload:hover .enquire__upload-btn {
+.enquire__drop:hover,
+.enquire__drop--over {
+  border-style: solid;
   border-color: var(--charcoal);
   background: var(--warm-white);
 }
 
-.enquire__upload-note {
-  font-size: var(--text-xs);
-  color: var(--muted);
+.enquire__drop-title {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.enquire__drop-note {
+  max-width: 22rem;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--charcoal) 55%, transparent);
 }
 
 .enquire__files {
@@ -702,8 +834,6 @@ useHead(() => ({
 
 .enquire__empty {
   margin: 0;
-  font-size: var(--text-sm);
-  color: var(--muted);
 }
 
 .enquire__board-list {
@@ -845,19 +975,6 @@ useHead(() => ({
   cursor: not-allowed;
 }
 
-.enquire__or {
-  margin: 0;
-  text-align: center;
-  font-size: var(--text-sm);
-  color: var(--muted);
-}
-
-.enquire__email {
-  color: var(--charcoal);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .enquire__success {
   display: flex;
   flex-direction: column;
@@ -868,18 +985,24 @@ useHead(() => ({
 
 .enquire__success-title {
   margin: 0;
-  font-size: var(--text-xl);
 }
 
-.enquire__success p {
-  margin: 0;
-  color: var(--muted);
-}
+@media (max-width: 900px) {
+  .enquire__stage {
+    grid-template-columns: 1fr;
+  }
 
-.enquire__address {
-  margin-top: 2.5rem;
-  font-size: var(--text-sm);
-  color: var(--muted);
+  .enquire__half {
+    border-left: 0;
+    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    margin-top: 3rem;
+    padding-top: 3rem;
+    padding-left: var(--gutter);
+  }
+
+  .enquire__panel {
+    max-width: none;
+  }
 }
 
 @media (max-width: 640px) {
@@ -889,7 +1012,8 @@ useHead(() => ({
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .enquire__stage {
+  .enquire__aside-block,
+  .enquire__panel {
     transition: none;
   }
 }
