@@ -18,6 +18,8 @@ export const useCursor = () => {
   const suppressLabel = useState<boolean>('site-cursor-suppress-label', () => false)
   /** Explicit `data-cursor="default"`: circle only, no page prompt. */
   const bare = useState<boolean>('site-cursor-bare', () => false)
+  /** Enter-the-studio button: a plain dot in the text colour, no arrow. */
+  const ink = useState<boolean>('site-cursor-ink', () => false)
   /** Pointer is inside the typology trigger column, including the gaps between cells. */
   const overColumn = useState<boolean>('site-cursor-over-column', () => false)
   /** Light mode: white cursor over the homepage slider, typology rows, and thumbnails. */
@@ -53,6 +55,7 @@ export const useCursor = () => {
   }
 
   const resolveFromPoint = (x: number, y: number) => {
+    ink.value = false
     if (overrideId.value) {
       overColumn.value = false
       onMedia.value = false
@@ -104,6 +107,14 @@ export const useCursor = () => {
       if (node.closest('.site-cursor')) continue
       if (getComputedStyle(node).pointerEvents === 'none') continue
       noteSurface(node)
+      if (node.closest('.homepage-intro__enter')) {
+        native.value = false
+        suppressLabel.value = true
+        bare.value = true
+        ink.value = true
+        if (preset.value) preset.value = null
+        return
+      }
       if (node.closest('.header, .homepage-intro__theme, .homepage-intro__skip, .homepage-intro__next, .homepage-intro__product')) {
         native.value = false
         suppressLabel.value = true
@@ -170,6 +181,7 @@ export const useCursor = () => {
     native,
     suppressLabel,
     bare,
+    ink,
     overColumn,
     onMedia,
     onSlider,

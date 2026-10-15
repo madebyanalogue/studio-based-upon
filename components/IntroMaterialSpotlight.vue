@@ -18,8 +18,10 @@ const props = withDefaults(
     toPage?: boolean
     /** Which pose this figure holds. Each group mounts its own spotlight. */
     placement?: number
+    /** 0–1 fade of the figure. The cursor light stays full strength once this has begun. */
+    opacity?: number
   }>(),
-  { revealed: false, dark: false, flatten: false, toPage: false, placement: 0 },
+  { revealed: false, dark: false, flatten: false, toPage: false, placement: 0, opacity: 0 },
 )
 
 const vertexPars = `uniform float uFlat;\nvarying vec3 vWPos;`
@@ -29,7 +31,8 @@ const fragmentPars = `
   uniform vec3 uHitPoint;
   uniform vec3 uStone;
   uniform vec3 uStoneDark;
-  uniform float uActive, uRadius, uSoftness, uDark, uFlat;
+  uniform float uActive, uRadius, uSoftness, uDark, uFlat, uFade;
+  uniform vec3 uGround;
   varying vec3 vWPos;
 `
 const fragmentMain = `
@@ -42,7 +45,9 @@ const fragmentMain = `
   roughnessFactor = mix(mix(0.95, 0.45, mask), 1.0, uFlat);
   metalnessFactor = 1.0 - uFlat;
   vec3 stone = mix(uStone, uStoneDark, uDark);
-  diffuseColor.rgb = stone * mix(lightMix, darkMix, uDark);
+  vec3 litStone = stone * mix(lightMix, darkMix, uDark);
+  float lit = mask * step(0.001, uFade);
+  diffuseColor.rgb = mix(mix(uGround, litStone, uFade), litStone, lit);
 `
 
 /** Offsets as a fraction of the figure's longest side. */
@@ -83,6 +88,7 @@ onMounted(async () => {
   let active = false
   let raf = 0
   let disposed = false
+  let shaderReady = false
 
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
@@ -143,6 +149,9 @@ onMounted(async () => {
       const material = mesh.material as THREE.MeshStandardMaterial
       material.roughness = 0.95
       material.metalness = 1
+      material.transparent = true
+      material.opacity = 0
+      material.depthWrite = false
       material.onBeforeCompile = (shader) => {
         shader.uniforms.uHitPoint = { value: uHit }
         shader.uniforms.uActive = { value: 0 }
@@ -150,6 +159,8 @@ onMounted(async () => {
         shader.uniforms.uSoftness = { value: config.softness }
         shader.uniforms.uDark = { value: 0 }
         shader.uniforms.uFlat = { value: 0 }
+        shader.uniforms.uFade = { value: 0 }
+        shader.uniforms.uGround = { value: ground }
         shader.uniforms.uStone = { value: stone }
         shader.uniforms.uStoneDark = { value: stoneDark }
         shader.vertexShader = shader.vertexShader
@@ -196,6 +207,7 @@ onMounted(async () => {
   const stoneDark = new THREE.Color(0xb9b7ae)
   const fieldClear = new THREE.Color()
   const clear = new THREE.Color()
+  const ground = new THREE.Color()
   const cssColor = (name: string, fallback: THREE.Color) => {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     if (!raw) return
@@ -247,7 +259,21 @@ onMounted(async () => {
     fieldClear.copy(lightClear).lerp(darkClear, theme)
     clear.copy(fieldClear).lerp(pageClear, pageBlend)
     renderer.setClearColor(clear, 1)
+    ground.copy(clear)
     if (model) model.scale.z = THREE.MathUtils.lerp(1, 0.012, flat)
+    if (model && !shaderReady && shaders.length > 0) {
+      shaderReady = true
+      model.traverse((node) => {
+        const mesh = node as THREE.Mesh
+        if (!mesh.isMesh) return
+        const material = mesh.material as THREE.MeshStandardMaterial
+        material.transparent = false
+        material.opacity = 1
+        material.depthWrite = true
+        material.needsUpdate = true
+      })
+    }
+    if (model) model.visible = shaderReady ? props.opacity > 0.001 : true
     if (model) {
       const pose = PLACEMENTS[Math.min(Math.max(props.placement, 0), PLACEMENTS.length - 1)]!
       const goalX = homeX + pose.x * modelSpan
@@ -281,6 +307,7 @@ onMounted(async () => {
       shader.uniforms.uActive!.value = uActive
       shader.uniforms.uDark!.value = theme
       shader.uniforms.uFlat!.value = flat
+      shader.uniforms.uFade!.value = props.opacity
     }
     renderer.render(scene, camera)
     const leavingSettled = props.toPage && flat > 0.995 && pageBlend > 0.995
@@ -322,15 +349,11 @@ onMounted(async () => {
   z-index: 0;
   pointer-events: none;
   background: var(--intro-ground-light, #eee);
-  opacity: 0;
-  transition:
-    opacity 0.28s ease,
-    background 0.45s ease;
+  transition: background 0.45s ease;
 }
 
 .intro-spotlight.is-in {
   z-index: 1;
-  opacity: 1;
 }
 
 .intro-spotlight.is-dark {

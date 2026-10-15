@@ -203,6 +203,16 @@ const typeLayerVisible = ref(false)
 
 let scrollPosition = 1
 let scrollTarget = 1
+let compact = false
+let compactLaidOut = false
+const COMPACT_QUERY = '(max-width: 1100px)'
+let compactMedia: MediaQueryList | null = null
+const onCompactChange = (event: MediaQueryListEvent) => {
+  compact = event.matches
+  compactLaidOut = false
+  rootEl.value?.classList.toggle('split-slider--compact', compact)
+  updateSlider()
+}
 let lastTouchY = 0
 let rafId = 0
 let running = false
@@ -332,6 +342,58 @@ const createSlide = (side: Side, index: number) => {
   el.append(img, overlay)
   host.appendChild(el)
   columns[side].visibleSlides.set(index, el)
+}
+
+/** Tablet and mobile: one finite row of slides per column, no clip reveal. */
+const layoutCompactSlides = () => {
+  const count = props.slides.length
+  for (const side of ['left', 'right'] as const) {
+    const host = columns[side].el
+    if (!host) continue
+    for (const [index, el] of [...columns[side].visibleSlides]) {
+      if (index < 0 || index >= count) {
+        el.remove()
+        columns[side].visibleSlides.delete(index)
+      }
+    }
+    for (let i = 0; i < count; i += 1) {
+      if (!columns[side].visibleSlides.has(i)) createSlide(side, i)
+      const el = columns[side].visibleSlides.get(i)
+      if (!el) continue
+      el.style.clipPath = 'none'
+      const image = el.querySelector('img')
+      if (image) image.style.transform = ''
+      host.appendChild(el)
+    }
+  }
+  compactLaidOut = true
+  const index = Math.max(0, Math.round(scrollPosition - 1))
+  requestAnimationFrame(() => {
+    const left = leftEl.value
+    const width = left?.clientWidth ?? 0
+    if (!left || !width) return
+    const next = index * width
+    left.scrollLeft = next
+    if (rightEl.value) rightEl.value.scrollLeft = next
+  })
+}
+
+let syncingCompactScroll = false
+const onCompactColumnScroll = (event: Event) => {
+  if (!compact || syncingCompactScroll) return
+  const source = event.currentTarget as HTMLElement
+  const other = source === leftEl.value ? rightEl.value : leftEl.value
+  syncingCompactScroll = true
+  if (other && Math.abs(other.scrollLeft - source.scrollLeft) > 1) {
+    other.scrollLeft = source.scrollLeft
+  }
+  syncingCompactScroll = false
+  dismissScrollHint()
+  const width = source.clientWidth || 1
+  const index = Math.max(0, Math.round(source.scrollLeft / width))
+  scrollTarget = index + 1
+  scrollPosition = scrollTarget
+  syncTypeLayer()
 }
 
 const getRevealShape = (side: Side, revealAmount: number) => {
@@ -720,7 +782,17 @@ const playEntrance = async () => {
   entranceStarted = true
   await prepareSurface()
   if (!running || leaving) return
-  await wipeColumns('in')
+  if (compact) {
+    surfaceReady.value = true
+    for (const el of [leftEl.value, rightEl.value]) {
+      if (!el) continue
+      el.style.opacity = '1'
+      el.style.clipPath = 'none'
+    }
+    layoutCompactSlides()
+  } else {
+    await wipeColumns('in')
+  }
   if (!running || leaving) return
   revealIntroChrome()
 
@@ -832,6 +904,12 @@ const syncTypeLayer = () => {
 }
 
 const updateSlider = () => {
+  if (compact) {
+    if (!compactLaidOut) layoutCompactSlides()
+    syncTypeLayer()
+    return
+  }
+  compactLaidOut = false
   const first = Math.floor(scrollPosition) - settings.bufferSlides
   const last = Math.floor(scrollPosition) + settings.bufferSlides + 1
 
@@ -877,6 +955,11 @@ const onWheel = (event: WheelEvent) => {
   if (event.deltaX || event.deltaY) dismissScrollHint()
   if (leaving || openingProduct.value) return
   cancelIntro()
+  if (compact) {
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+    if (leftEl.value) leftEl.value.scrollLeft += delta
+    return
+  }
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
 
@@ -885,7 +968,7 @@ const onTouchStart = (event: TouchEvent) => {
 }
 
 const onTouchMove = (event: TouchEvent) => {
-  if (leaving || openingProduct.value) return
+  if (compact || leaving || openingProduct.value) return
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
   if (y !== lastTouchY) dismissScrollHint()
@@ -1084,9 +1167,15 @@ onMounted(() => {
   lockPageScroll()
 
   const root = rootEl.value
+  compactMedia = window.matchMedia(COMPACT_QUERY)
+  compact = compactMedia.matches
+  root?.classList.toggle('split-slider--compact', compact)
+  compactMedia.addEventListener('change', onCompactChange)
   root?.addEventListener('wheel', onWheel, { passive: false })
   root?.addEventListener('touchstart', onTouchStart, { passive: true })
   root?.addEventListener('touchmove', onTouchMove, { passive: true })
+  leftEl.value?.addEventListener('scroll', onCompactColumnScroll, { passive: true })
+  rightEl.value?.addEventListener('scroll', onCompactColumnScroll, { passive: true })
   leftEl.value?.addEventListener('click', onLeftColumnClick)
   rightEl.value?.addEventListener('click', onRightColumnClick)
 
@@ -1119,9 +1208,12 @@ onBeforeUnmount(() => {
   revertSplits()
 
   const root = rootEl.value
+  compactMedia?.removeEventListener('change', onCompactChange)
   root?.removeEventListener('wheel', onWheel)
   root?.removeEventListener('touchstart', onTouchStart)
   root?.removeEventListener('touchmove', onTouchMove)
+  leftEl.value?.removeEventListener('scroll', onCompactColumnScroll)
+  rightEl.value?.removeEventListener('scroll', onCompactColumnScroll)
   leftEl.value?.removeEventListener('click', onLeftColumnClick)
   rightEl.value?.removeEventListener('click', onRightColumnClick)
 
@@ -1136,6 +1228,7 @@ watch(
   () => {
     lastDataIndex = -1
     activeKey.value = ''
+    compactLaidOut = false
     if (!entranceStarted) surfacePromise = null
   },
 )
@@ -1189,6 +1282,44 @@ watch(
   opacity: 1;
 }
 
+@media (max-width: 1100px) {
+  .split-slider--compact {
+    flex-direction: column;
+    touch-action: pan-x;
+  }
+
+  .split-slider--compact .split-slider__column {
+    flex: 1 1 0;
+    width: 100%;
+    height: 50%;
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: pan-x;
+  }
+
+  .split-slider--compact .split-slider__column::-webkit-scrollbar {
+    display: none;
+  }
+
+  .split-slider.split-slider--compact :deep(.split-slider__slide) {
+    position: relative;
+    inset: auto;
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
+    scroll-snap-align: start;
+    clip-path: none !important;
+  }
+
+  .split-slider--compact .split-slider__type--caption {
+    flex-direction: column;
+  }
+}
+
 .split-slider :deep(.split-slider__slide) {
   position: absolute;
   inset: 0;
@@ -1223,7 +1354,8 @@ watch(
   opacity: 0;
 }
 .split-slider__type:not(.split-slider__type--caption) {
- display:none;
+  display: none;
+  color: #fff !important;
 }
 
 .split-slider--type-on .split-slider__type {
@@ -1253,10 +1385,10 @@ watch(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 4px;
   padding: 16px 0;
-  text-align: left;
+  text-align: center;
   text-decoration: none;
   color: inherit;
   pointer-events: auto;
@@ -1287,7 +1419,7 @@ watch(
   transform: translate(-50%, -50%);
   text-transform: uppercase;
   font-family: var(--serif);
-  font-size: 5vw;
+  font-size: 3vw;
   font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1;

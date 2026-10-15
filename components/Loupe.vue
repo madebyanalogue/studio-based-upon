@@ -672,11 +672,33 @@ const onKeyUp = (event: KeyboardEvent) => {
   pressedKeys.delete(event.key)
 }
 
+const { preset, resolveFromPoint } = useCursor()
+const ZOOM_LABEL_MS = 800
+let zoomLabelTimer = 0
+
+const zoomReadout = () => `${scale.value.toFixed(1)}x`
+
+const showZoomLabel = (clientX: number, clientY: number) => {
+  const grab = grabRef.value
+  if (!grab) return
+  const label = zoomReadout()
+  grab.setAttribute('data-cursor-label', label)
+  resolveFromPoint(clientX, clientY)
+  preset.value = { id: 'cursor-label', tooltip: label }
+  window.clearTimeout(zoomLabelTimer)
+  zoomLabelTimer = window.setTimeout(() => {
+    zoomLabelTimer = 0
+    grab.removeAttribute('data-cursor-label')
+    if (/^\d\.\dx$/.test(preset.value?.tooltip ?? '')) preset.value = null
+  }, ZOOM_LABEL_MS)
+}
+
 const onWheel = (event: WheelEvent) => {
   event.preventDefault()
   event.stopPropagation()
   const step = event.deltaY > 0 ? -0.08 : 0.08
   scale.value = clamp(MIN_SCALE, MAX_SCALE, scale.value + step)
+  showZoomLabel(event.clientX, event.clientY)
 }
 
 watch(
@@ -709,6 +731,9 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onDialUp)
   window.removeEventListener('pointercancel', onDialUp)
   rootRef.value?.removeEventListener('wheel', onWheel)
+  window.clearTimeout(zoomLabelTimer)
+  grabRef.value?.removeAttribute('data-cursor-label')
+  if (/^\d\.\dx$/.test(preset.value?.tooltip ?? '')) preset.value = null
   pressedKeys.clear()
   gl?.getExtension('WEBGL_lose_context')?.loseContext()
   gl = null

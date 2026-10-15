@@ -37,19 +37,6 @@
 
       <aside class="enquire__aside">
         <div class="enquire__aside-block flex flex-col gap-2">
-          <h2 class="h6 muted">Working with clients</h2>
-          <p class="mono-copy">
-            The client is a critical part of the process. We collaborate with designers
-            and architects to realise work for private residences, yachts, hotels,
-            restaurants and fashion houses.
-          </p>
-          <p class="mono-copy">
-            Share a selection, a drawing, or a few words about the project. We will be
-            in touch to talk through material, scale and how the work is made.
-          </p>
-        </div>
-
-        <div class="enquire__aside-block flex flex-col gap-2">
           <h2 class="h6 muted">Contact</h2>
           <p class="mono-copy enquire__aside-line">
             Telephone <a :href="`tel:${phoneTel}`"><span class="enquire__aside-bracket">[</span>{{ phone }}<span class="enquire__aside-bracket">]</span></a>
@@ -66,19 +53,80 @@
 
       <div class="enquire__half">
       <div class="enquire__panel">
-    <p class="enquire__intro mono-copy">
+    <div class="enquire__aside-block flex flex-col gap-2">
+      <h2 class="h6 muted">Working with clients</h2>
+      <p class="mono-copy">
+        The client is a critical part of the process. We collaborate with designers
+        and architects to realise work for private residences, yachts, hotels,
+        restaurants and fashion houses.
+      </p>
+      <p class="mono-copy">
+        Share a selection, a drawing, or a few words about the project. We will be
+        in touch to talk through material, scale and how the work is made.
+      </p>
+    </div>
+
+    <!-- <p class="enquire__intro mono-copy">
       {{ page?.heroSubtitle || 'Tell us about your project, or request a call back below.' }}
-    </p>
+    </p> -->
 
     <div v-if="isSuccess" class="enquire__success">
       <p class="enquire__success-title h6 muted">Thank you</p>
       <p class="mono-copy">Your enquiry has been sent. We will be in touch shortly.</p>
-      <button type="button" class="btn btn--filled enquire__send" @click="resetForm">Send another enquiry</button>
+      <button type="button" class="enquire__send" @click="resetForm">Send another enquiry</button>
     </div>
 
     <form v-else class="enquire__form" @submit.prevent="submit">
+      <div class="enquire__field">
+        <span class="enquire__label interface">
+          Attachments <span class="enquire__hint">optional</span>
+        </span>
+        <label
+          class="enquire__drop"
+          :class="{ 'enquire__drop--over': dropActive }"
+          @dragenter.prevent="onDragEnter"
+          @dragover.prevent="onDragOver"
+          @dragleave.prevent="onDragLeave"
+          @drop.prevent="onDrop"
+        >
+          <input
+            type="file"
+            class="sr-only"
+            multiple
+            accept="image/*,.pdf,.doc,.docx"
+            @change="onFilesSelected"
+          />
+          <span class="enquire__drop-title">Drop files here</span>
+          <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
+        </label>
+        <ul v-if="attachments.length" class="enquire__files">
+          <li v-for="file in attachments" :key="file.id" class="enquire__file">
+            <span class="enquire__file-name">{{ file.name }}</span>
+            <span class="enquire__file-size">{{ formatSize(file.size) }}</span>
+            <button
+              type="button"
+              class="enquire__file-remove"
+              :aria-label="`Remove ${file.name}`"
+              @click="removeAttachment(file.id)"
+            >
+              ×
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <label class="enquire__field">
+        <span class="enquire__label interface">Start a conversation§</span>
+        <textarea
+          v-model="form.message"
+          name="message"
+          rows="6"
+          placeholder="Tell us about your project…"
+        />
+      </label>
+
       <div class="enquire__moodboards">
-        <p class="enquire__label">Include selections <span class="enquire__hint">optional</span></p>
+        <p class="enquire__label interface">Include selections <span class="enquire__hint">optional</span></p>
 
         <p v-if="!selectableMoodboards.length" class="enquire__empty mono-copy">
           You have no saved selections yet. Heart pieces across the site to build one.
@@ -119,73 +167,25 @@
 
       <div class="enquire__fields">
         <label class="enquire__field">
-          <span class="enquire__label">Name</span>
+          <span class="enquire__label interface">Name</span>
           <input v-model="form.name" type="text" name="name" autocomplete="name" required />
         </label>
 
         <label class="enquire__field">
-          <span class="enquire__label">Email</span>
+          <span class="enquire__label interface">Email</span>
           <input v-model="form.email" type="email" name="email" autocomplete="email" required />
         </label>
 
         <label class="enquire__field">
-          <span class="enquire__label">Telephone</span>
+          <span class="enquire__label interface">Telephone</span>
           <input v-model="form.telephone" type="tel" name="telephone" autocomplete="tel" />
         </label>
-
-        <label class="enquire__field">
-          <span class="enquire__label">Message</span>
-          <textarea
-            v-model="form.message"
-            name="message"
-            rows="6"
-            placeholder="Tell us about your project…"
-          />
-        </label>
-
-        <div class="enquire__field enquire__field--full">
-          <span class="enquire__label">
-            Attachments <span class="enquire__hint">optional</span>
-          </span>
-          <label
-            class="enquire__drop"
-            :class="{ 'enquire__drop--over': dropActive }"
-            @dragenter.prevent="onDragEnter"
-            @dragover.prevent="onDragOver"
-            @dragleave.prevent="onDragLeave"
-            @drop.prevent="onDrop"
-          >
-            <input
-              type="file"
-              class="sr-only"
-              multiple
-              accept="image/*,.pdf,.doc,.docx"
-              @change="onFilesSelected"
-            />
-            <span class="enquire__drop-title">Drop files here</span>
-            <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
-          </label>
-          <ul v-if="attachments.length" class="enquire__files">
-            <li v-for="file in attachments" :key="file.id" class="enquire__file">
-              <span class="enquire__file-name">{{ file.name }}</span>
-              <span class="enquire__file-size">{{ formatSize(file.size) }}</span>
-              <button
-                type="button"
-                class="enquire__file-remove"
-                :aria-label="`Remove ${file.name}`"
-                @click="removeAttachment(file.id)"
-              >
-                ×
-              </button>
-            </li>
-          </ul>
-        </div>
       </div>
 
       <p v-if="error" class="enquire__error" role="alert">{{ error }}</p>
 
       <div class="enquire__actions">
-        <button type="submit" class="btn btn--filled enquire__send" :disabled="isSubmitting">
+        <button type="submit" class="enquire__send" :disabled="isSubmitting">
           {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
         </button>
       </div>
@@ -577,6 +577,11 @@ useHead(() => ({
   flex-direction: column;
   min-height: 100dvh;
   max-width: none;
+  --grid-line: #00000050;
+}
+
+html.dark .enquire {
+  --grid-line: #ffffff50;
 }
 
 .enquire__title-filter {
@@ -607,38 +612,44 @@ useHead(() => ({
 .enquire__stage {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 640px) minmax(0, 1fr);
+  grid-template-areas: "heading form aside";
   align-items: start;
-  padding: calc(var(--header-height) + 4rem) 0 4rem;
+  width: 100%;
+  max-width: none;
+  text-align: left;
+  column-gap: 40px;
+  padding: calc(var(--header-height) + 4rem) var(--gutter) 4rem;
+  box-sizing: border-box;
 }
 
 .enquire__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4.5rem;
-  min-width: 0;
-  padding-left: var(--gutter);
-  padding-right: clamp(2rem, 5vw, 4rem);
+  display: contents;
 }
 
 .enquire__heading {
+  grid-area: heading;
   position: relative;
   min-width: 0;
+  text-align: left;
 }
 
 .enquire__heading .enquire__title {
-  width: 100%;
+  width: max-content;
   max-width: 100%;
   font-size: clamp(2.75rem, 4.8vw, 5.25rem);
   transform: none;
 }
 
 .enquire__aside {
-  display: flex;
+  display: none;
+  grid-area: aside;
   flex-direction: column;
   gap: 110px;
-  max-width: 480px;
+  justify-self: start;
+  max-width: 320px;
   min-width: 0;
+  text-align: left;
 }
 
 .enquire__aside-block,
@@ -659,6 +670,11 @@ useHead(() => ({
   min-width: 0;
 }
 
+.enquire .mono-copy,
+.enquire .mono-copy p {
+  margin: 0;
+}
+
 .enquire__aside-line a {
   color: currentColor;
   text-decoration: none;
@@ -669,54 +685,57 @@ useHead(() => ({
 }
 
 .enquire__half {
+  grid-area: form;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 40px;
+  width: 100%;
+  max-width: 640px;
   min-width: 0;
-  padding-left: clamp(2rem, 5vw, 4rem);
-  padding-right: var(--gutter);
-  border-left: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  padding: 0;
+  border: 0;
+  padding-top: 20px;
 }
 
 .enquire__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
   width: 100%;
-  max-width: 32rem;
+  max-width: none;
   min-width: 0;
-  border: 1px solid;
-  padding: 55px;
-  background: var(--background-color);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
 }
 
 .enquire__intro {
-  max-width: 40rem;
-  margin: 0 0 2rem;
+  max-width: none;
+  margin: 0;
 }
 
 .enquire__form {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 40px;
 }
 
 .enquire__fields {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  grid-template-columns: 1fr;
+  gap: 40px;
 }
 
 .enquire__field {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 25px;
 }
 
 .enquire__field:nth-child(4),
 .enquire__field--full {
   grid-column: 1 / -1;
-}
-
-.enquire__label {
-  font-size: var(--text-sm);
-  color: var(--muted);
 }
 
 .enquire__hint {
@@ -736,6 +755,10 @@ useHead(() => ({
   color: var(--charcoal);
   resize: vertical;
   transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.enquire__field textarea {
+  min-height: calc(1.5 * (6lh + 1.5rem + 2px));
 }
 
 .enquire__field input:hover,
@@ -841,12 +864,12 @@ useHead(() => ({
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.75rem;
 }
 
 .enquire__board-list--single {
-  grid-template-columns: minmax(0, 280px);
+  grid-template-columns: 1fr;
 }
 
 .enquire__board {
@@ -957,17 +980,26 @@ useHead(() => ({
 }
 
 .enquire__send {
+  display: block;
   width: 100%;
-  border: none;
-  border-radius: var(--ui-border-radius);
+  margin: 0;
+  padding: 13px;
+  border: 0;
+  border-radius: 0;
   background: var(--red);
-  color: var(--white);
+  color: white;
+  font-size: 12px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
 }
 
 .enquire__send:hover:not(:disabled) {
   background: var(--red);
-  color: var(--white);
-  opacity: 0.88;
+  color: white;
+  opacity: 0.9;
 }
 
 .enquire__send:disabled {
@@ -987,27 +1019,24 @@ useHead(() => ({
   margin: 0;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .enquire__stage {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 640px);
+    grid-template-areas:
+      "heading"
+      "form"
+      "aside";
+    justify-content: center;
+    width: min(640px, calc(100% - (var(--gutter) * 2)));
+    margin-inline: auto;
+    padding-inline: 0;
+    row-gap: 40px;
   }
 
-  .enquire__half {
-    border-left: 0;
-    border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-    margin-top: 3rem;
-    padding-top: 3rem;
-    padding-left: var(--gutter);
-  }
-
-  .enquire__panel {
+  .enquire__heading,
+  .enquire__aside {
+    justify-self: stretch;
     max-width: none;
-  }
-}
-
-@media (max-width: 640px) {
-  .enquire__fields {
-    grid-template-columns: 1fr;
   }
 }
 

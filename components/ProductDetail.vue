@@ -1458,10 +1458,9 @@ const runFlipClose = async () => {
   await nextTick()
   if (!startImmediate) await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
-  // Panel cream can drop now that chrome is gone.
-  // Archive / kebab close lets the page show through while the image flies home.
+  // Panel cream can drop now that chrome is gone. The page backdrop stays
+  // up until the return flyer is on screen, so closing doesn't flash empty.
   pendingFlip.value = true
-  if (startImmediate) setBackdropReady(false)
   await nextTick()
 
   const from = hero.getBoundingClientRect()
@@ -1541,9 +1540,6 @@ const runFlipClose = async () => {
     return
   }
 
-  gsap.set(hero, { visibility: 'hidden' })
-  hideFlipSource(source)
-
   const flyer = document.createElement('img')
   flyer.src = hero.currentSrc || hero.src
   flyer.alt = ''
@@ -1564,8 +1560,13 @@ const runFlipClose = async () => {
     overflow: 'hidden',
     borderRadius: `${frameRadiusPx(hero)}px`,
   })
-  document.body.appendChild(flyer)
+  // Decode before the hero is hidden — an empty flyer leaves a frame of background.
   if (!flyer.complete) await waitForImage(flyer)
+  gsap.set(hero, { visibility: 'hidden' })
+  hideFlipSource(source)
+  document.body.appendChild(flyer)
+  // Cream leaves behind the flyer, once the picture is actually covering it.
+  if (startImmediate) setBackdropReady(false)
 
   // 2) Flyer returns to the grid thumb
   const state = Flip.getState(flyer)
@@ -2194,7 +2195,7 @@ watch(
 }
 
 .pdp__action-split--pair > .pdp__rail-btn + .pdp__rail-btn {
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.12);
+  border-left: 1px dotted var(--grid-line);
 }
 
 .pdp__title-add {
@@ -2419,8 +2420,8 @@ watch(
   margin: 0;
   padding: 13px;
   border: 0;
-  background: #2a2a2a;
-  color: #f1ede4;
+  background: var(--background-color);
+  color: currentColor;
   font-size: 12px;
   font-family: var(--mono);
   letter-spacing: 0.1em;
@@ -2430,11 +2431,12 @@ watch(
 }
 
 .pdp__rail-btn:hover {
-  opacity: 0.9;
+  background: color-mix(in srgb, var(--background-color) 93%, currentColor);
 }
 
-.pdp__rail-btn[aria-pressed='true'] {
-  background: #3a3a3a;
+.pdp__rail-btn[aria-pressed='true'],
+.pdp__rail-btn[aria-pressed='true']:hover {
+  background: color-mix(in srgb, var(--background-color) 86%, currentColor);
 }
 
 .pdp__save {

@@ -4,19 +4,17 @@
     class="homepage-intro"
     :class="{ 'is-motion': motionOn, 'is-dark': isDark, 'is-flat': toPage }"
     :data-frame="frameIndex"
-    :data-cursor-label="cursorLabel"
+    :data-cursor-label="enterReady && !leaving ? 'Enter' : undefined"
     role="dialog"
     aria-label="Introduction"
     @click="onFieldClick"
   >
     <IntroMaterialSpotlight
-      v-for="slot in 3"
-      :key="slot"
       :dark="isDark"
-      :revealed="activeModel === slot - 1"
-      :flatten="modelFlatten[slot - 1]"
+      :revealed="modelIn"
+      :opacity="modelFade"
+      :flatten="toPage"
       :to-page="toPage"
-      :placement="slot - 1"
     />
 
     <div class="homepage-intro__logo">
@@ -53,32 +51,10 @@
     <div
       class="homepage-intro__theme"
       :class="{ 'is-in': backdropIn }"
-      role="group"
-      aria-label="Colour mode"
       data-cursor="default"
       @click.stop
     >
-      <button
-        type="button"
-        class="homepage-intro__theme-label"
-        :aria-pressed="!isDark"
-        @click.stop="setTheme('light')"
-      >Light</button>
-      <button
-        type="button"
-        class="homepage-intro__theme-switch"
-        :aria-pressed="isDark"
-        aria-label="Switch colour mode"
-        @click.stop="toggleTheme"
-      >
-        <span class="homepage-intro__theme-thumb" :class="{ 'is-dark': isDark }" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="homepage-intro__theme-label"
-        :aria-pressed="isDark"
-        @click.stop="setTheme('dark')"
-      >Dark</button>
+      <ThemeModeSwitch />
     </div>
 
     <a
@@ -104,12 +80,12 @@
 
     <div
       class="homepage-intro__progress"
-      :class="{ 'is-in': showProgress }"
+      :class="{ 'is-in': progressIn }"
       aria-hidden="true"
     >
-      <span>{{ frameIndex }}</span>
+      <span>{{ frameIndex + 1 }}</span>
       <span class="homepage-intro__progress-line" />
-      <span>{{ FRAMES.length - 1 }}</span>
+      <span>{{ FRAMES.length }}</span>
     </div>
 
     <div
@@ -129,17 +105,18 @@
         data-cursor="default"
         @click.stop="onEnter"
       >
-        Enter the studio
+        [ <span class="homepage-intro__mark">Enter the studio</span> ]
       </button>
     </div>
 
     <button
       type="button"
       class="homepage-intro__skip"
+      :class="{ 'is-in': skipIn }"
       data-cursor="default"
       @click.stop="onSkip"
     >
-      [ SKIP ]
+      [ <span class="homepage-intro__mark">Skip</span> ]
     </button>
 
     <div class="homepage-intro__load" aria-hidden="true">
@@ -193,9 +170,8 @@ const FRAMES: Frame[] = [
   },
 ]
 
-const STAGE_NAMES = ['Studio Based Upon', 'Two decades', 'Everything starts', 'Explore what']
-/** Hold after the title is fully in, before the click sends it out. */
-const DEFAULT_BEATS = [0.7, 1.4, 2.6, 1.4]
+/** Hold after a title is fully in, before it leaves on its own. */
+const BEATS = [2.2, 2.6, 3.3, 2.4]
 
 const pieces: Piece[] = FRAMES.map((frame, frameIndex) => ({
   key: `f${frameIndex}`,
@@ -206,32 +182,17 @@ const pieces: Piece[] = FRAMES.map((frame, frameIndex) => ({
 
 const { phase } = useHomepageIntro()
 
-const PRODUCT_AFTER_MS = 2000
 const thumb = (url: string) => `${url}?w=640&auto=format&q=80`
-/** Cards for the three model slides: Two decades, Everything starts, Explore what. */
-const SLIDE_PRODUCTS: Record<number, HomepageIntroProduct> = {
-  1: {
-    title: 'Diamond Coffee Table (Blush)',
-    meta: 'Diamond',
-    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/fbcd128f554f3e317ee629acb7459adb1cd6f33b-3000x2000.jpg'),
-    href: '/materials-and-forms/diamond-coffee-table-blush',
-  },
-  2: {
-    title: 'Untitled 06',
-    meta: '',
-    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/2d612776950658cd0acd084b4ebb9361a273f195-1993x3000.jpg'),
-    href: '/materials-and-forms/untitled-06',
-  },
-  3: {
-    title: 'Double Twist Table',
-    meta: 'Twist',
-    image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/c21436a67fe96cf2afda2fbca9789b4dbd4e5d51-3000x1924.jpg'),
-    href: '/materials-and-forms/double-twist-table',
-  },
+/** The one figure has one product. It stays for the rest of the sequence. */
+const PRODUCT: HomepageIntroProduct = {
+  title: 'Diamond Coffee Table (Blush)',
+  meta: 'Diamond',
+  image: thumb('https://cdn.sanity.io/images/k8gpyc57/production/fbcd128f554f3e317ee629acb7459adb1cd6f33b-3000x2000.jpg'),
+  href: '/materials-and-forms/diamond-coffee-table-blush',
 }
 const activeCard = ref<HomepageIntroProduct | null>(null)
 const productVisible = ref(false)
-let productTimer = 0
+let productShown = false
 const homeScrollHint = useHomeScrollHint()
 const route = useRoute()
 
@@ -247,67 +208,31 @@ const logoEl = ref<HTMLElement | null>(null)
 let logoShown = false
 const motionOn = ref(false)
 const frameIndex = ref(0)
-const { isDark, setTheme, toggleTheme } = useTheme()
+const { isDark } = useTheme()
 const { preset: cursorPreset } = useCursor()
 const { open: openProduct } = useProductOverlay()
 const router = useRouter()
 const backdropIn = ref(false)
 const toPage = ref(false)
-/** One spotlight per group. -1 until the first group begins. */
-const activeModel = ref(-1)
-const modelFlatten = ref([true, true, true])
-/** How long each title holds after it is in. */
-const beats = ref<number[]>([...DEFAULT_BEATS])
-/** Hold after the logo has landed, before the first line. */
-const logoHoldMs = ref(520)
+/** Single figure. Hidden through the logo and first slide, then fades in on slide 2. */
+const modelIn = ref(false)
+/** 0–1 fade of that figure, starting with the second slide. */
+const modelFade = ref(0)
+/** Skip arrives with the opening line, after the logo. */
+const skipIn = ref(false)
 const enterReady = ref(false)
 const enterEl = ref<HTMLElement | null>(null)
 const productEl = ref<HTMLElement | null>(null)
 const ruleDrawn = ref(false)
-/** From Two decades until the last slide. */
-const showProgress = computed(
-  () => frameIndex.value >= 1 && frameIndex.value < FRAMES.length - 1,
-)
-/** Opening slide stays empty. Each of the three slides after it fills another third. */
-const loadProgress = computed(() => {
-  const steps = FRAMES.length - 1
-  return Math.min(1, Math.max(0, frameIndex.value) / steps)
-})
+/** Counter from the opening line through the last slide. Drops as soon as we leave. */
+const progressIn = ref(false)
+/** 0 at the logo, 1 when the last line has landed. */
+const loadProgress = ref(0)
 const leaving = ref(false)
 
 let started = false
 let finished = false
-/** Two decades onward waits for a click. The follow lines stay inside their slide. */
-const CLICK_FROM = 1
-const awaitingClick = ref(false)
-/** Continue types on only after the arrived slide has had a moment to settle. */
-const CURSOR_AFTER_MS = 1200
-const cursorLabel = ref<string | undefined>(undefined)
-let cursorTimer = 0
-
-const clearNextCursor = () => {
-  window.clearTimeout(cursorTimer)
-  cursorTimer = 0
-  cursorLabel.value = undefined
-  const tip = cursorPreset.value?.tooltip
-  if (tip === 'Continue' || tip === 'Enter') cursorPreset.value = null
-}
-
-const armNextCursor = () => {
-  window.clearTimeout(cursorTimer)
-  cursorTimer = 0
-  cursorLabel.value = undefined
-  if (finished || leaving.value || frameIndex.value < CLICK_FROM) return
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  cursorTimer = window.setTimeout(() => {
-    cursorTimer = 0
-    if (finished || leaving.value || !awaitingClick.value) return
-    if (frameIndex.value < CLICK_FROM) return
-    const label = frameIndex.value >= FRAMES.length - 1 ? 'Enter' : 'Continue'
-    cursorLabel.value = label
-    cursorPreset.value = { id: 'cursor-label', tooltip: label }
-  }, reduced ? 160 : CURSOR_AFTER_MS)
-}
+let logoRaf = 0
 let pluginsReady = false
 let failTimer = 0
 let releaseTimer = 0
@@ -317,12 +242,14 @@ let splits: InstanceType<typeof SplitText>[] = []
 type LineGroup = { words: HTMLElement[]; follow: number | null }
 let linesByKey = new Map<string, LineGroup[]>()
 let stopPath: (() => void) | null = null
-/** Logo fades out fully before the first line fades in. */
+/** Logo is alone for this long, then the figure and opening line take over. */
+const LOGO_MS = 1000
+/** Logo fades out, then the opening line and figure fade in. */
 const LOGO_EXIT_START = 0
-const LOGO_EXIT_END = 0.28
-const TEXT_START = LOGO_EXIT_END
-/** Path units per second while the slides play themselves. */
-const SLIDE_RATE = 0.48
+const LOGO_EXIT_END = 0.5
+const TEXT_START = 0.55
+/** Path units per second. One unit is one second. */
+const SLIDE_RATE = 1
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -331,10 +258,11 @@ const finishSite = (immediate = false) => {
   finished = true
   homeScrollHint.value = false
   stopPath?.()
-  clearNextCursor()
+  cancelAnimationFrame(logoRaf)
   dismissProduct()
   window.clearTimeout(failTimer)
   window.clearTimeout(releaseTimer)
+  if (cursorPreset.value?.tooltip === 'Enter') cursorPreset.value = null
   if (immediate) {
     clearHomepageIntroLock()
     if (phase.value !== 'done' && phase.value !== 'skipped') phase.value = 'done'
@@ -342,8 +270,11 @@ const finishSite = (immediate = false) => {
     return
   }
 
+  backdropIn.value = false
+  skipIn.value = false
+  progressIn.value = false
+  ruleDrawn.value = false
   meltVisibleType()
-  modelFlatten.value = [true, true, true]
   toPage.value = true
   const flattenAt = performance.now()
   const FLATTEN_MS = 1200
@@ -419,31 +350,36 @@ const textOrigin = () => TEXT_START
 const logoAmount = (t: number) => 1 - along(t, LOGO_EXIT_START, LOGO_EXIT_END)
 
 /** Outgoing fade. The span is the fade speed, shared by every slide. */
-const EXIT_LEAD = 0.22
-const EXIT_TAIL = 0.1
+const EXIT_LEAD = 0.14
+const EXIT_TAIL = 0.08
 const EXIT_SPAN = EXIT_LEAD + EXIT_TAIL
 /** Opening line leaves a little quicker than the later slides. */
-const OPENING_EXIT_SPAN = 0.18
+const OPENING_EXIT_SPAN = 0.2
 const exitSpanFor = (index: number) => (index === 0 ? OPENING_EXIT_SPAN : EXIT_SPAN)
 /** Incoming fade. One slide is fully out before the next begins. */
-const ENTER_SPAN = 0.42
-/** Pause after a slide has gone, before the next title fades in. */
-const GROUP_TEXT_DELAY = 0.28
-const FOLLOW_AFTER = 0.08
+const ENTER_SPAN = 0.36
+/** Opening line takes longer so the handoff from the logo reads as a fade. */
+const OPENING_ENTER_SPAN = 1.2
+/** Figure keeps fading after the line has arrived. The cursor light is live from the first moment. */
+const MODEL_FADE_SPAN = 2.4
+const enterSpanFor = (index: number) => (index === 0 ? OPENING_ENTER_SPAN : ENTER_SPAN)
+/** Short breath after a slide has gone, before the next title fades in. */
+const GROUP_TEXT_DELAY = 0.18
+const FOLLOW_AFTER = 0.18
 const FOLLOW_STAGGER = 0.32
 const FOLLOW_SPAN = 0.28
 /** Last slide: each word fades in on its own. */
-const WORD_STAGGER = 0.07
-const WORD_SPAN = 0.18
+const WORD_STAGGER = 0.08
+const WORD_SPAN = 0.2
 
 const minHold = (index: number) => {
   const followCount = FRAMES[index]?.follow?.length ?? 0
-  if (!followCount) return 0.45
-  return FOLLOW_AFTER + (followCount - 1) * FOLLOW_STAGGER + FOLLOW_SPAN + 0.2
+  if (!followCount) return 0.4
+  return FOLLOW_AFTER + (followCount - 1) * FOLLOW_STAGGER + FOLLOW_SPAN + 0.12
 }
-const holdFor = (index: number) => Math.max(minHold(index), beats.value[index] ?? 1.4)
+const holdFor = (index: number) => Math.max(minHold(index), BEATS[index] ?? 1)
 /** Time from a slide's start until its title has finished melting in. */
-const leadIn = (index: number) => ENTER_SPAN + (index === 0 ? 0 : GROUP_TEXT_DELAY)
+const leadIn = (index: number) => enterSpanFor(index) + (index === 0 ? 0 : GROUP_TEXT_DELAY)
 const slideSpan = (index: number) => leadIn(index) + holdFor(index) + exitSpanFor(index)
 
 const frameStart = (index: number) => {
@@ -455,14 +391,14 @@ const frameEnd = (index: number) => frameStart(index) + slideSpan(index)
 
 /** Opening line starts with its slide. Group titles wait, then melt in. */
 const enterStartFor = (frame: number) => frameStart(frame) + (frame === 0 ? 0 : GROUP_TEXT_DELAY)
-/** Click starts the title and the model leaving together. */
+/** A title leaves on its own once its hold is over. */
 const exitStartFor = (frame: number) => frameStart(frame) + leadIn(frame) + holdFor(frame)
 
 /** 0 while a piece is off the path, 1 while its stage is fully present. */
 const pieceAmount = (piece: Piece, t: number) => {
   const textT = t - textOrigin()
   const enterStart = enterStartFor(piece.frame)
-  const enter = along(textT, enterStart, enterStart + ENTER_SPAN)
+  const enter = along(textT, enterStart, enterStart + enterSpanFor(piece.frame))
   const exitStart = exitStartFor(piece.frame)
   return enter * (1 - along(textT, exitStart, exitStart + exitSpanFor(piece.frame)))
 }
@@ -484,20 +420,25 @@ const stageAt = (t: number) => {
   return 0
 }
 
-/** Time when a slide, including its follow lines, is fully in and waiting for a click. */
-const arrivedTextT = (index: number) => {
+/** Path time when the last line's words have finished fading in. */
+const lastWordsDone = () => {
+  const index = FRAMES.length - 1
   const frame = FRAMES[index]
+  const wordCount = frame?.lines.join(' ').split(/\s+/).filter(Boolean).length ?? 1
   const enterStart = enterStartFor(index)
-  if (index === FRAMES.length - 1) {
-    const wordCount = frame?.lines.join(' ').split(/\s+/).filter(Boolean).length ?? 1
-    return enterStart + Math.max(0, wordCount - 1) * WORD_STAGGER + WORD_SPAN
-  }
-  const followCount = frame?.follow?.length ?? 0
-  if (!followCount) return enterStart + ENTER_SPAN
-  return enterStart + ENTER_SPAN + FOLLOW_AFTER + (followCount - 1) * FOLLOW_STAGGER + FOLLOW_SPAN
+  return enterStart + Math.max(0, wordCount - 1) * WORD_STAGGER + WORD_SPAN
 }
+/** Brief pause after that line, then the rule draws down to Enter. */
+const CLOSING_AFTER = 0.28
+const sequenceEnd = () => textOrigin() + lastWordsDone() + CLOSING_AFTER
+/** Logo hold plus the path, through the last stage's hold. */
+const sequenceSeconds = () => LOGO_MS / 1000 + sequenceEnd() / SLIDE_RATE
 
-const arrivedT = (index: number) => textOrigin() + arrivedTextT(index)
+const paintProgress = (pathT: number) => {
+  const total = sequenceSeconds()
+  const logoShare = LOGO_MS / 1000 / total
+  loadProgress.value = clamp01(logoShare + Math.max(0, pathT) / SLIDE_RATE / total)
+}
 
 const bindPieces = () => {
   const root = rootEl.value
@@ -569,28 +510,34 @@ const meltVisibleType = () => {
   })
 }
 
-/** Each group has its own figure: in before the title, out with it. */
-const syncModels = (t: number) => {
+/** Skip, theme, and product arrive with the opening line. The figure waits for slide 2. */
+const syncChrome = (t: number) => {
   if (toPage.value || leaving.value) return
   const textT = t - textOrigin()
-  let slide = 0
-  for (let index = 1; index < FRAMES.length; index += 1) {
-    if (textT >= frameStart(index)) slide = index
-  }
-  if (slide < 1) {
-    backdropIn.value = false
-    activeModel.value = -1
-    modelFlatten.value = [true, true, true]
-    return
-  }
-  const slot = slide - 1
-  // Hold the next figure until the previous one has faded out.
-  const revealed = textT >= enterStartFor(slide)
-  activeModel.value = revealed ? slot : -1
-  if (revealed) backdropIn.value = true
-  const flat = [true, true, true]
-  if (revealed) flat[slot] = textT >= exitStartFor(slide)
-  modelFlatten.value = flat
+  const opening = textT >= enterStartFor(0)
+  const figureStart = enterStartFor(1)
+  const figureOn = textT >= figureStart
+  if (!modelIn.value && figureOn) modelIn.value = true
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  modelFade.value = reducedMotion
+    ? figureOn
+      ? 1
+      : 0
+    : along(textT, figureStart, figureStart + MODEL_FADE_SPAN)
+  if (!progressIn.value && opening) progressIn.value = true
+  if (!skipIn.value && opening) skipIn.value = true
+  if (!backdropIn.value && opening) backdropIn.value = true
+
+  if (productShown || !opening) return
+  productShown = true
+  activeCard.value = PRODUCT
+  productVisible.value = false
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      if (finished) return
+      productVisible.value = true
+    })
+  })
 }
 
 const paint = (t: number) => {
@@ -638,7 +585,8 @@ const paint = (t: number) => {
       }
     }
   }
-  syncModels(t)
+  syncChrome(t)
+  paintProgress(t)
 }
 
 const armClosingChoices = () => {
@@ -658,10 +606,14 @@ const onRuleEnd = (event: TransitionEvent) => {
   enterReady.value = true
 }
 
+watch(enterReady, (ready) => {
+  if (!ready || finished || leaving.value) return
+  cursorPreset.value = { id: 'cursor-label', tooltip: 'Enter' }
+})
+
 const onEnter = () => {
   if (finished) return
   leaving.value = true
-  ruleDrawn.value = false
   finishSite()
 }
 
@@ -685,9 +637,8 @@ const onProduct = async () => {
 const onFieldClick = (event: MouseEvent) => {
   const target = event.target
   if (target instanceof Element && target.closest('button, a, .homepage-intro__theme')) return
-  if (finished || leaving.value) return
-  if (frameIndex.value >= FRAMES.length - 1) onEnter()
-  else advanceSlide()
+  if (finished || leaving.value || !enterReady.value) return
+  onEnter()
 }
 
 const onKey = (event: KeyboardEvent) => {
@@ -703,20 +654,14 @@ const onKey = (event: KeyboardEvent) => {
 
 const pathState = { t: 0 }
 let pathTween: gsap.core.Tween | null = null
-let pathDest: number | null = null
-/** Slide a click is already sending us to. Further clicks wait until it arrives. */
-let userSkip: number | null = null
-let pathArrive: (() => void) | undefined
 let playGeneration = 0
 
-const playTo = (target: number, onArrive?: () => void, dest?: number | null) => {
-  pathDest = dest === undefined ? null : dest
-  pathArrive = onArrive
+const playTo = (target: number, onArrive?: () => void) => {
   pathTween?.kill()
   if (target <= pathState.t + 0.01) {
     pathTween = null
-    pathDest = null
     paint(pathState.t)
+    onArrive?.()
     return
   }
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -731,8 +676,6 @@ const playTo = (target: number, onArrive?: () => void, dest?: number | null) => 
     },
     onComplete: () => {
       pathTween = null
-      pathDest = null
-      pathArrive = undefined
       if (finished) return
       paint(target)
       onArrive?.()
@@ -741,64 +684,12 @@ const playTo = (target: number, onArrive?: () => void, dest?: number | null) => 
   stopPath = () => {
     pathTween?.kill()
     pathTween = null
-    pathDest = null
     stopPath = null
   }
 }
 
 const dismissProduct = () => {
-  window.clearTimeout(productTimer)
-  productTimer = 0
   productVisible.value = false
-}
-
-const armProductCard = () => {
-  dismissProduct()
-  const frame = frameIndex.value
-  const card = SLIDE_PRODUCTS[frame]
-  if (!card || finished) return
-  productTimer = window.setTimeout(() => {
-    productTimer = 0
-    if (finished || frameIndex.value !== frame) return
-    activeCard.value = card
-    productVisible.value = false
-    void nextTick(() => {
-      requestAnimationFrame(() => {
-        if (finished || frameIndex.value !== frame) return
-        productVisible.value = true
-      })
-    })
-  }, PRODUCT_AFTER_MS)
-}
-
-const settleSlide = () => {
-  awaitingClick.value = true
-  if (frameIndex.value >= FRAMES.length - 1) armClosingChoices()
-  armNextCursor()
-  armProductCard()
-}
-
-const advanceSlide = () => {
-  if (finished || leaving.value) return
-  const next = frameIndex.value + 1
-  if (next >= FRAMES.length) {
-    onEnter()
-    return
-  }
-  if (userSkip === next) return
-  userSkip = next
-  awaitingClick.value = false
-  clearNextCursor()
-  dismissProduct()
-  const leaveAt = textOrigin() + exitStartFor(frameIndex.value)
-  if (leaveAt > pathState.t) {
-    pathState.t = leaveAt
-    paint(pathState.t)
-  }
-  playTo(arrivedT(next), () => {
-    userSkip = null
-    settleSlide()
-  }, next)
 }
 
 const play = async () => {
@@ -819,7 +710,10 @@ const play = async () => {
   if (finished || generation !== playGeneration || !rootEl.value) return
   paint(0)
 
-  playTo(arrivedT(CLICK_FROM), settleSlide, CLICK_FROM)
+  playTo(sequenceEnd(), () => {
+    loadProgress.value = 1
+    armClosingChoices()
+  })
 }
 
 const fadeLogo = async () => {
@@ -827,23 +721,25 @@ const fadeLogo = async () => {
   if (logoShown) return
   logoShown = true
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const startedAt = performance.now()
+  const total = sequenceSeconds()
+  const logoShare = LOGO_MS / 1000 / total
+  const step = () => {
+    if (finished) return
+    const elapsed = (performance.now() - startedAt) / 1000
+    loadProgress.value = clamp01((elapsed / (LOGO_MS / 1000)) * logoShare)
+    if (elapsed < LOGO_MS / 1000) logoRaf = requestAnimationFrame(step)
+  }
   if (reduced) {
     if (logo) gsap.set(logo, { opacity: 1, filter: 'none' })
-    return
+  } else if (logo) {
+    gsap.set(logo, { opacity: 0, filter: 'none' })
+    gsap.to(logo, { opacity: 1, duration: 0.22, ease: 'power2.out' })
   }
-  if (logo) gsap.set(logo, { opacity: 0 })
-  const rise = logo
-    ? gsap.to(logo, {
-        opacity: 1,
-        duration: 1.7,
-        delay: 0.42,
-        ease: 'power2.out',
-      })
-    : delay(2120)
-  await delay(420)
-  if (finished) return
-  await rise
-  await delay(logoHoldMs.value)
+  logoRaf = requestAnimationFrame(step)
+  await delay(LOGO_MS)
+  cancelAnimationFrame(logoRaf)
+  if (!finished) loadProgress.value = logoShare
 }
 
 onMounted(() => {
@@ -861,8 +757,7 @@ onUnmounted(() => {
   if (fadeVeil) document.removeEventListener('homepage-columns-opening', fadeVeil)
   window.clearTimeout(veilTimer)
   window.clearTimeout(failTimer)
-  window.clearTimeout(cursorTimer)
-  window.clearTimeout(productTimer)
+  cancelAnimationFrame(logoRaf)
   for (const split of splits) {
     try {
       split.revert()
@@ -907,94 +802,16 @@ onUnmounted(() => {
   left: 50%;
   top: 30px;
   z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 0px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
   color: inherit;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
   transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.55s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: opacity 0.28s ease;
 }
 
 .homepage-intro__theme.is-in {
   opacity: 1;
   pointer-events: auto;
-}
-
-.homepage-intro__theme-switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 40px;
-  height: 12px;
-  margin: 0;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  box-sizing: border-box;
-  cursor: pointer;
-}
-
-.homepage-intro__theme-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  transform: translateX(0);
-  transition: transform 0.35s ease;
-  pointer-events: none;
-}
-
-.homepage-intro__theme-thumb.is-dark {
-  transform: translateX(28px);
-}
-
-.homepage-intro__theme-label {
-  width: 80px;
-  margin: 0;
-  padding: 10px 15px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  text-align: left;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.4;
-  transition: opacity 0.35s ease;
-}
-
-.homepage-intro__theme-label:first-child {
-  text-align: right;
-}
-
-.homepage-intro__theme-label[aria-pressed='true'] {
-  opacity: 1;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .homepage-intro__theme:has(.homepage-intro__theme-label:hover) .homepage-intro__theme-label[aria-pressed='true']:not(:hover) {
-    opacity: 0.4;
-  }
-
-  .homepage-intro__theme-label:hover {
-    opacity: 1;
-  }
 }
 
 .homepage-intro__product {
@@ -1015,7 +832,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(18px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.6s ease;
+  transition: opacity 0.4s ease;
 }
 
 .homepage-intro__product.is-in {
@@ -1056,11 +873,12 @@ onUnmounted(() => {
 }
 
 .homepage-intro__progress {
+  /* Hidden for now. The bottom bar still tracks the whole sequence. */
+  display: none;
   position: absolute;
   left: 50%;
   bottom: 80px;
   z-index: 6;
-  display: flex;
   align-items: center;
   gap: 12px;
   margin: 0;
@@ -1073,7 +891,7 @@ onUnmounted(() => {
   transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.28s ease;
 }
 
 .homepage-intro__progress-line {
@@ -1103,21 +921,14 @@ onUnmounted(() => {
   background: currentColor;
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .homepage-intro__load-fill {
-    transition: none;
-  }
 }
 
 .homepage-intro__finale {
   position: absolute;
   left: 50%;
   /* From the bottom of the centered title to the slide indicator. */
-  top: calc(50% + 1.7rem);
-  bottom: 80px;
+  top: calc(50% + 2rem);
+  bottom: 150px;
   z-index: 6;
   display: flex;
   align-items: center;
@@ -1131,23 +942,24 @@ onUnmounted(() => {
   top: 3rem;
   left: 50%;
   width: 1px;
-  height: calc(50% - 7.5rem);
+  height: calc(50% + 2.5rem);
   margin-left: -0.5px;
   background: currentColor;
   transform-origin: top center;
   transform: scaleY(0);
-  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .homepage-intro__rule.is-drawn {
   transform: scaleY(1);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .homepage-intro__enter {
   margin: 0;
-  padding: 0.75rem 1.15rem;
-  border: 1px solid currentColor;
-  background: transparent;
+  padding: 0.4rem 0.2rem;
+  border: 0;
+  background: none;
   color: inherit;
   font-family: var(--mono);
   font-size: 11px;
@@ -1179,8 +991,45 @@ onUnmounted(() => {
   letter-spacing: 0.14em;
   line-height: 1;
   text-transform: uppercase;
-  opacity: 1;
+  opacity: 0;
+  pointer-events: none;
   cursor: pointer;
+  transition: opacity 0.28s ease;
+}
+
+.homepage-intro__skip.is-in {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.homepage-intro__mark {
+  padding: 0.2em 0.35em;
+  background-color: transparent;
+  color: inherit;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .homepage-intro__enter:hover .homepage-intro__mark,
+  .homepage-intro__skip:hover .homepage-intro__mark {
+    background-color: var(--red);
+    color: #fff;
+  }
+}
+
+@media (max-width: 767px) {
+  .homepage-intro__product {
+    display: none;
+  }
+
+  .homepage-intro__skip {
+    right: auto;
+    left: 50%;
+    bottom: 32px;
+    transform: translateX(-50%);
+  }
 }
 
 .homepage-intro__logo {

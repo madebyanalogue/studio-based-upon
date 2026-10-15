@@ -15,6 +15,7 @@
       '--showcase-bottom-inset': `${SHOWCASE_BOTTOM_INSET_PX}px`,
     }"
     aria-label="Pairings"
+    data-lenis-prevent
     :data-cursor-label="exploreCursorLabel || undefined"
     @pointerenter="noteShowcasePointer"
     @pointermove="noteShowcasePointer"
@@ -3991,6 +3992,33 @@ onBeforeUnmount(() => {
 .showcase__surrender:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+@media (max-width: 1100px) {
+  .showcase {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--showcase-side);
+    touch-action: pan-x;
+  }
+
+  .showcase__columns {
+    width: max-content;
+    max-width: none;
+    height: 100%;
+    margin-inline: 0;
+    padding-inline: var(--showcase-side);
+  }
+
+  .showcase__column-wrap {
+    flex: 0 0 min(82vw, 540px);
+    scroll-snap-align: start;
+  }
+
+  .showcase__column {
+    touch-action: pan-y;
+  }
 }
 
 @media (max-width: 860px) {

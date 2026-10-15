@@ -105,7 +105,7 @@ onUnmounted(() => {
   left: calc(var(--selections-panel-width) + var(--boards-panel-width));
   right: 0;
   height: 100dvh;
-  z-index: 320; /* above cart stage; selection rail rises to 340 while PDP is open */
+  z-index: 350; /* above the selection pile (340) */
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -128,7 +128,7 @@ html.pdp-related-rail-open .product-overlay {
   transition: opacity var(--backdrop-close-ms) var(--backdrop-close-ease);
 }
 
-/* Fades in before the flyer moves; flyer is body-level z-index 500 above this */
+/* Fades in behind the flyer (body-level z-index 360, above this overlay). */
 .product-overlay--backdrop .product-overlay__backdrop {
   opacity: 1;
 }

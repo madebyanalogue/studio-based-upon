@@ -1257,24 +1257,91 @@ const setGridMode = (uniform: boolean) => {
   targets.forEach((el) => {
     el.style.transform = ''
   })
-  const state = Flip.getState(targets)
-  evenGrid.value = uniform
-  gridAnimating.value = true
-  void nextTick(() => {
-    if (gen !== gridModeGen) return
-    // Layout is the new grid immediately; glide while that range is still held open.
-    glideGridScroll()
-    Flip.from(state, {
-      duration: 0.75,
-      ease: 'power3.inOut',
-      absolute: false,
-      scale: true,
-      onComplete: () => {
-        if (gen !== gridModeGen) return
-        gridAnimating.value = false
-        finishGridScroll(true)
-      },
+
+  const gridMetas = () =>
+    Array.from(
+      grid.querySelectorAll<HTMLElement>(
+        '.product-card:not(.is-filtered-out) .product-card__meta',
+      ),
+    )
+  const pinMeta = (opacity: string) => {
+    gridMetas().forEach((el) => {
+      el.style.transition = 'none'
+      el.style.opacity = opacity
     })
+  }
+  const releaseMeta = () => {
+    if (gen !== gridModeGen) return
+    gridMetas().forEach((el) => {
+      el.style.removeProperty('transition')
+      el.style.removeProperty('opacity')
+    })
+  }
+  // The card's CSS opacity transition restarts when the grid class changes
+  // and stalls mid-fade. Step the value directly so the stylesheet can't take it back.
+  const fadeMeta = (to: number, done?: () => void) => {
+    const from = new Map<HTMLElement, number>()
+    const start = performance.now()
+    const step = (now: number) => {
+      if (gen !== gridModeGen) return
+      const t = Math.min(1, (now - start) / 280)
+      const eased = t * t * (3 - 2 * t)
+      const live = gridMetas()
+      if (!live.length) {
+        done?.()
+        return
+      }
+      live.forEach((el) => {
+        if (!from.has(el)) {
+          from.set(el, Number.parseFloat(getComputedStyle(el).opacity) || 0)
+        }
+        const origin = from.get(el) ?? to
+        el.style.transition = 'none'
+        el.style.opacity = String(origin + (to - origin) * eased)
+      })
+      if (t < 1) requestAnimationFrame(step)
+      else done?.()
+    }
+    requestAnimationFrame(step)
+  }
+
+  const narrowGrid = window.matchMedia('(max-width: 767px)').matches
+  const startFlip = () => {
+    if (gen !== gridModeGen) return
+    const state = Flip.getState(targets)
+    evenGrid.value = uniform
+    gridAnimating.value = true
+    void nextTick(() => {
+      if (gen !== gridModeGen) return
+      if (narrowGrid) pinMeta('0')
+      // Layout is the new grid immediately; glide while that range is still held open.
+      glideGridScroll()
+      Flip.from(state, {
+        duration: 0.75,
+        ease: 'power3.inOut',
+        absolute: false,
+        scale: true,
+        onComplete: () => {
+          if (gen !== gridModeGen) return
+          gridAnimating.value = false
+          finishGridScroll(true)
+          if (!narrowGrid) return
+          fadeMeta(1, releaseMeta)
+        },
+      })
+    })
+  }
+
+  if (!narrowGrid) {
+    startFlip()
+    return
+  }
+
+  // Phone: titles leave before the tiles move, and return once the new order has landed.
+  gsap.killTweensOf(gridMetas())
+  fadeMeta(0, () => {
+    pinMeta('0')
+    startFlip()
   })
 }
 

@@ -8,8 +8,8 @@
   /* Intro field uses the backgrounds above. Figure is the 3D form. */
   --intro-ground-light: var(--bg-light);
   --intro-ground-dark: var(--bg-dark);
-  --intro-figure: #b9b7ae;
-  --intro-figure-dark: #b9b7ae;
+  --intro-figure: var(--bg-light);
+  --intro-figure-dark: #333;
 
   --background-color: var(--cream);
   --text-color: var(--charcoal);
@@ -61,7 +61,7 @@ html:not(.dark) {
   --charcoal: var(--text-dark);
   --black: var(--text-dark);
   --accent: var(--red);
-  --grid-line: rgba(0, 0, 0, 0.06);
+  --grid-line: rgba(0, 0, 0, 0.15);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
   --panel-bg: rgba(255, 255, 255, 0.8);

@@ -488,7 +488,7 @@
               </div>
             </div>
           </div>
-          <LightboxEdgeGlass v-if="lightboxGlass" ref="lightboxGlassRef" />
+          <LightboxEdgeGlass ref="lightboxGlassRef" :enabled="lightboxGlass" />
         </div>
 
         <!-- Boards cart — same square grid; boards span 1×1 (<1000) or 3×2 (≥1000 / 6-col) -->
@@ -8489,9 +8489,8 @@ onBeforeUnmount(() => {
 }
 
 /*
- * Rail and open cart both sit above ProductOverlay (320) while a PDP is up;
- * boards rail is a sibling under it. Doubled class so this outranks the other
- * .stack--* z-index modifiers regardless of source order.
+ * Kept under the product overlay (350) while a PDP is open. Doubled class so
+ * this still outranks the other .stack--* z-index modifiers.
  */
 .stack.stack--above-pdp {
   z-index: 340;
@@ -10217,7 +10216,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   margin: 0;
-  padding: 0.7rem 1.25rem;
+  padding: 0.5rem 1rem;
   border: 0;
   border-radius: var(--ui-border-radius);
   background: var(--red);
@@ -10341,14 +10340,6 @@ onBeforeUnmount(() => {
 .stack--lb-handoff .stack__lightbox-item {
   opacity: 0 !important;
   transition: none !important;
-}
-
-.stack__lightbox--compact :deep(.lb-edge-glass),
-.stack--view-flip :deep(.lb-edge-glass),
-.stack--flipping :deep(.lb-edge-glass),
-.stack--lb-handoff :deep(.lb-edge-glass),
-.stack--enquiry-parked :deep(.lb-edge-glass) {
-  visibility: hidden;
 }
 
 .stack__lightbox-item .stack__cell-frame,

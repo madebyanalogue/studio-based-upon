@@ -12,6 +12,7 @@
         'site-cursor--tip-left': tipLeft,
         'site-cursor--on-media': onMedia,
         'site-cursor--on-slider': onSlider,
+        'site-cursor--ink': ink,
       }"
       aria-hidden="true"
     >
@@ -70,7 +71,7 @@
       >
         <span
           v-for="(char, index) in labelChars"
-          :key="`${shownLabel}-${index}`"
+          :key="`${labelEpoch}-${index}`"
           class="site-cursor__hint-char"
           :class="{ 'is-in': index < labelCount }"
         >{{ char === ' ' ? '\u00a0' : char }}</span>
@@ -82,7 +83,7 @@
 <script setup lang="ts">
 import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTypologyRowHover'
 
-const { preset, native, suppressLabel, bare, overColumn, onMedia, onSlider, resolveFromPoint } = useCursor()
+const { preset, native, suppressLabel, bare, ink, overColumn, onMedia, onSlider, resolveFromPoint } = useCursor()
 const { isOpen: cartOpen } = useBucket()
 const route = useRoute()
 
@@ -143,11 +144,14 @@ const sideChevron = computed(() => {
 })
 
 const isHeart = computed(() => !homeScrollHint.value && preset.value?.icon === 'heart')
+/** Stays on while the Enter letters are still typing off after the click. */
+const enterPinned = ref(false)
 const isAdvance = computed(() => {
-  if (homeScrollHint.value) return false
+  if (homeScrollHint.value || ink.value) return false
   const tip = preset.value?.tooltip
-  return tip === 'Continue' || tip === 'Enter'
+  return tip === 'Continue' || tip === 'Enter' || enterPinned.value
 })
+const pinEnterLeft = () => preset.value?.tooltip === 'Enter' || enterPinned.value
 const showOrb = computed(() => !isMark.value && !isHeart.value)
 
 const pose = ref<MarkPose>({
@@ -256,6 +260,7 @@ const cursorLabel = computed(() => {
 })
 
 const labelChars = ref<string[]>([])
+const labelEpoch = ref(0)
 const labelMounted = ref(false)
 const labelRemoving = ref(false)
 const labelFading = ref(false)
@@ -277,6 +282,10 @@ const clearFading = () => {
 }
 
 /** Header and nav: drop the label in the same frame, with no delete or fade. */
+const releaseEnterPin = () => {
+  enterPinned.value = false
+}
+
 const dropLabelNow = () => {
   labelGeneration += 1
   clearLabelTimer()
@@ -287,6 +296,7 @@ const dropLabelNow = () => {
   labelCount.value = 0
   shownLabel.value = ''
   labelChars.value = []
+  releaseEnterPin()
 }
 
 /** Trigger cells and an open row hover. The outgoing label fades instead of deleting. */
@@ -302,9 +312,24 @@ const pointerOverTypologyHover = () => {
   return false
 }
 
+const isZoomReadout = (value: string) => /^\d\.\dx$/.test(value)
+
+const replaceZoomReadout = (text: string) => {
+  shownLabel.value = text
+  labelChars.value = [...text]
+  labelCount.value = text.length
+}
+
 const typeLabelOn = (text: string, generation: number) => {
   clearLabelTimer()
   clearFading()
+  labelEpoch.value += 1
+  if (text === 'Enter') {
+    enterPinned.value = true
+    tipLeft.value = true
+  } else {
+    enterPinned.value = false
+  }
   shownLabel.value = text
   labelChars.value = [...text]
   labelMounted.value = true
@@ -323,6 +348,13 @@ const typeLabelOn = (text: string, generation: number) => {
 
 const fadeLabelOn = (text: string, generation: number) => {
   clearLabelTimer()
+  labelEpoch.value += 1
+  if (text === 'Enter') {
+    enterPinned.value = true
+    tipLeft.value = true
+  } else {
+    enterPinned.value = false
+  }
   shownLabel.value = text
   labelChars.value = [...text]
   labelCount.value = text.length
@@ -346,6 +378,7 @@ const typeLabelOff = (generation: number, done: () => void) => {
     labelCount.value = 0
     shownLabel.value = ''
     labelChars.value = []
+    releaseEnterPin()
     done()
     return
   }
@@ -360,6 +393,7 @@ const typeLabelOff = (generation: number, done: () => void) => {
       labelCount.value = 0
       shownLabel.value = ''
       labelChars.value = []
+      releaseEnterPin()
       done()
     }
   }, 46)
@@ -375,6 +409,7 @@ const fadeLabelOff = (generation: number, done: () => void) => {
     labelCount.value = 0
     shownLabel.value = ''
     labelChars.value = []
+    releaseEnterPin()
     done()
     return
   }
@@ -394,6 +429,7 @@ const fadeLabelOff = (generation: number, done: () => void) => {
     labelCount.value = 0
     shownLabel.value = ''
     labelChars.value = []
+    releaseEnterPin()
     done()
   }
   const onEnd = (event: TransitionEvent) => {
@@ -438,6 +474,17 @@ const syncLabel = (text: string) => {
     if (labelRemoving.value) resumeLabel(text)
     return
   }
+  if (
+    text &&
+    labelMounted.value &&
+    !labelRemoving.value &&
+    !labelFading.value &&
+    isZoomReadout(shownLabel.value) &&
+    isZoomReadout(text)
+  ) {
+    replaceZoomReadout(text)
+    return
+  }
   labelGeneration += 1
   const generation = labelGeneration
   const start = () => {
@@ -477,12 +524,13 @@ const parkLabel = () => {
   window.clearTimeout(revealTimer)
   restTimer = window.setTimeout(() => {
     restTimer = 0
-    tipLeft.value = isAdvance.value ? true : labelSide()
+    tipLeft.value = pinEnterLeft() || isAdvance.value ? true : labelSide()
     requestAnimationFrame(() => {
       labelStill.value = true
       revealTimer = window.setTimeout(() => {
         revealTimer = 0
-        if (labelStill.value) tipLeft.value = labelSide()
+        if (!labelStill.value || pinEnterLeft()) return
+        tipLeft.value = labelSide()
       }, 300)
     })
   }, LABEL_REST_MS)
@@ -496,7 +544,10 @@ const noteMotion = () => {
 
 if (import.meta.client) {
   watch(isAdvance, (on) => {
-    if (on) return
+    if (on) {
+      if (pinEnterLeft()) tipLeft.value = true
+      return
+    }
     window.clearTimeout(restTimer)
     window.clearTimeout(revealTimer)
     restTimer = 0
@@ -597,7 +648,9 @@ const place = () => {
     const turn = prev ? 135 : -45
     chevRef.value.style.transform = `translate3d(${x + nudge}px, ${y}px, 0) translate(-50%, -50%) rotate(${turn}deg)`
   }
-  if (labelStill.value) {
+  if (pinEnterLeft()) {
+    if (!tipLeft.value) tipLeft.value = true
+  } else if (labelStill.value) {
     const flip = labelSide()
     if (tipLeft.value !== flip) tipLeft.value = flip
   }
@@ -797,6 +850,17 @@ watch(trailOn, (on) => {
 html:not(.dark) .site-cursor__orb,
 html:not(.dark) .site-cursor--advance .site-cursor__orb {
   background: var(--red);
+  mix-blend-mode: normal;
+}
+
+html:not(.dark) .site-cursor--ink .site-cursor__orb,
+html.dark .site-cursor--ink .site-cursor__orb,
+html.dark.homepage-intro .site-cursor--ink .site-cursor__orb {
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  border: 0 solid transparent;
+  color: var(--text-color);
   mix-blend-mode: normal;
 }
 

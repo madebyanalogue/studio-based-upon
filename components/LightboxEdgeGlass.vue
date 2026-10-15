@@ -15,6 +15,8 @@ const MAX_ITEMS = 8
 
 const bandPxFor = (stageWidth: number) => Math.min(stageWidth * BAND_RATIO, BAND_MAX)
 
+const props = defineProps<{ enabled?: boolean }>()
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 const VERT = `
@@ -38,6 +40,7 @@ const FRAG = `
   uniform float uEdge;
   uniform float uFlare;
   uniform float uCA;
+  uniform float uAlpha;
 
   float bowLeft(float y) {
     float bow = 0.0;
@@ -66,8 +69,8 @@ const FRAG = `
     float r = texture2D(uTex, uv + vec2(ca, 0.0)).r;
     vec4 g = texture2D(uTex, uv);
     float b = texture2D(uTex, uv - vec2(ca, 0.0)).b;
-    if (g.a < 0.02) discard;
-    gl_FragColor = vec4(r, g.g, b, g.a);
+    if (g.a < 0.02 || uAlpha < 0.01) discard;
+    gl_FragColor = vec4(r, g.g, b, g.a * uAlpha);
   }
 `
 
@@ -78,6 +81,7 @@ let plate: HTMLCanvasElement | null = null
 let uEdge: WebGLUniformLocation | null = null
 let uFlare: WebGLUniformLocation | null = null
 let uCA: WebGLUniformLocation | null = null
+let uAlpha: WebGLUniformLocation | null = null
 let uLeft: WebGLUniformLocation | null = null
 let uRight: WebGLUniformLocation | null = null
 let uLeftCount: WebGLUniformLocation | null = null
@@ -138,6 +142,7 @@ const init = () => {
   uEdge = context.getUniformLocation(next, 'uEdge')
   uFlare = context.getUniformLocation(next, 'uFlare')
   uCA = context.getUniformLocation(next, 'uCA')
+  uAlpha = context.getUniformLocation(next, 'uAlpha')
   uLeft = context.getUniformLocation(next, 'uLeft[0]')
   uRight = context.getUniformLocation(next, 'uRight[0]')
   uLeftCount = context.getUniformLocation(next, 'uLeftCount')
@@ -175,17 +180,66 @@ const hiddenByTransition = (stage: HTMLElement) => {
 /** Intro and close use the short row. Glass on that size leaves a sliced edge after the flight. */
 const rowIsCompact = (stage: HTMLElement) => stage.classList.contains('stack__lightbox--compact')
 
+const FADE_MS = 700
+let shown = 0
+let fadeRaf = 0
+let fadeStamp = 0
+let classObserver: MutationObserver | null = null
+
+const glassReady = (stage: HTMLElement) =>
+  props.enabled !== false &&
+  stage.classList.contains('stack__lightbox--settled') &&
+  !hiddenByTransition(stage) &&
+  !rowIsCompact(stage)
+
+const fadeGoal = () => {
+  const stage = canvasRef.value?.parentElement
+  return stage && glassReady(stage) ? 1 : 0
+}
+
+const kickFade = () => {
+  if (fadeRaf) return
+  const goal = fadeGoal()
+  if (Math.abs(shown - goal) < 0.001) return
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    shown = goal
+    paint()
+    return
+  }
+  fadeStamp = 0
+  fadeRaf = requestAnimationFrame(stepFade)
+}
+
+const stepFade = (now: number) => {
+  const goal = fadeGoal()
+  const dt = fadeStamp ? Math.min(48, now - fadeStamp) : 16
+  fadeStamp = now
+  const step = dt / FADE_MS
+  shown = shown < goal ? Math.min(goal, shown + step) : Math.max(goal, shown - step)
+  paint()
+  if (Math.abs(shown - goal) > 0.001) {
+    fadeRaf = requestAnimationFrame(stepFade)
+    return
+  }
+  fadeRaf = 0
+  fadeStamp = 0
+  shown = goal
+  paint()
+}
+
 const paint = () => {
   const canvas = canvasRef.value
   const stage = canvas?.parentElement
   if (!canvas || !stage || stage.clientWidth < 2 || stage.clientHeight < 2) return
   init()
   if (!gl || !program || !texture) return
-  if (hiddenByTransition(stage) || rowIsCompact(stage)) {
+  const reveal = shown
+  if (reveal < 0.01) {
     clearClips()
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
+    canvas.style.opacity = '1'
     return
   }
 
@@ -263,6 +317,7 @@ const paint = () => {
   gl.uniform1f(uEdge, edge / stage.clientWidth)
   gl.uniform1f(uFlare, FLARE)
   gl.uniform1f(uCA, CA)
+  gl.uniform1f(uAlpha, reveal)
   gl.uniform1f(uLeftCount, leftCount)
   gl.uniform1f(uRightCount, rightCount)
   gl.uniform4fv(uLeft, leftItems)
@@ -271,6 +326,13 @@ const paint = () => {
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, plate)
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  canvas.style.opacity = '1'
+
+  const holdEdges = reveal > 0.98 && glassReady(stage)
+  if (!holdEdges) {
+    clearClips()
+    return
+  }
 
   const seen = new Set<HTMLElement>()
   for (const node of drawn) {
@@ -291,8 +353,22 @@ const paint = () => {
   }
 }
 
-onMounted(init)
+watch(() => props.enabled, () => kickFade())
+
+onMounted(() => {
+  init()
+  const stage = canvasRef.value?.parentElement
+  const stack = stage?.closest('.stack')
+  classObserver = new MutationObserver(() => kickFade())
+  if (stage) classObserver.observe(stage, { attributes: true, attributeFilter: ['class'] })
+  if (stack && stack !== stage) classObserver.observe(stack, { attributes: true, attributeFilter: ['class'] })
+  kickFade()
+})
+
 onUnmounted(() => {
+  cancelAnimationFrame(fadeRaf)
+  classObserver?.disconnect()
+  classObserver = null
   clearClips()
   gl?.getExtension('WEBGL_lose_context')?.loseContext()
   gl = null
@@ -311,5 +387,7 @@ defineExpose({ paint })
   width: 100%;
   height: 100%;
   pointer-events: none;
+  background: transparent;
+  opacity: 0;
 }
 </style>

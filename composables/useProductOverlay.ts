@@ -74,8 +74,8 @@ export const PRODUCT_OVERLAY_BACKDROP_CLOSE_MS =
 /** House expo-out — cream clears straight away instead of snapping at the end */
 export const PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
-/** Flyer clears the overlay (320) but stays under the selection rail (340). */
-export const PRODUCT_OVERLAY_FLYER_Z = 330
+/** Above the product overlay (350) so the cream fade stays behind the picture. */
+export const PRODUCT_OVERLAY_FLYER_Z = 360
 
 // Keep Flip source off useState — DOM nodes are not serializable
 let flipSourceEl: HTMLElement | null = null

@@ -4,6 +4,7 @@
     :class="{
       'header--product-page': isProductPage,
       'header--scroll-hidden': headerScrollHidden,
+      'header--menu-open': menuOpen,
     }"
   >
     <div class="header__inner">
@@ -173,31 +174,68 @@
       class="header__sheet"
       :aria-hidden="menuOpen ? undefined : 'true'"
     >
-      <nav class="header__sheet-nav" aria-label="Menu">
-        <NuxtLink
-          v-for="item in headerMenu.items"
-          :key="`sheet-${item._key}`"
-          :to="item.path"
-          class="header__sheet-link interface"
-          :class="{ 'header__sheet-link--active': isActive(item.path) }"
-          @click="menuOpen = false"
-        >
-          {{ item.text }}
-        </NuxtLink>
-      </nav>
-      <div class="header__sheet-tools">
-        <button type="button" class="header__sheet-link interface" @click="onThemeClick">
-          {{ isDark ? 'Light mode' : 'Dark mode' }}
-        </button>
-        <button type="button" class="header__sheet-link interface" @click="onSheetSelections">
-          {{ selectionNavLabel }}
-        </button>
-        <button type="button" class="header__sheet-link interface" @click="onSheetNewSelection">
-          New selection
-        </button>
-        <a class="header__sheet-link interface" :href="`tel:${phoneTel}`">
-          {{ phone }}
-        </a>
+      <div class="header__sheet-columns">
+        <section class="header__sheet-group">
+          <p class="header__sheet-label">Explore</p>
+          <nav class="header__sheet-nav" aria-label="Explore">
+            <NuxtLink
+              v-for="item in headerMenu.items"
+              :key="`sheet-${item._key}`"
+              :to="item.path"
+              class="header__sheet-link interface"
+              :class="{ 'header__sheet-link--active': isActive(item.path) }"
+              @click="menuOpen = false"
+            >
+              {{ item.text }}
+            </NuxtLink>
+          </nav>
+        </section>
+
+        <div class="header__sheet-side">
+          <section class="header__sheet-group">
+            <p class="header__sheet-label">Selections</p>
+            <div class="header__sheet-nav">
+              <button
+                v-for="board in moodboards"
+                :key="`sheet-board-${board.id}`"
+                type="button"
+                class="header__sheet-link interface"
+                :class="{ 'header__sheet-link--active': board.id === activeMoodboardId }"
+                @click="onSheetPickSelection(board.id)"
+              >
+                {{ board.name?.trim() || 'My Selection' }}
+              </button>
+              <button type="button" class="header__sheet-link interface" @click="onSheetNewSelection">
+                New Selection +
+              </button>
+            </div>
+          </section>
+
+          <section class="header__sheet-group">
+            <p class="header__sheet-label">Contact</p>
+            <div class="header__sheet-nav">
+              <a class="header__sheet-link interface" :href="`tel:${phoneTel}`" @click="menuOpen = false">
+                {{ phone }}
+              </a>
+              <a class="header__sheet-link interface" :href="`mailto:${enquiryEmail}`" @click="menuOpen = false">
+                Email
+              </a>
+              <a
+                class="header__sheet-link interface"
+                :href="mapsHref"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click="menuOpen = false"
+              >
+                Find us
+              </a>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="header__sheet-theme">
+        <ThemeModeSwitch />
       </div>
     </div>
   </header>
@@ -206,7 +244,7 @@
 <script setup lang="ts">
 import type Lenis from 'lenis'
 
-const { headerMenu, phone, phoneTel, title, logoStyle } = useSiteSettings()
+const { headerMenu, phone, phoneTel, enquiryEmail, addressDisplay, title, logoStyle } = useSiteSettings()
 const { isOpen: productOverlayOpen } = useProductOverlay()
 const {
   isOpen,
@@ -246,8 +284,13 @@ const toggleMenu = () => {
   if (menuOpen.value) headerScrollHidden.value = false
 }
 
-const onSheetSelections = () => {
+const mapsHref = computed(
+  () => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressDisplay.value)}`,
+)
+
+const onSheetPickSelection = (id: string) => {
   menuOpen.value = false
+  if (id !== activeMoodboardId.value) void switchActiveMoodboard(id)
   onSelectionsClick()
 }
 
@@ -972,6 +1015,12 @@ const onNewSelection = () => {
 }
 
 @media (max-width: 1100px) {
+  .header--menu-open {
+    background: color-mix(in srgb, var(--background-color) 50%, transparent);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+  }
+
   .header__menu-btn {
     display: grid;
   }
@@ -1009,28 +1058,86 @@ const onNewSelection = () => {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 99;
-    padding: 1.5rem var(--gutter) calc(1.5rem + var(--stack-clearance));
-    background: var(--background-color);
+    z-index: 1;
+    padding: 1.75rem var(--gutter) calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--background-color) 50%, transparent);
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+    overflow: hidden;
+  }
+
+  .header__sheet-columns {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    align-content: start;
+    gap: 2rem 1.25rem;
     overflow: auto;
   }
 
-  .header__sheet-nav,
-  .header__sheet-tools {
+  .header__sheet-side {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.35rem;
+    gap: 70px;
+  }
+
+  .header__sheet-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .header__sheet-label {
+    margin: 0 0 18px;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    text-transform: uppercase;
+    color: var(--charcoal);
+    opacity: 0.45;
+  }
+
+  .header__sheet-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .header__sheet-theme {
+    display: flex;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding-top: 1.25rem;
   }
 
   .header__sheet-link {
-    padding: 0.55rem 0;
+    position: relative;
+    padding: 0.45rem 0;
     font-size: var(--text-sm);
     color: var(--charcoal);
+    text-align: left;
   }
 
   .header__sheet-link--active {
     opacity: 0.45;
+  }
+
+  .header__sheet-side .header__sheet-link--active::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -14px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    transform: translateY(-50%);
+    pointer-events: none;
   }
 }
 

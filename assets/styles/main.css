@@ -400,6 +400,11 @@ html.stack-chrome-hidden .stack__boards-rail {
   pointer-events: none !important;
 }
 
+/* Mobile menu covers the selection pile (closed 200, open 280, PDP 350). */
+html.header-menu-open .header {
+  z-index: 360;
+}
+
 /* Fixed chrome that lives in the content column (right of left rails) */
 .header {
   left: calc(var(--selections-panel-width) + var(--boards-panel-width)) !important;
