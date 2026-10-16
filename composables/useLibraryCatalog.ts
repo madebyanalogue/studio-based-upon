@@ -30,7 +30,8 @@ export const LIBRARY_QUERY = `*[_type == "gridItem"] | order(orderRank) {
     poster { asset->{ _id, url, metadata { dimensions { width, height } } } }
   },
   linkType,
-  externalUrl
+  externalUrl,
+  precrafted
 }`
 
 export type LibraryImageAsset = {
@@ -51,6 +52,8 @@ export type LibraryItem = FormalItem & {
   category?: string
   tags?: string[]
   externalUrl?: string
+  /** Origin items that open from the (Pre)Crafted page only. */
+  precrafted?: boolean
   /** width / height of the primary thumbnail image */
   aspectRatio: number
   gallery: { asset?: LibraryImageAsset }[]
@@ -205,6 +208,7 @@ export const normalizeLibraryItem = (item: Record<string, unknown>): LibraryItem
     spiritGallery: (item.spiritGallery as LibraryItem['spiritGallery']) || [],
     linkType,
     externalUrl: item.externalUrl as string | undefined,
+    precrafted: item.precrafted === true,
   }
 }
 
@@ -235,6 +239,7 @@ export const toDiscoveryItem = (item: LibraryItem) => ({
   feature: item.feature,
   materials: item.materials,
   colours: item.colours,
+  precrafted: item.precrafted === true,
 })
 
 export const discoveryFilterLabels = [
@@ -243,25 +248,34 @@ export const discoveryFilterLabels = [
 ]
 
 export const useLibraryCatalog = async () => {
-  const { data, pending, error, refresh } = await useAsyncData('libraryItems-v4', () =>
+  const { data, pending, error, refresh } = await useAsyncData('libraryItems-v5', () =>
     $fetch('/api/sanity/query', { method: 'POST', body: { query: LIBRARY_QUERY } })
       .then((r: { result?: unknown }) => r?.result ?? null)
       .catch(() => null),
   )
 
-  const items = computed<LibraryItem[]>(() => {
+  const normalized = computed<LibraryItem[]>(() => {
     if (Array.isArray(data.value) && data.value.length) {
       return (data.value as Record<string, unknown>[])
         .map(normalizeLibraryItem)
-        .filter((item) => item._id && !isPrecraftedItem(item))
+        .filter((item) => item._id)
     }
     return demoLibraryItems()
   })
+
+  const items = computed<LibraryItem[]>(() =>
+    normalized.value.filter((item) => !isPrecraftedItem(item)),
+  )
+
+  const precraftedItems = computed<LibraryItem[]>(() =>
+    normalized.value.filter((item) => isPrecraftedItem(item)),
+  )
 
   const discoveryItems = computed(() => items.value.map(toDiscoveryItem))
 
   return {
     items,
+    precraftedItems,
     discoveryItems,
     pending,
     error,

@@ -11,6 +11,7 @@
           /* pendingFlip only — keep cream while closingFlip fades PDP UI first */
           'product-overlay--flipping': pendingFlip,
           'product-overlay--backdrop': backdropReady,
+          'product-overlay--archive': flipSourceIsArchiveGrid(),
           'product-overlay--closing': closingFlip,
         }"
         :style="{
@@ -60,6 +61,7 @@ const {
   pendingFlip,
   closingFlip,
   backdropReady,
+  flipSourceIsArchiveGrid,
 } = useProductOverlay()
 const { isOpen: bucketOpen, pickerItem, closeDrawer, closePicker } = useBucket()
 
@@ -105,7 +107,7 @@ onUnmounted(() => {
   left: calc(var(--selections-panel-width) + var(--boards-panel-width));
   right: 0;
   height: 100dvh;
-  z-index: 350; /* above the selection pile (340) */
+  z-index: 350; /* under the selection pile (355); phones put the pile back under this */
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -131,6 +133,12 @@ html.pdp-related-rail-open .product-overlay {
 /* Fades in behind the flyer (body-level z-index 360, above this overlay). */
 .product-overlay--backdrop .product-overlay__backdrop {
   opacity: 1;
+}
+
+/* Materials grid: the cream arrives with the PDP, after the thumbnails have left. */
+.product-overlay--archive:not(.product-overlay--closing) .product-overlay__backdrop,
+.product-overlay--archive:not(.product-overlay--closing) .product-overlay__panel {
+  transition: none;
 }
 
 .product-overlay__panel {

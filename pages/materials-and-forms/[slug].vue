@@ -6,6 +6,7 @@
 </template>
 
 <script setup lang="ts">
+import { isPrecraftedItem } from '~/composables/demoData'
 // Soft product swaps — don't fade/remount the page (index rail must stay put).
 // A stable key stops Nuxt from rebuilding the page on every slug, which was
 // resetting the index rail and then scrolling the new item to the centre.
@@ -24,6 +25,18 @@ const { data: product } = await useAsyncData(
   () => `product-meta-${slug.value}`,
   () => fetchProduct(slug.value),
 )
+
+if (
+  product.value &&
+  isPrecraftedItem({
+    type: product.value.category,
+    series: product.value.series,
+    categories: product.value.categories,
+    precrafted: product.value.precrafted,
+  })
+) {
+  await navigateTo(`/pre-crafted/${slug.value}`, { replace: true })
+}
 
 const onClose = () => {
   const { relatedRailVisible, closeRelatedRail } = usePdpRelatedRail()

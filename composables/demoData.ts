@@ -301,7 +301,9 @@ export const isPrecraftedItem = (item: {
   type?: string
   series?: string
   categories?: string[]
+  precrafted?: boolean
 }) => {
+  if (item.precrafted) return true
   if (item.type === 'precrafted') return true
   if (item.series === '(Pre)Crafted' || item.series === 'precrafted') return true
   return (item.categories || []).some((c) => {

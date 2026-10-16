@@ -267,7 +267,8 @@ const { $lenis } = useNuxtApp()
 const isProductPage = computed(
   () =>
     productOverlayOpen.value ||
-    /^\/materials-and-forms\/[^/]+\/?$/.test(route.path),
+    /^\/materials-and-forms\/[^/]+\/?$/.test(route.path) ||
+    /^\/pre-crafted\/[^/]+\/?$/.test(route.path),
 )
 
 /** Archive index only — fade nav out on scroll down, back in on scroll up. */

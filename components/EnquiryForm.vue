@@ -250,18 +250,33 @@ const mediaColumnCenter = () => {
   }
 }
 
+const boxOf = (rect: DOMRect) => ({
+  left: rect.left,
+  top: rect.top,
+  width: rect.width,
+  height: rect.height,
+})
+
 const measureGrid = () => {
   const map = new Map<string, { left: number; top: number; width: number; height: number }>()
   for (const el of document.querySelectorAll<HTMLElement>('[data-enquiry-id]')) {
     const id = el.dataset.enquiryId || ''
     const rect = el.getBoundingClientRect()
     if (!id || rect.width < 2 || rect.height < 2) continue
-    map.set(id, {
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-    })
+    map.set(id, boxOf(rect))
+  }
+  return map
+}
+
+/** Picture box inside the cell pad — the disperse flight lands here. */
+const measureGridContent = () => {
+  const map = new Map<string, { left: number; top: number; width: number; height: number }>()
+  for (const el of document.querySelectorAll<HTMLElement>('[data-enquiry-id]')) {
+    const id = el.dataset.enquiryId || ''
+    const inner = el.firstElementChild instanceof HTMLElement ? el.firstElementChild : el
+    const rect = inner.getBoundingClientRect()
+    if (!id || rect.width < 2 || rect.height < 2) continue
+    map.set(id, boxOf(rect))
   }
   return map
 }
@@ -357,7 +372,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   if (id !== runId) return
 
   phase = 'spread'
-  await tweenEnquiryFlyers(boxesFor(ids, measureGrid()), SPREAD_S)
+  await tweenEnquiryFlyers(boxesFor(ids, measureGridContent()), SPREAD_S)
   if (id !== runId) return
 
   gridLines.value = true

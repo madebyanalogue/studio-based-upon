@@ -47,6 +47,8 @@ export type ProductRecord = {
   >
   /** Manual related picks from Sanity; empty → auto-match in the PDP */
   related?: RelatedProduct[]
+  /** (Pre)Crafted panel. Lives under /pre-crafted, not Materials & Forms. */
+  precrafted?: boolean
 }
 
 function slugify(title: string) {
@@ -148,10 +150,12 @@ export type ProductLinkItem = {
   slug?: { current?: string } | string
   category?: string
   type?: string
+  series?: string
+  precrafted?: boolean
 }
 
 /** Categories that open the product overlay even when linkType is "none". */
-const DETAIL_LINK_TYPES = new Set(['spirit', 'origin'])
+const DETAIL_LINK_TYPES = new Set(['spirit', 'origin', 'precrafted'])
 
 export function productSlug(item: ProductLinkItem): string | null {
   if (item.linkType === 'url') return null
@@ -169,9 +173,39 @@ export function productSlug(item: ProductLinkItem): string | null {
   return slug || item._id || null
 }
 
+export function isPrecraftedPathItem(item: {
+  category?: string
+  type?: string
+  series?: string
+  precrafted?: boolean
+}) {
+  const category = String(item.category || item.type || '').toLowerCase()
+  return (
+    item.precrafted === true ||
+    category === 'precrafted' ||
+    item.series === '(Pre)Crafted' ||
+    item.series === 'precrafted'
+  )
+}
+
+/** Standalone and overlay URL for a product slug. */
+export function productDetailPath(
+  slug: string,
+  item?: {
+    category?: string
+    type?: string
+    series?: string
+    precrafted?: boolean
+  },
+) {
+  return item && isPrecraftedPathItem(item)
+    ? `/pre-crafted/${slug}`
+    : `/materials-and-forms/${slug}`
+}
+
 export function productPath(item: ProductLinkItem) {
   const slug = productSlug(item)
-  return slug ? `/materials-and-forms/${slug}` : null
+  return slug ? productDetailPath(slug, item) : null
 }
 
 export const useProductCatalog = () => {
@@ -201,11 +235,13 @@ export const useProductCatalog = () => {
       file { asset->{ url, _id, mimeType, originalFilename } },
       poster { asset->{ url, _id } }
     },
+    precrafted,
     related[]->{
       _id,
       title,
       "slug": coalesce(slug.current, _id),
       category,
+      precrafted,
       "series": series->title,
       "materials": materiality[]->title,
       "colours": colours[]->title,
@@ -214,7 +250,7 @@ export const useProductCatalog = () => {
     }
   }`
 
-  const allProductsQuery = `*[_type == "gridItem" && (defined(slug.current) || category in ["spirit", "origin"]) && (linkType == "product" || !defined(linkType) || linkType == "none" || category in ["spirit", "origin"])] | order(orderRank) {
+  const allProductsQuery = `*[_type == "gridItem" && category != "precrafted" && precrafted != true && (defined(slug.current) || category in ["spirit", "origin"]) && (linkType == "product" || !defined(linkType) || linkType == "none" || category in ["spirit", "origin"])] | order(orderRank) {
     _id,
     title,
     "slug": coalesce(slug.current, _id),

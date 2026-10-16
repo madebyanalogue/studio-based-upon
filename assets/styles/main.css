@@ -170,6 +170,7 @@ html.bucket-push #app {
 body.infinite-slider-active #app,
 body.discovery-active #app,
 body.d2-active #app,
+body.d3-active #app,
 body:has(.curate-page) #app {
   padding-bottom: var(--bucket-push);
 }

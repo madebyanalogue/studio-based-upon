@@ -350,12 +350,12 @@ watch(
  */
 const SCATTER_OPEN = { duration: ARCHIVE_PDP_OPEN_S, ease: ARCHIVE_PDP_OPEN_EASE }
 const SCATTER_CLOSE = { duration: ARCHIVE_PDP_CLOSE_S, ease: ARCHIVE_PDP_CLOSE_EASE }
-/** Above the cream veil (319–320), under the Flip flyer (330). */
-const SCATTER_Z = 325
+/** Above the product overlay (350) so the fade doesn't hide the flight, under the Flip flyer (360). */
+const SCATTER_Z = 352
 
 type ScatteredTile = {
-  image: HTMLImageElement
-  clone: HTMLImageElement
+  host: HTMLElement
+  clone: HTMLElement
   left: number
   top: number
 }
@@ -380,10 +380,10 @@ const tileInViewport = (rect: DOMRect) =>
 const clearScatteredTiles = () => {
   window.clearTimeout(scatterReturnTimer)
   scatterReturnTimer = 0
-  scattered.forEach(({ image, clone }) => {
+  scattered.forEach(({ host, clone }) => {
     gsap.killTweensOf(clone)
     clone.remove()
-    image.style.removeProperty('visibility')
+    host.style.removeProperty('visibility')
   })
   scattered = []
   archiveScatterCovering.value = false
@@ -419,36 +419,40 @@ const scatterArchiveGrid = (source: HTMLElement) => {
     vy /= len
 
     const media = image.closest('.product-card__media')
-    const mediaStyle = media ? getComputedStyle(media) : null
-    const imageStyle = getComputedStyle(image)
-    const clone = document.createElement('img')
-    clone.src = image.currentSrc || image.src
-    clone.alt = ''
+    const host = media instanceof HTMLElement ? media : image
+    const hostRect = host.getBoundingClientRect()
+    const clone = host.cloneNode(true) as HTMLElement
     clone.setAttribute('aria-hidden', 'true')
+    clone.removeAttribute('href')
+    // The grid forces cover. Once the clone leaves that parent it falls back
+    // to the card's contain, which pops before the scatter tween starts.
+    const liveImages = [...host.querySelectorAll<HTMLImageElement>('img')]
+    clone.querySelectorAll<HTMLImageElement>('img').forEach((img, i) => {
+      const live = liveImages[i]
+      if (!live) return
+      const fit = getComputedStyle(live)
+      img.style.objectFit = fit.objectFit
+      img.style.objectPosition = fit.objectPosition
+    })
     Object.assign(clone.style, {
       position: 'fixed',
-      left: `${rect.left}px`,
-      top: `${rect.top}px`,
-      width: `${rect.width}px`,
-      height: `${rect.height}px`,
+      left: `${hostRect.left}px`,
+      top: `${hostRect.top}px`,
+      width: `${hostRect.width}px`,
+      height: `${hostRect.height}px`,
       margin: '0',
-      objectFit: imageStyle.objectFit,
-      objectPosition: imageStyle.objectPosition,
-      opacity: imageStyle.opacity,
-      filter: imageStyle.filter,
-      borderRadius: mediaStyle?.borderRadius || imageStyle.borderRadius,
       zIndex: String(SCATTER_Z),
       pointerEvents: 'none',
       transition: 'none',
     })
     document.body.appendChild(clone)
-    image.style.visibility = 'hidden'
+    host.style.visibility = 'hidden'
 
     const tile: ScatteredTile = {
-      image,
+      host,
       clone,
-      left: rect.left,
-      top: rect.top,
+      left: hostRect.left,
+      top: hostRect.top,
     }
     scattered.push(tile)
     archiveScatterCovering.value = true
@@ -475,11 +479,11 @@ const returnScatteredTiles = () => {
     tiles.map((tile) => tile.clone),
     {
       x: (i: number) => {
-        const home = tiles[i]?.image.getBoundingClientRect()
+        const home = tiles[i]?.host.getBoundingClientRect()
         return (home?.left ?? tiles[i]?.left ?? 0) - (tiles[i]?.left ?? 0)
       },
       y: (i: number) => {
-        const home = tiles[i]?.image.getBoundingClientRect()
+        const home = tiles[i]?.host.getBoundingClientRect()
         return (home?.top ?? tiles[i]?.top ?? 0) - (tiles[i]?.top ?? 0)
       },
       duration: SCATTER_CLOSE.duration,
@@ -487,8 +491,8 @@ const returnScatteredTiles = () => {
       stagger: { each: 0.005, from: 'random' },
       overwrite: true,
       onComplete: () => {
-        tiles.forEach(({ image, clone }) => {
-          image.style.removeProperty('visibility')
+        tiles.forEach(({ host, clone }) => {
+          host.style.removeProperty('visibility')
           clone.remove()
         })
         archiveScatterCovering.value = false

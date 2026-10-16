@@ -104,6 +104,7 @@ export const useSiteSettings = () => {
   const MAIN_NAV_ORDER = [
     { path: '/discovery', text: 'Discovery' },
     { path: '/d2', text: 'D2' },
+    { path: '/d3', text: 'D3' },
     { path: '/typology', text: 'Typology' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
     { path: '/curate', text: 'Pairings' },
@@ -145,13 +146,14 @@ export const useSiteSettings = () => {
       if (
         path === '/discovery' ||
         path === '/discover' ||
-        path === '/d3' ||
         text === 'Discovery' ||
-        text === 'Discover' ||
-        text === 'D3'
+        text === 'Discover'
       ) {
         path = '/discovery'
         text = 'Discovery'
+      } else if (path === '/d3' || text === 'D3') {
+        path = '/d3'
+        text = 'D3'
       } else if (path === '/d2' || text === 'D2') {
         path = '/d2'
         text = 'D2'

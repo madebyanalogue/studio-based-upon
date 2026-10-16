@@ -3095,24 +3095,21 @@ const stopTidyMotion = (persist: boolean) => {
 }
 
 const tidyFrame = (
-  ids: string[],
-  aspects: Record<string, number>,
+  specs: { id: string; w: number; h: number }[],
   sw: number,
   sh: number,
-  width: number,
 ) => {
   const gap = TIDY_GAP
   const margin = TIDY_MARGIN
   const innerW = sw - margin * 2
   const innerH = sh - margin * 2
-  if (width < 8 || width > innerW + 0.5) return null
-
-  const specs = ids.map((id) => ({
-    id,
-    w: width,
-    h: width / Math.max(aspects[id] || 1, 0.05),
-  }))
-  if (specs.some((spec) => spec.h > innerH + 0.5)) return null
+  if (
+    specs.some(
+      (spec) => spec.w < 8 || spec.w > innerW + 0.5 || spec.h > innerH + 0.5,
+    )
+  ) {
+    return null
+  }
 
   /** Take as many items as the edge can hold before moving to the next edge. */
   const columnCount = (start: number) => {
@@ -3132,13 +3129,22 @@ const tidyFrame = (
   const right = specs.slice(leftCount, leftCount + rightCount)
   let cursor = leftCount + rightCount
 
-  const leftStrip = left.length ? width + gap : 0
-  const rightStrip = right.length ? width + gap : 0
+  const colWidth = (items: typeof specs) =>
+    items.reduce((max, item) => Math.max(max, item.w), 0)
+  const leftStrip = left.length ? colWidth(left) + gap : 0
+  const rightStrip = right.length ? colWidth(right) + gap : 0
   const rowAvail = innerW - leftStrip - rightStrip
   const rowCount = (start: number) => {
-    if (start >= specs.length || rowAvail < width - 0.5) return 0
-    const maxByWidth = Math.floor((rowAvail + gap) / (width + gap))
-    return Math.max(0, Math.min(maxByWidth, specs.length - start))
+    if (start >= specs.length || rowAvail < 8) return 0
+    let used = 0
+    let count = 0
+    for (let index = start; index < specs.length; index += 1) {
+      const next = used + (count ? gap : 0) + specs[index].w
+      if (next > rowAvail + 0.5) break
+      used = next
+      count += 1
+    }
+    return count
   }
   const bottomCount = rowCount(cursor)
   const bottom = specs.slice(cursor, cursor + bottomCount)
@@ -3156,7 +3162,7 @@ const tidyFrame = (
   const topMax = top.reduce((max, item) => Math.max(max, item.h), 0)
   const bottomMax = bottom.reduce((max, item) => Math.max(max, item.h), 0)
   if (top.length && bottom.length && topMax + bottomMax + gap > innerH) return null
-  if (left.length && right.length && width * 2 + gap > innerW) return null
+  if (left.length && right.length && colWidth(left) + colWidth(right) + gap > innerW) return null
   if (span(left, 'h') > innerH + 0.5 || span(right, 'h') > innerH + 0.5) return null
 
   const rowX0 = margin + leftStrip
@@ -3178,8 +3184,8 @@ const tidyFrame = (
   const placeCol = (items: typeof specs, edge: 'left' | 'right') => {
     const total = span(items, 'h')
     let y = margin + Math.max(0, (innerH - total) / 2)
-    const x = edge === 'left' ? margin : sw - margin - width
     for (const item of items) {
+      const x = edge === 'left' ? margin : sw - margin - item.w
       placed[item.id] = { x, y }
       y += item.h + gap
     }
@@ -3220,22 +3226,36 @@ const tidyFreeform = () => {
   const ids = freeformEntries.value.map((entry) => entry.item.id).filter((id) => board[id])
   if (!ids.length) return
   const aspects: Record<string, number> = {}
-  for (const id of ids) aspects[id] = freeformAspects.value[id] || 1
+  const arrival: Record<string, number> = {}
+  for (const id of ids) {
+    aspects[id] = freeformAspects.value[id] || 1
+    const cells = board[id]?.accent ? ACCENT_CELLS : ARRIVAL_CELLS
+    arrival[id] = cappedWidthFraction(aspects[id], sw, sh, cells) * sw
+  }
 
-  const margin = TIDY_MARGIN
-  const inner = Math.min(sw, sh) - margin * 2
-  const cap = Math.max(48, inner * 0.46)
-  let lo = 28
-  let hi = cap
-  let best: { width: number; placed: Record<string, { x: number; y: number }> } | null = null
-  for (let step = 0; step < 18; step += 1) {
-    const mid = (lo + hi) / 2
-    const placed = tidyFrame(ids, aspects, sw, sh, mid)
-    if (placed) {
-      best = { width: mid, placed }
-      lo = mid
-    } else {
-      hi = mid
+  const specsAt = (scale: number) =>
+    ids.map((id) => ({
+      id,
+      w: arrival[id] * scale,
+      h: (arrival[id] * scale) / Math.max(aspects[id] || 1, 0.05),
+    }))
+
+  let best: { scale: number; placed: Record<string, { x: number; y: number }> } | null = null
+  const exact = tidyFrame(specsAt(1), sw, sh)
+  if (exact) {
+    best = { scale: 1, placed: exact }
+  } else {
+    let lo = 0.05
+    let hi = 1
+    for (let step = 0; step < 18; step += 1) {
+      const mid = (lo + hi) / 2
+      const placed = tidyFrame(specsAt(mid), sw, sh)
+      if (placed) {
+        best = { scale: mid, placed }
+        lo = mid
+      } else {
+        hi = mid
+      }
     }
   }
   if (!best) return
@@ -3254,7 +3274,7 @@ const tidyFreeform = () => {
         ...next[id],
         x: from.x + (pos.x / sw - from.x) * t,
         y: from.y + (pos.y / sh - from.y) * t,
-        w: from.w + (best.width / sw - from.w) * t,
+        w: from.w + ((arrival[id] * best.scale) / sw - from.w) * t,
         image: true,
         fitted: false,
       }
@@ -6217,7 +6237,7 @@ const bumpPileImpact = () => {
 
 const productSlug = (item: BucketItem) => {
   if (!item.link) return null
-  const match = item.link.match(/\/(?:products|materials-and-forms)\/([^/?#]+)/)
+  const match = item.link.match(/\/(?:products|materials-and-forms|pre-crafted)\/([^/?#]+)/)
   return match?.[1] || null
 }
 
@@ -6275,6 +6295,7 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
     imageIndex: index,
     flipSrc,
     bucketItemId: item.id,
+    path: item.link?.includes('/pre-crafted/') ? `/pre-crafted/${slug}` : undefined,
   })
 }
 
@@ -8489,11 +8510,18 @@ onBeforeUnmount(() => {
 }
 
 /*
- * Kept under the product overlay (350) while a PDP is open. Doubled class so
- * this still outranks the other .stack--* z-index modifiers.
+ * Above the product overlay (350) while a PDP is open, so the pile stays
+ * visible. Doubled class so this still outranks the other .stack--* modifiers.
+ * Phones drop back under the overlay.
  */
 .stack.stack--above-pdp {
-  z-index: 340;
+  z-index: 355;
+}
+
+@media (max-width: 1000px) {
+  .stack.stack--above-pdp {
+    z-index: 340;
+  }
 }
 
 .stack--moodboard {

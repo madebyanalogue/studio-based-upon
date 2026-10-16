@@ -27,6 +27,12 @@
     <div ref="leftEl" class="split-slider__column split-slider__column--left" />
     <div ref="rightEl" class="split-slider__column split-slider__column--right" />
 
+    <SliderOpeningStatement
+      v-if="surfaceReady && statementOn"
+      ref="statementRef"
+      @clear="onStatementClear"
+    />
+
     <div
       class="split-slider__type"
       :style="{ color: activeSlide?.accent || '#e8e8e8' }"
@@ -85,7 +91,9 @@
         class="split-slider__caption-side"
         :href="activeSlide.left.link"
         :data-cursor-label="
-          userScrolled ? activeSlide.left.title || activeSlide.title : undefined
+          userScrolled && !statementOn
+            ? activeSlide.left.title || activeSlide.title
+            : undefined
         "
         @click="onCaptionClick('left', $event)"
       >
@@ -98,7 +106,9 @@
         class="split-slider__caption-side"
         :href="activeSlide.right.link"
         :data-cursor-label="
-          userScrolled ? activeSlide.right.title || activeSlide.title : undefined
+          userScrolled && !statementOn
+            ? activeSlide.right.title || activeSlide.title
+            : undefined
         "
         @click="onCaptionClick('right', $event)"
       >
@@ -227,6 +237,10 @@ let leaving = false
 let leavePromise: Promise<void> | null = null
 let entranceStarted = false
 const userScrolled = ref(false)
+const statementOn = ref(true)
+const statementRef = ref<{ wash: (x: number, y: number) => void; lift: () => void } | null>(
+  null,
+)
 let pointerOverSlider = false
 let hoverX = 0
 let hoverY = 0
@@ -245,8 +259,30 @@ const clearScrollHintTimer = () => {
 
 const syncScrollHint = () => {
   const show =
-    scrollHintReady && pointerOverSlider && !userScrolled.value && !leaving && running
+    !statementOn.value &&
+    scrollHintReady &&
+    pointerOverSlider &&
+    !userScrolled.value &&
+    !leaving &&
+    running
   if (homeScrollHint.value !== show) homeScrollHint.value = show
+}
+
+const applyProjectLabels = () => {
+  if (statementOn.value) return
+  for (const side of ['left', 'right'] as const) {
+    for (const el of columns[side].visibleSlides.values()) {
+      const name = el.dataset.projectName
+      if (name) el.dataset.cursorLabel = name
+    }
+  }
+}
+
+const onStatementClear = () => {
+  statementOn.value = false
+  if (userScrolled.value) applyProjectLabels()
+  syncScrollHint()
+  if (pointerOverSlider) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
 const dismissScrollHint = () => {
@@ -254,13 +290,8 @@ const dismissScrollHint = () => {
   if (userScrolled.value) return
   userScrolled.value = true
   homeScrollHint.value = false
-  for (const side of ['left', 'right'] as const) {
-    for (const el of columns[side].visibleSlides.values()) {
-      const name = el.dataset.projectName
-      if (name) el.dataset.cursorLabel = name
-    }
-  }
-  if (pointerOverSlider) nextTick(() => resolveFromPoint(hoverX, hoverY))
+  applyProjectLabels()
+  if (pointerOverSlider && !statementOn.value) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
 const showScrollHint = () => {
@@ -285,11 +316,13 @@ const onSliderPointerMove = (event: PointerEvent) => {
   pointerOverSlider = true
   hoverX = event.clientX
   hoverY = event.clientY
+  if (statementOn.value) statementRef.value?.wash(event.clientX, event.clientY)
   syncScrollHint()
 }
 
 const onSliderPointerLeave = () => {
   pointerOverSlider = false
+  statementRef.value?.lift()
   syncScrollHint()
 }
 let columnWipe: gsap.core.Timeline | null = null
@@ -328,7 +361,7 @@ const createSlide = (side: Side, index: number) => {
   const projectName = (data[side].title || data.title || '').trim()
   if (projectName) {
     el.dataset.projectName = projectName
-    if (userScrolled.value) el.dataset.cursorLabel = projectName
+    if (userScrolled.value && !statementOn.value) el.dataset.cursorLabel = projectName
   }
 
   const img = document.createElement('img')
@@ -1354,8 +1387,8 @@ watch(
   opacity: 0;
 }
 .split-slider__type:not(.split-slider__type--caption) {
-  display: none;
   color: #fff !important;
+  display: none;
 }
 
 .split-slider--type-on .split-slider__type {
@@ -1489,6 +1522,7 @@ watch(
 }
 
 .split-slider__link {
+  display: none;
   position: absolute;
   bottom: 10%;
   left: 50%;

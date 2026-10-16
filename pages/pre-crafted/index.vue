@@ -139,6 +139,7 @@
                 v-else-if="section.kind === 'finishes'"
                 class="precrafted-h__item precrafted-h__item--text precrafted-h__item--finishes"
                 :class="{ 'is-finish-hover': finishHover?.sectionId === section.id }"
+                @mouseleave="clearFinishPreview(section.id)"
               >
                 <div class="precrafted-h__finish-stage" aria-hidden="true">
                   <img
@@ -158,13 +159,18 @@
                       v-for="finish in section.items"
                       :key="finish.id"
                       class="precrafted__finish"
-                      :class="{ 'is-active': isFinishActive(section.id, finish.id) }"
-                      @click="toggleFinish(section.id, finish.id)"
+                      :class="{
+                        'is-active': isFinishActive(section.id, finish.id),
+                        'precrafted__finish--link': finish.productSlug,
+                      }"
+                      data-cursor-label="Explore"
+                      @mouseenter="previewFinish(section.id, finish.id)"
+                      @click="onFinishClick($event, finish)"
                     >
                       <img
                         v-if="finish.imageSrc"
                         class="precrafted__finish-image"
-                        :src="finish.imageSrc"
+                        :src="finishThumbSrc(finish)"
                         :alt="finish.name"
                         loading="lazy"
                         decoding="async"
@@ -179,14 +185,18 @@
                     v-for="finish in section.items"
                     :key="finish.id"
                     class="precrafted__finish"
-                    :class="{ 'is-active': isFinishActive(section.id, finish.id) }"
-                    :data-cursor-label="finish.name"
-                    @click="toggleFinish(section.id, finish.id)"
+                    :class="{
+                      'is-active': isFinishActive(section.id, finish.id),
+                      'precrafted__finish--link': finish.productSlug,
+                    }"
+                    data-cursor-label="Explore"
+                    @mouseenter="previewFinish(section.id, finish.id)"
+                    @click="onFinishClick($event, finish)"
                   >
                     <img
                       v-if="finish.imageSrc"
                       class="precrafted__finish-image"
-                      :src="finish.imageSrc"
+                      :src="finishThumbSrc(finish)"
                       :alt="finish.name"
                       loading="lazy"
                       decoding="async"
@@ -346,11 +356,14 @@
                 v-for="finish in section.items"
                 :key="finish.id"
                 class="precrafted__finish"
+                :class="{ 'precrafted__finish--link': finish.productSlug }"
+                data-cursor-label="Explore"
+                @click="onFinishClick($event, finish)"
               >
                 <img
                   v-if="finish.imageSrc"
                   class="precrafted__finish-image"
-                  :src="finish.imageSrc"
+                  :src="finishThumbSrc(finish)"
                   :alt="finish.name"
                   loading="lazy"
                   decoding="async"
@@ -424,6 +437,7 @@
 
 <script setup lang="ts">
 import type { ScrubGalleryEntry } from '~/components/PrecraftedScrubGallery.vue'
+import { prefetchImage } from '~/composables/useSanityImage'
 
 type PortableBlock = {
   _key?: string
@@ -489,6 +503,8 @@ type FinishItem = {
   name: string
   imageSrc?: string
   hoverSrc?: string
+  productSlug?: string
+  productId?: string
 }
 
 type FinishesTrackSection = {
@@ -594,7 +610,7 @@ const DEFAULT_SECTIONS: TrackSection[] = [
     id: 'info',
     kind: 'info',
     title: 'Info',
-    pricingHeading: 'Panel Sizes & Trade Launch Pricing',
+    pricingHeading: 'Sizes & Trade Launch Pricing',
     pricingIntro:
       '(Pre)Crafted panels are finished on the front face only and are available in the following dimensions:',
     pricingNotes: [
@@ -646,6 +662,10 @@ const query = `*[_type == "preCraftedPage"][0] {
           url,
           metadata { dimensions { width, height } }
         }
+      },
+      product->{
+        _id,
+        "slug": coalesce(slug.current, _id)
       }
     },
     pricingHeading,
@@ -692,7 +712,7 @@ const query = `*[_type == "preCraftedPage"][0] {
 }`
 
 const { data: page } = await useAsyncData(
-  'preCraftedPage-v12',
+  'preCraftedPage-v16',
   () =>
     $fetch('/api/sanity/query', {
       method: 'POST',
@@ -703,6 +723,46 @@ const { data: page } = await useAsyncData(
 )
 
 const { imageUrl } = useSanityImage()
+const {
+  open: openProduct,
+  returnImage,
+  isOpen: productOverlayOpen,
+  getFlipSource,
+  getFlipSourceProductId,
+} = useProductOverlay()
+
+/** Gallery frame that flew home onto a finish thumbnail. */
+const finishGallerySrc = ref<Record<string, string>>({})
+const pendingFinishReturn = ref<{ productId: string; src: string } | null>(null)
+
+function finishThumbSrc(finish: FinishItem) {
+  const returned = finish.productId ? finishGallerySrc.value[finish.productId] : ''
+  return returned || finish.imageSrc
+}
+
+watch(returnImage, (value) => {
+  if (!value?.src) {
+    pendingFinishReturn.value = null
+    return
+  }
+  const source = getFlipSource()
+  if (!source?.closest('.precrafted__finish')) return
+  const productId = getFlipSourceProductId()
+  if (!productId) return
+  // Remember the frame now, but keep the original thumb until the flyer has landed.
+  pendingFinishReturn.value = { productId, src: value.src }
+})
+
+watch(productOverlayOpen, (open) => {
+  if (open) return
+  const pending = pendingFinishReturn.value
+  if (!pending) return
+  pendingFinishReturn.value = null
+  finishGallerySrc.value = {
+    ...finishGallerySrc.value,
+    [pending.productId]: pending.src,
+  }
+})
 
 const finishHover = ref<{ sectionId: string; finishId: string } | null>(null)
 
@@ -710,8 +770,31 @@ function isFinishActive(sectionId: string, finishId: string) {
   return finishHover.value?.sectionId === sectionId && finishHover.value?.finishId === finishId
 }
 
-function toggleFinish(sectionId: string, finishId: string) {
-  finishHover.value = isFinishActive(sectionId, finishId) ? null : { sectionId, finishId }
+function previewFinish(sectionId: string, finishId: string) {
+  finishHover.value = { sectionId, finishId }
+}
+
+function clearFinishPreview(sectionId: string) {
+  if (finishHover.value?.sectionId === sectionId) finishHover.value = null
+}
+
+function onFinishClick(event: MouseEvent, finish: FinishItem) {
+  if (!finish.productSlug) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+  event.preventDefault()
+  event.stopPropagation()
+  const current = event.currentTarget as HTMLElement | null
+  const source = current?.querySelector('img') as HTMLElement | null
+  const flipSrc =
+    source instanceof HTMLImageElement
+      ? source.currentSrc || source.src
+      : finish.imageSrc || finish.hoverSrc || null
+  if (flipSrc) void prefetchImage(flipSrc)
+  openProduct(finish.productSlug, {
+    source,
+    flipSrc: flipSrc || null,
+    productId: finish.productId,
+  })
 }
 
 function resolveImageSrc(source: unknown, width: number) {
@@ -877,16 +960,20 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
               name?: string
               image?: unknown
               hoverImage?: unknown
+              product?: { _id?: string; slug?: string } | null
             }
             const name = typeof row.name === 'string' ? row.name.trim() : ''
             if (!name) return null
             const imageSrc = resolveImageSrc(row.image, 600) || undefined
             const hoverSrc = resolveImageSrc(row.hoverImage, 2000) || undefined
+            const productSlug = row.product?.slug || row.product?._id || undefined
             return {
               id: row._key || `${id}-finish-${finishIndex}`,
               name,
               imageSrc,
               hoverSrc,
+              productSlug,
+              productId: row.product?._id,
             }
           })
           .filter((finish: FinishItem | null): finish is FinishItem => Boolean(finish))
@@ -903,7 +990,7 @@ function mapSanitySections(raw: unknown[]): TrackSection[] {
           id,
           kind: 'info',
           title: item.title || 'Info',
-          pricingHeading: item.pricingHeading || 'Panel Sizes & Trade Launch Pricing',
+          pricingHeading: item.pricingHeading || 'Sizes & Trade Launch Pricing',
           pricingIntro: item.pricingIntro || '',
           pricingNotes: Array.isArray(item.pricingNotes) ? item.pricingNotes.filter(Boolean) : [],
           leadTimesHeading: item.leadTimesHeading || 'Lead Times',
@@ -1802,6 +1889,10 @@ html.precrafted-loop-lock body {
   border: 1px solid var(--grid-line);
   overflow: hidden;
   font-family: var(--mono);
+}
+
+.precrafted__finish--link {
+  cursor: pointer;
 }
 
 .precrafted__finish-image {

@@ -77,7 +77,7 @@ const emit = defineEmits<{
   select: [item: LibraryItem]
 }>()
 
-const { data } = useLazyAsyncData('libraryItems', () =>
+const { data } = useLazyAsyncData('libraryItems-v5', () =>
   $fetch('/api/sanity/query', { method: 'POST', body: { query: LIBRARY_QUERY } })
     .then((r: { result?: unknown }) => r?.result ?? null)
     .catch(() => null),

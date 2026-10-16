@@ -1,6 +1,6 @@
 :root {
   /* Edit these. They stay put when the theme flips. */
-  --bg-dark: #111111;
+  --bg-dark: #1b1b1b;
   --text-dark: #111111;
   --bg-light: #f1ede4;
   --text-light: #f1ede4;
@@ -9,7 +9,7 @@
   --intro-ground-light: var(--bg-light);
   --intro-ground-dark: var(--bg-dark);
   --intro-figure: var(--bg-light);
-  --intro-figure-dark: #333;
+  --intro-figure-dark: #1b1b1b;
 
   --background-color: var(--cream);
   --text-color: var(--charcoal);

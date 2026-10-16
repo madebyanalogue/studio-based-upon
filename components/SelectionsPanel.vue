@@ -67,9 +67,12 @@ const onColumnWheel = (event: WheelEvent) => {
 }
 
 const onItemClick = (item: BucketItem) => {
-  const slug = item.link?.replace(/^\/products\//, '') || item.link
-  if (slug && !slug.startsWith('http')) {
-    open(slug.replace(/^\//, ''))
+  const match = item.link?.match(/\/(?:products|materials-and-forms|pre-crafted)\/([^/?#]+)/)
+  const slug = match?.[1]
+  if (slug) {
+    open(slug, {
+      path: item.link?.includes('/pre-crafted/') ? `/pre-crafted/${slug}` : undefined,
+    })
     return
   }
   openSelectionStack()

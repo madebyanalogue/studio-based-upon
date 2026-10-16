@@ -21,6 +21,7 @@ const { discoveryItems: catalogItems } = await useLibraryCatalog()
 
 const discoveryItems = computed(() =>
   catalogItems.value.filter((item) => {
+    if (item.precrafted) return false
     const keys = [item.category, ...(item.categories || [])]
       .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z]/g, ''))
       .filter(Boolean)

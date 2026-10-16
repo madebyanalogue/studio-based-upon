@@ -348,7 +348,7 @@ let galleryHydrateToken = 0
 
 const productSlug = (item: BucketItem) => {
   if (!item.link) return null
-  const match = item.link.match(/\/(?:products|materials-and-forms)\/([^/?#]+)/)
+  const match = item.link.match(/\/(?:products|materials-and-forms|pre-crafted)\/([^/?#]+)/)
   return match?.[1] || null
 }
 
@@ -449,6 +449,7 @@ const openProduct = (item: BucketItem, event?: MouseEvent) => {
     imageIndex: index,
     flipSrc,
     bucketItemId: item.id,
+    path: item.link?.includes('/pre-crafted/') ? `/pre-crafted/${slug}` : undefined,
   })
 }
 

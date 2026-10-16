@@ -16,6 +16,7 @@
       'pdp--specs-live': specsLive,
       'pdp--closing': closingFlip,
       'pdp--singularity': isSpiritOrOrigin,
+      'pdp--precrafted': isPrecrafted,
       'pdp--curate': flipSourceIsCurate(),
     }"
   >
@@ -51,7 +52,51 @@
           {{ product.title }}
         </h1>
 
-        <dl class="pdp__specs">
+        <div v-if="isPrecrafted" class="pdp__precrafted">
+          <div class="pdp__spec pdp__spec--toggle pdp__precrafted-specs">
+            <button
+              type="button"
+              class="pdp__disclosure pdp__spec-item"
+              :aria-expanded="specsShown"
+              @click="toggleSpecs"
+            >
+              <span class="serif-italic">Specifications</span>
+              <svg
+                class="pdp__disclosure-mark"
+                viewBox="0 0 14 12"
+                aria-hidden="true"
+              >
+                <path d="M1 3 L7 9 L13 3" />
+              </svg>
+            </button>
+            <div class="pdp__spec-panel" :class="{ 'is-open': specsShown }">
+              <div
+                class="pdp__spec-panel-clip"
+                :inert="!specsShown"
+              >
+                <div class="pdp__precrafted-body">
+                  <p v-if="product.description" class="pdp__precrafted-description">
+                    {{ product.description }}
+                  </p>
+                  <PrecraftedInfo
+                    embedded
+                    title=""
+                    :pricing-heading="precraftedCopy.pricingHeading"
+                    :pricing-intro="precraftedCopy.pricingIntro"
+                    :pricing-notes="precraftedCopy.pricingNotes"
+                    :lead-times-heading="precraftedCopy.leadTimesHeading"
+                    :lead-times="precraftedCopy.leadTimes"
+                    :install-heading="precraftedCopy.installHeading"
+                    :install-notes="precraftedCopy.installNotes"
+                    :panel-sizes="precraftedCopy.panelSizes"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <dl v-else class="pdp__specs">
           <div class="pdp__spec pdp__spec--toggle">
             <button
               type="button"
@@ -302,7 +347,7 @@
 import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import Lenis from 'lenis'
-import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
+import { PRODUCT_TYPE_FILTERS, isPrecraftedItem } from '~/composables/demoData'
 import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import { preloadLoupeBitmaps } from '~/components/Loupe.vue'
@@ -802,6 +847,114 @@ const isSpiritOrOrigin = computed(() => {
   return cat === 'spirit' || cat === 'origin'
 })
 
+const isPrecrafted = computed(() => {
+  const current = product.value
+  if (!current) return false
+  return isPrecraftedItem({
+    type: current.category,
+    series: current.series,
+    categories: current.categories,
+    precrafted: current.precrafted,
+  })
+})
+
+type PrecraftedBlock = {
+  _key?: string
+  _type: string
+  children?: Array<{ text?: string; marks?: string[] }>
+}
+
+const precraftedText = (key: string, text: string): PrecraftedBlock => ({
+  _key: key,
+  _type: 'block',
+  children: [{ text, marks: [] }],
+})
+
+const PRECRAFTED_PANEL_SIZES = [
+  { dimensions: '3200mm x 1200mm x 20mm', price: '£3,830/panel (approx. £995m²)' },
+  { dimensions: '2400mm x 1200mm x 20mm', price: '£2,870/panel (approx. £995m²)' },
+]
+
+const PRECRAFTED_PRICING_INTRO =
+  '(Pre)Crafted panels are finished on the front face only and are available in the following dimensions:'
+
+const PRECRAFTED_PRICING_NOTES = [
+  'All prices are exc. VAT, delivery & installation.',
+  'Prices stated are for approx. 30no panel orders. We will honour this volume pricing of £995m² for any volume ordered during our trade launch. Pricing valid until May 2026.',
+]
+
+const PRECRAFTED_LEAD_TIMES =
+  'Typical lead times are approx. 6–8 weeks (subject to production schedule at the time) with larger orders requiring longer to prepare. Please contact us about your project for more specific timings.'
+
+const PRECRAFTED_INSTALL_NOTES = [
+  precraftedText(
+    'i1',
+    'The edges are black to create a shadow gap detail between panels. We recommend a mechanical fixing system such as split battens to allow for adjustment during fitting.',
+  ),
+  precraftedText(
+    'i2',
+    'Speak to your appointed contractor to check specific requirements for your project or please contact us for further advice.',
+  ),
+]
+
+const { data: precraftedAside } = await useAsyncData(
+  'precrafted-pdp-aside-v4',
+  () =>
+    $fetch('/api/sanity/query', {
+      method: 'POST',
+      body: {
+        useCdn: false,
+        query: `*[_type == "preCraftedPage"][0] {
+          panelSizes[] { dimensions, price },
+          "info": sections[_type == "precraftedInfoSection"][0] {
+            pricingHeading,
+            pricingIntro,
+            pricingNotes,
+            leadTimesHeading,
+            leadTimes,
+            installHeading,
+            installNotes
+          }
+        }`,
+      },
+    })
+      .then(
+        (r: {
+          result?: {
+            panelSizes?: { dimensions?: string; price?: string }[]
+            info?: {
+              pricingHeading?: string
+              pricingIntro?: string
+              pricingNotes?: string[]
+              leadTimesHeading?: string
+              leadTimes?: string
+              installHeading?: string
+              installNotes?: PrecraftedBlock[]
+            } | null
+          } | null
+        }) => r?.result ?? null,
+      )
+      .catch(() => null),
+)
+
+const precraftedCopy = computed(() => {
+  const info = precraftedAside.value?.info
+  const notes = Array.isArray(info?.pricingNotes) ? info.pricingNotes.filter(Boolean) : []
+  const sizes = (precraftedAside.value?.panelSizes || []).filter(
+    (panel: { dimensions?: string; price?: string }) => panel?.dimensions || panel?.price,
+  )
+  return {
+    pricingHeading: info?.pricingHeading || 'Sizes & Trade Launch Pricing',
+    pricingIntro: info?.pricingIntro || PRECRAFTED_PRICING_INTRO,
+    pricingNotes: notes.length ? notes : PRECRAFTED_PRICING_NOTES,
+    leadTimesHeading: info?.leadTimesHeading || 'Lead Times',
+    leadTimes: info?.leadTimes || PRECRAFTED_LEAD_TIMES,
+    installHeading: info?.installHeading || 'Install',
+    installNotes: info?.installNotes?.length ? info.installNotes : PRECRAFTED_INSTALL_NOTES,
+    panelSizes: sizes.length ? sizes : PRECRAFTED_PANEL_SIZES,
+  }
+})
+
 const scrollGalleryInitial = () => {
   scrollSelectedIntoView(false)
 }
@@ -1023,8 +1176,10 @@ const typeLabel = computed(() => {
   const key =
     libraryItem.value?.category ||
     libraryItem.value?.type ||
+    product.value?.category ||
     product.value?.series ||
     ''
+  if (key === 'precrafted') return '(Pre)Crafted'
   const match = PRODUCT_TYPE_FILTERS.find((t) => t.value === key)
   return match?.label || key || 'Item'
 })
@@ -1073,7 +1228,11 @@ const nextInSequence = computed(() => {
 
 const catalogNext = computed(() => (product.value ? getNextProduct(product.value.slug) : null))
 
-const nextProduct = computed(() => nextInSequence.value ?? catalogNext.value)
+const nextProduct = computed(() => {
+  if (nextInSequence.value) return nextInSequence.value
+  if (isPrecrafted.value) return null
+  return catalogNext.value
+})
 
 const nextImageUrl = computed(() => {
   if (nextInSequence.value?.imageUrl) return nextInSequence.value.imageUrl
@@ -1083,7 +1242,7 @@ const nextImageUrl = computed(() => {
 })
 
 const goToNext = () => {
-  const slug = nextInSequence.value?.slug || catalogNext.value?.slug
+  const slug = nextProduct.value && 'slug' in nextProduct.value ? nextProduct.value.slug : ''
   if (slug) emit('navigate', slug)
 }
 
@@ -1108,7 +1267,7 @@ const onAddFrame = (index: number) => {
       imageUrls,
       imageIndex: index,
       itemType: product.value.series || 'item',
-      link: `/materials-and-forms/${product.value.slug}`,
+      link: productDetailPath(product.value.slug, product.value),
     },
     // Phone: toggle the heart only. A fly source hides the gallery frame.
     isNarrowPdp() ? { fly: false } : { source },
@@ -1125,6 +1284,7 @@ const sendEnquiry = () => {
     title: product.value.title,
     imageUrl: image,
     slug: product.value.slug,
+    path: productDetailPath(product.value.slug, product.value),
   })
 }
 
@@ -1323,7 +1483,8 @@ const runFlipOpen = async () => {
   const fromArchive = flipSourceIsArchiveGrid()
   const fromCart = flipSourceIsCart()
   const startImmediate = flipSourceStartsImmediately()
-  setBackdropReady(true)
+  // Materials grid stays clear while the other thumbnails fly off.
+  if (!fromArchive) setBackdropReady(true)
   await nextTick()
   if (fromArchive || fromCart) {
     // Start as soon as the hero frame has its real size — no cream hold.
@@ -1376,6 +1537,7 @@ const runFlipOpen = async () => {
       // Reveal strip + hero under the flyer before removing it — avoids a
       // blank frame and prevents the gallery from flashing ahead of Flip.
       gsap.set(flipHero, { visibility: 'visible' })
+      if (fromArchive) setBackdropReady(true)
       clearPendingFlip()
       contentReady.value = true
       sidesVisible.value = true
@@ -2219,6 +2381,42 @@ watch(
 
 .pdp__specs {
   margin: 0;
+}
+
+.pdp__precrafted {
+  padding: 0;
+}
+
+.pdp__precrafted-body {
+  padding: 0 var(--pdp-aside-padding);
+}
+
+.pdp__precrafted .pdp__spec-panel {
+  padding: 0;
+}
+
+.pdp__precrafted-description {
+  margin: 0.35rem 0 1.25rem;
+  font-size: 13px;
+  line-height: 1.55;
+  color: color-mix(in srgb, currentColor 80%, transparent);
+}
+
+.pdp__precrafted :deep(.info__panel-inner),
+.pdp__precrafted :deep(.info__panel-inner p),
+.pdp__precrafted :deep(.info__note),
+.pdp__precrafted :deep(.info__dimensions) {
+  font-size: 13px;
+  color: color-mix(in srgb, currentColor 80%, transparent);
+}
+
+.pdp__precrafted :deep(.info__price) {
+  color: currentColor;
+  opacity: 1;
+}
+
+.pdp__precrafted :deep(.info__item) {
+  border-top: 1px solid var(--grid-line);
 }
 
 .pdp__spec {

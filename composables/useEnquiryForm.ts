@@ -169,6 +169,7 @@ export const useEnquiryForm = () => {
     title: string
     imageUrl?: string
     slug?: string
+    path?: string
   }) => {
     reset()
     source.value = 'product'
@@ -182,8 +183,10 @@ export const useEnquiryForm = () => {
         imageUrl: product.imageUrl,
       },
     ]
-    form.value.message = product.slug
-      ? `Enquiry about ${product.title} (/materials-and-forms/${product.slug})`
+    const href =
+      product.path || (product.slug ? `/materials-and-forms/${product.slug}` : '')
+    form.value.message = href
+      ? `Enquiry about ${product.title} (${href})`
       : `Enquiry about ${product.title}`
     if (!isOpen.value) lockPageScroll()
     isOpen.value = true

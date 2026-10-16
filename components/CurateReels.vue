@@ -3164,7 +3164,7 @@ onBeforeUnmount(() => {
   --showcase-column-gap: 0px;
   --showcase-item-gap: 0px;
   --showcase-slots: 4;
-  --showcase-aspect: 0.8;
+  --showcase-aspect: 1;
   --showcase-dim-opacity: 0;
   --showcase-dim-delay: 0s;
   --showcase-dim-duration: 0.12s;

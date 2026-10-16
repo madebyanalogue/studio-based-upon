@@ -22,6 +22,8 @@ export type ProductOverlayOpenOptions = {
    * In-overlay navigation does not pass this, so the rail order stays put.
    */
   sequence?: PdpNextItem[] | null
+  /** Explicit product URL. (Pre)Crafted products use /pre-crafted/:slug. */
+  path?: string | null
 }
 
 export type PdpNextItem = {
@@ -294,7 +296,12 @@ export const useProductOverlay = () => {
     openSlug.value = slug
 
     if (import.meta.client) {
-      const url = `/materials-and-forms/${slug}`
+      const onPrecrafted =
+        window.location.pathname === '/pre-crafted' ||
+        /^\/pre-crafted\/[^/]+\/?$/.test(window.location.pathname)
+      const url =
+        options.path ||
+        (onPrecrafted ? `/pre-crafted/${slug}` : `/materials-and-forms/${slug}`)
       const state = { productOverlay: slug }
       // First open pushes a history entry; in-overlay navigation replaces it
       // so one Back / close returns to the original page.
@@ -427,7 +434,10 @@ export const useProductOverlay = () => {
         beginOverlayHistoryRestore()
         window.history.back()
         endOverlayHistoryRestore()
-      } else if (window.location.pathname.startsWith('/materials-and-forms/')) {
+      } else if (
+        window.location.pathname.startsWith('/materials-and-forms/') ||
+        /^\/pre-crafted\/[^/]+\/?$/.test(window.location.pathname)
+      ) {
         window.history.replaceState({}, '', target)
       }
 

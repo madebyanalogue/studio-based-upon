@@ -21,6 +21,8 @@ defineProps<{
   installNotes: PortableBlock[]
   panelSizes: PanelSize[]
   specSheetUrl?: string
+  /** PDP aside: accordions only, without the page title and enquire actions. */
+  embedded?: boolean
 }>()
 
 const openId = ref('')
@@ -36,7 +38,7 @@ function isOpen(id: string) {
 
 <template>
   <div class="info">
-    <h2 class="info__title">{{ title }}</h2>
+    <h2 v-if="!embedded" class="info__title">{{ title }}</h2>
 
     <div class="info__list">
       <div class="info__item" :class="{ 'info__item--open': isOpen('pricing') }">
@@ -103,7 +105,7 @@ function isOpen(id: string) {
       </div>
     </div>
 
-    <div class="info__actions">
+    <div v-if="!embedded" class="info__actions">
       <NuxtLink to="/enquire" class="info__action info__action--enquire" data-cursor="pointer">
         Enquire
       </NuxtLink>

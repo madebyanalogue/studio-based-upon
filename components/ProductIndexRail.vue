@@ -212,10 +212,10 @@
 
 <script setup lang="ts">
 import Lenis from 'lenis'
-import { PRODUCT_TYPE_FILTERS } from '~/composables/demoData'
+import { PRODUCT_TYPE_FILTERS, isPrecraftedItem } from '~/composables/demoData'
 import { IMAGE_WIDTH } from '~/composables/useSanityImage'
 import { productCoverFrame } from '~/composables/productImages'
-import { productSlug } from '~/composables/useProductCatalog'
+import { productDetailPath, productSlug } from '~/composables/useProductCatalog'
 
 const props = defineProps<{
   slug: string
@@ -228,7 +228,7 @@ const emit = defineEmits<{
 const { imageUrl } = useSanityImage()
 const { fetchProduct } = useProductCatalog()
 const { requestSave, isSaved } = useBucket()
-const { items: libraryItems } = await useLibraryCatalog()
+const { items: libraryItems, precraftedItems } = await useLibraryCatalog()
 const { closingFlip, getFlipSourceProductId } = useProductOverlay()
 
 type IndexCard = {
@@ -247,6 +247,7 @@ const INDEX_EXCLUDED_TYPES = new Set(['spirit', 'origin'])
 
 const typeLabelFor = (type?: string) => {
   if (!type) return ''
+  if (type === 'precrafted') return '(Pre)Crafted'
   return PRODUCT_TYPE_FILTERS.find((t) => t.value === type)?.label || type
 }
 
@@ -270,12 +271,25 @@ const activeSingularity = computed(() => {
   return cat === 'spirit' || cat === 'origin' ? cat : null
 })
 
+const toIndexCard = (item: (typeof libraryItems.value)[number]): IndexCard | null => {
+  const slug = productSlug(item)
+  if (!slug) return null
+  const cover = productCoverFrame(item)
+  return {
+    _id: item._id,
+    title: item.title,
+    slug,
+    imageUrl: cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : '',
+    typeLabel: typeLabelFor(item.category || item.type),
+    orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
+    aspect: item.aspectRatio > 0 ? item.aspectRatio : 1,
+  }
+}
+
 const indexItems = computed((): IndexCard[] => {
   const singularity = activeSingularity.value
   return libraryItems.value
     .map((item) => {
-      const slug = productSlug(item)
-      if (!slug) return null
       const typeKey = normalizeTypeKey(item.category || item.type)
       const cats = (item.categories || []).map((c) => normalizeTypeKey(c))
       if (singularity) {
@@ -286,18 +300,7 @@ const indexItems = computed((): IndexCard[] => {
       ) {
         return null
       }
-      return {
-        _id: item._id,
-        title: item.title,
-        slug,
-        imageUrl: (() => {
-          const cover = productCoverFrame(item)
-          return cover ? imageUrl(cover, IMAGE_WIDTH.thumb) : ''
-        })(),
-        typeLabel: typeLabelFor(item.category || item.type),
-        orientation: (item.aspectRatio || 1) >= 1 ? 'landscape' : 'portrait',
-        aspect: item.aspectRatio > 0 ? item.aspectRatio : 1,
-      }
+      return toIndexCard(item)
     })
     .filter((item): item is IndexCard => !!item)
 })
@@ -473,16 +476,38 @@ const indexActiveSlug = computed(() => {
   return props.slug
 })
 
-/** Related ids for the open product. The open product stays out of this set. */
+/** Related ids for the open product, with that product first so it stays selectable. */
 const computeRelatedIdsForActive = () => {
   const ids = new Set<string>()
   const product = activeProduct.value
   if (!product) return ids
 
+  const withCurrent = (relatedIds: Set<string>) => {
+    if (!relatedIds.size || !product._id) return relatedIds
+    const rest = [...relatedIds].filter((id) => id !== product._id)
+    return new Set([product._id, ...rest])
+  }
+
   const manual = (product.related || []).filter((item) => item?._id && item.slug)
   if (manual.length) {
     for (const item of manual) ids.add(item._id)
-    return ids
+    return withCurrent(ids)
+  }
+
+  if (
+    isPrecraftedItem({
+      type: product.category,
+      series: product.series,
+      categories: product.categories,
+      precrafted: product.precrafted,
+    })
+  ) {
+    for (const item of precraftedItems.value) {
+      if (item._id === product._id) continue
+      if (!productSlug(item)) continue
+      ids.add(item._id)
+    }
+    return withCurrent(ids)
   }
 
   const current = libraryItem.value
@@ -512,7 +537,7 @@ const computeRelatedIdsForActive = () => {
     .slice(0, 24)
 
   for (const row of scored) ids.add(row.id)
-  return ids
+  return withCurrent(ids)
 }
 
 const canFilter = computed(() => computeRelatedIdsForActive().size > 0)
@@ -525,7 +550,16 @@ const relatedItems = computed((): IndexCard[] => {
   // Keep the clicked product in the rail. The frozen set is the list from when
   // More like this opened, so selecting one does not remove it or insert the
   // product that was open before.
-  return indexItems.value.filter((item) => ids.has(item._id))
+  const cards = new Map<string, IndexCard>()
+  for (const item of indexItems.value) cards.set(item._id, item)
+  for (const item of precraftedItems.value) {
+    const card = toIndexCard(item)
+    if (card) cards.set(card._id, card)
+  }
+  return [...ids].flatMap((id) => {
+    const card = cards.get(String(id))
+    return card ? [card] : []
+  })
 })
 
 const indexRailVisible = useCookie<boolean>('sba-pdp-index-rail', {
@@ -661,7 +695,9 @@ const onToggleSave = (item: IndexCard, event?: MouseEvent) => {
       title: item.title,
       imageUrl: item.imageUrl,
       itemType: item.typeLabel || 'item',
-      link: `/materials-and-forms/${item.slug}`,
+      link: productDetailPath(item.slug, {
+        category: item.typeLabel === '(Pre)Crafted' ? 'precrafted' : undefined,
+      }),
     },
     { source },
   )
@@ -957,11 +993,6 @@ onMounted(() => {
 
 .pdp-index__tile--active {
   opacity: 0.2;
-}
-
-/* The product you open from More like this stays fully visible in that rail. */
-.pdp-index__rail--right .pdp-index__tile--active {
-  opacity: 1;
 }
 
 .pdp-index__tile-media {

@@ -116,7 +116,7 @@
       </div>
 
       <label class="enquire__field">
-        <span class="enquire__label interface">Start a conversation§</span>
+        <span class="enquire__label interface">Start a conversation</span>
         <textarea
           v-model="form.message"
           name="message"
