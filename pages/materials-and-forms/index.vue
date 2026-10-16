@@ -33,7 +33,11 @@
       <p v-if="pageDescription" class="products__intro">{{ pageDescription }}</p>
     </section>
 
-    <div class="products__dock">
+    <div
+      ref="dockEl"
+      class="products__dock"
+      :class="{ 'products__dock--away': dockAway }"
+    >
       <SlidingPill
         class="products__mode"
         label="Grid layout"
@@ -526,9 +530,13 @@ if (import.meta.client) {
 
   watch(productOverlayOpen, (open) => {
     if (open) {
-      if (flipSourceIsArchiveGrid()) void meltTitleForProduct()
+      if (flipSourceIsArchiveGrid()) {
+        void meltTitleForProduct()
+        hideArchiveDock()
+      }
       return
     }
+    showArchiveDock()
     if (scattered.length) clearScatteredTiles()
     void restoreTitleAfterProduct()
   })
@@ -798,6 +806,90 @@ const parkTitleSharp = () => {
     return
   }
   if (titleEl.value) gsap.set(titleEl.value, { opacity: 1 })
+}
+
+const dockEl = ref<HTMLElement | null>(null)
+const dockAway = ref(false)
+let dockTween: gsap.core.Tween | null = null
+let headerTween: gsap.core.Tween | null = null
+
+const archiveHeader = () => document.querySelector<HTMLElement>('.header')
+
+const dockTravel = () => {
+  const dock = dockEl.value
+  if (!dock) return 180
+  const bottom = parseFloat(getComputedStyle(dock).bottom) || 0
+  return dock.offsetHeight + bottom + 24
+}
+
+const headerTravel = () => {
+  const header = archiveHeader()
+  if (!header) return -80
+  return -(header.offsetHeight + 16)
+}
+
+/** Slide the grid switch and filter off the bottom, and the nav off the top. */
+const hideArchiveDock = () => {
+  const dock = dockEl.value
+  const header = archiveHeader()
+  dockAway.value = true
+  dockTween?.kill()
+  headerTween?.kill()
+  if (header) header.style.pointerEvents = 'none'
+  if (prefersReducedMotion()) {
+    if (dock) gsap.set(dock, { y: dockTravel() })
+    if (header) gsap.set(header, { y: headerTravel() })
+    return
+  }
+  if (dock) {
+    dockTween = gsap.to(dock, {
+      y: dockTravel(),
+      duration: ARCHIVE_PDP_OPEN_S,
+      ease: ARCHIVE_PDP_OPEN_EASE,
+      overwrite: true,
+    })
+  }
+  if (header) {
+    headerTween = gsap.to(header, {
+      y: headerTravel(),
+      duration: ARCHIVE_PDP_OPEN_S,
+      ease: ARCHIVE_PDP_OPEN_EASE,
+      overwrite: true,
+    })
+  }
+}
+
+const showArchiveDock = () => {
+  const dock = dockEl.value
+  const header = archiveHeader()
+  dockTween?.kill()
+  headerTween?.kill()
+  const finish = () => {
+    dockAway.value = false
+    if (header) header.style.pointerEvents = ''
+  }
+  if (!dock && !header) {
+    finish()
+    return
+  }
+  if (prefersReducedMotion()) {
+    if (dock) gsap.set(dock, { y: 0 })
+    if (header) gsap.set(header, { y: 0 })
+    finish()
+    return
+  }
+  const motion = {
+    y: 0,
+    duration: ARCHIVE_PDP_CLOSE_S,
+    ease: ARCHIVE_PDP_CLOSE_EASE,
+    overwrite: true as const,
+  }
+  if (header) {
+    headerTween = gsap.to(header, { ...motion, onComplete: finish })
+    if (dock) dockTween = gsap.to(dock, motion)
+  } else if (dock) {
+    dockTween = gsap.to(dock, { ...motion, onComplete: finish })
+  }
 }
 
 /** Melt the archive title away while a product is open, then back on close. */
@@ -1898,6 +1990,13 @@ onBeforeRouteLeave(async (to, from) => {
 })
 
 onBeforeUnmount(() => {
+  dockTween?.kill()
+  headerTween?.kill()
+  const header = document.querySelector<HTMLElement>('.header')
+  if (header) {
+    gsap.set(header, { y: 0 })
+    header.style.pointerEvents = ''
+  }
   releaseDocumentHeight()
   clearScatteredTiles()
   gridEl.value?.classList.remove('products__grid--meta-hold')
@@ -2185,6 +2284,12 @@ useHead(() => ({
   align-items: flex-end;
   justify-content: flex-end;
   padding-right: var(--gutter, 16px);
+  pointer-events: none;
+}
+
+.products__dock--away,
+.products__dock--away .products__mode,
+.products__dock--away .products__filter-tool {
   pointer-events: none;
 }
 

@@ -275,7 +275,7 @@ export const useProductOverlay = () => {
         pendingFlip.value = false
       }
       closingFlip.value = false
-      backdropReady.value = false
+      backdropReady.value = !!options.source?.closest('.precrafted__finish')
       archiveGridMotion.value = null
       openImageIndex.value =
         typeof options.imageIndex === 'number' && options.imageIndex >= 0
@@ -356,12 +356,17 @@ export const useProductOverlay = () => {
   const flipSourceIsCurate = () =>
     !!(import.meta.client && flipSourceEl && flipSourceEl.closest('.showcase'))
 
+  /** True when the Flip shell is a (Pre)Crafted finish thumbnail */
+  const flipSourceIsPrecrafted = () =>
+    !!(import.meta.client && flipSourceEl && flipSourceEl.closest('.precrafted__finish'))
+
   /** Skip cream/chrome holds — Flip starts as soon as the flyer is ready */
   const flipSourceStartsImmediately = () =>
     flipSourceIsArchiveGrid() ||
     flipSourceIsDiscoveryKebab() ||
     flipSourceIsCart() ||
-    flipSourceIsCurate()
+    flipSourceIsCurate() ||
+    flipSourceIsPrecrafted()
 
   /** Hero-tier URL preferred for the Flip flyer when prefetched */
   const getFlipImageUrl = () => flipImageUrl
@@ -521,6 +526,7 @@ export const useProductOverlay = () => {
     flipSourceIsDiscoveryKebab,
     flipSourceIsCart,
     flipSourceIsCurate,
+    flipSourceIsPrecrafted,
     flipSourceStartsImmediately,
     getFlipImageUrl,
     clearPendingFlip,

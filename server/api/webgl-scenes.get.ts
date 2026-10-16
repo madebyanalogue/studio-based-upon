@@ -4,7 +4,7 @@ import { join } from 'node:path'
 export default defineEventHandler(async () => {
   const names = await readdir(join(process.cwd(), 'public/webgl'))
   return names
-    .filter((name) => name.toLowerCase().endsWith('.glb'))
+    .filter((name) => name.toLowerCase().endsWith('.glb') && !/^reliefs_/i.test(name))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
     .map((name) => `/webgl/${encodeURIComponent(name)}`)
 })

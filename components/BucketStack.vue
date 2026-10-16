@@ -864,21 +864,26 @@
           >
             Tidy
           </button>
-          <label class="stack__upload-global interface" data-cursor="default" aria-label="Upload">
-            <input
-              type="file"
-              class="stack__upload-input"
-              accept="image/*"
-              multiple
-              @change="onCartUpload"
-            />
-            <span>Upload</span>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <path d="M12 16V5" />
-              <path d="M8 9l4-4 4 4" />
-              <path d="M5 19h14" />
-            </svg>
-          </label>
+          <div class="stack__upload">
+            <p v-if="showUploadOnboarding" class="stack__upload-note">
+              Upload your own source material
+            </p>
+            <label class="stack__upload-global interface" data-cursor="default" aria-label="Upload">
+              <input
+                type="file"
+                class="stack__upload-input"
+                accept="image/*"
+                multiple
+                @change="onCartUpload"
+              />
+              <span>Upload</span>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M12 16V5" />
+                <path d="M8 9l4-4 4 4" />
+                <path d="M5 19h14" />
+              </svg>
+            </label>
+          </div>
         </div>
         </div>
       </template>
@@ -1588,6 +1593,19 @@ const fileToCartImage = (file: File) =>
     img.src = objectUrl
   })
 
+const UPLOAD_ONBOARD_KEY = 'cart-upload-onboarded'
+const showUploadOnboarding = ref(false)
+
+const dismissUploadOnboarding = () => {
+  if (!showUploadOnboarding.value) return
+  showUploadOnboarding.value = false
+  try {
+    localStorage.setItem(UPLOAD_ONBOARD_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+}
+
 const onCartUpload = async (event: Event) => {
   const input = event.target
   if (!(input instanceof HTMLInputElement)) return
@@ -1609,6 +1627,7 @@ const onCartUpload = async (event: Event) => {
         imageUrls: [url],
         imageIndex: 0,
       }
+      dismissUploadOnboarding()
       if (showLightbox.value) {
         await playLightboxUpload(boardId, uploaded)
         continue
@@ -8405,6 +8424,11 @@ const onNavHeartLeave = () => {
 }
 
 onMounted(() => {
+  try {
+    showUploadOnboarding.value = localStorage.getItem(UPLOAD_ONBOARD_KEY) !== '1'
+  } catch {
+    showUploadOnboarding.value = true
+  }
   registerAnimatedClose(() => {
     void closeToPile()
   })
@@ -10437,6 +10461,38 @@ onBeforeUnmount(() => {
   transform: none;
 }
 
+.stack__upload {
+  position: relative;
+}
+
+.stack__upload-note {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 18px);
+  z-index: 1;
+  margin: 0;
+  font-family: var(--lacquer);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-color);
+  pointer-events: none;
+}
+
+.stack__upload-note::after {
+  content: '';
+  position: absolute;
+  right: 28px;
+  top: calc(100% + 4px);
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
 .stack__undo-global,
 .stack__tidy-global,
 .stack__upload-global {
@@ -10941,7 +10997,8 @@ onBeforeUnmount(() => {
     padding: 0.35rem 0.6rem;
   }
 
-  .stack__dock .stack__upload-global span {
+  .stack__dock .stack__upload-global span,
+  .stack__upload-note {
     display: none;
   }
 

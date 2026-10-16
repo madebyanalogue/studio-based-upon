@@ -15,6 +15,8 @@
       'pdp--gallery': galleryVisible,
       'pdp--specs-live': specsLive,
       'pdp--closing': closingFlip,
+      'pdp--heart-hold': heartHold,
+      'pdp--heart-out': heartOut,
       'pdp--singularity': isSpiritOrOrigin,
       'pdp--precrafted': isPrecrafted,
       'pdp--curate': flipSourceIsCurate(),
@@ -392,6 +394,7 @@ const {
   flipSourceIsArchiveGrid,
   flipSourceIsCart,
   flipSourceIsCurate,
+  flipSourceIsPrecrafted,
   flipSourceStartsImmediately,
   getFlipImageUrl,
   clearPendingFlip,
@@ -478,6 +481,30 @@ const stageRef = ref<HTMLElement | null>(null)
 const stripRef = ref<HTMLElement | null>(null)
 const stripTrackRef = ref<HTMLElement | null>(null)
 const contentReady = ref(false)
+/** Saved-heart on the grid thumb — keep the gallery heart hidden until Flip lands. */
+const activeSourceHeart = () => {
+  const source = getFlipSource()
+  if (!source || !flipSourceIsArchiveGrid()) return null
+  const btn = source.closest('.product-card')?.querySelector<HTMLElement>('.product-card__add')
+  return btn?.classList.contains('add-btn--active') ? btn : null
+}
+const heartHold = ref(false)
+/** Close: the gallery heart on the active frame leaves before the image. */
+const heartOut = ref(false)
+let fadedHeart: HTMLElement | null = null
+const releaseFadedHeart = () => {
+  if (!fadedHeart) return
+  gsap.set(fadedHeart, { clearProps: 'opacity' })
+  fadedHeart = null
+}
+if (import.meta.client) {
+  const btn = activeSourceHeart()
+  if (btn) {
+    heartHold.value = true
+    fadedHeart = btn
+    gsap.to(btn, { opacity: 0, duration: 0.28, ease: 'power2.out', overwrite: true })
+  }
+}
 /** Shared with ProductIndexRail so open/close chrome stays in lockstep. */
 const sidesVisible = useState('pdp-chrome-visible', () => false)
 /** Overlay flip only — hard-load / standalone skip chrome translate-in. */
@@ -1148,13 +1175,16 @@ onMounted(() => {
   nextTick(() => {
     initGalleryLenis()
     scrollGalleryInitial()
-    if (heroRef.value?.complete) void runFlipOpen()
+    const fromFinish = flipSourceIsPrecrafted()
+    if (fromFinish) setBackdropReady(true)
+    if (heroRef.value?.complete || (fromFinish && heroRef.value)) void runFlipOpen()
     else if (!activeEntry.value) revealWithoutFlip()
   })
   window.addEventListener('keydown', onGalleryKeydown)
 })
 
 onUnmounted(() => {
+  releaseFadedHeart()
   destroyGalleryLenis()
   narrowPdpQuery?.removeEventListener('change', onNarrowPdpChange)
   window.removeEventListener('keydown', onGalleryKeydown)
@@ -1354,6 +1384,8 @@ const tweenCornerRadius = (
 
 const revealWithoutFlip = () => {
   restoreFlipSource()
+  heartHold.value = false
+  releaseFadedHeart()
   setBackdropReady(true)
   clearPendingFlip()
   chromeEnterMotion.value = false
@@ -1376,6 +1408,15 @@ const waitForImage = (img: HTMLImageElement) => {
     img.addEventListener('error', () => resolve(), { once: true })
   })
 }
+
+/** Finish opens must not sit invisible if the hero download stalls. */
+const waitForImageLimited = (img: HTMLImageElement, ms = 1200) =>
+  Promise.race([
+    waitForImage(img),
+    new Promise<void>((resolve) => {
+      window.setTimeout(resolve, ms)
+    }),
+  ])
 
 const runFlipOpen = async () => {
   if (flipStarted.value || !import.meta.client) return
@@ -1400,7 +1441,9 @@ const runFlipOpen = async () => {
   source.style.opacity = '1'
   source.style.filter = 'grayscale(0)'
 
-  await waitForImage(hero)
+  const fromPrecrafted = flipSourceIsPrecrafted()
+  // Finish thumbs are already on screen. Don't hold the open on the hero file.
+  if (!fromPrecrafted) await waitForImage(hero)
   await nextTick()
   // Let flex layout resolve real image boxes before Flip measures
   await new Promise<void>((resolve) => {
@@ -1486,7 +1529,11 @@ const runFlipOpen = async () => {
   // Materials grid stays clear while the other thumbnails fly off.
   if (!fromArchive) setBackdropReady(true)
   await nextTick()
-  if (fromArchive || fromCart) {
+  if (fromPrecrafted && !(flipHero.complete && flipHero.naturalWidth > 0)) {
+    // Cream and the thumb flyer are already up. Give the hero a short head start.
+    await waitForImageLimited(flipHero)
+    scrollGalleryInitial()
+  } else if (fromArchive || fromCart) {
     // Start as soon as the hero frame has its real size — no cream hold.
     let stable = 0
     for (let i = 0; i < 24; i++) {
@@ -1534,19 +1581,29 @@ const runFlipOpen = async () => {
     absolute: true,
     scale: false,
     onComplete: () => {
-      // Reveal strip + hero under the flyer before removing it — avoids a
-      // blank frame and prevents the gallery from flashing ahead of Flip.
-      gsap.set(flipHero, { visibility: 'visible' })
-      if (fromArchive) setBackdropReady(true)
-      clearPendingFlip()
-      contentReady.value = true
-      sidesVisible.value = true
-      galleryVisible.value = true
-      requestAnimationFrame(() => {
+      const reveal = () => {
+        // Reveal strip + hero under the flyer before removing it — avoids a
+        // blank frame and prevents the gallery from flashing ahead of Flip.
+        gsap.set(flipHero, { visibility: 'visible' })
+        if (fromArchive) setBackdropReady(true)
         requestAnimationFrame(() => {
-          flyer.remove()
+          heartHold.value = false
         })
-      })
+        clearPendingFlip()
+        contentReady.value = true
+        sidesVisible.value = true
+        galleryVisible.value = true
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flyer.remove()
+          })
+        })
+      }
+      if (!fromPrecrafted || (flipHero.complete && flipHero.naturalWidth > 0)) reveal()
+      else {
+        flipHero.addEventListener('load', reveal, { once: true })
+        flipHero.addEventListener('error', reveal, { once: true })
+      }
     },
   })
   tweenCornerRadius(flyer, fromRadius, toRadius, openDuration, openEase)
@@ -1555,6 +1612,9 @@ const runFlipOpen = async () => {
 const runFlipClose = async () => {
   if (!import.meta.client || flipCloseStarted.value) return
   flipCloseStarted.value = true
+  if (flipSourceIsArchiveGrid() && isFrameSaved(selectedIndex.value)) {
+    heartOut.value = true
+  }
 
   const source = getFlipSource()
   const hero = heroRef.value
@@ -2158,6 +2218,19 @@ watch(
 .pdp__hero-frame--ready .pdp__frame-add {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Saved item: heart stays out until the open Flip has landed, then fades in. */
+.pdp--heart-hold .pdp__strip-item--active .pdp__frame-add {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Close: the heart on the active gallery frame leaves before the image. */
+.pdp--heart-out .pdp__strip-item--active .pdp__frame-add {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 0.12s;
 }
 
 .pdp__frame-add :deep(.add-btn__icon) {
