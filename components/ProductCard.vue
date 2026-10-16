@@ -367,20 +367,41 @@ const onToggle = (event?: MouseEvent) => {
   top: var(--thumb-ctrl-inset);
   right: var(--thumb-ctrl-inset);
   z-index: 3;
-  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
-}
-
-/* Heart stays on the thumbnail, including pieces already in the stack. */
-.product-card__add {
   opacity: 1;
   transform: none;
   pointer-events: auto;
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.product-card--saved .product-card__image,
-.product-card--saved .product-card__placeholder {
-  opacity: 1;
-  filter: none;
+/* Desktop: outline heart on hover. A saved thumb stays at 0.1 with a solid heart. */
+@media (hover: hover) and (pointer: fine) {
+  .product-card:not(.product-card--saved) .product-card__add {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .product-card:not(.product-card--saved) .product-card__media:hover .product-card__add,
+  .product-card:not(.product-card--saved) .product-card__media:focus-within .product-card__add {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .product-card--saved {
+    --gathered-thumb-opacity: 0.1;
+  }
+
+  .product-card--saved .product-card__image,
+  .product-card--saved .product-card__placeholder {
+    opacity: 0.1;
+    filter: none;
+  }
+
+  .product-card--saved:hover .product-card__image,
+  .product-card--saved:hover .product-card__placeholder,
+  .product-card--saved:focus-within .product-card__image,
+  .product-card--saved:focus-within .product-card__placeholder {
+    opacity: 1;
+  }
 }
 
 .product-card__meta {

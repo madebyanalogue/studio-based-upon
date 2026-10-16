@@ -12,7 +12,7 @@ uniform float uAspect;
 float blob(vec2 mouse, vec2 screen) {
   vec2 delta = screen - mouse;
   delta.x *= uAspect;
-  return smoothstep(0.16, 0.0, length(delta));
+  return smoothstep(0.19, 0.0, length(delta));
 }
 
 void main() {

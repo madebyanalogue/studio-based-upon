@@ -129,18 +129,18 @@ const restoreFlipSource = () => {
   if (!import.meta.client || !flipSourceEl) return
   const el = flipSourceEl
 
-  // Instant handoff — keep visibility/opacity locked until styles clear together
-  // so CSS opacity transitions can’t flash a hide→show
+  // Paint full, then let CSS ease a saved desktop thumb down to its dim.
+  // Clearing opacity in the same frame as `transition: none` would skip that fade.
   el.style.transition = 'none'
   el.style.visibility = ''
   el.style.opacity = '1'
   el.style.filter = 'grayscale(0)'
   void el.offsetWidth
-  el.style.removeProperty('opacity')
   el.style.removeProperty('filter')
   el.style.removeProperty('visibility')
+  el.style.removeProperty('transition')
   requestAnimationFrame(() => {
-    if (el.style.transition === 'none') el.style.removeProperty('transition')
+    el.style.removeProperty('opacity')
   })
 }
 

@@ -516,6 +516,14 @@ const onNewSelection = () => {
   pointer-events: none;
 }
 
+/* Archive open slides the whole bar up — don’t snap it out from under the tween. */
+html.archive-header-shift .header--product-page .header__nav,
+html.archive-header-shift .header--product-page .header__actions,
+html.archive-header-shift .header--product-page .header__logo,
+html.archive-header-shift .header--product-page .header__wordmark {
+  visibility: visible;
+}
+
 .header__wordmark {
   justify-self: start;
   align-self: center;

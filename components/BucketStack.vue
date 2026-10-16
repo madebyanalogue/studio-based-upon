@@ -8380,6 +8380,7 @@ const switchPileFromNav = async (nextId: string) => {
       minHeight: cell,
       overflow: 'visible',
     })
+    nextEl.style.translate = `0px ${dropY}px`
     await playDrop(nextEl, dropY, 0, 500, easeOut)
     if (token !== navSwitchToken) return
     nextEl.style.translate = ''
@@ -8801,8 +8802,16 @@ onBeforeUnmount(() => {
 
 .stack__pile-wrap--empty {
   width: var(--stack-cell-size);
-  height: var(--stack-cell-size) !important;
+  height: var(--stack-cell-size);
+  min-height: 0;
+}
+
+/* Parked empties must not keep a cell above the pile — that slot plus the
+   downward shift paints the dashed indicator on top of the active stack. */
+.stack__pile-wrap--empty.stack__pile-wrap--parked {
+  height: 0 !important;
   min-height: 0 !important;
+  overflow: hidden;
 }
 
 .stack__pile-empty {

@@ -234,8 +234,8 @@ const CLIP_OUT_DUR = 0.85
 const CLIP_IN_DUR = 0.95
 /** Title gooey-in — slower than clip so the melt reads clearly. */
 const TITLE_GOOEY_IN_DUR = 1.85
-/** PDP open at the top — quicker than the filter-swap melt. */
-const TITLE_PDP_GOOEY_OUT_DUR = 0.4
+/** PDP open — long enough that the melt stays with the flip, not ahead of it. */
+const TITLE_PDP_GOOEY_OUT_DUR = 1.2
 /** Beat after paint before intro clip/title starts. */
 const INTRO_START_DELAY_MS = 100
 /** Title gooeys in shortly after thumbnails begin. */
@@ -428,16 +428,24 @@ const scatterArchiveGrid = (source: HTMLElement) => {
     const clone = host.cloneNode(true) as HTMLElement
     clone.setAttribute('aria-hidden', 'true')
     clone.removeAttribute('href')
-    // The grid forces cover. Once the clone leaves that parent it falls back
-    // to the card's contain, which pops before the scatter tween starts.
+    // The clone leaves `.product-card`, so saved dim (0.1) and hidden hearts
+    // would otherwise fall back to full opacity. Freeze the live look first.
     const liveImages = [...host.querySelectorAll<HTMLImageElement>('img')]
     clone.querySelectorAll<HTMLImageElement>('img').forEach((img, i) => {
       const live = liveImages[i]
       if (!live) return
       const fit = getComputedStyle(live)
+      img.style.transition = 'none'
       img.style.objectFit = fit.objectFit
       img.style.objectPosition = fit.objectPosition
+      img.style.opacity = fit.opacity
     })
+    const liveHeart = host.querySelector<HTMLElement>('.product-card__add')
+    const cloneHeart = clone.querySelector<HTMLElement>('.product-card__add')
+    if (liveHeart && cloneHeart) {
+      cloneHeart.style.transition = 'none'
+      cloneHeart.style.opacity = getComputedStyle(liveHeart).opacity
+    }
     Object.assign(clone.style, {
       position: 'fixed',
       left: `${hostRect.left}px`,
@@ -828,6 +836,9 @@ const headerTravel = () => {
   return -(header.offsetHeight + 16)
 }
 
+/** Above scattering thumbs (352) and the product overlay (350), under the pile (355). */
+const ARCHIVE_CHROME_Z = '354'
+
 /** Slide the grid switch and filter off the bottom, and the nav off the top. */
 const hideArchiveDock = () => {
   const dock = dockEl.value
@@ -835,7 +846,12 @@ const hideArchiveDock = () => {
   dockAway.value = true
   dockTween?.kill()
   headerTween?.kill()
-  if (header) header.style.pointerEvents = 'none'
+  // Keep the nav above the flying thumbs, and visible, so the upward move reads.
+  if (header) {
+    header.style.zIndex = ARCHIVE_CHROME_Z
+    header.style.pointerEvents = 'none'
+    document.documentElement.classList.add('archive-header-shift')
+  }
   if (prefersReducedMotion()) {
     if (dock) gsap.set(dock, { y: dockTravel() })
     if (header) gsap.set(header, { y: headerTravel() })
@@ -866,7 +882,11 @@ const showArchiveDock = () => {
   headerTween?.kill()
   const finish = () => {
     dockAway.value = false
-    if (header) header.style.pointerEvents = ''
+    document.documentElement.classList.remove('archive-header-shift')
+    if (header) {
+      header.style.zIndex = ''
+      header.style.pointerEvents = ''
+    }
   }
   if (!dock && !header) {
     finish()
@@ -905,7 +925,7 @@ const meltTitleForProduct = async () => {
   abortTitleSwapTween()
   titleSwapGen += 1
   if (interrupted) parkTitleSharp()
-  await titleGooeyOut(TITLE_PDP_GOOEY_OUT_DUR, 'power2.out')
+  await titleGooeyOut(TITLE_PDP_GOOEY_OUT_DUR, 'power2.inOut')
   if (gen !== titleProductGen) return
   if (!titleRestoreStarted) titleFront.value = false
 }
@@ -1995,8 +2015,10 @@ onBeforeUnmount(() => {
   const header = document.querySelector<HTMLElement>('.header')
   if (header) {
     gsap.set(header, { y: 0 })
+    header.style.zIndex = ''
     header.style.pointerEvents = ''
   }
+  document.documentElement.classList.remove('archive-header-shift')
   releaseDocumentHeight()
   clearScatteredTiles()
   gridEl.value?.classList.remove('products__grid--meta-hold')
@@ -2279,7 +2301,8 @@ useHead(() => ({
   left: 0;
   right: 0;
   bottom: calc(60px + var(--bucket-push, 0px));
-  z-index: 60;
+  /* Above scattering thumbs (352) and the product overlay (350), under the pile (355). */
+  z-index: 354;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;

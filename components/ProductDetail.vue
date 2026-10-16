@@ -2214,10 +2214,26 @@ watch(
   transition: opacity 0.35s ease;
 }
 
-/* Match hero fade — don’t flash the heart over an empty/transparent frame */
+/* Match hero fade — don’t flash the heart over an empty/transparent frame.
+   Touch: the heart stays on every ready frame. */
 .pdp__hero-frame--ready .pdp__frame-add {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Desktop: an inactive heart only appears over the frame. A saved heart stays. */
+@media (hover: hover) and (pointer: fine) {
+  .pdp__hero-frame--ready .pdp__frame-add {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .pdp__hero-frame--ready:hover .pdp__frame-add,
+  .pdp__hero-frame--ready:focus-within .pdp__frame-add,
+  .pdp__hero-frame--ready .pdp__frame-add.add-btn--active {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* Saved item: heart stays out until the open Flip has landed, then fades in. */

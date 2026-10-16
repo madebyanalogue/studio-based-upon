@@ -416,6 +416,41 @@ onMounted(() => {
   pointer-events: auto;
 }
 
+/* Desktop: an inactive heart only appears over the thumbnail. */
+@media (hover: hover) and (pointer: fine) {
+  .grid-item:not(.grid-item--saved) .grid-item__add {
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+  }
+
+  .grid-item:not(.grid-item--saved) .grid-item__media:hover .grid-item__add,
+  .grid-item:not(.grid-item--saved) .grid-item__media:focus-within .grid-item__add {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
+/* Desktop: an added thumb fades back dim, and returns to full while hovered. */
+@media (hover: hover) and (pointer: fine) {
+  .grid-item--saved {
+    --gathered-thumb-opacity: 0.1;
+  }
+
+  .grid-item--saved .grid-item__image,
+  .grid-item--saved .grid-item__placeholder {
+    opacity: 0.1;
+  }
+
+  .grid-item--saved:hover .grid-item__image,
+  .grid-item--saved:hover .grid-item__placeholder,
+  .grid-item--saved:focus-within .grid-item__image,
+  .grid-item--saved:focus-within .grid-item__placeholder {
+    opacity: 1;
+  }
+}
+
 .grid-item__cycle {
   display: none;
   position: absolute;
