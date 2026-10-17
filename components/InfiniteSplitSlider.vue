@@ -340,6 +340,30 @@ const columns: Record<
   right: { el: null, visibleSlides: new Map() },
 }
 
+const { returnImage } = useProductOverlay()
+
+/** Keep the gallery frame that flew home. Flip lands on it; the slide must not snap back. */
+watch(returnImage, (value) => {
+  if (!value?.productId || !value.src) return
+  for (const slide of props.slides) {
+    if (slide.left.productId === value.productId) {
+      slide.leftImage = value.src
+      slide.left.imageIndex = value.index
+    }
+    if (slide.right.productId === value.productId) {
+      slide.rightImage = value.src
+      slide.right.imageIndex = value.index
+    }
+  }
+  for (const side of ['left', 'right'] as const) {
+    for (const el of columns[side].visibleSlides.values()) {
+      if (el.dataset.productId !== value.productId) continue
+      const img = el.querySelector('img')
+      if (img) img.src = value.src
+    }
+  }
+})
+
 const ensurePlugins = () => {
   if (!import.meta.client) return
   gsap.registerPlugin(SplitText)
@@ -368,6 +392,7 @@ const createSlide = (side: Side, index: number) => {
   img.src = side === 'left' ? data.leftImage : data.rightImage
   img.alt = ''
   img.draggable = false
+  if (data[side].productId) el.dataset.productId = data[side].productId
 
   const overlay = document.createElement('div')
   overlay.className = 'split-slider__overlay'
