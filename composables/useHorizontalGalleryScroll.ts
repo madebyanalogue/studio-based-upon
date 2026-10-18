@@ -67,6 +67,26 @@ function getLoopPeriod(track: HTMLElement | null) {
 }
 
 const TITLE_INTRO_SCROLL = 600
+/** Opening inset: stack pile width, then this much clear space. */
+const PRECRAFTED_START_GAP = 80
+
+function stackPileWidth() {
+  if (typeof document === 'undefined') return 0
+  const pile = document.querySelector(
+    '.stack__rail .stack__pile-wrap:not(.stack__pile-wrap--parked)',
+  )
+  if (pile instanceof HTMLElement && pile.offsetWidth > 1) return pile.offsetWidth
+  const stack = document.querySelector('.stack')
+  if (!(stack instanceof HTMLElement)) return 0
+  const size = Number.parseFloat(getComputedStyle(stack).getPropertyValue('--stack-cell-size'))
+  return Number.isFinite(size) && size > 1 ? size : 0
+}
+
+/** Track starts clear of the corner pile, with 80px of padding after it. */
+function applyPrecraftedStartInset(track: HTMLElement | null) {
+  if (!track) return
+  track.style.paddingLeft = `${stackPileWidth() + PRECRAFTED_START_GAP}px`
+}
 
 function getTotalScroll({ maxScroll, hasTitleIntro }: { maxScroll: number; hasTitleIntro: boolean }) {
   return (hasTitleIntro ? TITLE_INTRO_SCROLL : 0) + maxScroll
@@ -198,6 +218,30 @@ export function useHorizontalGalleryScroll({
       typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measurePeriod) : null
     if (periodObserver && trackRef.value) periodObserver.observe(trackRef.value)
 
+    applyPrecraftedStartInset(trackRef.value)
+    const onResize = () => applyPrecraftedStartInset(trackRef.value)
+    window.addEventListener('resize', onResize)
+    let pileWatch: ResizeObserver | null = null
+    const watchPile = () => {
+      const pile = document.querySelector(
+        '.stack__rail .stack__pile-wrap:not(.stack__pile-wrap--parked)',
+      )
+      if (!(pile instanceof HTMLElement)) return false
+      applyPrecraftedStartInset(trackRef.value)
+      if (typeof ResizeObserver === 'undefined') return true
+      pileWatch = new ResizeObserver(() => applyPrecraftedStartInset(trackRef.value))
+      pileWatch.observe(pile)
+      return true
+    }
+    if (!watchPile()) {
+      let tries = 0
+      const retry = () => {
+        if (watchPile() || tries++ > 30) return
+        requestAnimationFrame(retry)
+      }
+      requestAnimationFrame(retry)
+    }
+
     const onVirtualScroll = (data: { deltaX: number; deltaY: number; event: Event }) => {
       if (data.event.type === 'touchend' || data.event.type === 'touchcancel') return
       if (eventWantsNativeScroll(data.event)) return
@@ -238,6 +282,9 @@ export function useHorizontalGalleryScroll({
     gsap.ticker.add(tick)
     removeLoopDriver = () => {
       document.documentElement.classList.remove('precrafted-loop-lock')
+      window.removeEventListener('resize', onResize)
+      pileWatch?.disconnect()
+      if (trackRef.value) trackRef.value.style.paddingLeft = ''
       periodObserver?.disconnect()
       lenis.off?.('virtual-scroll', onVirtualScroll)
       gsap.ticker.remove(tick)

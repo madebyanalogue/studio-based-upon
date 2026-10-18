@@ -275,7 +275,9 @@ export const useProductOverlay = () => {
         pendingFlip.value = false
       }
       closingFlip.value = false
-      backdropReady.value = !!options.source?.closest('.precrafted__finish')
+      // Finish thumbs stay on the page while the nav slides up. Cream arrives
+      // with the landed flyer, same as the materials grid.
+      backdropReady.value = false
       archiveGridMotion.value = null
       openImageIndex.value =
         typeof options.imageIndex === 'number' && options.imageIndex >= 0

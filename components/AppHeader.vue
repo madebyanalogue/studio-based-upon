@@ -5,6 +5,7 @@
       'header--product-page': isProductPage,
       'header--scroll-hidden': headerScrollHidden,
       'header--menu-open': menuOpen,
+      'header--precrafted': onPrecrafted,
     }"
   >
     <div class="header__inner">
@@ -271,6 +272,11 @@ const isProductPage = computed(
     /^\/pre-crafted\/[^/]+\/?$/.test(route.path),
 )
 
+/** (Pre)Crafted — nav leaves with the same fade as the product chrome. */
+const onPrecrafted = computed(
+  () => route.path === '/pre-crafted' || route.path === '/pre-crafted/',
+)
+
 /** Archive index only — fade nav out on scroll down, back in on scroll up. */
 const isMaterialsIndex = computed(
   () =>
@@ -514,6 +520,22 @@ const onNewSelection = () => {
 .header--product-page .header__wordmark {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Finish open: fade with the product chrome instead of popping out. */
+.header--precrafted .header__nav,
+.header--precrafted .header__actions,
+.header--precrafted .header__logo,
+.header--precrafted .header__wordmark {
+  transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.header--precrafted.header--product-page .header__nav,
+.header--precrafted.header--product-page .header__actions,
+.header--precrafted.header--product-page .header__logo,
+.header--precrafted.header--product-page .header__wordmark {
+  visibility: visible;
+  opacity: 0;
 }
 
 /* Archive open slides the whole bar up — don’t snap it out from under the tween. */

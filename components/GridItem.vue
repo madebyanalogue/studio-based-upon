@@ -77,7 +77,7 @@ import {
   productGalleryFrames,
   productCoverFrame,
 } from '~/composables/productImages'
-import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+import { IMAGE_WIDTH, imageAssetKey } from '~/composables/useSanityImage'
 
 type GridItemData = {
   _id: string
@@ -112,6 +112,8 @@ const saved = computed(() => {
   return isSaved(props.item._id, index)
 })
 const imageIndex = ref(0)
+/** Spirit (or other non-gallery) frame that flew home — kept in the thumb. */
+const returnedSrc = ref<string | null>(null)
 const rootRef = ref<HTMLElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
 let lastHeight = 0
@@ -121,10 +123,22 @@ watch(
   returnImage,
   (value) => {
     if (value?.productId !== props.item._id) return
-    if (imageIndex.value === value.index) return
+    const urls = projectImages.value
+    let nextIndex = imageIndex.value
+    let nextReturned: string | null = null
+    if (value.src) {
+      const key = imageAssetKey(value.src)
+      const match = urls.findIndex((url) => imageAssetKey(url) === key)
+      if (match >= 0) nextIndex = match
+      else nextReturned = value.src
+    } else if (value.index >= 0 && value.index < urls.length) {
+      nextIndex = value.index
+    }
+    if (nextIndex === imageIndex.value && nextReturned === returnedSrc.value) return
     // Capture height before src swap so Flip-close can bottom-anchor like cycle()
     lastHeight = measureHeight() || lastHeight
-    imageIndex.value = value.index
+    returnedSrc.value = nextReturned
+    imageIndex.value = nextIndex
     anchorOnNextLayout = true
     nextTick(() => {
       const img = imageRef.value
@@ -170,7 +184,7 @@ const heroImages = computed(() =>
 )
 
 const activeImage = computed(
-  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
+  () => returnedSrc.value || projectImages.value[imageIndex.value] || props.imageUrl || '',
 )
 const imageBroken = ref(false)
 watch(activeImage, () => {
@@ -179,7 +193,7 @@ watch(activeImage, () => {
 const hasImage = computed(() => Boolean(activeImage.value) && !imageBroken.value)
 
 const activeHeroImage = computed(
-  () => heroImages.value[imageIndex.value] || activeImage.value || '',
+  () => returnedSrc.value || heroImages.value[imageIndex.value] || activeImage.value || '',
 )
 
 const prefetchActiveHero = () => {
@@ -219,6 +233,7 @@ const linkTag = computed(() => (href.value ? 'NuxtLink' : 'div'))
 const linkProps = computed(() => (href.value ? { to: href.value } : {}))
 
 const randomizeImage = () => {
+  returnedSrc.value = null
   imageIndex.value = randomImageIndex(projectImages.value.length)
   anchorOnNextLayout = true
 }
@@ -264,6 +279,7 @@ const cycle = (direction: 1 | -1) => {
   if (count < 2) return
   lastHeight = measureHeight() || lastHeight
   anchorOnNextLayout = true
+  returnedSrc.value = null
   imageIndex.value = (imageIndex.value + direction + count) % count
   nextTick(() => {
     const img = imageRef.value

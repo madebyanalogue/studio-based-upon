@@ -1526,11 +1526,11 @@ const runFlipOpen = async () => {
   const fromArchive = flipSourceIsArchiveGrid()
   const fromCart = flipSourceIsCart()
   const startImmediate = flipSourceStartsImmediately()
-  // Materials grid stays clear while the other thumbnails fly off.
-  if (!fromArchive) setBackdropReady(true)
+  // Materials grid and (Pre)Crafted stay clear while the nav slides up.
+  if (!fromArchive && !fromPrecrafted) setBackdropReady(true)
   await nextTick()
   if (fromPrecrafted && !(flipHero.complete && flipHero.naturalWidth > 0)) {
-    // Cream and the thumb flyer are already up. Give the hero a short head start.
+    // Page stays up while the nav leaves. Give the hero a short head start.
     await waitForImageLimited(flipHero)
     scrollGalleryInitial()
   } else if (fromArchive || fromCart) {
@@ -1585,7 +1585,7 @@ const runFlipOpen = async () => {
         // Reveal strip + hero under the flyer before removing it — avoids a
         // blank frame and prevents the gallery from flashing ahead of Flip.
         gsap.set(flipHero, { visibility: 'visible' })
-        if (fromArchive) setBackdropReady(true)
+        if (fromArchive || fromPrecrafted) setBackdropReady(true)
         requestAnimationFrame(() => {
           heartHold.value = false
         })
@@ -2259,7 +2259,7 @@ watch(
   height: 100%;
   max-width: none;
   max-height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   cursor: auto;
   transform-origin: center center;
   will-change: transform;

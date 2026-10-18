@@ -65,7 +65,7 @@ import { PRODUCT_TYPE_FILTERS, type FormalItem } from '~/composables/demoData'
 import { productPath, productSlug as resolveProductSlug } from '~/composables/useProductCatalog'
 import type { LibraryItem } from '~/composables/useLibraryCatalog'
 import { uniqueImageUrls, productGalleryFrames } from '~/composables/productImages'
-import { IMAGE_WIDTH } from '~/composables/useSanityImage'
+import { IMAGE_WIDTH, imageAssetKey } from '~/composables/useSanityImage'
 
 const props = withDefaults(
   defineProps<{
@@ -118,13 +118,28 @@ watch(
   { immediate: true },
 )
 
+/** Spirit (or other non-gallery) frame that flew home — kept in the thumb. */
+const returnedSrc = ref<string | null>(null)
+
 watch(
   returnImage,
   (value) => {
     if (isImageLocked.value) return
-    if (value?.productId === props.item._id) {
-      imageIndex.value = value.index
+    if (value?.productId !== props.item._id) return
+    const urls = projectImages.value
+    if (value.src) {
+      const key = imageAssetKey(value.src)
+      const match = urls.findIndex((url) => imageAssetKey(url) === key)
+      if (match >= 0) {
+        returnedSrc.value = null
+        imageIndex.value = match
+        return
+      }
+      returnedSrc.value = value.src
+      return
     }
+    returnedSrc.value = null
+    if (value.index >= 0 && value.index < urls.length) imageIndex.value = value.index
   },
 )
 
@@ -185,7 +200,7 @@ const heroImages = computed(() =>
 )
 
 const activeImage = computed(
-  () => projectImages.value[imageIndex.value] || props.imageUrl || '',
+  () => returnedSrc.value || projectImages.value[imageIndex.value] || props.imageUrl || '',
 )
 const imageBroken = ref(false)
 watch(activeImage, () => {
@@ -194,7 +209,7 @@ watch(activeImage, () => {
 const hasImage = computed(() => Boolean(activeImage.value) && !imageBroken.value)
 
 const activeHeroImage = computed(
-  () => heroImages.value[imageIndex.value] || activeImage.value || '',
+  () => returnedSrc.value || heroImages.value[imageIndex.value] || activeImage.value || '',
 )
 
 const prefetchActiveHero = () => {
@@ -204,6 +219,7 @@ const prefetchActiveHero = () => {
 watch(
   () => props.item._id,
   () => {
+    returnedSrc.value = null
     if (typeof props.forcedImageIndex === 'number' && props.forcedImageIndex >= 0) {
       imageIndex.value = props.forcedImageIndex
       return

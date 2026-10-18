@@ -1,6 +1,8 @@
 :root {
   --gutter: 16px;
   --header-height: 56px;
+  /* Sit a label just above its anchor. 100% resolves on the element that uses it. */
+  --above: calc(100% + 28px);
   --filter-bar-height: 72px;
   /* PDP side columns */
   --side-column-width: 320px;
@@ -47,7 +49,7 @@
   --thumb-ctrl-size: 16px;
   --thumb-ctrl-radius: 2px;
   --thumb-ctrl-blend: normal;
-  --thumb-radius: 3px;
+  --thumb-radius: 0px;
   --undo-remove-ms: 5s;
 
   --rail-aspect: 5/4;
@@ -55,8 +57,7 @@
 
   --pdp-gallery-padding:60px;
   --pdp-gallery-gap: 8px;
-  --products-grid-gap: 25px;
-  --products-grid-gap: 40px;
+  --products-grid-gap: 30px;
 
   --pdp-aside-left: 30px;
   --pdp-aside-top: 30px;

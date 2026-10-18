@@ -692,6 +692,7 @@
           :class="{
             'stack__toolbar--visible': controlsVisible,
             'stack__toolbar--lines': showOrderGrid && gridLinesVisible,
+            'stack__toolbar--freeform': cartIsFreeform,
           }"
           aria-label="Selection actions"
         >
@@ -758,6 +759,21 @@
               </button>
               <button
                 type="button"
+                class="stack__selection-option stack__selection-option--edit interface"
+                @click="startEdit"
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                class="stack__selection-option stack__selection-option--edit interface"
+                :disabled="!bulkClearPending && !items.length"
+                @click="bulkClearPending ? onUndoBulkClear() : onRemoveAll()"
+              >
+                {{ bulkClearPending ? 'Undo' : 'Remove all' }}
+              </button>
+              <button
+                type="button"
                 class="stack__selection-option stack__selection-option--danger interface"
                 :disabled="bulkBusy"
                 @click="selectionMenuOpen = false; confirmingDelete = true"
@@ -768,25 +784,6 @@
           </div>
 
           <div class="stack__toolbar-actions">
-            <div class="stack__toolbar-edits">
-              <button
-                type="button"
-                class="stack__toolbar-clear interface"
-                data-cursor="default"
-                @click="startEdit"
-              >
-                Rename
-              </button>
-              <button
-                type="button"
-                class="stack__toolbar-clear interface"
-                data-cursor="default"
-                :disabled="!bulkClearPending && !items.length"
-                @click="bulkClearPending ? onUndoBulkClear() : onRemoveAll()"
-              >
-                {{ bulkClearPending ? 'Undo' : 'Remove all' }}
-              </button>
-            </div>
             <div class="stack__toolbar-send">
               <button
                 type="button"
@@ -6288,11 +6285,9 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   if (flipSrc) void prefetchImage(flipSrc)
 
   // Flyer leaves on the click. Cart chrome fades alongside it.
-  if (showLightbox.value) {
-    lightboxSettled.value = false
-    if (lightboxSettleTimer) window.clearTimeout(lightboxSettleTimer)
-    lightboxSettleTimer = 0
-  }
+  // Leave the lightbox settled so the edge glass stays painted under the PDP.
+  // Dropping it here clips the pictures back to a hard edge, and the warp
+  // only returns after the close — that gap reads as a dark band.
   pdpFocusItemId.value = item.id
   pdpOpenedFromCart.value = true
   controlsVisible.value = false
@@ -6371,11 +6366,12 @@ watch(controlsVisible, (visible) => {
   if (!visible) selectionMenuOpen.value = false
 })
 
-// Hold the under-PDP layering until the cream close veil has gone too
+// Hold the under-PDP layering until the cream close veil has gone too.
+// Don't resettle the lightbox: that fades the edge glass out and back in,
+// and the clipped pictures show a hard dark band before the warp returns.
 watch([productOverlayOpen, pdpCloseVeilActive], ([on, veil]) => {
   if (on || veil) return
   pdpOpenedFromCart.value = false
-  if (showLightbox.value) queueLightboxSettle()
 })
 
 const selectionTitleLabel = () => activeMoodboard.value?.name || 'My Selection'
@@ -9938,7 +9934,7 @@ onBeforeUnmount(() => {
   max-height: 100%;
   padding: 0;
   border: 0;
-  border-radius: 2px;
+  border-radius: 0px;
   overflow: hidden;
   background: transparent;
   cursor: pointer;
@@ -10121,6 +10117,12 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 
+.stack__toolbar--freeform {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .stack__toolbar .stack__close {
   justify-self: start;
 }
@@ -10211,14 +10213,18 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--charcoal) 8%, transparent);
 }
 
-.stack__selection-option--new {
+.stack__selection-option--new,
+.stack__selection-option--edit {
   margin-top: 0.25rem;
   border-top: 1px solid var(--grid-line);
 }
 
+.stack__selection-option--edit + .stack__selection-option--edit {
+  margin-top: 0;
+  border-top: 0;
+}
+
 .stack__selection-option--danger {
-  margin-top: 0.25rem;
-  border-top: 1px solid var(--grid-line);
   color: var(--muted);
 }
 
@@ -10239,36 +10245,9 @@ onBeforeUnmount(() => {
   gap: 40px;
 }
 
-.stack__toolbar-edits {
-  display: flex;
-  align-items: center;
-  gap: 25px;
-}
-
 .stack__toolbar-send {
   display: flex;
   align-items: center;
-}
-
-.stack__toolbar-clear {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: var(--text-xs);
-  text-decoration: none;
-  opacity: 0.6;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.stack__toolbar-clear:hover:not(:disabled) {
-  opacity: 1;
-}
-
-.stack__toolbar-clear:disabled {
-  cursor: default;
 }
 
 .stack__toolbar-create {
@@ -10477,7 +10456,7 @@ onBeforeUnmount(() => {
 .stack__upload-note {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 18px);
+  bottom: var(--above);
   z-index: 1;
   margin: 0;
   font-family: var(--lacquer);
@@ -10934,15 +10913,6 @@ onBeforeUnmount(() => {
 
   .stack__toolbar-actions {
     gap: 0.55rem;
-  }
-
-  .stack__toolbar-edits {
-    gap: 0.55rem;
-  }
-
-  /* The name itself is editable, so the extra Rename control can go. */
-  .stack__toolbar-edits .stack__toolbar-clear:first-child {
-    display: none;
   }
 
   .stack__toolbar-create {

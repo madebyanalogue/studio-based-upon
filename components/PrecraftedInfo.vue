@@ -37,7 +37,7 @@ function isOpen(id: string) {
 </script>
 
 <template>
-  <div class="info">
+  <div class="info" :class="{ 'info--page': !embedded }">
     <h2 v-if="!embedded" class="info__title">{{ title }}</h2>
 
     <div class="info__list">
@@ -140,6 +140,10 @@ function isOpen(id: string) {
   border-top: 0;
 }
 
+.info--page .info__item:not(:last-child) {
+  border-bottom: 1px solid var(--grid-line);
+}
+
 .info__trigger {
   display: flex;
   align-items: center;
@@ -152,6 +156,10 @@ function isOpen(id: string) {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.info--page .info__trigger {
+  padding: 20px 0;
 }
 
 .info__mark {

@@ -122,10 +122,9 @@
                   <p v-if="section.eyebrow" class="precrafted__eyebrow interface">
                     {{ section.eyebrow }}
                   </p>
-                  <h1 v-if="section.variant === 'intro'" class="page-title">
+                  <h2 v-if="section.variant !== 'intro'" class="precrafted__heading">
                     {{ section.title }}
-                  </h1>
-                  <h2 v-else class="precrafted__heading">{{ section.title }}</h2>
+                  </h2>
                   <SanityContent
                     v-if="section.body?.length"
                     :blocks="section.body"
@@ -133,6 +132,9 @@
                     :class="{ 'precrafted-h__lede': section.variant === 'intro' }"
                   />
                 </div>
+                <h1 v-if="section.variant === 'intro'" class="page-title">
+                  {{ section.title }}
+                </h1>
               </section>
 
               <section
@@ -1444,6 +1446,7 @@ html.precrafted-loop-lock body {
   line-height: 1.4;
   font-family: var(--serif);
   color: var(--muted);
+    max-width: 40rem;
 }
 .precrafted-h__lede :deep(p) {
   line-height: 1.4;
@@ -1604,13 +1607,14 @@ html.precrafted-loop-lock body {
 
 .precrafted-h__item--text {
   height: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: .8;
   width: auto;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: clamp(1.5rem, 4vh, 3rem);
   box-sizing: border-box;
+
 }
 
 .precrafted-h__text-inner {
@@ -1620,18 +1624,32 @@ html.precrafted-loop-lock body {
 
 .precrafted-h__item--intro {
   position: relative;
+  display: grid;
+  grid-template-columns: max-content;
+  width: max-content;
+  aspect-ratio: auto;
+  align-items: center;
+  justify-content: start;
+  padding-inline: 0;
+  min-width: 70vh;
 }
 
 .precrafted-h__item--intro .precrafted-h__text-inner {
-  max-width: 40rem;
+  grid-area: 1 / 1;
+  /* Fill the title width without letting the paragraph set it. */
+  width: 0;
+  min-width: 100%;
+  max-width: none;
   text-align: left;
 }
 
 .precrafted-h__item--intro .page-title {
-  position: absolute;
-  bottom: 60px;
-  left: 20px;
-  margin: 0;
+  grid-area: 1 / 1;
+  align-self: end;
+  justify-self: start;
+  width: max-content;
+  white-space: nowrap;
+  margin: 0 0 60px 20px;
   z-index: 4;
 }
 
