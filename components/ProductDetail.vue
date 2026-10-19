@@ -350,7 +350,7 @@ import gsap from 'gsap'
 import { Flip } from 'gsap/Flip'
 import Lenis from 'lenis'
 import { PRODUCT_TYPE_FILTERS, isPrecraftedItem } from '~/composables/demoData'
-import { IMAGE_WIDTH, prefetchImage } from '~/composables/useSanityImage'
+import { IMAGE_WIDTH, imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import { preloadLoupeBitmaps } from '~/components/Loupe.vue'
 import {
@@ -783,6 +783,26 @@ watch(
   },
 )
 
+/**
+ * Reel columns pass their own index, which is not a gallery index.
+ * Open on the frame that shares the flying image so the flyer and the
+ * gallery are the same photograph.
+ */
+const galleryIndexForFlipImage = (entries: GalleryEntry[]) => {
+  const flip = getFlipImageUrl()
+  if (!flip || !entries.length) return -1
+  const key = imageAssetKey(flip)
+  if (!key) return -1
+  return entries.findIndex((entry) => {
+    if (entry.kind !== 'image') return false
+    return (
+      imageAssetKey(entry.src) === key ||
+      imageAssetKey(entry.thumbSrc) === key ||
+      imageAssetKey(entry.zoomSrc) === key
+    )
+  })
+}
+
 watch(galleryEntries, (entries) => {
   preloadLoupeBitmaps(
     entries.flatMap((entry) => (entry.kind === 'image' ? [entry.src, entry.zoomSrc] : [])),
@@ -790,6 +810,10 @@ watch(galleryEntries, (entries) => {
   if (!entries.length) {
     selectedIndex.value = 0
     return
+  }
+  if (!flipStarted.value && !contentReady.value) {
+    const matched = galleryIndexForFlipImage(entries)
+    if (matched >= 0) selectedIndex.value = matched
   }
   if (selectedIndex.value >= entries.length) selectedIndex.value = 0
   // Soft-swap prepares ahead of time; hard-load / late mounts still warm the first frames
@@ -1299,8 +1323,9 @@ const onAddFrame = (index: number) => {
       itemType: product.value.series || 'item',
       link: productDetailPath(product.value.slug, product.value),
     },
-    // Phone: toggle the heart only. A fly source hides the gallery frame.
-    isNarrowPdp() ? { fly: false } : { source },
+    // Phone, and a PDP opened from the cart: toggle the heart only.
+    // A fly source hides the gallery frame and sends it into the stack.
+    isNarrowPdp() || flipSourceIsCart() ? { fly: false } : { source },
   )
 }
 
@@ -1463,11 +1488,15 @@ const runFlipOpen = async () => {
   await nextTick()
   void flipHero.offsetWidth
 
-  // Prefer prefetched hero-tier URL so Flip scales a sharp bitmap, not the grid thumb
+  // Prefer the gallery file when it is the same asset, so the flyer is the
+  // photograph the strip is about to reveal — not a smaller reel crop of it.
+  const requestedFlip = getFlipImageUrl()
+  const heroSrc = flipHero.currentSrc || flipHero.src
+  const sameAsset =
+    !!requestedFlip && !!heroSrc && imageAssetKey(requestedFlip) === imageAssetKey(heroSrc)
   const flipSrc =
-    getFlipImageUrl() ||
-    flipHero.currentSrc ||
-    flipHero.src ||
+    (sameAsset ? heroSrc : requestedFlip) ||
+    heroSrc ||
     (source as HTMLImageElement).currentSrc ||
     (source as HTMLImageElement).src
 

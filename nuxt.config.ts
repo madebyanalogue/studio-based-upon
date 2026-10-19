@@ -49,6 +49,7 @@ export default defineNuxtConfig({
     '~/assets/styles/main.css',
     '~/assets/styles/colours.css',
     '~/assets/styles/typography.css',
+    '~/assets/styles/enquire-form.css',
   ],
   app: {
     head: {

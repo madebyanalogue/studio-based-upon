@@ -358,7 +358,7 @@ import gsap from 'gsap'
 import Lenis from 'lenis'
 import { productGalleryFrames, uniqueImageUrls } from '~/composables/productImages'
 import { bucketItemId, type BucketItem } from '~/composables/useBucket'
-import { imageAssetKey, IMAGE_WIDTH } from '~/composables/useSanityImage'
+import { imageAssetKey, IMAGE_WIDTH, withImageWidth } from '~/composables/useSanityImage'
 import {
   demoShowcaseBuckets,
   SHOWCASE_DEFAULT_COLUMNS,
@@ -475,7 +475,7 @@ const props = defineProps<{
   buckets?: ShowcaseBucket[]
 }>()
 
-const { open } = useProductOverlay()
+const { open, returnImage } = useProductOverlay()
 const { openFromBucket } = useEnquiryForm()
 const { addItem } = useBucket()
 const { fetchProduct } = useProductCatalog()
@@ -2610,6 +2610,20 @@ const playLeave = () => {
 
 defineExpose({ playLeave })
 
+/** Cell the flyer left from. Close writes the gallery frame back onto it. */
+let openedThumb: { instanceId: string; imageId: string } | null = null
+
+watch(returnImage, (value) => {
+  const opened = openedThumb
+  if (!opened || !value?.src) return
+  const column = columns.value.find((entry) => entry.instanceId === opened.instanceId)
+  const image = column?.images.find((entry) => entry.id === opened.imageId)
+  if (!image) return
+  const nextSrc = withImageWidth(value.src, IMAGE_WIDTH.thumb)
+  if (!nextSrc || imageAssetKey(nextSrc) === imageAssetKey(image.src)) return
+  image.src = nextSrc
+})
+
 const onSelect = (column: ShowcaseColumn, imageIndex: number, event: MouseEvent) => {
   const image = column.images[imageIndex]
   const slug = image?.slug || column.slug
@@ -2619,7 +2633,12 @@ const onSelect = (column: ShowcaseColumn, imageIndex: number, event: MouseEvent)
     cell instanceof HTMLElement
       ? (cell.querySelector<HTMLImageElement>('.showcase__img') ?? cell)
       : null
+  openedThumb = image?.id
+    ? { instanceId: column.instanceId, imageId: image.id }
+    : null
   open(slug, {
+    // Column index is only a fallback. ProductDetail opens the gallery frame
+    // whose asset matches this thumbnail.
     imageIndex,
     source,
     flipSrc: image?.src || null,

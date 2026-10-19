@@ -26,6 +26,13 @@ defineProps<{
 }>()
 
 const openId = ref('')
+const { open: openEnquire } = useEnquireSheet()
+
+const PRECRAFTED_ENQUIRY = "I'm interested in the (Pre)Crafted panelling. "
+
+function onEnquire() {
+  openEnquire(PRECRAFTED_ENQUIRY)
+}
 
 function toggle(id: string) {
   openId.value = openId.value === id ? '' : id
@@ -106,9 +113,14 @@ function isOpen(id: string) {
     </div>
 
     <div v-if="!embedded" class="info__actions">
-      <NuxtLink to="/enquire" class="info__action info__action--enquire" data-cursor="pointer">
+      <button
+        type="button"
+        class="info__action info__action--enquire"
+        data-cursor="pointer"
+        @click="onEnquire"
+      >
         Enquire
-      </NuxtLink>
+      </button>
       <a
         v-if="specSheetUrl"
         class="info__action"

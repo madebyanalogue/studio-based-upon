@@ -100,7 +100,7 @@
         </h2>
         <div v-if="section === 1" class="about-plan__clients">
           <p class="mono-copy">
-            The client is a critical element of our process. His or her involvement is vital
+            You are a critical element of our process. His or her involvement is vital
             to the pursuit of this beauty. The client’s absolute satisfaction and emotional
             fulfillment is the singular point of the pursuit.
           </p>

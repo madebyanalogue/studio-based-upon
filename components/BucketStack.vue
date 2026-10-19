@@ -6517,7 +6517,16 @@ const lightboxFlyStarts = (
   }
   const left = hidden.filter((rect) => rect.left + rect.width / 2 < vw / 2)
   const right = hidden.filter((rect) => rect.left + rect.width / 2 >= vw / 2)
-  return [...visible, ...place(left, 'left'), ...place(right, 'right')]
+  // Parked thumbs fly to the edges. Keep them under the large on-screen pictures.
+  const thumbs = [...place(left, 'left'), ...place(right, 'right')].map((rect, index) => ({
+    ...rect,
+    z: index + 1,
+  }))
+  const pictures = visible.map((rect, index) => ({
+    ...rect,
+    z: 100 + index,
+  }))
+  return [...pictures, ...thumbs]
 }
 
 const sendEnquiry = () => {

@@ -19,6 +19,7 @@
     <MoodboardPicker />
     <ProductOverlay />
     <EnquiryForm />
+    <EnquireSheet v-if="enquireOpen" />
     <ClientOnly>
       <CustomCursor />
     </ClientOnly>
@@ -46,6 +47,11 @@ const { initBucketUi, isV1, isV2 } = useBucketUi()
 const { initTextCase } = useTextCase()
 const { initStackChrome } = useStackChrome()
 const route = useRoute()
+const { isOpen: enquireOpen, close: closeEnquire } = useEnquireSheet()
+
+watch(() => route.path, (path) => {
+  if (path === '/enquire') closeEnquire()
+})
 const { phase: introPhase } = useHomepageIntro()
 const introActive = computed(
   () =>

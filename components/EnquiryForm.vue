@@ -41,86 +41,90 @@
               <button type="button" class="btn btn--filled" @click="close">Close</button>
             </div>
 
-            <form v-else class="enquiry__form" @submit.prevent="submit">
-            <label class="enquiry__field">
-              <span class="enquiry__label">Name</span>
-              <input
-                v-model="form.name"
-                type="text"
-                name="name"
-                autocomplete="name"
-                required
-              />
-            </label>
+            <form v-else class="enquire__form" @submit.prevent="submit">
+              <div class="enquire__field">
+                <span class="enquire__label interface">
+                  Attachments <span class="enquire__hint">optional</span>
+                </span>
+                <label class="enquire__drop">
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    class="sr-only"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx"
+                    @change="onFilesSelected"
+                  />
+                  <span class="enquire__drop-title">Drop files here</span>
+                  <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
+                </label>
+                <ul v-if="attachments.length" class="enquire__files">
+                  <li v-for="file in attachments" :key="file.id" class="enquire__file">
+                    <span class="enquire__file-name">{{ file.name }}</span>
+                    <span class="enquire__file-size">{{ formatSize(file.size) }}</span>
+                    <button
+                      type="button"
+                      class="enquire__file-remove"
+                      :aria-label="`Remove ${file.name}`"
+                      @click="removeAttachment(file.id)"
+                    >
+                      ×
+                    </button>
+                  </li>
+                </ul>
+              </div>
 
-            <label class="enquiry__field">
-              <span class="enquiry__label">Email</span>
-              <input
-                v-model="form.email"
-                type="email"
-                name="email"
-                autocomplete="email"
-                required
-              />
-            </label>
-
-            <label class="enquiry__field">
-              <span class="enquiry__label">Telephone</span>
-              <input
-                v-model="form.telephone"
-                type="tel"
-                name="telephone"
-                autocomplete="tel"
-              />
-            </label>
-
-            <label class="enquiry__field">
-              <span class="enquiry__label">Message</span>
-              <textarea
-                v-model="form.message"
-                name="message"
-                rows="5"
-                placeholder="Tell us about your project…"
-              />
-            </label>
-
-            <div class="enquiry__field">
-              <span class="enquiry__label">
-                Attachments <span class="enquiry__hint">optional</span>
-              </span>
-              <label class="enquiry__upload">
-                <input
-                  ref="fileInput"
-                  type="file"
-                  class="sr-only"
-                  multiple
-                  accept="image/*,.pdf,.doc,.docx"
-                  @change="onFilesSelected"
+              <label class="enquire__field">
+                <span class="enquire__label interface">Start a conversation</span>
+                <textarea
+                  v-model="form.message"
+                  name="message"
+                  rows="6"
+                  placeholder="Tell us about your project…"
                 />
-                <span class="enquiry__upload-btn">Upload files</span>
-                <span class="enquiry__upload-note">Images, PDF or Word · up to 10MB each</span>
               </label>
-              <ul v-if="attachments.length" class="enquiry__files">
-                <li v-for="file in attachments" :key="file.id" class="enquiry__file">
-                  <span class="enquiry__file-name">{{ file.name }}</span>
-                  <span class="enquiry__file-size">{{ formatSize(file.size) }}</span>
-                  <button
-                    type="button"
-                    class="enquiry__file-remove"
-                    :aria-label="`Remove ${file.name}`"
-                    @click="removeAttachment(file.id)"
-                  >
-                    ×
-                  </button>
-                </li>
-              </ul>
-            </div>
 
-            <p v-if="error" class="enquiry__error" role="alert">{{ error }}</p>
+              <div class="enquire__fields">
+                <label class="enquire__field">
+                  <span class="enquire__label interface">Name</span>
+                  <input
+                    v-model="form.name"
+                    type="text"
+                    name="name"
+                    autocomplete="name"
+                    required
+                  />
+                </label>
 
-            <button type="submit" class="enquiry__send interface" :disabled="isSubmitting">
-              {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
-            </button>
+                <label class="enquire__field">
+                  <span class="enquire__label interface">Telephone</span>
+                  <input
+                    v-model="form.telephone"
+                    type="tel"
+                    name="telephone"
+                    autocomplete="tel"
+                  />
+                </label>
+
+                <label class="enquire__field enquire__field--full">
+                  <span class="enquire__label interface">Email</span>
+                  <input
+                    v-model="form.email"
+                    type="email"
+                    name="email"
+                    autocomplete="email"
+                    required
+                  />
+                </label>
+              </div>
+
+              <p v-if="error" class="enquire__error" role="alert">{{ error }}</p>
+
+              <div class="enquire__actions">
+                <button type="submit" class="enquire__send" :disabled="isSubmitting">
+                  {{ isSubmitting ? 'Sending…' : 'Send enquiry' }}
+                </button>
+              </div>
             </form>
           </div>
 
@@ -574,7 +578,6 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background: rgba(26, 26, 26, 0.45);
-  backdrop-filter: blur(2px);
 }
 
 .enquiry__panel {
@@ -583,8 +586,20 @@ onUnmounted(() => {
   max-height: min(90dvh, 820px);
   display: flex;
   flex-direction: column;
-  background: var(--warm-white);
-  border: 1px solid var(--grid-line);
+  background: #fff;
+  color: #111;
+  --charcoal: #111;
+  --text-color: #111;
+  --muted: rgba(17, 17, 17, 0.55);
+  --cream: #fff;
+  --warm-white: #fff;
+  --grid-line: #bbb;
+  --enquire-border-style: 1px dotted var(--grid-line);
+  --enquire-pad: 35px;
+  --enquire-copy: 14px;
+  --enquire-title-pad: 25px;
+  --enquire-field-pad: 18px;
+  border: 0;
   overflow: hidden;
 }
 
@@ -593,8 +608,8 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 0 35px;
-  border-bottom: 1px solid var(--grid-line);
+  padding: var(--enquire-pad);
+  border-bottom: var(--enquire-border-style);
 }
 
 .enquiry__title {
@@ -666,8 +681,8 @@ onUnmounted(() => {
 .enquiry__preview {
   min-height: 0;
   padding: 0;
-  border-left: 1px solid var(--grid-line);
-  background: var(--cream);
+  border-left: var(--enquire-border-style);
+  background: #fff;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
@@ -767,148 +782,13 @@ onUnmounted(() => {
 .enquiry__fields {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0;
   min-height: 0;
-  padding: 40px;
-  overflow: auto;
-}
-
-.enquiry__form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.enquiry__field {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-
-.enquiry__label {
-  font-size: var(--text-sm);
-  font-family: var(--mono);
-}
-
-.enquiry__hint {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.6;
-}
-
-.enquiry__field input,
-.enquiry__field textarea {
-  width: 100%;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--grid-line);
-  background: var(--cream);
-  font: inherit;
-  color: var(--charcoal);
-  resize: vertical;
-}
-
-.enquiry__field input:focus,
-.enquiry__field textarea:focus {
-  outline: none;
-  border-color: var(--charcoal);
-}
-
-.enquiry__upload {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem 1rem;
-  cursor: pointer;
-}
-
-.enquiry__upload-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.55rem 0.85rem;
-  border: 1px solid var(--grid-line);
-  background: var(--cream);
-  font-size: var(--text-sm);
-  color: var(--charcoal);
-  transition: border-color 0.2s ease, background 0.2s ease;
-}
-
-.enquiry__upload:hover .enquiry__upload-btn {
-  border-color: var(--charcoal);
-  background: var(--warm-white);
-}
-
-.enquiry__upload-note {
-  font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.enquiry__files {
-  list-style: none;
-  margin: 0.35rem 0 0;
   padding: 0;
-  display: grid;
-  gap: 0.4rem;
+  overflow: auto;
+  background: #fff;
 }
 
-.enquiry__file {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 0.65rem;
-  align-items: center;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--grid-line);
-  background: var(--cream);
-  font-size: var(--text-sm);
-}
-
-.enquiry__file-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--charcoal);
-}
-
-.enquiry__file-size {
-  color: var(--muted);
-  font-size: var(--text-xs);
-}
-
-.enquiry__file-remove {
-  font-size: 1.1rem;
-  line-height: 1;
-  color: var(--muted);
-}
-
-.enquiry__error {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: #a33;
-}
-
-.enquiry__send {
-  width: 100%;
-  min-height: 3.25rem;
-  margin-top: 0.25rem;
-  padding: 0.9rem 1.25rem;
-  border: 0;
-  border-radius: var(--ui-border-radius);
-  background: var(--red);
-  color: #fff;
-  cursor: pointer;
-}
-
-.enquiry__send:hover:not(:disabled) {
-  background: var(--red);
-  color: #fff;
-  filter: brightness(0.95);
-}
-
-.enquiry__send:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 .enquiry__success {
   display: flex;

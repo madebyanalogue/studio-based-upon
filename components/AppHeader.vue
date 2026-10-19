@@ -163,9 +163,9 @@
           >
             {{ phone }}
           </a>
-          <NuxtLink to="/enquire" class="header__enquire interface">
+          <button type="button" class="header__enquire interface" @click="openEnquire()">
             Enquire
-          </NuxtLink>
+          </button>
         </div>
       </div>
     </div>
@@ -262,6 +262,7 @@ const {
 const { closeBoardsPanel } = useBoards()
 const { isDark, toggleTheme } = useTheme()
 const route = useRoute()
+const { open: openEnquire } = useEnquireSheet()
 const { $lenis } = useNuxtApp()
 
 /** Product page or overlay: hide the header, including the logo. */
