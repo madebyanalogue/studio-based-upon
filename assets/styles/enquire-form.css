@@ -234,6 +234,19 @@
   background: transparent;
 }
 
+/* Hold the autofill paint off, and keep the type charcoal instead of WebKit white. */
+.enquire__field input:-webkit-autofill,
+.enquire__field input:-webkit-autofill:hover,
+.enquire__field input:-webkit-autofill:focus,
+.enquire__field textarea:-webkit-autofill,
+.enquire__field textarea:-webkit-autofill:hover,
+.enquire__field textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--charcoal);
+  caret-color: var(--charcoal);
+  box-shadow: 0 0 0 1000px #fff inset;
+  transition: background-color 9999s ease-out;
+}
+
 .enquire__drop {
   display: flex;
   flex-direction: column;
@@ -493,6 +506,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  display: none;
 }
 
 .enquire__contact-email {

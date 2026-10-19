@@ -12,9 +12,14 @@
       aria-label="Send enquiry"
       data-cursor="default"
     >
-            <div class="enquiry__backdrop" data-lenis-prevent @click="formShown && close()" />
+            <div
+              class="enquiry__backdrop"
+              data-lenis-prevent
+              :data-cursor-label="formShown ? 'Close' : undefined"
+              @click="formShown && close()"
+            />
 
-      <div class="enquiry__panel">
+      <div class="enquiry__panel" data-cursor="default">
         <div class="enquiry__body">
           <div
             ref="previewRef"
@@ -40,20 +45,32 @@
                 :class="{ 'enquiry__grid-item--swatch': item.kind !== 'image' }"
                 :data-enquiry-id="item.id"
               >
-                <img
-                  v-if="item.kind === 'image' && item.imageUrl"
-                  :src="item.imageUrl"
-                  :alt="item.title"
-                  :style="item.aspectRatio ? { aspectRatio: String(item.aspectRatio) } : undefined"
-                />
-                <span
-                  v-else-if="item.kind === 'colour' && item.colour"
-                  class="enquiry__colour"
-                  :style="{ background: item.colour }"
-                />
-                <span v-else-if="item.kind === 'text'" class="enquiry__text  interface">
-                  {{ item.text || item.title }}
-                </span>
+                <div class="enquiry__frame">
+                  <div class="enquiry__figure">
+                    <span v-if="item.kind === 'image' && item.imageUrl" class="enquiry__hit">
+                      <img
+                        class="enquiry__image"
+                        :src="item.imageUrl"
+                        :alt="item.title"
+                      />
+                    </span>
+                    <span
+                      v-else-if="item.kind === 'colour' && item.colour"
+                      class="enquiry__colour"
+                      :style="{ background: item.colour }"
+                    />
+                    <span v-else-if="item.kind === 'text'" class="enquiry__text  interface">
+                      {{ item.text || item.title }}
+                    </span>
+                    <AddButton
+                      class="enquiry__remove"
+                      variant="remove"
+                      cursor="pointer"
+                      :label="`Remove ${item.title}`"
+                      @click.stop="removePreviewItem(item.id)"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             </div>
@@ -67,8 +84,10 @@
             </header>
 
             <div v-if="isSuccess" class="enquiry__success">
-              <p class="enquiry__success-title  interface">Thank you</p>
-              <p>Your enquiry has been sent. We will be in touch shortly.</p>
+              <div class="enquiry__success-copy">
+                <p class="enquiry__success-title">Thank you</p>
+                <p>Your enquiry has been sent. We will be in touch shortly.</p>
+              </div>
               <button type="button" class="btn btn--filled" @click="close">Close</button>
             </div>
 
@@ -339,7 +358,8 @@ const measureGridContent = () => {
   const map = new Map<string, { left: number; top: number; width: number; height: number }>()
   for (const el of document.querySelectorAll<HTMLElement>('[data-enquiry-id]')) {
     const id = el.dataset.enquiryId || ''
-    const inner = el.firstElementChild instanceof HTMLElement ? el.firstElementChild : el
+    const inner = el.querySelector<HTMLElement>('.enquiry__figure')
+      ?? (el.firstElementChild instanceof HTMLElement ? el.firstElementChild : el)
     const rect = inner.getBoundingClientRect()
     if (!id || rect.width < 2 || rect.height < 2) continue
     map.set(id, boxOf(rect))
@@ -381,6 +401,9 @@ const returnToStack = async (id: number) => {
     gridCover.value = true
     await nextTick()
     if (id !== runId) return
+    // Hold the preview clip for the whole cluster. Flyers sit on a fixed layer,
+    // so they would paint outside the column until they are one pile.
+    clipFlyersToPreview()
     const ids = enquiryFlyImages().map((img) => img.dataset.flyId || '')
     const grid = measureGrid()
     const sample = grid.values().next().value
@@ -393,7 +416,6 @@ const returnToStack = async (id: number) => {
     })
     await tweenEnquiryFlyers(pileBoxes(sources, size, mediaColumnCenter()), SPREAD_S)
     if (id !== runId) return
-    clipFlyersToPreview()
   }
 
   if (formShown.value || phase === 'covered' || leavingGrid) {
@@ -457,6 +479,7 @@ const close = async () => {
   gridLines.value = false
   const flying = phase !== 'idle' || enquiryFlyImages().length > 0
   if (!flying) {
+    attempted.value = false
     closeEnquiry()
     return
   }
@@ -476,6 +499,7 @@ const close = async () => {
       closing.value = false
       closeEnquiry()
       formShown.value = false
+      attempted.value = false
     }
   }
 }
@@ -483,23 +507,10 @@ const close = async () => {
 const previewRef = ref<HTMLElement | null>(null)
 const previewScrollRef = ref<HTMLElement | null>(null)
 let previewLenis: Lenis | null = null
-let previewLenisRaf = 0
-let previewLenisRo: ResizeObserver | null = null
 
 const destroyPreviewLenis = () => {
-  previewLenisRo?.disconnect()
-  previewLenisRo = null
-  if (previewLenisRaf) {
-    cancelAnimationFrame(previewLenisRaf)
-    previewLenisRaf = 0
-  }
   previewLenis?.destroy()
   previewLenis = null
-}
-
-const tickPreviewLenis = (time: number) => {
-  previewLenis?.raf(time)
-  previewLenisRaf = requestAnimationFrame(tickPreviewLenis)
 }
 
 const initPreviewLenis = () => {
@@ -508,9 +519,11 @@ const initPreviewLenis = () => {
   const content = previewScrollRef.value
   if (!wrapper || !content) return
   destroyPreviewLenis()
+  wrapper.scrollTop = 0
   previewLenis = new Lenis({
     wrapper,
     content,
+    eventsTarget: wrapper,
     orientation: 'vertical',
     gestureOrientation: 'vertical',
     smoothWheel: true,
@@ -521,19 +534,16 @@ const initPreviewLenis = () => {
     wheelMultiplier: 1.4,
     lerp: 0.07,
     overscroll: false,
-    // The dialog already opts out of the page scroller.
-    prevent: () => false,
+    autoRaf: true,
+    naiveDimensions: true,
   })
   previewLenis.resize()
-  if (typeof ResizeObserver !== 'undefined') {
-    previewLenisRo = new ResizeObserver(() => {
-      const y = previewLenis?.animatedScroll ?? 0
-      previewLenis?.resize()
-      previewLenis?.scrollTo(y, { immediate: true })
-    })
-    previewLenisRo.observe(content)
-  }
-  previewLenisRaf = requestAnimationFrame(tickPreviewLenis)
+}
+
+const syncPreviewLenis = () => {
+  if (!previewLenis) initPreviewLenis()
+  previewLenis?.start()
+  previewLenis?.resize()
 }
 
 watch(isSuccess, (success) => {
@@ -543,7 +553,12 @@ watch(isSuccess, (success) => {
 watch(previewClipped, (clipped) => {
   if (!previewLenis) return
   if (clipped) previewLenis.stop()
-  else previewLenis.start()
+  else syncPreviewLenis()
+})
+
+watch(previewItems, () => {
+  if (!isOpen.value || previewClipped.value) return
+  syncPreviewLenis()
 })
 
 watch(isOpen, async (open) => {
@@ -561,7 +576,7 @@ watch(isOpen, async (open) => {
     phase = 'idle'
     await nextTick()
     if (!previewRef.value) await nextTick()
-    initPreviewLenis()
+    syncPreviewLenis()
     return
   }
   // Hide before the first paint. The form fades in only after the pile lands.
@@ -575,9 +590,15 @@ watch(isOpen, async (open) => {
   if (id !== runId) return
   initPreviewLenis()
   await gatherIntoGrid(id, origins)
+  if (id === runId) syncPreviewLenis()
 }, { flush: 'sync' })
 
-const { moodboards } = useBucket()
+const { moodboards, removeItem } = useBucket()
+
+const removePreviewItem = (id: string) => {
+  previewItems.value = previewItems.value.filter((item) => item.id !== id)
+  if (source.value === 'bucket' && !id.startsWith('wash-')) removeItem(id)
+}
 const selectableMoodboards = computed(() => moodboards.value.filter((board) => board.items.length))
 const selectedIds = ref<string[]>([])
 const attempted = ref(false)
@@ -844,14 +865,23 @@ onUnmounted(() => {
 
 .enquiry__preview {
   grid-column: 1;
+  align-self: stretch;
   min-height: 0;
   height: 100%;
-  max-height: 860px;
+  max-height: 100%;
   padding: 0;
   background: #222;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* .lenis-stopped sets overflow:clip, which swallows the wheel. */
+.enquiry__preview.lenis-stopped:not(.enquiry__preview--pile) {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
 
 .enquiry__fields {
@@ -867,7 +897,7 @@ onUnmounted(() => {
 }
 
 .enquiry__preview--pile {
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 .enquiry__composition {
@@ -889,7 +919,7 @@ onUnmounted(() => {
 }
 
 .enquiry__grid {
-  --bucket-thumb-width: 33.3%;
+  --bucket-thumb-width: 50%;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--bucket-thumb-width), 1fr));
   gap: 0;
@@ -898,16 +928,77 @@ onUnmounted(() => {
 }
 
 .enquiry__grid-item {
+  position: relative;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   aspect-ratio: 1;
   box-sizing: border-box;
-  padding: 12%;
   border-right: 1px solid transparent;
   border-bottom: 1px solid transparent;
   transition: border-color 0.45s ease;
+}
+
+.enquiry__frame {
+  position: absolute;
+  inset: 12%;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  container-type: size;
+}
+
+/* Shrink-wraps to the contained image so the minus sits on the picture, not the square. */
+.enquiry__figure {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  width: fit-content;
+  height: fit-content;
+  line-height: 0;
+}
+
+.enquiry__grid-item--swatch .enquiry__figure {
+  width: 100%;
+  height: 100%;
+}
+
+.enquiry__hit {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+.enquiry__image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100cqi;
+  max-height: 100cqb;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.enquiry__remove {
+  position: absolute;
+  z-index: 2;
+  top: var(--thumb-ctrl-inset, 4px);
+  left: var(--thumb-ctrl-inset, 4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.enquiry__grid-item:hover .enquiry__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.enquiry--fly-cover .enquiry__remove {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .enquiry__grid--lines .enquiry__grid-item {
@@ -927,13 +1018,6 @@ onUnmounted(() => {
 
 .enquiry__grid-item--swatch {
   aspect-ratio: 1;
-}
-
-.enquiry__grid-item img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 
 .enquiry__colour {
@@ -971,15 +1055,32 @@ onUnmounted(() => {
   min-height: 0;
   max-height: 100%;
   overflow: auto;
+  font-family: var(--mono);
 }
 
+.enquiry__fields .enquire__form {
+  padding: 40px;
+}
 
 .enquiry__success {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0;
+  align-items: stretch;
+  padding: var(--enquire-pad);
+}
+
+.enquiry__success-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 360px;
+  align-self: center;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .enquiry__success-title {
@@ -990,6 +1091,18 @@ onUnmounted(() => {
 .enquiry__success p {
   margin: 0;
   color: var(--muted);
+}
+
+.enquiry__success .btn {
+  width: 100%;
+  margin-top: auto;
+  font-family: var(--mono);
+}
+
+.enquiry__success .btn.btn--filled:hover {
+  background: color-mix(in srgb, var(--charcoal) 88%, white);
+  border-color: color-mix(in srgb, var(--charcoal) 88%, white);
+  color: var(--warm-white);
 }
 
 @media (max-width: 767px) {

@@ -46,7 +46,7 @@ let lastStampY = Number.NaN
 let lastFrame = 0
 const motes: Mote[] = []
 const MOTE_CAP = 720
-let brushR = 42
+let brushR = 76
 
 const finish = () => {
   if (cleared) return
@@ -78,7 +78,7 @@ const paintGlyphs = () => {
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   const w = Math.round(cssW * dpr)
   const h = Math.round(cssH * dpr)
-  brushR = 38 * dpr
+  brushR = 76 * dpr
 
   view.width = w
   view.height = h
@@ -301,7 +301,7 @@ onBeforeUnmount(() => {
   visibility: hidden;
   pointer-events: none;
   font-family: var(--mono);
-  font-size: clamp(2.96rem, 5vw, 3.2rem);
+  font-size: clamp(1.48rem, 2.5vw, 1.6rem);
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.02em;

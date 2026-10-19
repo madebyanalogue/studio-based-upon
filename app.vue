@@ -33,6 +33,7 @@ const {
   seoTitle,
   seoDescription,
   googleTagId,
+  favicon,
   facebookShareImage,
   title,
   phone,
@@ -171,6 +172,16 @@ watch(
 
 useHead(() => ({
   title: seoTitle.value,
+  link: favicon.value
+    ? [
+        {
+          key: 'favicon',
+          rel: 'icon',
+          href: favicon.value.href,
+          ...(favicon.value.type ? { type: favicon.value.type } : {}),
+        },
+      ]
+    : [],
   meta: [
     ...(seoDescription.value
       ? [{ name: 'description', content: seoDescription.value }]

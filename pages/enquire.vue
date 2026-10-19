@@ -50,29 +50,31 @@
         </p>
       </div>
 
-      <div class="enquire__contact">
-        <a class="enquire__contact-email interface" :href="`mailto:${enquiryEmail}`">
-          <span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span>
-        </a>
-        <div class="enquire__contact-social">
+      <ul class="enquire__contact interface">
+        <li>
+          <a :href="`mailto:${enquiryEmail}`">
+            <span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span>
+          </a>
+        </li>
+        <li>
           <a
-            class="enquire__contact-link interface"
             href="https://www.instagram.com/studiobasedupon"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Ig
+            <span class="enquire__aside-bracket">[</span>Instagram<span class="enquire__aside-bracket">]</span>
           </a>
+        </li>
+        <li>
           <a
-            class="enquire__contact-link interface"
             href="https://www.pinterest.com/Studio_Based_Upon/"
             target="_blank"
             rel="noopener noreferrer"
           >
-            Pi
+            <span class="enquire__aside-bracket">[</span>Pinterest<span class="enquire__aside-bracket">]</span>
           </a>
-        </div>
-      </div>
+        </li>
+      </ul>
       </div>
 
       <div class="enquire__half">
@@ -712,14 +714,14 @@ html.dark .enquire {
   max-width: none;
   text-align: left;
   column-gap: 40px;
-  padding: calc(var(--header-height) + 4rem) 0 4rem;
+  padding: calc(var(--header-height) + 4rem) var(--gutter) 4rem;
   box-sizing: border-box;
 }
 
 .enquire__lead {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 140px;
   min-width: 0;
 }
 
@@ -734,6 +736,10 @@ html.dark .enquire {
   max-width: 100%;
   font-size: clamp(2.75rem, 4.8vw, 5.25rem);
   transform: none;
+}
+
+.enquire__aside-block {
+  max-width: 500px;
 }
 
 .enquire__aside-block,
@@ -786,6 +792,21 @@ html.dark .enquire {
 .enquire__half .enquire__success {
   width: 100%;
   max-width: 840px;
+}
+
+.enquire__contact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.enquire__contact a {
+  color: inherit;
+  text-decoration: none;
 }
 
 .enquire__aside-head {

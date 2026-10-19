@@ -105,11 +105,17 @@ export const useEnquiryForm = () => {
 
   const flyOrigins = useState<EnquiryFlyRect[] | null>('enquiry-fly-origins', () => null)
 
+  const prepareOpen = () => {
+    isSubmitting.value = false
+    error.value = null
+    isSuccess.value = false
+  }
+
   const openFromBucket = (
     items: BucketItem[],
     options?: { colour?: string | null; origins?: EnquiryFlyRect[] | null },
   ) => {
-    reset()
+    prepareOpen()
     source.value = 'bucket'
     compositionImage.value = null
     flyOrigins.value = options?.origins?.length ? options.origins : null
@@ -148,7 +154,7 @@ export const useEnquiryForm = () => {
     placements: MoodboardItem[],
     screenshot: string | null = null,
   ) => {
-    reset()
+    prepareOpen()
     source.value = 'moodboard'
     flyOrigins.value = null
     compositionImage.value = screenshot
@@ -171,7 +177,7 @@ export const useEnquiryForm = () => {
     slug?: string
     path?: string
   }) => {
-    reset()
+    prepareOpen()
     source.value = 'product'
     flyOrigins.value = null
     compositionImage.value = null
@@ -194,8 +200,11 @@ export const useEnquiryForm = () => {
 
   const close = () => {
     const wasOpen = isOpen.value
+    const sent = isSuccess.value
     isOpen.value = false
-    reset()
+    isSubmitting.value = false
+    error.value = null
+    if (sent) reset()
     previewItems.value = []
     compositionImage.value = null
     source.value = null

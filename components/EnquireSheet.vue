@@ -669,6 +669,7 @@ useHead(() => {
   max-width: none;
   pointer-events: none;
   --grid-line: rgba(0, 0, 0, 0.15);
+  --enquire-inset: 15px;
 }
 
 :global(html.enquire-open),
@@ -792,10 +793,13 @@ useHead(() => {
 
 .enquire__columns {
   position: absolute;
-  top: 20px;
-  right: 20px;
+  top: var(--enquire-inset);
+  right: var(--enquire-inset);
+  bottom: var(--enquire-inset);
   z-index: 1;
-  width: min(840px, calc(100% - 40px));
+  display: flex;
+  flex-direction: column;
+  width: min(840px, calc(100% - calc(2 * var(--enquire-inset))));
   pointer-events: none;
   transition: none;
 }
@@ -807,10 +811,14 @@ useHead(() => {
 .enquire__stage {
   position: relative;
   z-index: 1;
-  display: block;
+  
+  display: flex;
+    flex-direction: column;
+  flex: 1;
   width: 100%;
+  min-height: 0;
   max-width: none;
-  max-height: calc(100dvh - 40px);
+  max-height: calc(100dvh - calc(2 * var(--enquire-inset)));
   overflow: auto;
   overscroll-behavior: contain;
   border-radius: 0px;
@@ -821,7 +829,6 @@ useHead(() => {
   --enquire-field-pad: 18px;
   --grid-line: #bbb;
   --enquire-border-style: 1px dotted var(--grid-line);
-  padding: 0;
   background: #fff;
   color: #111;
   --charcoal: #111;
@@ -916,6 +923,7 @@ useHead(() => {
   min-width: 0;
   padding: 0;
   border: 0;
+  flex: 1;
 }
 
 .enquire__panel {
@@ -929,6 +937,7 @@ useHead(() => {
   padding: 0;
   background: transparent;
   text-align: left;
+  flex: 1;
 }
 
 .enquire__clients {
@@ -1026,6 +1035,7 @@ useHead(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
+  flex:1;
 }
 
 .enquire__fields {
@@ -1094,9 +1104,10 @@ useHead(() => {
 }
 
 .enquire__field textarea {
-  height: calc(1.5 * (15lh + 1.5rem + 2px));
+  flex: 1 1 auto;
+  height: auto;
   min-height: calc(1.5 * (15lh + 1.5rem + 2px));
-  max-height: calc(1.5 * (15lh + 1.5rem + 2px));
+  max-height: none;
   overflow: auto;
   resize: none;
 }
@@ -1146,6 +1157,10 @@ useHead(() => {
 
 .enquire__message-block {
   position: relative;
+  flex: 1;
+
+  display: flex;
+    flex-direction: column;
 }
 
 .enquire__attach {
@@ -1176,6 +1191,7 @@ useHead(() => {
 
 .enquire__message-block > .enquire__field:not(.enquire__attach) {
   border-bottom: 0;
+  flex: 1;
 }
 
 .enquire__message-block > .enquire__attach:first-of-type {

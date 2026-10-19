@@ -6474,7 +6474,7 @@ const measureStackFlyRects = () => {
   return lightbox ? lightboxFlyStarts(rects) : rects
 }
 
-/** Off-screen lightbox items still join the gather, parked just inside the viewport. */
+/** Off-screen lightbox items still join the gather, parked fully outside the viewport. */
 const lightboxFlyStarts = (
   rects: Array<{
     id: string
@@ -6509,7 +6509,7 @@ const lightboxFlyStarts = (
     const top0 = Math.min(vh - size - 16, Math.max(16, rowMid - size / 2 - span / 2))
     return group.map((rect, index) => ({
       ...rect,
-      left: side === 'left' ? 16 : vw - size - 16,
+      left: side === 'left' ? -(size + 32) : vw + 32,
       top: top0 + index * pitch,
       width: size,
       height: size,
@@ -6517,7 +6517,7 @@ const lightboxFlyStarts = (
   }
   const left = hidden.filter((rect) => rect.left + rect.width / 2 < vw / 2)
   const right = hidden.filter((rect) => rect.left + rect.width / 2 >= vw / 2)
-  // Parked thumbs fly to the edges. Keep them under the large on-screen pictures.
+  // Parked thumbs stay off-screen. Keep them under the large on-screen pictures.
   const thumbs = [...place(left, 'left'), ...place(right, 'right')].map((rect, index) => ({
     ...rect,
     z: index + 1,

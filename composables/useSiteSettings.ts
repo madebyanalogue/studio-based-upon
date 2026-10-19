@@ -13,6 +13,10 @@ export const useSiteSettings = () => {
       "width": asset->metadata.dimensions.width,
       "height": asset->metadata.dimensions.height
     },
+    favicon {
+      "url": asset->url,
+      "mimeType": asset->mimeType
+    },
     disablePreloader,
     enquiryEmail,
     phone,
@@ -57,6 +61,24 @@ export const useSiteSettings = () => {
   const googleTagId = computed(() => {
     const id = String(settings.value?.googleTagId || '').trim()
     return /^(G|GT|AW|DC|GTM)-[A-Z0-9]+$/i.test(id) ? id : ''
+  })
+  const favicon = computed(() => {
+    const image = settings.value?.favicon
+    const url = typeof image?.url === 'string' ? image.url : ''
+    if (!url.startsWith('https://')) return null
+    const mimeType = typeof image?.mimeType === 'string' ? image.mimeType : ''
+    const svg = mimeType === 'image/svg+xml' || /\.svg($|\?)/i.test(url)
+    if (svg) return { href: url, type: 'image/svg+xml' }
+    try {
+      const parsed = new URL(url)
+      parsed.searchParams.set('w', '64')
+      parsed.searchParams.set('h', '64')
+      parsed.searchParams.set('fit', 'max')
+      parsed.searchParams.set('fm', 'png')
+      return { href: parsed.href, type: 'image/png' }
+    } catch {
+      return { href: url, type: mimeType || undefined }
+    }
   })
   const facebookShareImage = computed(() => {
     const image = settings.value?.facebookShareImage
@@ -219,6 +241,7 @@ export const useSiteSettings = () => {
     seoTitle,
     seoDescription,
     googleTagId,
+    favicon,
     facebookShareImage,
     logo,
     logoStyle,
