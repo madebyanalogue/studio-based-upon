@@ -1,6 +1,14 @@
+import { isHomepagePath } from '~/composables/useHomepagePreloader'
+
 export type ThemeMode = 'light' | 'dark'
 
 const STORAGE_KEY = 'basedupon:theme'
+
+/**
+ * TEMP: pure-black homepage field needs dark chrome.
+ * Flip to false (or delete) when --home-bg-dark is no longer #000.
+ */
+const FORCE_HOME_DARK_UI = true
 
 const readStored = (): ThemeMode | null => {
   if (!import.meta.client) return null
@@ -36,7 +44,8 @@ export const useTheme = () => {
   const isDark = computed(() => theme.value === 'dark')
 
   const applyEffective = () => {
-    applyDom(isDark.value ? 'dark' : 'light')
+    const forceDark = FORCE_HOME_DARK_UI && isHomepagePath(route.path)
+    applyDom(forceDark || isDark.value ? 'dark' : 'light')
   }
 
   const setTheme = (mode: ThemeMode) => {

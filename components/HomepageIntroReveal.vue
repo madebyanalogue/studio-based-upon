@@ -18,7 +18,7 @@ const GROUND =
 /** Softer grow — more decay so pockets breathe rather than linger. */
 const DECAY = 0.988
 const HEAL_OUT = 0.012
-const BRUSH = 0.14
+const BRUSH = 0.112
 const IDLE_AFTER_MS = 280
 const IDLE_STRENGTH = 0.22
 /** Soft opening grows before the split slider arrives. */

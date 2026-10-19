@@ -3134,7 +3134,7 @@ type CurateCache = {
 }
 
 /** v2 ignores layouts saved when the first load was four columns. */
-const CURATE_CACHE_KEY = 'sba-curate-columns-v2'
+const CURATE_CACHE_KEY = 'sba-curate-columns-v3'
 const curateCache = useState<CurateCache | null>('curate-columns', () => null)
 let suppressCurateCache = false
 let curateCacheTimer = 0
@@ -3487,7 +3487,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: auto;
   max-height: 100%;
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 .showcase__slot {

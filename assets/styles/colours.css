@@ -1,6 +1,8 @@
 :root {
   /* Edit these. They stay put when the theme flips. */
-  --bg-dark: #000;
+  --bg-dark: #111111;
+  /** Homepage / intro field — override independently of site --bg-dark. */
+  --home-bg-dark: #000000;
   --text-dark: #111111;
   --bg-light: #f1ede4;
   --text-light: #f1ede4;
@@ -91,4 +93,17 @@ html.dark {
 
   --thumb-ctrl-color: var(--charcoal);
   --thumb-ctrl-bg: var(--cream);
+}
+
+/*
+ * TEMP: homepage / intro field is pure black — keep dark UI tokens + cream
+ * on --home-bg-dark. Remove when the home field softens again.
+ * (html.dark is also forced on / via useTheme while this stands.)
+ */
+html.dark.homepage-intro,
+html.dark:has(body.infinite-slider-active) {
+  --bg-dark: var(--home-bg-dark);
+  --cream: var(--home-bg-dark);
+  --warm-white: var(--home-bg-dark);
+  --intro-ground-dark: var(--home-bg-dark);
 }
