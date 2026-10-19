@@ -807,14 +807,14 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   left: calc(100% + 1px);
-  width: 25px;
-  height: 25px;
+  width: 70px;
+  height: 70px;
   display: grid;
   place-items: center;
   margin: 0;
   padding: 0;
   border: 0;
-  background: transparent;
+  background: #fff;
   color: #111;
   box-sizing: border-box;
   cursor: pointer;
@@ -828,8 +828,9 @@ onUnmounted(() => {
 .enquiry__close-icon {
   position: relative;
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 25px;
+  height: 25px;
+  opacity: 0.6;
 }
 
 .enquiry__close-icon::before,
@@ -1059,7 +1060,7 @@ onUnmounted(() => {
 }
 
 .enquiry__fields .enquire__form {
-  padding: 40px;
+  padding: 0;
 }
 
 .enquiry__success {

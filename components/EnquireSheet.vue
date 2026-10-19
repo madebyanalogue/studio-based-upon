@@ -1001,7 +1001,7 @@ useHead(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 30px;
+  margin: 0 0 35px;
 }
 
 .enquire__clients-head > .interface {

@@ -8,9 +8,11 @@
 
   <div v-if="preloaderReady" id="app">
     <ClientOnly>
-      <WebglHome backdrop />
+      <WebglHome v-if="webglHomeOn" backdrop />
+      <HomepageIntroReveal v-if="introGroundOn" />
+      <HomepageIntroBloom v-if="introGroundOn" />
     </ClientOnly>
-    <HomepageIntro v-if="introActive" />
+    <HomepageImageIntro v-if="introActive" />
     <AppHeader />
     <main class="page-wrapper">
       <NuxtPage />
@@ -53,15 +55,29 @@ const { initStackChrome } = useStackChrome()
 const route = useRoute()
 const { isOpen: enquireOpen, close: closeEnquire } = useEnquireSheet()
 
-watch(() => route.path, (path) => {
-  if (path === '/enquire') closeEnquire()
-})
-const { phase: introPhase } = useHomepageIntro()
+const { phase: introPhase, ground: introGround } = useHomepageIntro()
 const introActive = computed(
   () =>
     introPhase.value === 'cover' ||
     introPhase.value === 'type' ||
     introPhase.value === 'chrome',
+)
+/** Step-2 image sits under the slider. WebGL stays off while that layer is up. */
+const introGroundOn = computed(
+  () => introGround.value.active && isHomepagePath(route.path),
+)
+const webglHomeOn = computed(
+  () => !introActive.value && !introGroundOn.value,
+)
+
+watch(
+  () => route.path,
+  (path) => {
+    if (path === '/enquire') closeEnquire()
+    if (!isHomepagePath(path) && introGround.value.active) {
+      introGround.value = { active: false, live: false }
+    }
+  },
 )
 
 onMounted(() => {

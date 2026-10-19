@@ -39,10 +39,21 @@ export type HomepageIntroProduct = {
   href: string
 }
 
+export type HomepageIntroGroundState = {
+  /** Backdrop under the split slider — mouse wake over the 2× image. */
+  active: boolean
+  /** Stage has faded in and the cursor wake is live. */
+  live: boolean
+}
+
 export function useHomepageIntro() {
   const phase = useState<HomepageIntroPhase>('homepage-intro-phase', () => 'skipped')
   const product = useState<HomepageIntroProduct | null>('homepage-intro-product', () => null)
-  return { phase, product }
+  const ground = useState<HomepageIntroGroundState>('homepage-intro-ground', () => ({
+    active: false,
+    live: false,
+  }))
+  return { phase, product, ground }
 }
 
 export function clearHomepageIntroLock() {

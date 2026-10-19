@@ -1,6 +1,6 @@
 :root {
   /* Edit these. They stay put when the theme flips. */
-  --bg-dark: #1b1b1b;
+  --bg-dark: #000;
   --text-dark: #111111;
   --bg-light: #f1ede4;
   --text-light: #f1ede4;
@@ -61,7 +61,7 @@ html:not(.dark) {
   --charcoal: var(--text-dark);
   --black: var(--text-dark);
   --accent: var(--red);
-  --grid-line: rgba(0, 0, 0, 0.15);
+  --grid-line: rgba(0, 0, 0, 0.1);
   --handwritten-color: var(--charcoal);
   --ui-border-color: rgba(0, 0, 0, 0.12);
   --panel-bg: rgba(255, 255, 255, 0.8);

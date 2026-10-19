@@ -86,15 +86,15 @@ void main() {
   float gradient = mix(1.0, 0.5, length(screen - vec2(0.0, 0.8)));
   plasterColor += gradient * 0.12;
   plasterColor = plasterColor * 0.6 + 0.4;
-
   float luma = dot(plasterColor, vec3(0.299, 0.587, 0.114));
-  vec3 onLight = uGround + (plasterColor - vec3(luma)) + vec3(luma - 0.73) * 0.4;
-  vec3 relief = mix(onLight, plasterColor, uDark);
+  float shade = clamp((luma - 0.73) * 0.28, -0.045, 0.08);
+  vec3 relief = uGround + vec3(shade);
 
   vec3 n = normalize(cross(dFdx(vEye), dFdy(vEye)));
   vec3 tilted = normalize(vec3(n.xy, n.z * 2.0));
   vec3 hue = rgb2hsv(clamp(tilted * 0.5 + 0.5, 0.0, 1.0));
   hue.x = fract(hue.x - 0.52);
+  hue.y *= 0.28;
   vec3 effect = hsv2rgb(hue);
 
   float facing = abs(dot(normalize(n), vec3(0.0, 0.0, 1.0)));
@@ -103,7 +103,7 @@ void main() {
   float ridge = smoothstep(1.0, 0.1, mix(fres, 1.0, 0.02));
   float carved = smoothstep(0.42, 0.2, bake1.r) * 0.25;
   float mask = max(ridge, carved) * fluidEdges;
-  relief = mix(relief, effect, mask * 0.57 * uWake);
+  relief = mix(relief, effect, mask * 0.22 * uWake);
 
   float reveal = smoothstep(0.02, 0.35, extrude);
   gl_FragColor = vec4(mix(uGround, relief, reveal), 1.0);

@@ -37,6 +37,7 @@
           :to="item.path"
           class="header__nav-link  interface"
           :class="{ 'header__nav-link--active': isActive(item.path) }"
+          @click="onNavClick(item.path)"
         >
           {{ item.text }}
         </NuxtLink>
@@ -185,7 +186,7 @@
               :to="item.path"
               class="header__sheet-link interface"
               :class="{ 'header__sheet-link--active': isActive(item.path) }"
-              @click="menuOpen = false"
+              @click="menuOpen = false; onNavClick(item.path)"
             >
               {{ item.text }}
             </NuxtLink>
@@ -454,6 +455,17 @@ const isActive = (path: string) => {
   const base = pathname || '/'
   if (base === '/') return route.path === '/'
   return route.path === base || route.path.startsWith(`${base}/`)
+}
+
+const mafPrefs = useCookie<{ filter?: string; search?: string }>('sba-maf-prefs')
+
+/** Nav entry always opens the archive with no type filter or search. */
+const onNavClick = (path: string) => {
+  const [pathname] = path.split('#')
+  if (pathname !== '/materials-and-forms') return
+  const current = mafPrefs.value
+  if (!current) return
+  mafPrefs.value = { ...current, filter: '', search: '' }
 }
 
 const onThemeClick = () => {

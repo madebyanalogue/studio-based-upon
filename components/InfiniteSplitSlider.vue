@@ -27,12 +27,6 @@
     <div ref="leftEl" class="split-slider__column split-slider__column--left" />
     <div ref="rightEl" class="split-slider__column split-slider__column--right" />
 
-    <SliderOpeningStatement
-      v-if="surfaceReady && statementOn"
-      ref="statementRef"
-      @clear="onStatementClear"
-    />
-
     <div
       class="split-slider__type"
       :style="{ color: activeSlide?.accent || '#e8e8e8' }"
@@ -188,6 +182,12 @@ const settings = {
   imageShift: 6,
   revealOverlap: 0.5,
 }
+/** Distance to an aligned frame, as a fraction of one slide, that eases shut. */
+const SNAP_TOLERANCE = 0.1
+/** Wait after the last scroll before the settle starts. */
+const SNAP_IDLE_MS = 480
+/** How quickly the target drifts onto the frame. The picture follows via smoothness. */
+const SNAP_EASE = 0.035
 
 const blurFilterId = 'split-slider-blur-matrix'
 const titleFilter = `url(#${blurFilterId}) blur(0.25px)`
@@ -213,6 +213,7 @@ const typeLayerVisible = ref(false)
 
 let scrollPosition = 1
 let scrollTarget = 1
+let lastScrollInputAt = 0
 let compact = false
 let compactLaidOut = false
 const COMPACT_QUERY = '(max-width: 1100px)'
@@ -237,7 +238,7 @@ let leaving = false
 let leavePromise: Promise<void> | null = null
 let entranceStarted = false
 const userScrolled = ref(false)
-const statementOn = ref(true)
+const statementOn = ref(false)
 const statementRef = ref<{ wash: (x: number, y: number) => void; lift: () => void } | null>(
   null,
 )
@@ -276,13 +277,6 @@ const applyProjectLabels = () => {
       if (name) el.dataset.cursorLabel = name
     }
   }
-}
-
-const onStatementClear = () => {
-  statementOn.value = false
-  if (userScrolled.value) applyProjectLabels()
-  syncScrollHint()
-  if (pointerOverSlider) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
 const dismissScrollHint = () => {
@@ -733,7 +727,7 @@ const clipFrom = (el: HTMLElement | null, fallback: string) => {
   return fallback
 }
 
-/** Opposite vertical wipes. In opens from shut; out closes from the current pose. */
+/** Vertical wipe open on entrance; matching wipe shut on leave. */
 const wipeColumns = (direction: 'in' | 'out') =>
   new Promise<void>((resolve) => {
     const left = leftEl.value
@@ -767,7 +761,7 @@ const wipeColumns = (direction: 'in' | 'out') =>
     for (const el of [left, right]) {
       if (!el) continue
       el.style.transition = 'none'
-      if (opening) el.style.willChange = 'clip-path'
+      el.style.willChange = 'clip-path'
     }
     if (opening) {
       if (left) gsap.set(left, { opacity: 1, clipPath: CLIP_LEFT_SHUT })
@@ -1008,7 +1002,15 @@ const updateSlider = () => {
   syncTypeLayer()
 }
 
+/** Overlays keep their own scroll. Everywhere else drives the slides. */
+const wheelOwnsItself = (event: WheelEvent) => {
+  const target = event.target
+  if (!(target instanceof Element)) return false
+  return !!target.closest('.product-overlay, .enquire, [data-lenis-prevent]')
+}
+
 const onWheel = (event: WheelEvent) => {
+  if (event.ctrlKey || wheelOwnsItself(event)) return
   event.preventDefault()
   if (event.deltaX || event.deltaY) dismissScrollHint()
   if (leaving || openingProduct.value) return
@@ -1018,6 +1020,7 @@ const onWheel = (event: WheelEvent) => {
     if (leftEl.value) leftEl.value.scrollLeft += delta
     return
   }
+  lastScrollInputAt = performance.now()
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
 
@@ -1030,12 +1033,28 @@ const onTouchMove = (event: TouchEvent) => {
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
   if (y !== lastTouchY) dismissScrollHint()
+  lastScrollInputAt = performance.now()
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
   lastTouchY = y
 }
 
+/** Ease onto a frame after the scroll has rested inside the tolerance. */
+const snapIfClose = () => {
+  if (compact || performance.now() - lastScrollInputAt < SNAP_IDLE_MS) return
+  const nearest = Math.round(scrollPosition)
+  if (Math.abs(scrollPosition - nearest) > SNAP_TOLERANCE) return
+  if (Math.abs(scrollTarget - nearest) > SNAP_TOLERANCE) return
+  const gap = nearest - scrollTarget
+  if (Math.abs(gap) < 0.0006) {
+    scrollTarget = nearest
+    return
+  }
+  scrollTarget += gap * SNAP_EASE
+}
+
 const tick = () => {
   if (!running || leaving) return
+  snapIfClose()
   scrollPosition += (scrollTarget - scrollPosition) * settings.smoothness
   updateSlider()
   rafId = requestAnimationFrame(tick)
@@ -1229,7 +1248,7 @@ onMounted(() => {
   compact = compactMedia.matches
   root?.classList.toggle('split-slider--compact', compact)
   compactMedia.addEventListener('change', onCompactChange)
-  root?.addEventListener('wheel', onWheel, { passive: false })
+  window.addEventListener('wheel', onWheel, { passive: false })
   root?.addEventListener('touchstart', onTouchStart, { passive: true })
   root?.addEventListener('touchmove', onTouchMove, { passive: true })
   leftEl.value?.addEventListener('scroll', onCompactColumnScroll, { passive: true })
@@ -1267,7 +1286,7 @@ onBeforeUnmount(() => {
 
   const root = rootEl.value
   compactMedia?.removeEventListener('change', onCompactChange)
-  root?.removeEventListener('wheel', onWheel)
+  window.removeEventListener('wheel', onWheel)
   root?.removeEventListener('touchstart', onTouchStart)
   root?.removeEventListener('touchmove', onTouchMove)
   leftEl.value?.removeEventListener('scroll', onCompactColumnScroll)
@@ -1295,13 +1314,13 @@ watch(
 <style scoped>
 .split-slider {
   position: fixed;
-  inset: 10% 7%;
-  width: 86%;
-  height: 80svh;
+  inset: 19% 20%;
+  width: 60%;
+  height: 62svh;
   display: flex;
   overflow: visible;
   background: transparent;
-  z-index: 1;
+  z-index: 2;
   touch-action: none;
 }
 
@@ -1462,7 +1481,7 @@ watch(
 }
 
 .split-slider__caption-title {
-  opacity: 1;
+  display: none;
 }
 
 .split-slider__caption-subtitle {

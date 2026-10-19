@@ -557,6 +557,8 @@ const lockSnapPending: boolean[] = Array.from({ length: MAX_COLUMNS }, () => fal
 const settleLockUntil: number[] = Array.from({ length: MAX_COLUMNS }, () => 0)
 /** Last wheel/touch on this column — used to ignore cross-column Lenis noise. */
 const lastUserIntentAt: number[] = Array.from({ length: MAX_COLUMNS }, () => 0)
+const toolReturnTimers: number[] = Array.from({ length: MAX_COLUMNS }, () => 0)
+const TOOL_RETURN_MS = 1000
 const intentAbort: (AbortController | null)[] = Array.from(
   { length: MAX_COLUMNS },
   () => null,
@@ -2100,6 +2102,7 @@ const onColumnScroll = (slotIndex: number) => {
       }
     }
 
+    holdColumnTools(slotIndex)
     unsettleColumn(slotIndex)
 
     const velocity = lenis?.velocity ?? 0
@@ -2127,8 +2130,20 @@ const onUserIntent = (slotIndex: number) => {
   if (performance.now() < settleLockUntil[slotIndex]) return
 
   lastUserIntentAt[slotIndex] = performance.now()
+  holdColumnTools(slotIndex)
   // Don't unsettle here — wait until scroll leaves the snapped target so
   // first/last can keep their sibling fade through residual wheel events.
+}
+
+const holdColumnTools = (slotIndex: number) => {
+  const shell = columnEls[slotIndex]?.closest<HTMLElement>('.showcase__column-shell')
+  if (!shell) return
+  shell.classList.add('showcase__column-shell--scrolling')
+  window.clearTimeout(toolReturnTimers[slotIndex])
+  toolReturnTimers[slotIndex] = window.setTimeout(() => {
+    toolReturnTimers[slotIndex] = 0
+    shell.classList.remove('showcase__column-shell--scrolling')
+  }, TOOL_RETURN_MS)
 }
 
 const destroyLenisSlot = (slotIndex: number) => {
@@ -2531,7 +2546,11 @@ const playArrival = async () => {
   revealAllImages()
   columns.value.forEach((column, slotIndex) => {
     if (!column.images.length) return
-    const imageIndex = Math.floor(Math.random() * column.images.length)
+    const settled = settledIndexes.value[slotIndex]
+    const imageIndex =
+      settled != null && settled >= 0 && settled < column.images.length
+        ? settled
+        : Math.floor(Math.random() * column.images.length)
     settleColumnInstant(slotIndex, imageIndex)
   })
 
@@ -3015,14 +3034,29 @@ const addColumn = () => {
   )
 }
 
-const onUploadChange = (event: Event) => {
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
+const onUploadChange = async (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
   if (!file || !file.type.startsWith('image/')) return
   if (columnMotion.value || !canAddColumn.value) return
 
-  const src = URL.createObjectURL(file)
+  let src = ''
+  try {
+    src = await fileToDataUrl(file)
+  } catch {
+    src = URL.createObjectURL(file)
+  }
+  if (columnMotion.value || !canAddColumn.value || !src) return
+
   const column = createUploadColumn(file, src)
   const preserved = captureActiveImageIds()
   preserved.push(column.images[0]?.id ?? null)
@@ -3082,6 +3116,172 @@ const removeColumn = async (slotIndex: number) => {
   }
 }
 
+type CurateCacheColumn = {
+  bucketId?: string
+  productId: string
+  title: string
+  slug?: string
+  imageIds: string[]
+  activeImageId: string | null
+  locked?: boolean
+  single?: boolean
+  uploadSrc?: string
+}
+
+type CurateCache = {
+  columns: CurateCacheColumn[]
+  nextBucketCursor: number
+}
+
+/** v2 ignores layouts saved when the first load was four columns. */
+const CURATE_CACHE_KEY = 'sba-curate-columns-v2'
+const curateCache = useState<CurateCache | null>('curate-columns', () => null)
+let suppressCurateCache = false
+let curateCacheTimer = 0
+
+const readCurateCache = (): CurateCache | null => {
+  if (curateCache.value?.columns.length) return curateCache.value
+  if (!import.meta.client) return null
+  try {
+    const raw = sessionStorage.getItem(CURATE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as CurateCache
+    if (!parsed?.columns?.length) return null
+    curateCache.value = parsed
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+const writeCurateCache = (cache: CurateCache) => {
+  curateCache.value = cache
+  if (!import.meta.client) return
+  try {
+    sessionStorage.setItem(CURATE_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    try {
+      const withoutUploads: CurateCache = {
+        ...cache,
+        columns: cache.columns.map((column) => ({ ...column, uploadSrc: undefined })),
+      }
+      sessionStorage.setItem(CURATE_CACHE_KEY, JSON.stringify(withoutUploads))
+    } catch {
+      /* sessionStorage is full — the in-memory cache still covers this visit */
+    }
+  }
+}
+
+const snapshotCurateCache = (): CurateCache => {
+  const active = captureActiveImageIds()
+  return {
+    nextBucketCursor,
+    columns: columns.value.map((column, index) => {
+      const src = column.images[0]?.src
+      const uploaded =
+        Boolean(column.objectUrl) ||
+        (Boolean(column.single) &&
+          !!src &&
+          (src.startsWith('data:') || src.startsWith('blob:')))
+      return {
+        bucketId: column.bucketId,
+        productId: column.productId,
+        title: column.title,
+        slug: column.slug,
+        imageIds: column.images.map((image) => image.id),
+        activeImageId: active[index] ?? null,
+        locked: column.locked || undefined,
+        single: column.single || undefined,
+        uploadSrc: uploaded ? src : undefined,
+      }
+    }),
+  }
+}
+
+const columnFromCache = (cached: CurateCacheColumn): ShowcaseColumn | null => {
+  if (cached.uploadSrc) {
+    instanceSeq += 1
+    const id = cached.imageIds[0] || `upload-img-${instanceSeq}`
+    return {
+      instanceId: `upload-${instanceSeq}`,
+      productId: cached.productId || `upload-${instanceSeq}`,
+      title: cached.title,
+      images: [
+        {
+          id,
+          src: cached.uploadSrc,
+          title: cached.title,
+          productTitle: cached.title,
+        },
+      ],
+      single: true,
+      locked: cached.locked,
+      objectUrl: cached.uploadSrc.startsWith('blob:') ? cached.uploadSrc : undefined,
+    }
+  }
+
+  const bucket = bucketPool.value.find(
+    (entry) =>
+      (cached.bucketId && entry.id === cached.bucketId) ||
+      entry.productId === cached.productId ||
+      entry.id === cached.productId,
+  )
+  if (!bucket?.images.length) return null
+  const byId = new Map(bucket.images.map((image) => [image.id, image]))
+  const ordered = cached.imageIds
+    .map((id) => byId.get(id))
+    .filter((image): image is ShowcaseBucketImage => Boolean(image))
+  const extras = bucket.images.filter((image) => !cached.imageIds.includes(image.id))
+  const images = (ordered.length ? [...ordered, ...extras] : bucket.images).map((image) => ({
+    ...image,
+  }))
+  if (!images.length) return null
+  instanceSeq += 1
+  return {
+    instanceId: `col-${instanceSeq}-${bucket.id || cached.productId}`,
+    productId: bucket.productId || bucket.id || cached.productId,
+    bucketId: bucket.id,
+    title: cached.title || bucket.title,
+    slug: cached.slug || bucket.slug,
+    images,
+    locked: cached.locked,
+    single: images.length < 2,
+  }
+}
+
+const restoreFromCache = () => {
+  const cached = readCurateCache()
+  if (!cached) return false
+  const next = cached.columns
+    .map((column) => columnFromCache(column))
+    .filter((column): column is ShowcaseColumn => Boolean(column))
+  if (!next.length || next.length !== cached.columns.length) return false
+
+  suppressCurateCache = true
+  nextBucketCursor = cached.nextBucketCursor
+  columns.value = next
+  applyActiveImageIds(cached.columns.map((column) => column.activeImageId))
+  resetImageRevealState()
+  suppressCurateCache = false
+  if (motionReady && arrivalPlayed && !arrivalAnimating) {
+    remountMotion({ settleImmediately: true })
+  }
+  return true
+}
+
+const scheduleCurateCache = () => {
+  if (suppressCurateCache || !columns.value.length) return
+  window.clearTimeout(curateCacheTimer)
+  curateCacheTimer = window.setTimeout(() => {
+    curateCacheTimer = 0
+    if (suppressCurateCache || !columns.value.length) return
+    writeCurateCache(snapshotCurateCache())
+  }, 200)
+}
+
+watch(columns, scheduleCurateCache, { deep: true })
+watch(settledIndexes, scheduleCurateCache)
+
 const resetFromBuckets = () => {
   columns.value.forEach(revokeColumnUrl)
   instanceSeq = 0
@@ -3114,6 +3314,7 @@ watch(
   () => bucketPool.value.map((bucket) => bucket.id || bucket.title).join('|'),
   () => {
     if (arrivalAnimating) return
+    if (restoreFromCache()) return
     resetFromBuckets()
   },
   { immediate: true },
@@ -3145,10 +3346,16 @@ onBeforeUnmount(() => {
   }
   window.clearTimeout(layoutRealignTimer)
   layoutRealignTimer = 0
+  window.clearTimeout(curateCacheTimer)
+  curateCacheTimer = 0
+  if (columns.value.length) writeCurateCache(snapshotCurateCache())
   resizeObserver?.disconnect()
   resizeObserver = null
-  columns.value.forEach(revokeColumnUrl)
-  for (let i = 0; i < MAX_COLUMNS; i += 1) clearSnapTimer(i)
+  for (let i = 0; i < MAX_COLUMNS; i += 1) {
+    clearSnapTimer(i)
+    window.clearTimeout(toolReturnTimers[i])
+    toolReturnTimers[i] = 0
+  }
   destroyLenis()
   stopRaf()
   releasePageClip?.()
@@ -3388,7 +3595,7 @@ onBeforeUnmount(() => {
   opacity: var(--showcase-dim-opacity);
   filter: grayscale(1);
   transition-delay: 0s;
-  transition-duration: 0.05s;
+  transition-duration: 0s;
 }
 
 .showcase__column--settled.showcase__column--surrender-dim .showcase__cell:not(.showcase__cell--active) {
@@ -3398,12 +3605,12 @@ onBeforeUnmount(() => {
 
 .showcase__column--locked.showcase__column--settled .showcase__cell:not(.showcase__cell--active) {
   transition-delay: 0s;
-  transition-duration: 0.05s;
+  transition-duration: 0s;
 }
 
 .showcase__column-shell--leaving .showcase__column--settled .showcase__cell:not(.showcase__cell--active) {
   transition-delay: 0s;
-  transition-duration: 0.05s;
+  transition-duration: 0s;
 }
 
 .showcase__column--settled .showcase__cell--active {
@@ -3478,7 +3685,7 @@ onBeforeUnmount(() => {
   color: var(--charcoal);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity 0s;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -3496,19 +3703,27 @@ onBeforeUnmount(() => {
     opacity: 1;
     filter: grayscale(0);
     transition-delay: 0s;
-    transition-duration: 0.2s;
+    transition-duration: 0.45s;
   }
 
   .showcase__column-shell--hot .showcase__remove,
   .showcase__column-shell--hot .showcase__lock {
     opacity: 1;
     pointer-events: auto;
+    transition: opacity 0.45s ease;
   }
 }
 
 .showcase__lock--on {
   opacity: 1;
   pointer-events: auto;
+}
+
+.showcase__column-shell--scrolling .showcase__remove,
+.showcase__column-shell--scrolling .showcase__lock {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .showcase__remove-circle,
@@ -3551,24 +3766,24 @@ onBeforeUnmount(() => {
 }
 
 .showcase__adder {
-  position: absolute;
-  top: 50%;
-  right: 20px;
-  z-index: 6;
-  width: var(--showcase-adder-width);
+  position: fixed;
+  right: 60px;
+  bottom: calc(60px + var(--bucket-push, 0px));
+  z-index: 20;
+  width: auto;
   height: auto;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 15px;
   padding: 8px;
   border-radius: 100px;
   border: var(--showcase-ctrl-border);
-  background: color-mix(in srgb, var(--cream) 82%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transform: translateY(-50%);
+  background: transparent;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .showcase__add {
@@ -3989,6 +4204,8 @@ onBeforeUnmount(() => {
   border: var(--showcase-ctrl-border);
   border-radius: 100px;
   background: transparent;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   color: var(--charcoal);
   font-size: var(--text-sm);
   letter-spacing: 0.04em;
@@ -4003,7 +4220,6 @@ onBeforeUnmount(() => {
 
 .showcase__surrender:hover:not(:disabled),
 .showcase__surrender:focus-visible:not(:disabled) {
-  background: color-mix(in srgb, var(--charcoal) 6%, var(--cream));
   border-color: var(--charcoal);
 }
 
@@ -4040,10 +4256,16 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 860px) {
+  .showcase__adder,
   .showcase__surrender {
     bottom: calc(16px + var(--stack-clearance, 0px));
   }
 
+  .showcase__adder {
+    right: 16px;
+  }
+
+  :global(html.bucket-push) .showcase__adder,
   :global(html.bucket-push) .showcase__surrender {
     bottom: calc(16px + var(--bucket-push, 0px));
   }

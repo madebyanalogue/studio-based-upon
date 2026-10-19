@@ -118,11 +118,11 @@ const spawn = (x: number, y: number, r: number, g: number, b: number, awayX: num
   motes.push({
     x,
     y,
-    vx: Math.cos(ang) * speed + (Math.random() - 0.5) * 0.8,
-    vy: Math.sin(ang) * speed - Math.random() * 1.1,
-    life: 1.15 + Math.random() * 1.35,
+    vx: Math.cos(ang) * speed * 0.45 + (Math.random() - 0.5) * 0.35,
+    vy: 0.85 + Math.random() * 2.1,
+    life: 0.7 + Math.random() * 0.85,
     age: 0,
-    size: (Math.random() < 0.16 ? 2.4 + Math.random() * 2.2 : 0.7 + Math.random() * 1.5) * (brushR / 38),
+    size: (0.28 + Math.random() * 0.55) * (brushR / 52),
     seed: Math.random() * Math.PI * 2,
     r,
     g,
@@ -185,7 +185,7 @@ const draw = () => {
   vctx.drawImage(glyph, 0, 0)
   for (const mote of motes) {
     const t = mote.age / mote.life
-    vctx.globalAlpha = (1 - t) * (1 - t)
+    vctx.globalAlpha = 0.38 * (1 - t) * (1 - t)
     vctx.fillStyle = `rgb(${mote.r} ${mote.g} ${mote.b})`
     vctx.fillRect(mote.x, mote.y, mote.size, mote.size)
   }
@@ -202,10 +202,10 @@ const frame = (now: number) => {
       motes.splice(i, 1)
       continue
     }
-    mote.vx += Math.sin(mote.age * 16 + mote.seed) * 0.04
-    mote.vy += 0.01
-    mote.vx *= 0.985
-    mote.vy *= 0.985
+    mote.vx += Math.sin(mote.age * 16 + mote.seed) * 0.02
+    mote.vy += 0.11
+    mote.vx *= 0.97
+    mote.vy *= 0.992
     mote.x += mote.vx
     mote.y += mote.vy
   }

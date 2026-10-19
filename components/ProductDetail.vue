@@ -298,18 +298,10 @@
                     'pdp__hero-image--ready': galleryReady[entry.id],
                     'pdp__hero-image--saved': isFrameSaved(i),
                   }"
-                  :style="
-                    i === selectedIndex && imageExpanded
-                      ? {
-                          transformOrigin: `${zoomOriginX}% ${zoomOriginY}%`,
-                          transform: `scale(${FRAME_ZOOM_SCALE})`,
-                        }
-                      : undefined
-                  "
                   draggable="false"
-                  data-cursor="default"
+                  :data-cursor="i === selectedIndex && imageExpanded ? undefined : 'default'"
                   @load="onStripImageLoad(i)"
-                  @click.stop="onGalleryMediaClick"
+                  @click.stop="onGalleryMediaClick(i, $event)"
                 />
                 <AddButton
                   class="pdp__frame-add"
@@ -331,6 +323,30 @@
         </p>
       </div>
     </div>
+    <Teleport to="body">
+      <div
+        v-if="imageExpanded && activeEntry?.kind === 'image'"
+        ref="zoomLayerRef"
+        class="pdp__zoom"
+        :class="{ 'pdp__zoom--hold': !zoomLayerShown }"
+        data-lenis-prevent
+      >
+        <img
+          ref="zoomImageRef"
+          class="pdp__zoom-image"
+          :src="activeEntry.zoomSrc || activeEntry.src"
+          :alt="`${product.title} enlarged`"
+          :style="
+            galleryAspects[activeEntry.id]
+              ? { aspectRatio: String(galleryAspects[activeEntry.id]) }
+              : undefined
+          "
+          draggable="false"
+          data-cursor-label="Close"
+          @click.stop="collapseImageZoom"
+        />
+      </div>
+    </Teleport>
     <Loupe
       v-if="loupeOpen"
       :src="activeEntry?.kind === 'image' ? activeEntry.zoomSrc || activeEntry.src : ''"
@@ -516,16 +532,25 @@ let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
 const selectedIndex = ref(openImageIndex.value)
-/** In-frame gallery zoom (stays inside the image footprint) */
+/** Full-bleed gallery zoom. A second click collapses it. */
 const imageExpanded = ref(false)
 const loupeOpen = ref(false)
 const loupeClosing = ref(false)
 const frameZoomHiRes = ref(false)
-const zoomOriginX = ref(50)
-const zoomOriginY = ref(50)
-const FRAME_ZOOM_SCALE = 2.5
 let stripScrollRaf = 0
-let frameZoomToken = 0
+let imageZoomFlip: gsap.core.Tween | null = null
+let imageZooming = false
+let zoomFlyer: HTMLImageElement | null = null
+/** 0–1 down the image. The open zoom centres this point. */
+let zoomFocusY = 0.5
+/** Trackpad pinch scale of the enlarged image. 1 is full viewport width. */
+let pinchScale = 1
+const PINCH_MIN = 1
+const PINCH_MAX = 4
+const zoomLayerRef = ref<HTMLElement | null>(null)
+const zoomImageRef = ref<HTMLImageElement | null>(null)
+/** Fullscreen layer stays invisible until the flyer has grown into it. */
+const zoomLayerShown = ref(false)
 const stripVideoEls: (HTMLVideoElement | null)[] = []
 const stripImageEls: (HTMLImageElement | null)[] = []
 
@@ -1015,7 +1040,7 @@ const syncSelectedFromScroll = () => {
   // Don't retarget the open flyer. A narrow portrait at the left is closer
   // to the next frame's centre than to the viewport centre, and that swap
   // was sending Flip into the second image.
-  if (!contentReady.value || pendingFlip.value) return
+  if (!contentReady.value || pendingFlip.value || imageExpanded.value) return
   if (!strip || !galleryEntries.value.length) return
   const scroll = getStripScroll()
   let best = 0
@@ -1111,12 +1136,12 @@ const initGalleryLenis = () => {
     lerp: 0.08,
     overscroll: false,
     // Strip keeps data-lenis-prevent for the page scroller; don't self-block.
-    prevent: () => false,
+    // Hold the gallery strip while a zoom is open or its flyer is in flight.
+    prevent: () => imageZooming || imageExpanded.value,
   })
 
   galleryLenis.on('scroll', onStripScroll)
   galleryLenis.resize()
-  if (imageExpanded.value) galleryLenis.stop()
   galleryLenisRaf = requestAnimationFrame(tickGalleryLenis)
 }
 
@@ -1124,10 +1149,10 @@ const resizeGalleryLenis = () => {
   galleryLenis?.resize()
 }
 
-watch(imageExpanded, (expanded) => {
-  if (!galleryLenis) return
-  if (expanded) galleryLenis.stop()
-  else galleryLenis.start()
+watch(imageExpanded, async () => {
+  await nextTick()
+  resizeGalleryLenis()
+  if (!imageZooming) galleryLenis?.start()
 })
 
 watch(
@@ -1145,19 +1170,240 @@ watch(
 
 let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
 
+const frameEl = (index: number) =>
+  stripRef.value?.querySelector<HTMLElement>(
+    `[data-strip-index="${index}"] .pdp__hero-frame`,
+  ) ?? null
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+const settleZoomScroll = (top: number) => {
+  const layer = zoomLayerRef.value
+  if (layer) layer.scrollTop = top
+}
+
+const clearZoomFlyer = () => {
+  imageZoomFlip?.kill()
+  imageZoomFlip = null
+  zoomFlyer?.remove()
+  zoomFlyer = null
+}
+
+const showZoomFrame = (frame: HTMLElement | null) => {
+  frame?.style.removeProperty('visibility')
+}
+
+/** Scroll so the click sits in the centre, without padding past the image. */
+const layoutZoomToFocus = () => {
+  const layer = zoomLayerRef.value
+  const image = zoomImageRef.value
+  if (!layer || !image) return
+  image.style.marginTop = '0px'
+  settleZoomScroll(0)
+  const view = layer.clientHeight
+  const focus = image.offsetHeight * zoomFocusY
+  const delta = focus - view / 2
+  const maxScroll = Math.max(0, layer.scrollHeight - view)
+  settleZoomScroll(Math.min(Math.max(0, delta), maxScroll))
+}
+
+const spawnZoomFlyer = (img: HTMLImageElement, from: DOMRect) => {
+  const flyer = document.createElement('img')
+  flyer.src = img.currentSrc || img.src
+  flyer.alt = ''
+  flyer.setAttribute('aria-hidden', 'true')
+  Object.assign(flyer.style, {
+    position: 'fixed',
+    zIndex: '445',
+    top: `${from.top}px`,
+    left: `${from.left}px`,
+    width: `${from.width}px`,
+    height: `${from.height}px`,
+    margin: '0',
+    objectFit: 'cover',
+    pointerEvents: 'none',
+  })
+  document.body.appendChild(flyer)
+  zoomFlyer = flyer
+  return flyer
+}
+
+const scaleZoomAtPinch = (event: WheelEvent) => {
+  const layer = zoomLayerRef.value
+  const image = zoomImageRef.value
+  if (!layer || !image) return
+  const next = Math.min(
+    PINCH_MAX,
+    Math.max(PINCH_MIN, pinchScale * Math.exp(-event.deltaY * 0.01)),
+  )
+  if (Math.abs(next - pinchScale) < 0.0001) return
+  const layerRect = layer.getBoundingClientRect()
+  const cursorX = event.clientX - layerRect.left
+  const cursorY = event.clientY - layerRect.top
+  const contentX = layer.scrollLeft + cursorX
+  const contentY = layer.scrollTop + cursorY
+  const u = image.offsetWidth > 0 ? (contentX - image.offsetLeft) / image.offsetWidth : 0.5
+  const v = image.offsetHeight > 0 ? (contentY - image.offsetTop) / image.offsetHeight : 0.5
+  pinchScale = next
+  image.style.width = `${next * 100}%`
+  layer.scrollLeft = image.offsetLeft + u * image.offsetWidth - cursorX
+  layer.scrollTop = image.offsetTop + v * image.offsetHeight - cursorY
+}
+
+/** Laptop trackpad pinch arrives as a ctrl-wheel and would zoom the whole page. */
+const onPinchWheel = (event: WheelEvent) => {
+  if (!event.ctrlKey) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (imageZooming) return
+  if (!imageExpanded.value) {
+    const host =
+      event.target instanceof Element ? event.target.closest('[data-strip-index]') : null
+    const index = host
+      ? Number(host.getAttribute('data-strip-index'))
+      : selectedIndex.value
+    const img = host?.querySelector('img')
+    let focusY = 0.5
+    if (img) {
+      const rect = img.getBoundingClientRect()
+      if (rect.height > 0) focusY = (event.clientY - rect.top) / rect.height
+    }
+    if (Number.isFinite(index)) void expandImageZoom(index, focusY)
+    return
+  }
+  scaleZoomAtPinch(event)
+}
+
+const onSafariPinch = (event: Event) => {
+  event.preventDefault()
+}
+
+const flyZoom = (
+  frame: HTMLElement,
+  flyer: HTMLImageElement,
+  to: DOMRect,
+  revealFrame: boolean,
+) => {
+  imageZoomFlip = gsap.to(flyer, {
+    top: to.top,
+    left: to.left,
+    width: to.width,
+    height: to.height,
+    duration: 0.55,
+    ease: 'power3.inOut',
+    overwrite: true,
+    onComplete: () => {
+      if (revealFrame) showZoomFrame(frame)
+      else zoomLayerShown.value = true
+      flyer.remove()
+      if (zoomFlyer === flyer) zoomFlyer = null
+      imageZoomFlip = null
+      imageZooming = false
+      resizeGalleryLenis()
+    },
+  })
+}
+
+const expandImageZoom = async (index: number, focusY: number) => {
+  if (imageZooming) return
+  const frame = frameEl(index)
+  const img = frame?.querySelector('img')
+  if (!frame || !(img instanceof HTMLImageElement)) return
+  selectedIndex.value = index
+  heroRef.value = img
+  pinchScale = 1
+  zoomFocusY = Math.min(1, Math.max(0, focusY))
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  zoomLayerShown.value = reduced
+  const from = img.getBoundingClientRect()
+  imageZooming = true
+  // Gallery frame stays in its padded slot, hidden, for the whole zoom.
+  frame.style.visibility = 'hidden'
+  const flyer = spawnZoomFlyer(img, from)
+  imageExpanded.value = true
+  frameZoomHiRes.value = true
+  await nextTick()
+  await nextFrame()
+  layoutZoomToFocus()
+  await nextFrame()
+  const zoomImage = zoomImageRef.value
+  const to = zoomImage?.getBoundingClientRect()
+  if (reduced || from.width < 2 || !to || to.width < 2) {
+    zoomLayerShown.value = true
+    flyer.remove()
+    if (zoomFlyer === flyer) zoomFlyer = null
+    imageZooming = false
+    return
+  }
+  flyZoom(frame, flyer, to, false)
+}
+
+const collapseImageZoom = async () => {
+  if (imageZooming || !imageExpanded.value) return
+  const frame = frameEl(selectedIndex.value)
+  const zoomImage = zoomImageRef.value
+  if (!frame || !zoomImage) {
+    collapseImage()
+    return
+  }
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const from = zoomImage.getBoundingClientRect()
+  imageZooming = true
+  const flyer = spawnZoomFlyer(zoomImage, from)
+  imageExpanded.value = false
+  frameZoomHiRes.value = false
+  await nextTick()
+  await nextFrame()
+  const to = frame.getBoundingClientRect()
+  if (reduced || from.width < 2 || to.width < 2) {
+    showZoomFrame(frame)
+    flyer.remove()
+    if (zoomFlyer === flyer) zoomFlyer = null
+    imageZooming = false
+    return
+  }
+  flyZoom(frame, flyer, to, true)
+}
+
 const collapseImage = () => {
-  frameZoomToken += 1
+  const frame = frameEl(selectedIndex.value)
+  showZoomFrame(frame)
+  clearZoomFlyer()
+  pinchScale = 1
+  zoomLayerShown.value = false
+  imageZooming = false
   imageExpanded.value = false
   frameZoomHiRes.value = false
 }
 
 const homeScrollHint = useHomeScrollHint()
 
-const onGalleryMediaClick = () => {
+const onGalleryMediaClick = (index?: number, event?: MouseEvent) => {
+  if (typeof index === 'number' && !isNarrowPdp()) {
+    const entry = galleryEntries.value[index]
+    if (entry?.kind === 'image') {
+      if (imageExpanded.value) {
+        void collapseImageZoom()
+        return
+      }
+      const img = event?.currentTarget
+      const rect = img instanceof HTMLElement ? img.getBoundingClientRect() : null
+      const focusY =
+        rect && rect.height > 0 && event
+          ? (event.clientY - rect.top) / rect.height
+          : 0.5
+      void expandImageZoom(index, focusY)
+      return
+    }
+  }
   requestPdpClose()
 }
 
 const requestPdpClose = () => {
+  if (imageExpanded.value) collapseImage()
   if (props.standalone && loupeOpen.value && !loupeClosing.value && !closingFlip.value) {
     loupeClosing.value = true
     window.setTimeout(() => emit('close'), 220)
@@ -1166,16 +1412,20 @@ const requestPdpClose = () => {
   emit('close')
 }
 
-/** Letterbox and the image both close. Controls keep their own clicks. */
+/** Letterbox closes the page. A zoomed image collapses first. Controls keep their own clicks. */
 const onStageClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   if (!target) return
   if (target.closest('button, a, .pdp__hero-image, .pdp__hero-video, .loupe')) return
+  if (imageExpanded.value) {
+    void collapseImageZoom()
+    return
+  }
   onGalleryMediaClick()
 }
 
 const onGalleryKeydown = (event: KeyboardEvent) => {
-  if (loupeOpen.value) return
+  if (loupeOpen.value || imageExpanded.value) return
   if (galleryEntries.value.length < 2) return
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -1205,13 +1455,22 @@ onMounted(() => {
     else if (!activeEntry.value) revealWithoutFlip()
   })
   window.addEventListener('keydown', onGalleryKeydown)
+  window.addEventListener('wheel', onPinchWheel, { passive: false, capture: true })
+  window.addEventListener('gesturestart', onSafariPinch, { passive: false })
+  window.addEventListener('gesturechange', onSafariPinch, { passive: false })
+  window.addEventListener('gestureend', onSafariPinch, { passive: false })
 })
 
 onUnmounted(() => {
+  clearZoomFlyer()
   releaseFadedHeart()
   destroyGalleryLenis()
   narrowPdpQuery?.removeEventListener('change', onNarrowPdpChange)
   window.removeEventListener('keydown', onGalleryKeydown)
+  window.removeEventListener('wheel', onPinchWheel, { capture: true })
+  window.removeEventListener('gesturestart', onSafariPinch)
+  window.removeEventListener('gesturechange', onSafariPinch)
+  window.removeEventListener('gestureend', onSafariPinch)
   if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
 })
@@ -1641,6 +1900,7 @@ const runFlipOpen = async () => {
 const runFlipClose = async () => {
   if (!import.meta.client || flipCloseStarted.value) return
   flipCloseStarted.value = true
+  if (imageExpanded.value) collapseImage()
   if (flipSourceIsArchiveGrid() && isFrameSaved(selectedIndex.value)) {
     heartOut.value = true
   }
@@ -2302,6 +2562,33 @@ watch(
 
 .pdp__strip-item .pdp__hero-image--zoomed {
   cursor: auto;
+}
+
+/* Above the selection stack (355) and its dock (430). */
+.pdp__zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 440;
+  overflow: auto;
+  background: var(--cream);
+  scrollbar-width: none;
+  cursor: auto;
+  touch-action: none;
+}
+
+.pdp__zoom--hold {
+  visibility: hidden;
+}
+
+.pdp__zoom::-webkit-scrollbar {
+  display: none;
+}
+
+.pdp__zoom-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: none;
 }
 
 /* Close cross only after the open flyer has finished — dark UI cursor */

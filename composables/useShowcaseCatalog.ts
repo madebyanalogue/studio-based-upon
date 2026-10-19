@@ -23,8 +23,8 @@ export type ShowcaseBucket = {
 export const SHOWCASE_SLOT_COUNT = 6
 /** Soft cap for user-added columns. */
 export const SHOWCASE_MAX_COLUMNS = 6
-/** Columns shown on first load. */
-export const SHOWCASE_DEFAULT_COLUMNS = 5
+/** Columns shown on first load, before a session has saved a layout. */
+export const SHOWCASE_DEFAULT_COLUMNS = 3
 /** @deprecated Prefer SHOWCASE_DEFAULT_COLUMNS — kept for older imports. */
 export const SHOWCASE_DEFAULT_VISIBLE_COLUMNS = [1, 2, 3, 4, 5, 6] as const
 

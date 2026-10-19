@@ -79,9 +79,8 @@ onMounted(async () => {
     return
   }
 
-  renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
-  renderer.setClearColor(0x10100e, 1)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   host.appendChild(renderer.domElement)
 
@@ -170,11 +169,16 @@ onMounted(async () => {
   status.value = ''
   host.classList.add('is-live')
 
-  const ground = new THREE.Color(0x1b1b1b)
-  const groundTarget = new THREE.Color(0x1b1b1b)
+  const ground = new THREE.Color()
+  const groundTarget = new THREE.Color()
   const readGround = () => {
     const raw = getComputedStyle(document.body).backgroundColor
-    if (raw && raw !== 'transparent' && raw !== 'rgba(0, 0, 0, 0)') groundTarget.setStyle(raw)
+    const parts = raw.match(/[\d.]+/g)
+    if (!parts || parts.length < 3) return
+    // Keep the CSS sRGB bytes. setStyle() misses space-separated rgb() and would leave the dark fallback.
+    groundTarget.r = Number(parts[0]) / 255
+    groundTarget.g = Number(parts[1]) / 255
+    groundTarget.b = Number(parts[2]) / 255
   }
   readGround()
   ground.copy(groundTarget)
