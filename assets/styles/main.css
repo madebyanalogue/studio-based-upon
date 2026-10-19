@@ -316,6 +316,8 @@ html.stack-freeform-dragging * {
 }
 
 .page-wrapper {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-width: 0;
 }

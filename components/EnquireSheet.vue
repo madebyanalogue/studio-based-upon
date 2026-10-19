@@ -1,5 +1,5 @@
 <template>
-  <article class="enquire" :class="{ 'enquire--open': sheetIn, 'enquire--intro': introOpen }" data-lenis-prevent>
+  <article class="enquire" :class="{ 'enquire--open': sheetIn, 'enquire--intro': introOpen, 'enquire--clients-out': clientsOut }" data-lenis-prevent>
     <button
       type="button"
       class="enquire__overlay"
@@ -494,6 +494,7 @@ const titlePaintReady = ref(false)
 const stageVisible = ref(false)
 const sheetIn = ref(false)
 const introOpen = ref(true)
+const clientsOut = ref(false)
 const attachmentsOpen = ref(false)
 const selectionsOpen = ref(false)
 
@@ -530,18 +531,32 @@ watch(selectionsSheetEl, (sheet, _, onCleanup) => {
   onCleanup(() => observer.disconnect())
 })
 
-const COLUMN_MS = 1150
+const CLIENTS_OUT_MS = 550
+const STAGE_OUT_MS = 1250
+const STAGE_OUT_DELAY_MS = 120
 
 let closeTimer = 0
 
+const clientsPanelVisible = () =>
+  introOpen.value && window.matchMedia('(min-width: 768px)').matches
+
 const closeSheet = () => {
-  if (!sheetIn.value) return
-  sheetIn.value = false
+  if (!sheetIn.value || clientsOut.value) return
   window.clearTimeout(closeTimer)
-  const wait = prefersReducedMotion() ? 0 : COLUMN_MS
-  closeTimer = window.setTimeout(() => {
-    closeEnquireSheet()
-  }, wait)
+  const reduced = prefersReducedMotion()
+  const startStage = () => {
+    sheetIn.value = false
+    const wait = reduced ? 0 : STAGE_OUT_MS + STAGE_OUT_DELAY_MS
+    closeTimer = window.setTimeout(() => {
+      closeEnquireSheet()
+    }, wait)
+  }
+  if (!clientsPanelVisible() || reduced) {
+    startStage()
+    return
+  }
+  clientsOut.value = true
+  closeTimer = window.setTimeout(startStage, CLIENTS_OUT_MS)
 }
 const titleFilterId = `enquire-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
@@ -670,6 +685,8 @@ useHead(() => {
   pointer-events: none;
   --grid-line: rgba(0, 0, 0, 0.15);
   --enquire-inset: 15px;
+  --enquire-open-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --enquire-stage-in: 0.8s;
 }
 
 :global(html.enquire-open),
@@ -688,12 +705,12 @@ useHead(() => {
   opacity: 0;
   pointer-events: auto;
   cursor: pointer;
-  transition: opacity 1.1s ease;
+  transition: opacity 1.4s ease;
 }
 
 .enquire--open .enquire__overlay {
   opacity: 1;
-  transition: opacity 0.45s ease;
+  transition: opacity 0.65s ease;
 }
 
 .enquire__sheet-head {
@@ -841,12 +858,12 @@ useHead(() => {
   text-align: left;
   pointer-events: auto;
   transform: translateX(calc(100vw + 20px));
-  transition: transform 1s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
+  transition: transform 1.25s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
 }
 
 .enquire--open .enquire__stage {
   transform: none;
-  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform var(--enquire-stage-in) var(--enquire-open-ease);
 }
 
 .enquire__heading {
@@ -942,7 +959,7 @@ useHead(() => {
 
 .enquire__clients {
   position: absolute;
-  top: 0;
+  /* top: 0; */
   bottom: 0;
   right: calc(100% + 1px);
   z-index: 1;
@@ -961,13 +978,18 @@ useHead(() => {
   --enquire-copy: 14px;
   overflow: auto;
   pointer-events: auto;
-  transform: translateX(calc(100vw + 20px));
-  transition: transform 1s cubic-bezier(0.22, 1, 0.36, 1);
+  clip-path: inset(0 0 0 100%);
+  transition: clip-path 0.4s var(--enquire-open-ease);
 }
 
 .enquire--open .enquire__clients {
-  transform: none;
-  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 0.7s var(--enquire-open-ease) var(--enquire-stage-in);
+}
+
+.enquire--open.enquire--clients-out .enquire__clients {
+  clip-path: inset(0 0 0 100%);
+  transition: clip-path 0.55s var(--enquire-open-ease);
 }
 
 .enquire__clients-body {
@@ -1562,6 +1584,10 @@ useHead(() => {
   .enquire__aside-block,
   .enquire__panel {
     transition: none;
+  }
+
+  .enquire__clients {
+    clip-path: none;
   }
 }
 </style>

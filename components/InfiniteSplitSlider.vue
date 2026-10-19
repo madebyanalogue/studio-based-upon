@@ -1300,8 +1300,8 @@ watch(
   height: 80svh;
   display: flex;
   overflow: visible;
-  background: var(--cream);
-  z-index: 0;
+  background: transparent;
+  z-index: 1;
   touch-action: none;
 }
 

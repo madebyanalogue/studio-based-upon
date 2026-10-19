@@ -587,9 +587,7 @@ if (import.meta.client) {
 }
 
 const active = computed(() => fine.value && inside.value && !native.value)
-const trailOn = computed(
-  () => active.value && !reduceMotion.value && route.path === '/about',
-)
+const trailOn = computed(() => false)
 
 const drawTrail = () => {
   const canvas = trailCanvas.value
@@ -670,12 +668,6 @@ const onPointerMove = (event: PointerEvent) => {
   y = event.clientY
   if (Math.hypot(dx, dy) > 2) noteMotion()
   inside.value = true
-  if (route.path === '/about' && !reduceMotion.value) {
-    const last = trailPoints[trailPoints.length - 1]
-    if (!last || Math.hypot(x - last.x, y - last.y) >= 1) {
-      trailPoints.push({ x, y, t: performance.now() })
-    }
-  }
   place()
   resolveFromPoint(x, y)
   syncHeartSize(x, y)

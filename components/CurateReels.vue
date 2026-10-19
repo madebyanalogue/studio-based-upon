@@ -3199,10 +3199,11 @@ onBeforeUnmount(() => {
   --showcase-side: 5vw;
 
   position: relative;
+  z-index: 1;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: var(--cream);
+  background: transparent;
 }
 
 .showcase__columns {
@@ -3987,9 +3988,7 @@ onBeforeUnmount(() => {
   padding: 0 1.25rem;
   border: var(--showcase-ctrl-border);
   border-radius: 100px;
-  background: color-mix(in srgb, var(--cream) 82%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: transparent;
   color: var(--charcoal);
   font-size: var(--text-sm);
   letter-spacing: 0.04em;

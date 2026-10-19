@@ -50,7 +50,7 @@ useHead(() => ({
 <style scoped>
 .home-page {
   min-height: 100dvh;
-  background: var(--cream);
+  background: transparent;
 }
 
 .home-page__fallback {

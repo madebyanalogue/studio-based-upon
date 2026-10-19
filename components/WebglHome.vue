@@ -1,15 +1,17 @@
 <template>
-  <div class="webgl-home">
+  <div class="webgl-home" :class="{ 'webgl-home--backdrop': backdrop }">
     <div ref="hostEl" class="webgl-home__stage" />
-    <aside class="webgl-home__debug">
-      <p class="webgl-home__load">{{ loadLabel }}</p>
-      <label><input v-model="centerOnly" type="checkbox"> Centre column only</label>
-      <label><input v-model="plasterOn" type="checkbox"> Plaster grain</label>
-      <label><input v-model="wakeOn" type="checkbox"> Cursor colour</label>
-      <label><input v-model="backdropOn" type="checkbox"> Backdrop</label>
-    </aside>
-    <p v-if="status" class="webgl-home__status">{{ status }}</p>
-    <div class="webgl-home__scroll" aria-hidden="true" />
+    <template v-if="!backdrop">
+      <aside class="webgl-home__debug">
+        <p class="webgl-home__load">{{ loadLabel }}</p>
+        <label><input v-model="centerOnly" type="checkbox"> Centre column only</label>
+        <label><input v-model="plasterOn" type="checkbox"> Plaster grain</label>
+        <label><input v-model="wakeOn" type="checkbox"> Cursor colour</label>
+        <label><input v-model="backdropOn" type="checkbox"> Backdrop</label>
+      </aside>
+      <p v-if="status" class="webgl-home__status">{{ status }}</p>
+      <div class="webgl-home__scroll" aria-hidden="true" />
+    </template>
   </div>
 </template>
 
@@ -24,6 +26,13 @@ const centerOnly = ref(true)
 const plasterOn = ref(true)
 const wakeOn = ref(true)
 const backdropOn = ref(true)
+
+withDefaults(defineProps<{
+  /** Homepage layer: scene only, under the intro and then the slider. */
+  backdrop?: boolean
+}>(), {
+  backdrop: false,
+})
 let stopScene: (() => void) | null = null
 let cancelled = false
 
@@ -238,6 +247,20 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.webgl-home--backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.webgl-home--backdrop .webgl-home__stage {
+  position: absolute;
+  transform: translateY(0%) scale(1.2);
+  transform-origin: center center;
+}
+
 .webgl-home__stage {
   position: fixed;
   inset: 0;

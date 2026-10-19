@@ -778,7 +778,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100svh;
   overflow: hidden;
-  background: var(--intro-ground-light, #eee);
+  background: transparent;
   color: #111;
   --intro-inset: clamp(20px, 5vw, 130px);
   pointer-events: auto;
@@ -788,13 +788,13 @@ onUnmounted(() => {
 }
 
 .homepage-intro.is-dark {
-  background: var(--intro-ground-dark, #111111);
+  background: transparent;
   color: #f1ede4;
 }
 
 .homepage-intro.is-flat,
 .homepage-intro.is-dark.is-flat {
-  background: var(--cream);
+  background: transparent;
 }
 
 .homepage-intro__theme {

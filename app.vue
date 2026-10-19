@@ -7,6 +7,9 @@
   </ClientOnly>
 
   <div v-if="preloaderReady" id="app">
+    <ClientOnly>
+      <WebglHome backdrop />
+    </ClientOnly>
     <HomepageIntro v-if="introActive" />
     <AppHeader />
     <main class="page-wrapper">
