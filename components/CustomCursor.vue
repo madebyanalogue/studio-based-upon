@@ -12,6 +12,7 @@
         'site-cursor--tip-left': tipLeft,
         'site-cursor--on-media': onMedia,
         'site-cursor--on-slider': onSlider,
+        'site-cursor--on-enquire': onEnquire,
         'site-cursor--ink': ink,
       }"
       aria-hidden="true"
@@ -83,7 +84,7 @@
 <script setup lang="ts">
 import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTypologyRowHover'
 
-const { preset, native, suppressLabel, bare, ink, overColumn, onMedia, onSlider, resolveFromPoint } = useCursor()
+const { preset, native, suppressLabel, bare, ink, overColumn, onMedia, onSlider, onEnquire, resolveFromPoint } = useCursor()
 const { isOpen: cartOpen } = useBucket()
 const route = useRoute()
 
@@ -872,6 +873,29 @@ html:not(.dark) .site-cursor--advance.site-cursor--resting .site-cursor__orb {
 
 html:not(.dark) .site-cursor__hint {
   color: var(--red);
+  mix-blend-mode: normal;
+}
+
+/* White enquire surfaces: red cursor in dark mode, same as light mode. */
+html.dark .site-cursor--on-enquire .site-cursor__orb,
+html.dark .site-cursor--on-enquire.site-cursor--advance .site-cursor__orb {
+  background: var(--red);
+  mix-blend-mode: normal;
+}
+
+html.dark .site-cursor--on-enquire.site-cursor--advance.site-cursor--resting .site-cursor__orb {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--text-color);
+}
+
+html.dark .site-cursor--on-enquire .site-cursor__hint {
+  color: var(--red);
+  mix-blend-mode: normal;
+}
+
+html.dark .site-cursor--on-enquire .site-cursor__chev {
+  border-color: var(--red);
   mix-blend-mode: normal;
 }
 

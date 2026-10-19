@@ -265,11 +265,8 @@ export const useEnquiryForm = () => {
     }
   }
 
-  const submit = async () => {
-    if (!form.value.name.trim() || !form.value.email.trim()) {
-      error.value = 'Please enter your name and email.'
-      return
-    }
+  const submit = async (extra: Record<string, unknown> = {}) => {
+    if (!form.value.name.trim() || !form.value.email.trim()) return
 
     isSubmitting.value = true
     error.value = null
@@ -277,7 +274,7 @@ export const useEnquiryForm = () => {
     try {
       await $fetch('/api/enquiry', {
         method: 'POST',
-        body: await buildPayload(),
+        body: await buildPayload(extra),
       })
       isSuccess.value = true
       attachments.value = []

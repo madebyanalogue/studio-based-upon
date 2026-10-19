@@ -5,7 +5,7 @@
       :class="{ 'enquire__stage--in': stageVisible }"
       :inert="!stageVisible"
     >
-      <div class="enquire__copy">
+      <div class="enquire__lead">
       <header class="enquire__heading">
         <svg class="enquire__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
           <defs>
@@ -35,40 +35,47 @@
         </h1>
       </header>
 
-      <aside class="enquire__aside">
-        <div class="enquire__aside-block flex flex-col gap-2">
-          <h2 class="h6 muted">Contact</h2>
-          <p class="mono-copy enquire__aside-line">
-            Telephone <a :href="`tel:${phoneTel}`"><span class="enquire__aside-bracket">[</span>{{ phone }}<span class="enquire__aside-bracket">]</span></a>
-          </p>
-          <p class="mono-copy enquire__aside-line">
-            Email <a :href="`mailto:${enquiryEmail}`"><span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span></a>
-          </p>
-          <p v-if="studioAddress" class="mono-copy enquire__aside-line">
-            Address <span class="enquire__aside-bracket">[</span>{{ studioAddress }}<span class="enquire__aside-bracket">]</span>
-          </p>
+      <div class="enquire__aside-block flex flex-col gap-2">
+        <div class="enquire__aside-head">
+          <h2 class="h6 muted">Working with clients</h2>
         </div>
-      </aside>
+        <p class="mono-copy">
+          The client is a critical part of the process. We collaborate with designers
+          and architects to realise work for private residences, yachts, hotels,
+          restaurants and fashion houses.
+        </p>
+        <p class="mono-copy">
+          Share a selection, a drawing, or a few words about the project. We will be
+          in touch to talk through material, scale and how the work is made.
+        </p>
+      </div>
+
+      <div class="enquire__contact">
+        <a class="enquire__contact-email interface" :href="`mailto:${enquiryEmail}`">
+          <span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span>
+        </a>
+        <div class="enquire__contact-social">
+          <a
+            class="enquire__contact-link interface"
+            href="https://www.instagram.com/studiobasedupon"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Ig
+          </a>
+          <a
+            class="enquire__contact-link interface"
+            href="https://www.pinterest.com/Studio_Based_Upon/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Pi
+          </a>
+        </div>
+      </div>
       </div>
 
       <div class="enquire__half">
-      <div class="enquire__panel">
-    <div class="enquire__aside-block flex flex-col gap-2">
-      <div class="enquire__aside-head">
-        <h2 class="h6 muted">Working with clients</h2>
-        <span class="enquire__pixel-x" aria-hidden="true" />
-      </div>
-      <p class="mono-copy">
-        The client is a critical part of the process. We collaborate with designers
-        and architects to realise work for private residences, yachts, hotels,
-        restaurants and fashion houses.
-      </p>
-      <p class="mono-copy">
-        Share a selection, a drawing, or a few words about the project. We will be
-        in touch to talk through material, scale and how the work is made.
-      </p>
-    </div>
-
     <!-- <p class="enquire__intro mono-copy">
       {{ page?.heroSubtitle || 'Tell us about your project, or request a call back below.' }}
     </p> -->
@@ -79,99 +86,14 @@
       <button type="button" class="enquire__send" @click="resetForm">Send another enquiry</button>
     </div>
 
-    <form v-else class="enquire__form" @submit.prevent="submit">
-      <div class="enquire__field">
-        <span class="enquire__label interface">
-          Attachments <span class="enquire__hint">optional</span>
-        </span>
-        <label
-          class="enquire__drop"
-          :class="{ 'enquire__drop--over': dropActive }"
-          @dragenter.prevent="onDragEnter"
-          @dragover.prevent="onDragOver"
-          @dragleave.prevent="onDragLeave"
-          @drop.prevent="onDrop"
-        >
-          <input
-            type="file"
-            class="sr-only"
-            multiple
-            accept="image/*,.pdf,.doc,.docx"
-            @change="onFilesSelected"
-          />
-          <span class="enquire__drop-title">Drop files here</span>
-          <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
-        </label>
-        <ul v-if="attachments.length" class="enquire__files">
-          <li v-for="file in attachments" :key="file.id" class="enquire__file">
-            <span class="enquire__file-name">{{ file.name }}</span>
-            <span class="enquire__file-size">{{ formatSize(file.size) }}</span>
-            <button
-              type="button"
-              class="enquire__file-remove"
-              :aria-label="`Remove ${file.name}`"
-              @click="removeAttachment(file.id)"
-            >
-              ×
-            </button>
-          </li>
-        </ul>
-      </div>
-
-      <label class="enquire__field">
-        <span class="enquire__label interface">Start a conversation</span>
-        <textarea
-          v-model="form.message"
-          name="message"
-          rows="6"
-          placeholder="Tell us about your project…"
-        />
-      </label>
-
-      <div class="enquire__moodboards">
-        <p class="enquire__label interface">Include selections <span class="enquire__hint">optional</span></p>
-
-        <p v-if="!selectableMoodboards.length" class="enquire__empty mono-copy">
-          You have no saved selections yet. Heart pieces across the site to build one.
-        </p>
-
-        <ul
-          v-else
-          class="enquire__board-list"
-          :class="{ 'enquire__board-list--single': selectableMoodboards.length === 1 }"
-        >
-          <li v-for="board in selectableMoodboards" :key="board.id">
-            <label class="enquire__board" :class="{ 'enquire__board--active': selectedIds.includes(board.id) }">
-              <input
-                type="checkbox"
-                class="sr-only"
-                :value="board.id"
-                :checked="selectedIds.includes(board.id)"
-                @change="toggleBoard(board.id)"
-              />
-              <span class="enquire__board-thumbs" aria-hidden="true">
-                <span
-                  v-for="item in board.items.slice(0, 4)"
-                  :key="item.id"
-                  class="enquire__board-thumb"
-                >
-                  <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.title" loading="lazy" />
-                </span>
-              </span>
-              <span class="enquire__board-meta">
-                <span class="enquire__board-name  interface">{{ board.name }}</span>
-                <span class="enquire__board-count">{{ board.items.length }} {{ board.items.length === 1 ? 'item' : 'items' }}</span>
-              </span>
-              <span class="enquire__board-check" aria-hidden="true">{{ selectedIds.includes(board.id) ? '✓' : '' }}</span>
-            </label>
-          </li>
-        </ul>
-      </div>
-
+    <form v-else class="enquire__form" novalidate @submit.prevent="submit">
       <div class="enquire__fields">
         <label class="enquire__field">
-          <span class="enquire__label interface">Name</span>
-          <input v-model="form.name" type="text" name="name" autocomplete="name" required />
+          <span class="enquire__label interface">
+            Name
+            <span v-if="missing.name" class="enquire__hint enquire__required">Required</span>
+          </span>
+          <input v-model="form.name" type="text" name="name" autocomplete="name" />
         </label>
 
         <label class="enquire__field">
@@ -180,9 +102,139 @@
         </label>
 
         <label class="enquire__field enquire__field--full">
-          <span class="enquire__label interface">Email</span>
-          <input v-model="form.email" type="email" name="email" autocomplete="email" required />
+          <span class="enquire__label interface">
+            Email
+            <span v-if="missing.email" class="enquire__hint enquire__required">Required</span>
+          </span>
+          <input v-model="form.email" type="email" name="email" autocomplete="email" />
         </label>
+      </div>
+
+      <div class="enquire__message-block">
+      <label class="enquire__field">
+        <span class="enquire__label interface">Message</span>
+        <textarea
+          v-model="form.message"
+          name="message"
+          rows="6"
+          placeholder="Tell us about your project…"
+        />
+      </label>
+
+      <div class="enquire__field enquire__attach" :class="{ 'enquire__attach--open': attachmentsOpen }">
+        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
+          <span class="interface">Attachments</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div class="enquire__attach-sheet" :style="attachmentsLiftStyle">
+        <button
+          type="button"
+          class="enquire__attach-trigger"
+          :aria-expanded="attachmentsOpen"
+          @click="toggleAttachments"
+        >
+          <span class="interface">Attachments</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div class="enquire__attach-panel">
+          <div class="enquire__attach-panel-inner">
+            <div class="enquire__attach-body">
+              <label
+                class="enquire__drop"
+                :class="{ 'enquire__drop--over': dropActive }"
+                @dragenter.prevent="onDragEnter"
+                @dragover.prevent="onDragOver"
+                @dragleave.prevent="onDragLeave"
+                @drop.prevent="onDrop"
+              >
+                <input
+                  type="file"
+                  class="sr-only"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx"
+                  @change="onFilesSelected"
+                />
+                <span class="enquire__drop-title">Drop files here</span>
+                <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
+              </label>
+              <ul v-if="attachments.length" class="enquire__files">
+                <li v-for="file in attachments" :key="file.id" class="enquire__file">
+                  <span class="enquire__file-name">{{ file.name }}</span>
+                  <span class="enquire__file-size">{{ formatSize(file.size) }}</span>
+                  <button
+                    type="button"
+                    class="enquire__file-remove"
+                    :aria-label="`Remove ${file.name}`"
+                    @click="removeAttachment(file.id)"
+                  >
+                    ×
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <div class="enquire__field enquire__attach" :class="{ 'enquire__attach--open': selectionsOpen }">
+        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
+          <span class="interface">Include selections</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div ref="selectionsSheetEl" class="enquire__attach-sheet">
+        <button
+          type="button"
+          class="enquire__attach-trigger"
+          :aria-expanded="selectionsOpen"
+          @click="toggleSelections"
+        >
+          <span class="interface">Include selections</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div class="enquire__attach-panel">
+          <div class="enquire__attach-panel-inner">
+            <div class="enquire__attach-body enquire__moodboards">
+              <p v-if="!selectableMoodboards.length" class="enquire__empty mono-copy">
+                You have no saved selections yet. Heart pieces across the site to build one.
+              </p>
+
+              <ul
+                v-else
+                class="enquire__board-list"
+                :class="{ 'enquire__board-list--single': selectableMoodboards.length === 1 }"
+              >
+                <li v-for="board in selectableMoodboards" :key="board.id">
+                  <label class="enquire__board" :class="{ 'enquire__board--active': selectedIds.includes(board.id) }">
+                    <input
+                      type="checkbox"
+                      class="sr-only"
+                      :value="board.id"
+                      :checked="selectedIds.includes(board.id)"
+                      @change="toggleBoard(board.id)"
+                    />
+                    <span class="enquire__board-thumbs" aria-hidden="true">
+                      <span
+                        v-for="item in board.items.slice(0, 4)"
+                        :key="item.id"
+                        class="enquire__board-thumb"
+                      >
+                        <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.title" loading="lazy" />
+                      </span>
+                    </span>
+                    <span class="enquire__board-meta">
+                      <span class="enquire__board-name interface">{{ board.name }}</span>
+                      <span class="enquire__board-count mono">{{ board.items.length }} {{ board.items.length === 1 ? 'item' : 'items' }}</span>
+                    </span>
+                    <span class="enquire__board-check" aria-hidden="true">{{ selectedIds.includes(board.id) ? '✓' : '' }}</span>
+                  </label>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
       </div>
 
       <p v-if="error" class="enquire__error" role="alert">{{ error }}</p>
@@ -193,8 +245,6 @@
         </button>
       </div>
     </form>
-
-      </div>
       </div>
     </div>
   </article>
@@ -356,13 +406,54 @@ const resetForm = () => {
   attachments.value = []
   isSuccess.value = false
   error.value = null
+  attempted.value = false
 }
 
-const submit = async () => {
-  if (!form.name.trim() || !form.email.trim()) {
-    error.value = 'Please enter your name and email.'
+const attempted = ref(false)
+const missing = computed(() => ({
+  name: attempted.value && !form.name.trim(),
+  email: attempted.value && !form.email.trim(),
+}))
+
+const attachmentsOpen = ref(false)
+const selectionsOpen = ref(false)
+
+const toggleAttachments = () => {
+  attachmentsOpen.value = !attachmentsOpen.value
+  if (attachmentsOpen.value) selectionsOpen.value = false
+}
+
+const toggleSelections = () => {
+  selectionsOpen.value = !selectionsOpen.value
+  if (selectionsOpen.value) attachmentsOpen.value = false
+}
+
+const selectionsSheetEl = ref<HTMLElement | null>(null)
+const attachmentsLift = ref(0)
+const attachmentsLiftStyle = computed(() =>
+  attachmentsLift.value ? { transform: `translateY(${attachmentsLift.value}px)` } : undefined,
+)
+
+const syncSelectionsLift = () => {
+  const sheet = selectionsSheetEl.value
+  const row = sheet?.parentElement
+  if (!sheet || !row) {
+    attachmentsLift.value = 0
     return
   }
+  attachmentsLift.value = Math.min(0, row.offsetHeight - sheet.offsetHeight)
+}
+
+watch(selectionsSheetEl, (sheet, _, onCleanup) => {
+  if (!sheet) return
+  const observer = new ResizeObserver(() => syncSelectionsLift())
+  observer.observe(sheet)
+  onCleanup(() => observer.disconnect())
+})
+
+const submit = async () => {
+  attempted.value = true
+  if (!form.name.trim() || !form.email.trim()) return
 
   isSubmitting.value = true
   error.value = null
@@ -615,8 +706,7 @@ html.dark .enquire {
 .enquire__stage {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 2fr) minmax(0, 0.45fr);
-  grid-template-areas: "heading form aside";
+  grid-template-columns: minmax(0, 1fr) minmax(840px, 1fr);
   align-items: start;
   width: 100%;
   max-width: none;
@@ -626,12 +716,14 @@ html.dark .enquire {
   box-sizing: border-box;
 }
 
-.enquire__copy {
-  display: contents;
+.enquire__lead {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  min-width: 0;
 }
 
 .enquire__heading {
-  grid-area: heading;
   position: relative;
   min-width: 0;
   text-align: left;
@@ -644,25 +736,14 @@ html.dark .enquire {
   transform: none;
 }
 
-.enquire__aside {
-  display: none;
-  grid-area: aside;
-  flex-direction: column;
-  gap: 110px;
-  justify-self: start;
-  max-width: 320px;
-  min-width: 0;
-  text-align: left;
-}
-
 .enquire__aside-block,
-.enquire__panel {
+.enquire__half {
   opacity: 0;
   transition: opacity 0.7s ease;
 }
 
 .enquire__stage--in .enquire__aside-block,
-.enquire__stage--in .enquire__panel {
+.enquire__stage--in .enquire__half {
   opacity: 1;
 }
 
@@ -688,42 +769,23 @@ html.dark .enquire {
 }
 
 .enquire__half {
-  grid-area: form;
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  align-items: flex-start;
   width: 100%;
-  max-width: none;
   min-width: 0;
   padding: 0;
   border: 0;
-  padding-top: 20px;
 }
 
-.enquire__panel {
-  display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
-  gap: 1px;
-  align-items: start;
-  width: 100%;
-  max-width: none;
+.enquire__lead .mono-copy {
   min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  text-align: left;
 }
 
-.enquire__panel > .enquire__aside-block {
-  position: sticky;
-  top: 10px;
-  align-self: start;
-  background: white;
-  padding: 40px;
-  color: #111;
-  --charcoal: #111;
-  --text-color: #111;
-  --muted: rgba(17, 17, 17, 0.55);
+.enquire__half .enquire__form,
+.enquire__half .enquire__success {
+  width: 100%;
+  max-width: 840px;
 }
 
 .enquire__aside-head {
@@ -768,33 +830,15 @@ html.dark .enquire {
 
 @media (max-width: 1100px) {
   .enquire__stage {
-    grid-template-columns: minmax(0, 640px);
-    grid-template-areas:
-      "heading"
-      "form"
-      "aside";
-    justify-content: center;
-    width: min(640px, calc(100% - (var(--gutter) * 2)));
-    margin-inline: auto;
-    padding-inline: 0;
+    grid-template-columns: minmax(0, 1fr);
     row-gap: 40px;
-  }
-
-  .enquire__heading,
-  .enquire__aside {
-    justify-self: stretch;
-    max-width: none;
-  }
-
-  .enquire__panel {
-    grid-template-columns: 1fr;
   }
 }
 
 
 @media (prefers-reduced-motion: reduce) {
   .enquire__aside-block,
-  .enquire__panel {
+  .enquire__half {
     transition: none;
   }
 }

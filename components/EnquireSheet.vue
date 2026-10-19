@@ -34,6 +34,29 @@
         width="2250"
         height="3000"
       />
+      <div class="enquire__contact">
+        <a class="enquire__contact-email interface" :href="`mailto:${enquiryEmail}`">
+          <span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span>
+        </a>
+        <div class="enquire__contact-social">
+          <a
+            class="enquire__contact-link interface"
+            href="https://www.instagram.com/studiobasedupon"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Ig
+          </a>
+          <a
+            class="enquire__contact-link interface"
+            href="https://www.pinterest.com/Studio_Based_Upon/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Pi
+          </a>
+        </div>
+      </div>
     </aside>
     <div
       class="enquire__stage"
@@ -772,13 +795,13 @@ useHead(() => {
   top: 20px;
   right: 20px;
   z-index: 1;
-  width: min(740px, calc(100% - 40px));
+  width: min(840px, calc(100% - 40px));
   pointer-events: none;
   transition: none;
 }
 
 .enquire--intro .enquire__columns {
-  width: min(740px, calc(100% - 501px));
+  width: min(840px, calc(100% - 501px));
 }
 
 .enquire__stage {
@@ -988,6 +1011,15 @@ useHead(() => {
   width: 100%;
   height: auto;
   margin: 0;
+}
+
+.enquire__clients .enquire__contact {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 20px 35px;
+  background: white;
 }
 
 .enquire__form {
@@ -1483,7 +1515,7 @@ useHead(() => {
   .enquire--intro .enquire__columns {
     top: 10px;
     right: 10px;
-    width: min(740px, calc(100% - 20px));
+    width: min(840px, calc(100% - 20px));
   }
 
   .enquire__stage {

@@ -26,6 +26,8 @@ export const useCursor = () => {
   const onMedia = useState<boolean>('site-cursor-on-media', () => false)
   /** Homepage slider: white cursor in light and dark mode. */
   const onSlider = useState<boolean>('site-cursor-on-slider', () => false)
+  /** Dark mode: red cursor over the enquire modal and its white form. */
+  const onEnquire = useState<boolean>('site-cursor-on-enquire', () => false)
   /** Programmatic overlay for onboarding — wins over hover until cleared. */
   const overrideId = useState<string | null>('site-cursor-override', () => null)
 
@@ -60,6 +62,7 @@ export const useCursor = () => {
       overColumn.value = false
       onMedia.value = false
       onSlider.value = false
+      onEnquire.value = false
       suppressLabel.value = false
       bare.value = false
       native.value = overrideId.value === CURSOR_NATIVE_ID
@@ -76,6 +79,7 @@ export const useCursor = () => {
       native.value = true
       onMedia.value = false
       onSlider.value = false
+      onEnquire.value = false
       suppressLabel.value = false
       bare.value = false
       preset.value = null
@@ -86,6 +90,7 @@ export const useCursor = () => {
       native.value = true
       onMedia.value = false
       onSlider.value = false
+      onEnquire.value = false
       suppressLabel.value = false
       bare.value = false
       preset.value = null
@@ -101,6 +106,9 @@ export const useCursor = () => {
       notedSurface = true
       onMedia.value = Boolean(node.closest(LIGHT_CURSOR_MEDIA))
       onSlider.value = Boolean(node.closest('.split-slider'))
+      onEnquire.value = Boolean(
+        node.closest('.enquire__overlay, .enquire__columns, .enquire__form, .enquiry'),
+      )
     }
     for (const node of stack) {
       if (!(node instanceof Element)) continue
@@ -170,6 +178,7 @@ export const useCursor = () => {
     if (!notedSurface) {
       onMedia.value = false
       onSlider.value = false
+      onEnquire.value = false
     }
     suppressLabel.value = false
     bare.value = false
@@ -185,6 +194,7 @@ export const useCursor = () => {
     overColumn,
     onMedia,
     onSlider,
+    onEnquire,
     overrideId,
     setCursor,
     resolveFromPoint,
