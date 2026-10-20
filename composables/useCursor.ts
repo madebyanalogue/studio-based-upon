@@ -9,7 +9,7 @@ const NATIVE_SELECTOR =
 
 /** Dark image surfaces where the light-mode cursor should stay white. */
 const LIGHT_CURSOR_MEDIA =
-  '.split-slider, .collection-rail__card, .story-break__media, .discover-card__media, .product-card__media--image, .pdp__hero-frame, .pdp-index__tile-media, .bucket__thumb, .stack__column-thumb, .stack__cell-figure'
+  '.split-slider, .collection-rail__card, .story-break__media, .discover-card__media, .product-card__media--image, .pdp__hero-frame, .pdp-index__tile-media, .bucket__thumb, .stack__column-thumb, .stack__cell-figure, .showcase__column-shell, .showcase__column, .showcase__cell'
 
 export const useCursor = () => {
   const preset = useState<CursorPreset | null>('site-cursor-preset', () => null)

@@ -34,9 +34,11 @@ onMounted(async () => {
   const host = hostEl.value
   if (!host) return
 
-  files.value = await $fetch<string[]>('/api/webgl-scenes')
+  const listed = await $fetch<string[]>('/api/webgl-scenes')
+  // Lab brief: feature model 2 only (second GLB in the sorted list).
+  files.value = listed.length > 1 ? [listed[1]!] : listed.slice(0, 1)
   if (cancelled || !files.value.length) {
-    status.value = files.value.length ? '' : 'No scenes in public/webgl.'
+    status.value = listed.length ? '' : 'No scenes in public/webgl.'
     return
   }
 
@@ -58,7 +60,7 @@ onMounted(async () => {
 
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
-  renderer.setClearColor(0x10100e, 1)
+  renderer.setClearColor(0xdddcd7, 1)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   host.appendChild(renderer.domElement)
 
@@ -244,7 +246,7 @@ onMounted(async () => {
   bottom: 24px;
   z-index: 2;
   margin: 0;
-  color: #f4f1ea;
+  color: #222;
   font-size: 13px;
   letter-spacing: 0.04em;
 }

@@ -1,5 +1,7 @@
 <template>
   <div class="intro-lab">
+    <LabSubnav />
+    <LabFeatured :slugs="['birth-of-tramazite-mother-rain']" />
     <IntroLabStage
       :overlay="overlay"
       :overlay-anim="overlayAnim"

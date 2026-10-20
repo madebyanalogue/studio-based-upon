@@ -282,6 +282,7 @@ const onToggle = (event?: MouseEvent) => {
       link: href.value,
       imageUrls: urls.length > 1 ? urls : undefined,
       imageIndex: urls.length > 1 ? idx : undefined,
+      materials: props.item.materials?.length ? [...props.item.materials] : undefined,
     },
     { source },
   )

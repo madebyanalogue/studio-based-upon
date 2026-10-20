@@ -350,7 +350,19 @@
           class="stack__freeform"
           data-cursor="default"
           data-lenis-prevent
+          @pointerenter="dismissFreeformTip"
         >
+          <div
+            class="stack__freeform-tip"
+            :class="{
+              'stack__freeform-tip--ready': freeformTipReady,
+              'stack__freeform-tip--gone': freeformTipGone,
+            }"
+            aria-hidden="true"
+          >
+            <p>Resize, arrange your saved items.</p>
+            <p>Then send them as an enquiry.</p>
+          </div>
           <div ref="freeformPlane" class="stack__freeform-plane">
             <div
               v-for="entry in freeformEntries"
@@ -440,6 +452,12 @@
         >
           <div class="stack__lightbox-caption">
             <p class="stack__lightbox-name h6">{{ lightboxActiveTitle }}</p>
+            <p
+              v-if="lightboxActiveMateriality"
+              class="stack__lightbox-meta muted"
+            >
+              {{ lightboxActiveMateriality }}
+            </p>
             <button
               v-if="lightboxActiveItem"
               type="button"
@@ -996,6 +1014,7 @@ import {
 import type { SavedBoard, SelectionBoardEntry } from '~/composables/useBoards'
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
+import { findProductBySlug } from '~/composables/useProductCatalog'
 
 type CellPhase = 'scale-out' | 'scale-in' | 'scaled-in' | 'undo-ready' | 'undo-leaving'
 
@@ -2787,6 +2806,8 @@ const freeformDotsLeaveMs = ref(200)
 /** Close has started — don't fade the matrix back in when the flight ends. */
 const freeformDotsSuppress = ref(false)
 let freeformDotsLeaveTimer = 0
+const freeformTipReady = ref(false)
+const freeformTipGone = ref(false)
 
 const beginFreeformDotsLeave = (ms = 200) => {
   if (!freeformDotsOn.value) return
@@ -2799,6 +2820,11 @@ const beginFreeformDotsLeave = (ms = 200) => {
   }, ms)
 }
 
+const dismissFreeformTip = () => {
+  if (!freeformTipReady.value || freeformTipGone.value) return
+  freeformTipGone.value = true
+}
+
 /** Dot grid waits until a freeform arrival has settled, then fades in. */
 watch([showFreeform, viewFlipBusy, isFlipping], () => {
   if (freeformDotsSuppress.value) return
@@ -2806,10 +2832,13 @@ watch([showFreeform, viewFlipBusy, isFlipping], () => {
     window.clearTimeout(freeformDotsLeaveTimer)
     freeformDotsLeaving.value = false
     freeformDotsOn.value = true
+    freeformTipReady.value = true
     return
   }
   if (showFreeform.value || !freeformDotsOn.value || freeformDotsLeaving.value) return
   beginFreeformDotsLeave(200)
+  freeformTipReady.value = false
+  freeformTipGone.value = false
 }, { immediate: true })
 
 const FREEFORM_KEY = 'sba-cart-freeform'
@@ -3559,6 +3588,17 @@ const lightboxActiveTitle = computed(
 const lightboxActiveItem = computed(
   () => freeformEntries.value[lightboxIndex.value]?.item ?? null,
 )
+const lightboxActiveMateriality = computed(() => {
+  const item = lightboxActiveItem.value
+  if (!item) return ''
+  const stored = (item.materials || []).map((m) => String(m).trim()).filter(Boolean)
+  if (stored.length) return stored.join(', ')
+  const slug = productSlug(item)
+  if (!slug) return ''
+  const product = findProductBySlug(slug)
+  const mats = (product?.materials || []).map((m) => String(m).trim()).filter(Boolean)
+  return mats.length ? mats.join(', ') : ''
+})
 
 let lbScroll = 0
 let lbTarget = 0
@@ -10348,6 +10388,14 @@ onBeforeUnmount(() => {
   color: var(--charcoal);
 }
 
+.stack__lightbox-meta {
+  margin: 0.35rem 0 0;
+  font-family: var(--mono);
+  font-size: var(--text-sm, 13px);
+  letter-spacing: 0.065em;
+  line-height: 1.3;
+}
+
 .stack__lightbox-remove {
   display: none;
 }
@@ -10612,6 +10660,48 @@ onBeforeUnmount(() => {
   z-index: 1;
   padding: var(--header-height) 28px 120px;
   box-sizing: border-box;
+}
+
+.stack__freeform-tip {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.35em;
+  margin: 0;
+  padding: var(--header-height) 28px 120px;
+  box-sizing: border-box;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(8px);
+  transition:
+    opacity 0.9s ease,
+    filter 0.9s ease;
+}
+
+.stack__freeform-tip--ready {
+  opacity: 1;
+  filter: blur(0);
+}
+
+.stack__freeform-tip--gone {
+  opacity: 0;
+  filter: blur(10px);
+  transition-duration: 1.1s;
+}
+
+.stack__freeform-tip p {
+  margin: 0;
+  max-width: 18em;
+  font-family: var(--lacquer);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
 }
 
 .stack__freeform-plane {

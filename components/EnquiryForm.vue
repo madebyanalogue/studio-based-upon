@@ -9,7 +9,7 @@
       }"
       role="dialog"
       aria-modal="true"
-      aria-label="Send enquiry"
+      aria-labelledby="enquiry-header-title"
       data-cursor="default"
     >
             <div
@@ -78,6 +78,7 @@
 
           <div class="enquiry__fields" data-lenis-prevent>
             <header class="enquiry__header" data-lenis-prevent>
+              <h2 id="enquiry-header-title" class="enquiry__title">{{ headerTitle }}</h2>
               <button type="button" class="enquiry__close" aria-label="Close" @click="close">
                 <span class="enquiry__close-icon" aria-hidden="true" />
               </button>
@@ -593,7 +594,14 @@ watch(isOpen, async (open) => {
   if (id === runId) syncPreviewLenis()
 }, { flush: 'sync' })
 
-const { moodboards, removeItem } = useBucket()
+const { moodboards, activeMoodboard, removeItem } = useBucket()
+
+const headerTitle = computed(() => {
+  if (source.value === 'product') {
+    return previewItems.value[0]?.title?.trim() || 'Enquire'
+  }
+  return activeMoodboard.value?.name?.trim() || 'My Selection'
+})
 
 const removePreviewItem = (id: string) => {
   previewItems.value = previewItems.value.filter((item) => item.id !== id)
@@ -758,7 +766,7 @@ onUnmounted(() => {
 .enquiry__panel {
   position: relative;
   width: min(1350px, 100%);
-  max-height: min(90dvh, 860px);
+  max-height: min(90dvh, var(--enquire-form-height));
   overflow: visible;
   display: flex;
   flex-direction: column;
@@ -773,27 +781,40 @@ onUnmounted(() => {
   --enquire-border-style: 1px dotted var(--grid-line);
   --enquire-pad: 35px;
   --enquire-copy: 14px;
-  --enquire-title-pad: 25px;
-  --enquire-field-pad: 18px;
+  --enquire-title-pad: 20px;
+  --enquire-field-pad: 22px;
+  --enquire-form-height: 930px;
   border: 0;
 }
 
 .enquiry__header {
-  position: absolute;
-  top: 0;
-  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: relative;
   z-index: 3;
+  flex: none;
   width: 100%;
-  height: 0;
   margin: 0;
-  padding: 0;
-  pointer-events: none;
+  padding: var(--enquire-pad);
+  border-bottom: var(--enquire-border-style);
+  background: #fff;
+  box-sizing: border-box;
 }
 
 .enquiry__title {
   margin: 0;
-  font-size: 25px;
+  min-width: 0;
+  padding: 0;
   font-family: var(--mono);
+  font-size: 25px;
+  font-weight: 400;
+  line-height: 0.85;
+  color: #111;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .enquiry__subtitle {
@@ -803,18 +824,15 @@ onUnmounted(() => {
 }
 
 .enquiry__close {
-  pointer-events: auto;
-  position: absolute;
-  top: 0;
-  left: calc(100% + 1px);
-  width: 70px;
-  height: 70px;
+  flex: none;
+  width: 25px;
+  height: 25px;
   display: grid;
   place-items: center;
   margin: 0;
   padding: 0;
   border: 0;
-  background: #fff;
+  background: transparent;
   color: #111;
   box-sizing: border-box;
   cursor: pointer;
@@ -822,14 +840,13 @@ onUnmounted(() => {
 
 .enquiry__close:hover {
   color: var(--accent, var(--charcoal));
-  border-color: currentColor;
 }
 
 .enquiry__close-icon {
   position: relative;
   display: block;
-  width: 25px;
-  height: 25px;
+  width: 20px;
+  height: 20px;
   opacity: 0.6;
 }
 
@@ -858,8 +875,8 @@ onUnmounted(() => {
   gap: 0;
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
-  height: min(860px, 90dvh);
-  max-height: 860px;
+  height: min(var(--enquire-form-height), 90dvh);
+  max-height: var(--enquire-form-height);
   overflow: visible;
   flex: 1;
 }

@@ -84,7 +84,12 @@ const introGroundOn = computed(
   () => introGround.value.active && isHomepagePath(route.path),
 )
 const webglHomeOn = computed(
-  () => !introActive.value && !introGroundOn.value,
+  () =>
+    !introActive.value &&
+    !introGroundOn.value &&
+    route.path !== '/webgl' &&
+    route.path !== '/webgl-home' &&
+    route.path !== '/webgl-metallic',
 )
 
 watch(

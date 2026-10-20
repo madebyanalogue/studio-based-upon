@@ -13,6 +13,8 @@ export type BucketItem = {
   imageUrls?: string[]
   /** Index into imageUrls for the currently shown image. */
   imageIndex?: number
+  /** Materiality labels shown under the title in cart / lightbox. */
+  materials?: string[]
 }
 
 /** Stable cart id — product + image index so multiple gallery frames can be saved. */

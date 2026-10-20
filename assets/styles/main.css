@@ -2,7 +2,7 @@
   --gutter: 16px;
   --header-height: 56px;
   /* Sit a label just above its anchor. 100% resolves on the element that uses it. */
-  --above: calc(100% + 28px);
+  --above: calc(100% + 40px);
   --filter-bar-height: 72px;
   /* PDP side columns */
   --side-column-width: 320px;

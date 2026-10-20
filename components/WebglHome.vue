@@ -186,6 +186,47 @@ onMounted(async () => {
   relief.setTheme(ground, themeMix)
   renderer.setClearColor(ground, 1)
 
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  type GhostPhase = 'wait' | 'stroke'
+  const ghost = {
+    phase: 'wait' as GhostPhase,
+    waitUntil: performance.now() + 400,
+    from: { x: 0.42, y: 0.48 },
+    to: { x: 0.58, y: 0.55 },
+    t: 0,
+    duration: 1.1,
+    lastX: 0.5,
+    lastY: 0.5,
+  }
+  const ghostPick = () => {
+    const margin = 0.14
+    const x = margin + Math.random() * (1 - margin * 2)
+    const y = margin + Math.random() * (1 - margin * 2)
+    return { x, y }
+  }
+  const ghostStartStroke = (now: number) => {
+    ghost.from = { x: ghost.lastX, y: ghost.lastY }
+    ghost.to = ghostPick()
+    const dx = ghost.to.x - ghost.from.x
+    const dy = ghost.to.y - ghost.from.y
+    const dist = Math.hypot(dx, dy)
+    ghost.duration = 0.7 + dist * 1.4 + Math.random() * 0.35
+    ghost.t = 0
+    ghost.phase = 'stroke'
+    ghost.waitUntil = now
+  }
+  const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
+  const drivePointer = (x: number, y: number, dtMs: number) => {
+    const parked = relief.pointer.x < -0.5
+    relief.velocity.set(
+      parked ? 0 : (x - relief.pointer.x) / dtMs * 8,
+      parked ? 0 : (y - relief.pointer.y) / dtMs * 8,
+    )
+    const speed = relief.velocity.length()
+    if (speed > 0.35) relief.velocity.multiplyScalar(0.35 / speed)
+    relief.pointer.set(x, y)
+  }
+
   let frame = 0
   let last = performance.now()
   const loop = (now: number) => {
@@ -193,6 +234,32 @@ onMounted(async () => {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
     elapsed += dt
+
+    if (!reduceMotion) {
+      if (ghost.phase === 'wait') {
+        if (now >= ghost.waitUntil) ghostStartStroke(now)
+        else {
+          relief.velocity.multiplyScalar(0.9)
+          if (relief.pointer.x > -0.5) {
+            relief.pointer.x += (ghost.lastX - relief.pointer.x) * 0.04
+            relief.pointer.y += (ghost.lastY - relief.pointer.y) * 0.04
+          }
+        }
+      } else {
+        ghost.t = Math.min(1, ghost.t + dt / ghost.duration)
+        const e = easeInOut(ghost.t)
+        const x = ghost.from.x + (ghost.to.x - ghost.from.x) * e
+        const y = ghost.from.y + (ghost.to.y - ghost.from.y) * e
+        drivePointer(x, y, Math.max(8, dt * 1000))
+        ghost.lastX = x
+        ghost.lastY = y
+        if (ghost.t >= 1) {
+          ghost.phase = 'wait'
+          ghost.waitUntil = now + 280 + Math.random() * 900
+        }
+      }
+    }
+
     const delta = (window.scrollY - scrollY) / Math.max(1, window.innerHeight)
     scrollY = window.scrollY
     placeCamera(delta)
@@ -219,19 +286,13 @@ onMounted(async () => {
   }
   let lastPointer = 0
   const onPointer = (event: PointerEvent) => {
+    if (!reduceMotion) return
     const x = event.clientX / window.innerWidth
     const y = 1 - event.clientY / window.innerHeight
     const now = performance.now()
     const dt = Math.max(8, now - lastPointer)
     lastPointer = now
-    const parked = relief.pointer.x < -0.5
-    relief.velocity.set(
-      parked ? 0 : (x - relief.pointer.x) / dt * 8,
-      parked ? 0 : (y - relief.pointer.y) / dt * 8,
-    )
-    const speed = relief.velocity.length()
-    if (speed > 0.35) relief.velocity.multiplyScalar(0.35 / speed)
-    relief.pointer.set(x, y)
+    drivePointer(x, y, dt)
   }
   window.addEventListener('resize', onResize)
   window.addEventListener('pointermove', onPointer)

@@ -2434,11 +2434,12 @@ const dismissColumnScrollHint = () => {
 
 const dismissScrollHint = () => {
   scrollHintDismissed = true
-  homeScrollHint.value = false
+  if (homeScrollHint.value) homeScrollHint.value = false
 }
 
 const showScrollHint = () => {
-  homeScrollHint.value = false
+  if (scrollHintDismissed || pageLeaving) return
+  homeScrollHint.value = true
 }
 
 const pageClipTargets = () => {

@@ -842,8 +842,8 @@ useHead(() => {
   box-sizing: border-box;
   --enquire-pad: 35px;
   --enquire-copy: 14px;
-  --enquire-title-pad: 25px;
-  --enquire-field-pad: 18px;
+  --enquire-title-pad: 20px;
+  --enquire-field-pad: 22px;
   --grid-line: #bbb;
   --enquire-border-style: 1px dotted var(--grid-line);
   background: #fff;

@@ -333,11 +333,6 @@
           class="pdp__zoom-image"
           :src="activeEntry.zoomSrc || activeEntry.src"
           :alt="`${product.title} enlarged`"
-          :style="
-            galleryAspects[activeEntry.id]
-              ? { aspectRatio: String(galleryAspects[activeEntry.id]) }
-              : undefined
-          "
           draggable="false"
           data-cursor-label="Close"
           @click.stop="collapseImageZoom"
@@ -539,9 +534,10 @@ let stripScrollRaf = 0
 let imageZoomFlip: gsap.core.Tween | null = null
 let imageZooming = false
 let zoomFlyer: HTMLImageElement | null = null
-/** 0–1 down the image. The open zoom centres this point. */
+/** 0–1 across / down the image. The open zoom centres this point. */
+let zoomFocusX = 0.5
 let zoomFocusY = 0.5
-/** Trackpad pinch scale of the enlarged image. 1 is full viewport width. */
+/** Trackpad pinch scale. 1 = cover the viewport (fill width and height). */
 let pinchScale = 1
 const PINCH_MIN = 1
 const PINCH_MAX = 4
@@ -1228,18 +1224,61 @@ const thawGalleryScroll = () => {
   galleryLenis.start()
 }
 
-/** Scroll so the click sits in the centre, without padding past the image. */
+/** Size the zoom image so it covers the viewport, then apply pinch. */
+const applyZoomCoverSize = () => {
+  const layer = zoomLayerRef.value
+  const image = zoomImageRef.value
+  if (!layer || !image) return
+  const entryId = activeEntry.value?.id || ''
+  const ar =
+    galleryAspects[entryId] ||
+    (image.naturalWidth > 0 && image.naturalHeight > 0
+      ? image.naturalWidth / image.naturalHeight
+      : image.offsetWidth / Math.max(image.offsetHeight, 1))
+  if (!Number.isFinite(ar) || ar <= 0) return
+  const viewW = layer.clientWidth
+  const viewH = layer.clientHeight
+  // Cover: fill both axes (may overflow one).
+  let w = viewW
+  let h = w / ar
+  if (h < viewH) {
+    h = viewH
+    w = h * ar
+  }
+  w *= pinchScale
+  h *= pinchScale
+  image.style.width = `${w}px`
+  image.style.height = `${h}px`
+  image.style.maxWidth = 'none'
+  image.style.aspectRatio = 'auto'
+  image.style.marginTop = '0px'
+}
+
+/** Scroll so the click sits in the centre of the covered image. */
 const layoutZoomToFocus = () => {
   const layer = zoomLayerRef.value
   const image = zoomImageRef.value
   if (!layer || !image) return
-  image.style.marginTop = '0px'
-  settleZoomScroll(0)
-  const view = layer.clientHeight
-  const focus = image.offsetHeight * zoomFocusY
-  const delta = focus - view / 2
-  const maxScroll = Math.max(0, layer.scrollHeight - view)
-  settleZoomScroll(Math.min(Math.max(0, delta), maxScroll))
+  applyZoomCoverSize()
+  const viewW = layer.clientWidth
+  const viewH = layer.clientHeight
+  const maxX = Math.max(0, layer.scrollWidth - viewW)
+  const maxY = Math.max(0, layer.scrollHeight - viewH)
+  const focusX = image.offsetLeft + image.offsetWidth * zoomFocusX
+  const focusY = image.offsetTop + image.offsetHeight * zoomFocusY
+  layer.scrollLeft = Math.min(Math.max(0, focusX - viewW / 2), maxX)
+  settleZoomScroll(Math.min(Math.max(0, focusY - viewH / 2), maxY))
+}
+
+const ensureZoomImageReady = async () => {
+  const image = zoomImageRef.value
+  if (!image) return
+  if (image.complete && image.naturalWidth > 0) return
+  await new Promise<void>((resolve) => {
+    const done = () => resolve()
+    image.addEventListener('load', done, { once: true })
+    image.addEventListener('error', done, { once: true })
+  })
 }
 
 const spawnZoomFlyer = (img: HTMLImageElement, from: DOMRect, radius = 0) => {
@@ -1281,7 +1320,7 @@ const scaleZoomAtPinch = (event: WheelEvent) => {
   const u = image.offsetWidth > 0 ? (contentX - image.offsetLeft) / image.offsetWidth : 0.5
   const v = image.offsetHeight > 0 ? (contentY - image.offsetTop) / image.offsetHeight : 0.5
   pinchScale = next
-  image.style.width = `${next * 100}%`
+  applyZoomCoverSize()
   layer.scrollLeft = image.offsetLeft + u * image.offsetWidth - cursorX
   layer.scrollTop = image.offsetTop + v * image.offsetHeight - cursorY
 }
@@ -1299,12 +1338,14 @@ const onPinchWheel = (event: WheelEvent) => {
       ? Number(host.getAttribute('data-strip-index'))
       : selectedIndex.value
     const img = host?.querySelector('img')
+    let focusX = 0.5
     let focusY = 0.5
     if (img) {
       const rect = img.getBoundingClientRect()
+      if (rect.width > 0) focusX = (event.clientX - rect.left) / rect.width
       if (rect.height > 0) focusY = (event.clientY - rect.top) / rect.height
     }
-    if (Number.isFinite(index)) void expandImageZoom(index, focusY)
+    if (Number.isFinite(index)) void expandImageZoom(index, focusY, focusX)
     return
   }
   scaleZoomAtPinch(event)
@@ -1381,7 +1422,11 @@ const zoomTargetInFrame = (frame: HTMLElement) => {
   return image instanceof HTMLImageElement ? image : frame
 }
 
-const expandImageZoom = async (index: number, focusY: number) => {
+const expandImageZoom = async (
+  index: number,
+  focusY: number,
+  focusX = 0.5,
+) => {
   if (imageZooming) return
   const frame = frameEl(index)
   const img = frame?.querySelector('img')
@@ -1389,6 +1434,7 @@ const expandImageZoom = async (index: number, focusY: number) => {
   selectedIndex.value = index
   heroRef.value = img
   pinchScale = 1
+  zoomFocusX = Math.min(1, Math.max(0, focusX))
   zoomFocusY = Math.min(1, Math.max(0, focusY))
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   imageZooming = true
@@ -1401,10 +1447,13 @@ const expandImageZoom = async (index: number, focusY: number) => {
   const flyer = spawnZoomFlyer(img, from, frameRadiusPx(frame))
   imageExpanded.value = true
   await nextTick()
+  await ensureZoomImageReady()
   await nextFrame()
   layoutZoomToFocus()
   await nextFrame()
   const zoomImage = zoomImageRef.value
+  // Fly to the focused region of the covered image (viewport centre), not
+  // the top-left of a width-only layout — that was jumping lower frames up.
   const to = zoomImage?.getBoundingClientRect()
   if (reduced || from.width < 2 || !zoomImage || !to || to.width < 2) {
     zoomLayerShown.value = true
@@ -1471,11 +1520,15 @@ const onGalleryMediaClick = (index?: number, event?: MouseEvent) => {
       }
       const img = event?.currentTarget
       const rect = img instanceof HTMLElement ? img.getBoundingClientRect() : null
+      const focusX =
+        rect && rect.width > 0 && event
+          ? (event.clientX - rect.left) / rect.width
+          : 0.5
       const focusY =
         rect && rect.height > 0 && event
           ? (event.clientY - rect.top) / rect.height
           : 0.5
-      void expandImageZoom(index, focusY)
+      void expandImageZoom(index, focusY, focusX)
       return
     }
   }
@@ -1662,6 +1715,7 @@ const onAddFrame = (index: number) => {
       imageIndex: index,
       itemType: product.value.series || 'item',
       link: productDetailPath(product.value.slug, product.value),
+      materials: materials.value.length ? [...materials.value] : undefined,
     },
     // Phone, and a PDP opened from the cart: toggle the heart only.
     // A fly source hides the gallery frame and sends it into the stack.
@@ -2680,9 +2734,11 @@ watch(
 
 .pdp__zoom-image {
   display: block;
+  /* Sized in JS to cover the viewport; width/height set on open + pinch. */
   width: 100%;
   height: auto;
   max-width: none;
+  vertical-align: top;
 }
 
 /* Close cross only after the open flyer has finished — dark UI cursor */
