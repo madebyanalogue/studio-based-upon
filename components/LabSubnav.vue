@@ -86,23 +86,28 @@ const isActive = (to: string) =>
 }
 
 :global(html.dark) .lab-subnav,
-:global(body.intro-lab-active) .lab-subnav {
+:global(body.intro-lab-active) .lab-subnav,
+:global(body.webgl-layer-active) .lab-subnav {
   border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(12, 12, 12, 0.88);
   color: #f1ede4;
 }
 
 :global(html.dark) .lab-subnav__eyebrow,
-:global(body.intro-lab-active) .lab-subnav__eyebrow {
+:global(body.intro-lab-active) .lab-subnav__eyebrow,
+:global(body.webgl-layer-active) .lab-subnav__eyebrow {
   color: rgba(241, 237, 228, 0.5);
 }
 
 :global(html.dark) .lab-subnav__link:hover,
-:global(body.intro-lab-active) .lab-subnav__link:hover {
+:global(body.intro-lab-active) .lab-subnav__link:hover,
+:global(body.webgl-layer-active) .lab-subnav__link:hover {
   background: rgba(255, 255, 255, 0.06);
 }
 
 :global(html.dark) .lab-subnav__link.is-on,
-:global(body.intro-lab-active) .lab-subnav__link.is-on {
+:global(body.intro-lab-active) .lab-subnav__link.is-on,
+:global(body.webgl-layer-active) .lab-subnav__link.is-on {
   border-color: rgba(241, 237, 228, 0.28);
   background: rgba(241, 237, 228, 0.1);
 }

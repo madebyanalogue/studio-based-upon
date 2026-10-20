@@ -10,6 +10,9 @@ const STORAGE_KEY = 'basedupon:theme'
  */
 const FORCE_HOME_DARK_UI = true
 
+const forceDarkPath = (path: string) =>
+  (FORCE_HOME_DARK_UI && isHomepagePath(path)) || path === '/webgl' || path.startsWith('/webgl/')
+
 const readStored = (): ThemeMode | null => {
   if (!import.meta.client) return null
   try {
@@ -44,8 +47,7 @@ export const useTheme = () => {
   const isDark = computed(() => theme.value === 'dark')
 
   const applyEffective = () => {
-    const forceDark = FORCE_HOME_DARK_UI && isHomepagePath(route.path)
-    applyDom(forceDark || isDark.value ? 'dark' : 'light')
+    applyDom(forceDarkPath(route.path) || isDark.value ? 'dark' : 'light')
   }
 
   const setTheme = (mode: ThemeMode) => {

@@ -252,8 +252,12 @@ export function createHomeRelief(renderer: THREE.WebGLRenderer) {
   const materials: THREE.ShaderMaterial[] = []
   const pointer = new THREE.Vector2(-1, -1)
   const velocity = new THREE.Vector2()
+  /** Optional second brush (e.g. ghost cursor) — when active, replaces the lagged trail stamp. */
+  const ghost = new THREE.Vector2(-1, -1)
+  const ghostVelocity = new THREE.Vector2()
   const eased = new THREE.Vector2(-1, -1)
   const lagged = new THREE.Vector2(-1, -1)
+  const easedGhost = new THREE.Vector2(-1, -1)
   const layers = { plaster: 1, wake: 1 }
   let fastScroll = 0
   let screenScroll = 0
@@ -332,11 +336,24 @@ export function createHomeRelief(renderer: THREE.WebGLRenderer) {
       eased.lerp(pointer, 0.4)
       lagged.lerp(eased, 0.12)
     }
+    const ghostOn = ghost.x > -0.5
+    if (ghostOn) {
+      if (easedGhost.x < -0.5) easedGhost.copy(ghost)
+      else easedGhost.lerp(ghost, 0.45)
+    } else {
+      easedGhost.set(-1, -1)
+    }
     flowUniforms.uMouse.value.copy(eased)
     flowUniforms.uVelocity.value.copy(velocity)
     velocity.multiplyScalar(0.8)
-    flowUniforms.uMouse2.value.copy(lagged)
-    flowUniforms.uVelocity2.value.copy(eased).sub(lagged).multiplyScalar(0.35)
+    if (ghostOn) {
+      flowUniforms.uMouse2.value.copy(easedGhost)
+      flowUniforms.uVelocity2.value.copy(ghostVelocity)
+      ghostVelocity.multiplyScalar(0.8)
+    } else {
+      flowUniforms.uMouse2.value.copy(lagged)
+      flowUniforms.uVelocity2.value.copy(eased).sub(lagged).multiplyScalar(0.35)
+    }
     flowUniforms.uAspect.value = aspect
     flowUniforms.uTime.value = time
     screenScroll += scrollDelta
@@ -361,7 +378,7 @@ export function createHomeRelief(renderer: THREE.WebGLRenderer) {
       material.uniforms.uPlaster.value = layers.plaster
       material.uniforms.uWake.value = layers.wake
       material.uniforms.uMouse.value.copy(eased)
-      material.uniforms.uMouse2.value.copy(lagged)
+      material.uniforms.uMouse2.value.copy(ghostOn ? easedGhost : lagged)
       material.uniforms.uAspect.value = aspect
     }
   }
@@ -390,5 +407,18 @@ export function createHomeRelief(renderer: THREE.WebGLRenderer) {
     for (const material of materials) material.dispose()
   }
 
-  return { background, assign, resize, update, placeBackground, setTheme, pointer, velocity, layers, dispose }
+  return {
+    background,
+    assign,
+    resize,
+    update,
+    placeBackground,
+    setTheme,
+    pointer,
+    velocity,
+    ghost,
+    ghostVelocity,
+    layers,
+    dispose,
+  }
 }

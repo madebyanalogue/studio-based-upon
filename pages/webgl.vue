@@ -2,10 +2,7 @@
   <div class="webgl-page">
     <LabSubnav />
     <h1 class="webgl-page__title">Animated WebGL</h1>
-    <LabFeatured
-      :slugs="['fish-shoal-platinum', 'blossom-cabinet']"
-      light
-    />
+    <LabFeatured :slugs="['fish-shoal-platinum', 'blossom-cabinet']" />
     <WebglScenes />
   </div>
 </template>
@@ -27,7 +24,7 @@ useHead({
 body.webgl-layer-active,
 body.webgl-layer-active #app,
 body.webgl-layer-active .page-wrapper {
-  background: #dddcd7;
+  background: #000;
 }
 
 body.webgl-layer-active #app {
@@ -44,7 +41,7 @@ body.webgl-layer-active #app {
   z-index: 28;
   margin: 0;
   max-width: min(16rem, calc(100vw - 14rem));
-  color: #222;
+  color: #f1ede4;
   font-size: clamp(1.35rem, 2.4vw, 1.85rem);
   font-weight: 500;
   letter-spacing: 0.02em;

@@ -34,11 +34,26 @@ onMounted(async () => {
   const host = hostEl.value
   if (!host) return
 
-  const listed = await $fetch<string[]>('/api/webgl-scenes')
+  const FALLBACK = [
+    '/webgl/webgl-01-fish.glb',
+    '/webgl/webgl-02-butterfly.glb',
+    '/webgl/webgl-03-bird.glb',
+    '/webgl/webgl-04-woodpecker.glb',
+    '/webgl/webgl-05-toad.glb',
+    '/webgl/webgl-06-turle.glb',
+    '/webgl/webgl-07-dragonfly.glb',
+  ]
+  let listed: string[] = []
+  try {
+    listed = await $fetch<string[]>('/api/webgl-scenes')
+  } catch {
+    listed = FALLBACK
+  }
+  if (!listed.length) listed = FALLBACK
   // Lab brief: feature model 2 only (second GLB in the sorted list).
   files.value = listed.length > 1 ? [listed[1]!] : listed.slice(0, 1)
   if (cancelled || !files.value.length) {
-    status.value = listed.length ? '' : 'No scenes in public/webgl.'
+    status.value = 'No scenes in public/webgl.'
     return
   }
 
@@ -60,7 +75,7 @@ onMounted(async () => {
 
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
-  renderer.setClearColor(0xdddcd7, 1)
+  renderer.setClearColor(0x000000, 1)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   host.appendChild(renderer.domElement)
 
@@ -246,7 +261,7 @@ onMounted(async () => {
   bottom: 24px;
   z-index: 2;
   margin: 0;
-  color: #222;
+  color: rgba(241, 237, 228, 0.72);
   font-size: 13px;
   letter-spacing: 0.04em;
 }

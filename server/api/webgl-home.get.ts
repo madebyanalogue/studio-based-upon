@@ -1,6 +1,12 @@
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
+/** Static fallback — Vercel serverless has no `public/` on disk for `readdir`. */
+const FALLBACK = {
+  model: '/webgl/reliefs_high_compressed.glb',
+  plaster: '/webgl/plaster.jpg',
+}
+
 async function listing(dir: string) {
   try {
     return await readdir(dir)
@@ -35,7 +41,7 @@ export default defineEventHandler(async () => {
     `/webgl/${inHome ? 'home/' : ''}${encodeURIComponent(name)}`
 
   return {
-    model: modelName ? url(modelName, modelInHome) : null,
-    plaster: plasterName ? url(plasterName, plasterInHome) : null,
+    model: modelName ? url(modelName, modelInHome) : FALLBACK.model,
+    plaster: plasterName ? url(plasterName, plasterInHome) : FALLBACK.plaster,
   }
 })
