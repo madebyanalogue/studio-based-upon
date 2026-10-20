@@ -109,7 +109,8 @@ const loadImage = (src: string) =>
 
 const updateCoverRect = () => {
   if (!glowImage || !glowReady) return
-  const scale = 2
+  /** Match reveal: 1.85× cover. */
+  const scale = 1.9
   const iw = glowImage.naturalWidth || glowImage.width
   const ih = glowImage.naturalHeight || glowImage.height
   if (!iw || !ih) return

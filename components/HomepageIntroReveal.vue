@@ -92,7 +92,8 @@ const loadImage = (src: string) =>
 
 const updateCoverRect = () => {
   if (!image || !imageReady) return
-  const scale = 2
+  /** Cover scale — 1.85× zoomed in. */
+  const scale = 1.9
   const iw = image.naturalWidth || image.width
   const ih = image.naturalHeight || image.height
   if (!iw || !ih) return
