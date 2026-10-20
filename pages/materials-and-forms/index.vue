@@ -46,66 +46,28 @@
         @update:model-value="setGridMode($event === 'uniform')"
       />
       <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
-      <div
-        ref="filtersEl"
-        class="products__filters"
-        :class="{
-          'is-collapsed': filtersCollapsed,
-          'is-open': filtersCollapsed && filtersMenuOpen,
-        }"
-        role="group"
-        aria-label="Filter by type or tag"
-      >
-        <div class="products__filters-list">
+        <MorphingSelect
+          label="Filter by type"
+          direction="up"
+          :options="filterSelectOptions"
+          :model-value="activeFilter"
+          @update:model-value="selectFilter"
+        />
+        <div
+          ref="searchEl"
+          class="products__search type-chip"
+          :class="{
+            'products__search--open': searchExpanded,
+            'type-chip--active': isSearchUiActive,
+          }"
+        >
           <button
             type="button"
-            class="type-chip"
-            data-filter-chip="all"
-            :class="{ 'type-chip--active': activeChipKey === 'all' }"
-            :aria-expanded="filtersCollapsed && activeChipKey === 'all' ? filtersMenuOpen : undefined"
-            :aria-haspopup="filtersCollapsed && activeChipKey === 'all' ? 'listbox' : undefined"
-            @click="onFilterChipClick('')"
-          >
-            All <span class="type-chip__count">({{ filterCount('') }})</span>
-            <span
-              v-if="activeChipKey === 'all'"
-              class="type-chip__chevron"
-              aria-hidden="true"
-            >
-              <svg viewBox="0 0 12 8" width="10" height="7">
-                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-          </button>
-          <button
-            v-for="filter in pageFilters"
-            :key="filterKey(filter)"
-            type="button"
-            class="type-chip"
-            :data-filter-chip="filterKey(filter)"
-            :class="{ 'type-chip--active': activeChipKey === filterKey(filter) }"
-            :aria-expanded="filtersCollapsed && activeChipKey === filterKey(filter) ? filtersMenuOpen : undefined"
-            :aria-haspopup="filtersCollapsed && activeChipKey === filterKey(filter) ? 'listbox' : undefined"
-            @click="onFilterChipClick(filterKey(filter))"
-          >
-            {{ filter.label }}
-            <span class="type-chip__count">({{ filterCount(filterKey(filter)) }})</span>
-            <span
-              v-if="activeChipKey === filterKey(filter)"
-              class="type-chip__chevron"
-              aria-hidden="true"
-            >
-              <svg viewBox="0 0 12 8" width="10" height="7">
-                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-          </button>
-
-          <label
-            class="products__search type-chip"
-            data-filter-chip="__search__"
-            :class="{ 'type-chip--active': activeChipKey === '__search__' }"
-            @click="onSearchChipClick"
+            class="products__search-toggle"
+            :aria-expanded="searchExpanded"
+            :aria-controls="searchInputId"
+            aria-label="Search materials and forms"
+            @click="openSearch"
           >
             <span class="products__search-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -113,41 +75,32 @@
                 <path d="M20 20l-3.5-3.5" />
               </svg>
             </span>
-            <input
-              v-model="searchQuery"
-              type="search"
-              class="products__search-input"
-              placeholder="Search"
-              aria-label="Search materials and forms"
-            />
-            <button
-              v-if="activeChipKey === '__search__'"
-              type="button"
-              class="type-chip__chevron"
-              :aria-expanded="filtersCollapsed ? filtersMenuOpen : undefined"
-              :aria-haspopup="filtersCollapsed ? 'listbox' : undefined"
-              aria-label="Show filters"
-              @click.prevent.stop="toggleFilterMenu"
-            >
-              <svg viewBox="0 0 12 8" width="10" height="7" aria-hidden="true">
-                <path d="M1 1.5 L6 6.5 L11 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              v-if="isSearchUiActive"
-              type="button"
-              class="products__search-clear"
-              aria-label="Clear search"
-              @click.prevent="clearSearch"
-            >
-              <span class="products__search-x" aria-hidden="true">
-                <span class="products__search-x-arm" />
-                <span class="products__search-x-arm" />
-              </span>
-            </button>
-          </label>
+          </button>
+          <input
+            :id="searchInputId"
+            ref="searchInputEl"
+            v-model="searchQuery"
+            type="search"
+            class="products__search-input"
+            placeholder="Search"
+            aria-label="Search materials and forms"
+            :tabindex="searchExpanded ? 0 : -1"
+            @focus="searchOpen = true"
+            @keydown.escape.prevent="collapseSearch"
+          />
+          <button
+            type="button"
+            class="products__search-clear"
+            aria-label="Clear search"
+            :tabindex="isSearchUiActive ? 0 : -1"
+            @click.prevent="clearSearch"
+          >
+            <span class="products__search-x" aria-hidden="true">
+              <span class="products__search-x-arm" />
+              <span class="products__search-x-arm" />
+            </span>
+          </button>
         </div>
-      </div>
       </div>
     </div>
 
@@ -1140,12 +1093,41 @@ const filterBeforeSearch = ref<string | null>(
 /** Immediate UI — search owns the active chip as soon as there’s text. */
 const isSearchUiActive = computed(() => searchQuery.value.trim().length > 0)
 
-const filtersEl = ref<HTMLElement | null>(null)
+const searchInputId = `products-search-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+const searchEl = ref<HTMLElement | null>(null)
+const searchInputEl = ref<HTMLInputElement | null>(null)
+const searchOpen = ref(isSearchUiActive.value)
+const searchExpanded = computed(() => searchOpen.value || isSearchUiActive.value)
 
-const activeChipKey = computed(() => {
-  if (isSearchUiActive.value) return '__search__'
-  return activeFilter.value || 'all'
-})
+const openSearch = async () => {
+  searchOpen.value = true
+  await nextTick()
+  searchInputEl.value?.focus()
+}
+
+const collapseSearch = () => {
+  if (isSearchUiActive.value) {
+    searchInputEl.value?.blur()
+    return
+  }
+  searchOpen.value = false
+  searchInputEl.value?.blur()
+}
+
+const onSearchPointerDown = (event: PointerEvent) => {
+  if (!searchExpanded.value || isSearchUiActive.value) return
+  const root = searchEl.value
+  if (root && event.target instanceof Node && root.contains(event.target)) return
+  searchOpen.value = false
+}
+
+const filterSelectOptions = computed(() => [
+  { value: '', label: 'All' },
+  ...pageFilters.value.map((filter) => ({
+    value: filterKey(filter),
+    label: filter.label,
+  })),
+])
 
 const displayTitle = computed(() => {
   if (isSearchUiActive.value) return pageTitle.value
@@ -1242,88 +1224,19 @@ const selectFilter = (key: string) => {
   activeFilter.value = key
 }
 
-const filtersCollapsed = ref(true)
-const filtersMenuOpen = ref(false)
-
-const filterChipEls = () =>
-  Array.from(
-    filtersEl.value?.querySelectorAll<HTMLElement>('[data-filter-chip]') ?? [],
-  )
-
-const chipIsActive = (el: HTMLElement) =>
-  el.classList.contains('type-chip--active')
-
-const layoutFilterMenu = (open: boolean) => {
-  if (!filtersCollapsed.value) {
-    filterChipEls().forEach((el) => {
-      el.style.transform = ''
-    })
-    return
-  }
-  const active = filterChipEls().find(chipIsActive)
-  if (active) active.style.transform = ''
-  const rest = filterChipEls().filter((el) => !chipIsActive(el))
-  let y = 0
-  for (let i = rest.length - 1; i >= 0; i -= 1) {
-    const el = rest[i]!
-    const h = el.offsetHeight || 38
-    y -= h + 8
-    el.style.transition =
-      'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s ease'
-    el.style.transform = open ? `translateY(${y}px)` : ''
-  }
-}
-
-const onFilterChipClick = (key: string) => {
-  const id = key || 'all'
-  if (filtersCollapsed.value) {
-    const current = activeChipKey.value === id
-    if (!filtersMenuOpen.value) {
-      filtersMenuOpen.value = true
-      return
-    }
-    if (current) {
-      filtersMenuOpen.value = false
-      return
-    }
-    selectFilter(key)
-    filtersMenuOpen.value = false
-    return
-  }
-  selectFilter(key)
-}
-
-const toggleFilterMenu = () => {
-  if (!filtersCollapsed.value) return
-  filtersMenuOpen.value = !filtersMenuOpen.value
-}
-
-const onSearchChipClick = (event: MouseEvent) => {
-  if (!filtersCollapsed.value) return
-  const target = event.target
-  if (!(target instanceof Element)) return
-  if (target.closest('input, .products__search-clear, .type-chip__chevron')) return
-  filtersMenuOpen.value = !filtersMenuOpen.value
-}
-
-const onFilterPointerDown = (event: PointerEvent) => {
-  if (!filtersMenuOpen.value) return
-  const root = filtersEl.value
-  if (root && event.target instanceof Node && root.contains(event.target)) return
-  filtersMenuOpen.value = false
-}
-
-watch(filtersMenuOpen, (open) => {
-  void nextTick(() => layoutFilterMenu(open))
-})
-
 const clearSearch = () => {
   const restore = filterBeforeSearch.value
   filterBeforeSearch.value = null
   searchQuery.value = ''
   debouncedSearchQuery.value = ''
   if (restore !== null) activeFilter.value = restore
+  searchOpen.value = false
+  searchInputEl.value?.blur()
 }
+
+watch(isSearchUiActive, (active) => {
+  if (active) searchOpen.value = true
+})
 
 /** Kept for cookie shape only — layout is a fixed 6-col archive grid. */
 const columns = ref(6)
@@ -1985,6 +1898,7 @@ onMounted(() => {
   seedVisibility()
   scrollPageToTop()
   window.addEventListener('pageshow', onPageShow)
+  document.addEventListener('pointerdown', onSearchPointerDown)
 
   if (document.body.classList.contains('preloader-complete')) {
     startPageIntro()
@@ -2001,7 +1915,6 @@ onMounted(() => {
     { once: true },
   )
 
-  document.addEventListener('pointerdown', onFilterPointerDown)
 })
 
 onBeforeRouteLeave(async (to, from) => {
@@ -2023,6 +1936,7 @@ onBeforeUnmount(() => {
   clearScatteredTiles()
   gridEl.value?.classList.remove('products__grid--meta-hold')
   window.removeEventListener('pageshow', onPageShow)
+  document.removeEventListener('pointerdown', onSearchPointerDown)
   history.scrollRestoration = 'auto'
   introRan = false
   pageOutroRan = false
@@ -2030,7 +1944,6 @@ onBeforeUnmount(() => {
   titleSwapGen += 1
   if (revealTimer) clearTimeout(revealTimer)
   if (searchFlipTimer) clearTimeout(searchFlipTimer)
-  document.removeEventListener('pointerdown', onFilterPointerDown)
   teardownTitleGooey()
   if (import.meta.client && gridEl.value) {
     gsap.killTweensOf(
@@ -2134,27 +2047,6 @@ const matchesFacets = (item: FormalItem) =>
   matchesFacet(item, 'feature') &&
   matchesFacet(item, 'materiality') &&
   matchesFacet(item, 'colour')
-
-const filterCounts = computed(() => {
-  const counts: Record<string, number> = { '': 0 }
-
-  for (const filter of pageFilters.value) {
-    counts[filterKey(filter)] = 0
-  }
-
-  for (const item of items.value) {
-    if (!matchesFacets(item)) continue
-    if (matchesPageFilter(item, '')) counts[''] += 1
-    for (const filter of pageFilters.value) {
-      const key = filterKey(filter)
-      if (matchesPageFilter(item, key)) counts[key] += 1
-    }
-  }
-
-  return counts
-})
-
-const filterCount = (key: string) => filterCounts.value[key] ?? 0
 
 const filteredItems = computed(() => {
   const query = debouncedSearchQuery.value.trim().toLowerCase()
@@ -2328,188 +2220,112 @@ useHead(() => ({
   position: relative;
   z-index: 2;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   width: max-content;
   max-width: unset;
   padding: 0;
   pointer-events: auto;
 }
 
-.products__filters {
-  position: relative;
-  display: block;
-  width: -moz-max-content;
-  width: max-content;
-  max-width: 530px;
-  text-align: center;
-}
-
-.products__filters.is-collapsed {
-  padding: 4px;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-}
-
-.products__filters-list {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: end;
-  gap: 0;
-}
-
-.products__filters.is-collapsed .type-chip:not(.type-chip--active) {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: max-content;
-  white-space: nowrap;
-}
-
-.products__filters.is-collapsed .type-chip--active {
-  z-index: 3;
-  background: #fff;
-  color: #111;
-}
-
-.products__filters.is-collapsed:not(.is-open) .type-chip:not(.type-chip--active) {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.products__filters.is-collapsed.is-open .type-chip:not(.type-chip--active) {
-  z-index: 2;
-  pointer-events: auto;
-  border: 1px solid var(--grid-line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  color: var(--charcoal);
-}
-
-.products__filters.is-collapsed .type-chip,
-.products__filters.is-collapsed .type-chip:hover,
-.products__filters.is-collapsed .type-chip--active,
-.products__filters.is-collapsed .products__search:hover,
-.products__filters.is-collapsed .products__search:focus-within {
-  border-radius: 999px;
-}
-
-.products__filters.is-collapsed .type-chip {
-  padding: 0.45rem 1.05rem;
-}
-
-.products__filters.is-collapsed .products__search:has(.products__search-clear) {
-  padding-right: calc(1.05rem + 1.25rem);
-}
-
 .type-chip {
+  /* Same shell as .sliding-pill. */
   position: relative;
   display: inline-flex;
   align-items: center;
   font-size: var(--text-sm);
-  color: var(--text-color);
+  color: var(--charcoal);
   opacity: 1;
   transition:
     color 0.25s ease,
     background 0.25s ease,
-    border-radius 1.6s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.45s ease;
-  padding: 10px 15px;
-  border: none;
-  border-radius: var(--ui-border-radius);
+  padding: 0.45rem 1.05rem;
+  border: 1px solid var(--grid-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .type-chip:hover {
   opacity: 1;
-  border-radius: var(--ui-border-radius);
 }
 
 .type-chip--active {
-  border-radius: var(--ui-border-radius);
   background: #fff;
   color: #111;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .type-chip,
-  .type-chip__chevron {
+  .type-chip {
     transition: none;
   }
 }
 
-.type-chip__count {
-  font-variant-numeric: tabular-nums;
-  display: none;
-}
-
-.type-chip__chevron {
-  display: inline-grid;
-  place-items: center;
-  width: 0;
-  min-width: 0;
-  margin-left: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  line-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;
-  transition:
-    width 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    margin-left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.3s ease,
-    transform 0.35s ease;
-}
-
-.products__filters.is-collapsed .type-chip--active .type-chip__chevron {
-  width: 0.7rem;
-  margin-left: 0.45rem;
-  opacity: 1;
-  pointer-events: auto;
-  transform: rotate(180deg);
-}
-
-.products__filters.is-collapsed.is-open .type-chip--active .type-chip__chevron {
-  transform: rotate(0deg);
-}
-
-.type-chip__chevron svg {
-  display: block;
-}
-
 .products__search {
+  /* Equal width/height + 999 radius = circle when closed. */
+  --search-size: 40px;
+  --search-open-width: 14rem;
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  min-width: 7rem;
-  max-width: 14rem;
+  flex: none;
+  gap: 0;
+  width: var(--search-size);
+  min-width: var(--search-size);
+  max-width: var(--search-open-width);
+  height: var(--search-size);
   margin: 0;
-  border-color: transparent;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   cursor: pointer;
+  transition:
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    gap 0.35s ease,
+    color 0.25s ease,
+    background 0.25s ease,
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.45s ease;
+}
+
+.products__search--open {
+  width: var(--search-open-width);
+  gap: 0.4rem;
+  padding: 0 0.9rem 0 0.35rem;
+  cursor: text;
 }
 
 .products__search:hover,
 .products__search:focus-within {
   opacity: 1;
-  border-radius: var(--ui-border-radius);
 }
 
-.products__search:has(.products__search-clear) {
-  padding-right: calc(15px + 1.25rem);
+.products__search-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--search-size);
+  height: var(--search-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.products__search--open .products__search-toggle {
+  width: 34px;
+  height: 34px;
+  pointer-events: none;
 }
 
 .products__search-icon {
@@ -2519,8 +2335,9 @@ useHead(() => ({
 }
 
 .products__search-input {
-  width: 100%;
+  width: 0;
   min-width: 0;
+  flex: 1;
   margin: 0;
   padding: 0;
   border: 0;
@@ -2538,7 +2355,15 @@ useHead(() => ({
   box-shadow: none;
   appearance: none;
   -webkit-appearance: none;
-  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.products__search--open .products__search-input {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: text;
 }
 
 .products__search-input:focus,
@@ -2567,21 +2392,37 @@ useHead(() => ({
 }
 
 .products__search-clear {
-  position: absolute;
-  top: 50%;
-  right: 15px;
+  flex: none;
   display: grid;
   place-items: center;
-  flex-shrink: 0;
-  width: 1.25rem;
+  width: 0;
   height: 1.25rem;
   margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
   cursor: pointer;
-  transform: translateY(-50%);
+  transition:
+    width 0.3s ease,
+    opacity 0.2s ease;
+}
+
+.products__search--open.type-chip--active .products__search-clear {
+  width: 1.25rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .products__search,
+  .products__search-input,
+  .products__search-clear {
+    transition: none;
+  }
 }
 
 .products__search-x {
@@ -2829,9 +2670,19 @@ useHead(() => ({
     max-width: 100%;
   }
 
-  .products__filters {
-    width: 100%;
-    max-width: 100%;
+  .products__filter-tool :deep(.msel) {
+    flex: 0 1 auto;
+    max-width: none;
+  }
+
+  .products__search {
+    flex: none;
+  }
+
+  .products__search--open {
+    flex: 1;
+    width: auto;
+    max-width: none;
   }
 
   :global(html.bucket-push) .products__dock {

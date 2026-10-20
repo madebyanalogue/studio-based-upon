@@ -18,11 +18,11 @@ import { useHomepageIntro } from '~/composables/useHomepagePreloader'
 const COLOR_MAP =
   'https://cdn.sanity.io/images/k8gpyc57/production/1e9cc54fa247edcffae1d0808da32d7429c30d14-3000x2055.jpg?auto=format&q=80&w=2400'
 
-/** High decay — flashes die fast. Large pocket, short travel, infrequent. */
-const SCREEN_DECAY = 0.8
-const SCREEN_HEAL = 0.18
+/** Soft decay — still clears between bursts, without strobing. */
+const SCREEN_DECAY = 0.9
+const SCREEN_HEAL = 0.07
 const SCREEN_BRUSH = 0.13
-const SCREEN_STRENGTH = 0.9
+const SCREEN_STRENGTH = 0.82
 const BURST_MS = 520
 const REST_MS_MIN = 2800
 const REST_MS_MAX = 4800
@@ -70,6 +70,9 @@ const visible = ref(false)
 let mask: HTMLCanvasElement | null = null
 let mctx: CanvasRenderingContext2D | null = null
 let gctx: CanvasRenderingContext2D | null = null
+/** Prebaked bright plate — avoids refiltering every frame (flicker/jank). */
+let plate: HTMLCanvasElement | null = null
+let pctx: CanvasRenderingContext2D | null = null
 let glowImage: HTMLImageElement | null = null
 let glowReady = false
 let running = false
@@ -125,6 +128,22 @@ const updateCoverRect = () => {
   }
 }
 
+/** Cool, bright plate — less yellow, more luminance. */
+const bakePlate = () => {
+  if (!glowImage || !glowReady) return
+  updateCoverRect()
+  if (!plate) plate = document.createElement('canvas')
+  plate.width = width
+  plate.height = height
+  pctx = plate.getContext('2d', { alpha: true })
+  if (!pctx) return
+  pctx.clearRect(0, 0, width, height)
+  pctx.filter =
+    'brightness(2.15) saturate(1.05) contrast(1.06) hue-rotate(-12deg)'
+  pctx.drawImage(glowImage, coverRect.x, coverRect.y, coverRect.w, coverRect.h)
+  pctx.filter = 'none'
+}
+
 const resize = () => {
   const view = canvasEl.value
   if (!view) return
@@ -138,7 +157,7 @@ const resize = () => {
   mask.height = height
   mctx = mask.getContext('2d', { alpha: true })
   gctx = view.getContext('2d', { alpha: true })
-  updateCoverRect()
+  bakePlate()
 }
 
 const stampScreen = (x: number, y: number, vx: number, vy: number, strength = 1) => {
@@ -248,27 +267,15 @@ const tickScreenWand = (now: number) => {
 
   screenFrame += 1
 
-  // Slow linger — soft drift, low wobble.
-  const speedA = 0.012 + Math.random() * 0.008
+  // Slow linger — soft drift, steady strength (no per-frame random = no flicker).
+  const speedA = 0.012
   screenX += (screenTargetX * width - screenX) * speedA
   screenY += (screenTargetY * height - screenY) * speedA
   const x1 = screenX + Math.sin(now * 0.0011) * 2.5 * dpr
   const y1 = screenY + Math.cos(now * 0.00095) * 2 * dpr
-  // Paint every other frame so the pocket blooms rather than races.
-  if (screenFrame % 2 === 0) {
-    const s1 = paintScreenStroke(
-      screenLastX,
-      screenLastY,
-      x1,
-      y1,
-      SCREEN_STRENGTH * (0.7 + Math.random() * 0.2),
-    )
-    screenLastX = s1.x
-    screenLastY = s1.y
-  } else {
-    screenLastX = x1
-    screenLastY = y1
-  }
+  const s1 = paintScreenStroke(screenLastX, screenLastY, x1, y1, SCREEN_STRENGTH)
+  screenLastX = s1.x
+  screenLastY = s1.y
 }
 
 const healScreenMask = () => {
@@ -283,13 +290,9 @@ const healScreenMask = () => {
 }
 
 const paintScreenLayer = () => {
-  if (!gctx || !mask || !glowImage || !glowReady) return
-  updateCoverRect()
+  if (!gctx || !mask || !plate) return
   gctx.clearRect(0, 0, width, height)
-  gctx.save()
-  gctx.filter = 'brightness(1.65) saturate(2.5) contrast(1.14)'
-  gctx.drawImage(glowImage, coverRect.x, coverRect.y, coverRect.w, coverRect.h)
-  gctx.restore()
+  gctx.drawImage(plate, 0, 0)
   gctx.globalCompositeOperation = 'destination-in'
   gctx.drawImage(mask, 0, 0)
   gctx.globalCompositeOperation = 'source-over'

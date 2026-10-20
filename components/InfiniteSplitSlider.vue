@@ -288,13 +288,15 @@ const dismissScrollHint = () => {
   if (pointerOverSlider && !statementOn.value) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
-/** Scroll-to-explore cursor copy is off — reveal project labels straight away. */
 const showScrollHint = () => {
-  clearScrollHintTimer()
-  if (userScrolled.value || leaving) return
-  userScrolled.value = true
-  homeScrollHint.value = false
-  applyProjectLabels()
+  if (scrollHintReady || scrollHintTimer || userScrolled.value || leaving) return
+  scrollHintTimer = window.setTimeout(() => {
+    scrollHintTimer = 0
+    if (!running || leaving || userScrolled.value) return
+    scrollHintReady = true
+    pointerOverSlider = rootEl.value?.matches(':hover') ?? false
+    syncScrollHint()
+  }, SCROLL_HINT_DELAY_MS)
 }
 
 const onSliderPointerEnter = (event: PointerEvent) => {

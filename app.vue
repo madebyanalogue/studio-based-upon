@@ -9,8 +9,25 @@
   <div v-if="preloaderReady" id="app">
     <ClientOnly>
       <WebglHome v-if="webglHomeOn" backdrop />
-      <HomepageIntroReveal v-if="introGroundOn" />
-      <HomepageIntroBloom v-if="introGroundOn" />
+      <IntroLabStage
+        v-if="introGroundOn"
+        :active="introGround.live"
+        :overlay="true"
+        :overlay-anim="true"
+        :overlay-size="0.9"
+        :overlay-strength="1.95"
+        :overlay-anim-strength="3.65"
+        :overlay-sustain="0.82"
+        :bloom="true"
+        :bloom-anim="true"
+        :bloom-strength="1"
+        bloom-blend="plus-lighter"
+        :darken="false"
+        :darken-anim="true"
+        :darken-strength="2"
+        darken-blend="soft-light"
+        :zoom="1.2"
+      />
     </ClientOnly>
     <HomepageImageIntro v-if="introActive" />
     <AppHeader />

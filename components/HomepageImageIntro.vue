@@ -106,7 +106,7 @@ const play = async () => {
   const second = secondEl.value
   if (!logo || !first || !second || finished) return
 
-  // Mount the reveal during the logo so the image is warm when we go live.
+  // Mount the field stage during the logo; go live 0.5s into the intro.
   ground.value = { active: true, live: false }
   const imageReady = preload(GROUND)
   if (reducedMotion()) {
@@ -118,14 +118,16 @@ const play = async () => {
   }
 
   gsap.set([logo, first, second], { opacity: 0 })
+  gsap.delayedCall(0.5, () => {
+    if (!finished) ground.value = { active: true, live: true }
+  })
   await run((line) => {
     line.add(beat(logo, 0.95))
   })
   if (finished) return
 
-  // Reveal streaks come in the moment the logo is gone.
   void imageReady
-  ground.value = { active: true, live: true }
+  if (!ground.value.live) ground.value = { active: true, live: true }
 
   await run((line) => {
     // Brief beat after the logo, then “Two decades” comes in.

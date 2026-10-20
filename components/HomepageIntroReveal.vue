@@ -19,25 +19,26 @@ const GROUND =
 const DECAY = 0.988
 const HEAL_OUT = 0.012
 const BRUSH = 0.112
-const IDLE_AFTER_MS = 280
-const IDLE_STRENGTH = 0.22
+const IDLE_AFTER_MS = 900
+const IDLE_STRENGTH = 0.1
+const IDLE_POWER = 0.55
 /** Soft opening grows before the split slider arrives. */
-const OPENING_GROWS = 3
+const OPENING_GROWS = 1
 
-/** Edge-biased UV spots — keep auto grows off the dead centre. */
+/** Rim UV spots — keep auto grows off the dead centre. */
 const EDGE_ZONES = [
-  [0.12, 0.18],
-  [0.88, 0.16],
-  [0.08, 0.48],
-  [0.92, 0.52],
-  [0.16, 0.82],
-  [0.84, 0.78],
-  [0.3, 0.1],
-  [0.7, 0.12],
-  [0.24, 0.9],
-  [0.76, 0.88],
-  [0.06, 0.34],
-  [0.94, 0.66],
+  [0.06, 0.1],
+  [0.94, 0.1],
+  [0.05, 0.5],
+  [0.95, 0.5],
+  [0.07, 0.9],
+  [0.93, 0.88],
+  [0.22, 0.06],
+  [0.78, 0.06],
+  [0.2, 0.94],
+  [0.8, 0.94],
+  [0.5, 0.05],
+  [0.5, 0.95],
 ] as const
 
 const pickEdgeUv = (jitter = 0.1) => {
@@ -124,43 +125,41 @@ const resize = () => {
   updateCoverRect()
 }
 
-/** Soft round grow — little stretch so it reads as bloom, not a streak. */
-const stampAt = (x: number, y: number, _vx: number, _vy: number, strength = 1) => {
+/** Soft round grow — stable radius (no random) to avoid flicker. */
+const stampAt = (
+  x: number,
+  y: number,
+  _vx: number,
+  _vy: number,
+  strength = 1,
+  powerScale = 1,
+) => {
   if (!mctx) return
-  const radius = Math.max(width, height) * BRUSH * (0.95 + Math.random() * 0.12)
-  const amount = Math.min(0.42, strength)
+  const radius = Math.max(width, height) * BRUSH * powerScale * 0.98
+  const amount = Math.min(0.42, strength * powerScale)
 
   const core = mctx.createRadialGradient(x, y, 0, x, y, radius)
-  core.addColorStop(0, `rgba(255,255,255,${0.48 * amount})`)
-  core.addColorStop(0.4, `rgba(255,255,255,${0.2 * amount})`)
-  core.addColorStop(0.75, `rgba(255,255,255,${0.06 * amount})`)
+  core.addColorStop(0, `rgba(255,255,255,${0.4 * amount})`)
+  core.addColorStop(0.45, `rgba(255,255,255,${0.14 * amount})`)
+  core.addColorStop(0.8, `rgba(255,255,255,${0.04 * amount})`)
   core.addColorStop(1, 'rgba(255,255,255,0)')
   mctx.fillStyle = core
   mctx.beginPath()
   mctx.arc(x, y, radius, 0, Math.PI * 2)
   mctx.fill()
-
-  const halo = radius * 1.45
-  const side = mctx.createRadialGradient(x, y, radius * 0.2, x, y, halo)
-  side.addColorStop(0, `rgba(255,255,255,${0.08 * amount})`)
-  side.addColorStop(0.6, `rgba(255,255,255,${0.025 * amount})`)
-  side.addColorStop(1, 'rgba(255,255,255,0)')
-  mctx.fillStyle = side
-  mctx.beginPath()
-  mctx.arc(x, y, halo, 0, Math.PI * 2)
-  mctx.fill()
 }
 
 const pickDriftTarget = () => {
-  const edge = pickEdgeUv(0.12)
+  const edge = pickEdgeUv(0.06)
   driftTargetX = edge.x
   driftTargetY = edge.y
-  driftRetargetAt = performance.now() + 2200 + Math.random() * 2400
+  driftRetargetAt = performance.now() + 3200 + Math.random() * 2800
 }
 
-const paintStroke = (x: number, y: number, strength = 1) => {
+const paintStroke = (x: number, y: number, strength = 1, powerScale = 1) => {
+  const brush = BRUSH * powerScale
   if (lastX < 0) {
-    stampAt(x, y, 0, 0, 0.75 * strength)
+    stampAt(x, y, 0, 0, 0.75 * strength, powerScale)
     lastX = x
     lastY = y
     lastStamp = performance.now()
@@ -169,27 +168,27 @@ const paintStroke = (x: number, y: number, strength = 1) => {
   const dx = x - lastX
   const dy = y - lastY
   const dist = Math.hypot(dx, dy)
-  // Wide steps = soft grow along a slow path, not a dense streak.
-  const step = Math.max(18 * dpr, Math.max(width, height) * BRUSH * 0.45)
+  const step = Math.max(22 * dpr, Math.max(width, height) * brush * 0.55)
   const steps = Math.max(1, Math.ceil(dist / step))
   for (let i = 1; i <= steps; i += 1) {
     const t = i / steps
-    stampAt(lastX + dx * t, lastY + dy * t, 0, 0, (0.4 + 0.2 * (1 - t)) * strength)
+    stampAt(
+      lastX + dx * t,
+      lastY + dy * t,
+      0,
+      0,
+      (0.35 + 0.2 * (1 - t)) * strength,
+      powerScale,
+    )
   }
   lastX = x
   lastY = y
   lastStamp = performance.now()
 }
 
-/** Soft expanding pocket at an edge point. */
-const paintGrow = (cx: number, cy: number, strength = 0.65) => {
-  const layers = 4
-  for (let i = 0; i < layers; i += 1) {
-    const t = i / (layers - 1)
-    const ox = (Math.random() - 0.5) * 10 * dpr
-    const oy = (Math.random() - 0.5) * 10 * dpr
-    stampAt(cx + ox, cy + oy, 0, 0, strength * (0.55 + 0.45 * (1 - t)))
-  }
+/** Single soft rim touch — no multi-layer bursts. */
+const paintGrow = (cx: number, cy: number, strength = 0.28) => {
+  stampAt(cx, cy, 0, 0, strength, IDLE_POWER)
 }
 
 const tickIdleDrift = (now: number) => {
@@ -201,20 +200,19 @@ const tickIdleDrift = (now: number) => {
   }
 
   if (driftX < 0) {
-    const edge = pickEdgeUv(0.08)
+    const edge = pickEdgeUv(0.05)
     driftX = edge.x * width
     driftY = edge.y * height
     pickDriftTarget()
   }
   if (now >= driftRetargetAt) pickDriftTarget()
 
-  // Slow crawl between edge pockets.
   const tx = driftTargetX * width
   const ty = driftTargetY * height
-  driftX += (tx - driftX) * 0.008
-  driftY += (ty - driftY) * 0.008
-  const x = driftX + Math.sin(now * 0.00055) * 4 * dpr
-  const y = driftY + Math.cos(now * 0.00045) * 3 * dpr
+  driftX += (tx - driftX) * 0.0045
+  driftY += (ty - driftY) * 0.0045
+  const x = driftX + Math.sin(now * 0.00035) * 2 * dpr
+  const y = driftY + Math.cos(now * 0.00028) * 1.5 * dpr
 
   if (!idlePainting) {
     idlePainting = true
@@ -222,20 +220,14 @@ const tickIdleDrift = (now: number) => {
     lastY = y
   }
   idleFrame += 1
-  // Paint sparingly so each touch can grow before the next.
-  if (idleFrame % 5 === 0) {
-    paintStroke(x, y, IDLE_STRENGTH)
+  if (idleFrame % 8 === 0) {
+    paintStroke(x, y, IDLE_STRENGTH, IDLE_POWER)
   } else {
     lastX = x
     lastY = y
   }
   mouseX = x
   mouseY = y
-
-  if (idleFrame % 90 === 0) {
-    const edge = pickEdgeUv(0.1)
-    paintGrow(edge.x * width, edge.y * height, 0.4)
-  }
 }
 
 const drawImageCover = (ctx: CanvasRenderingContext2D) => {
@@ -332,20 +324,15 @@ const stop = () => {
   visible.value = false
 }
 
-/** 2–3 soft edge grows ready before the slider wipes in. */
+/** One soft rim touch before the slider wipes in — no opening flash. */
 const seedOpeningGrows = () => {
   if (!mctx || !imageReady) return
   mctx.globalCompositeOperation = 'source-over'
-  let endX = width * 0.2
-  let endY = height * 0.2
-
+  const edge = pickEdgeUv(0.05)
+  const endX = edge.x * width
+  const endY = edge.y * height
   for (let i = 0; i < OPENING_GROWS; i += 1) {
-    const edge = pickEdgeUv(0.1)
-    const cx = edge.x * width
-    const cy = edge.y * height
-    paintGrow(cx, cy, 0.55 + Math.random() * 0.2)
-    endX = cx
-    endY = cy
+    paintGrow(endX, endY, 0.28)
   }
 
   lagX = endX
