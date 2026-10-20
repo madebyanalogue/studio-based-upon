@@ -170,16 +170,19 @@ export const useEnquiryForm = () => {
     isOpen.value = true
   }
 
-  const openFromProduct = (product: {
-    id: string
-    title: string
-    imageUrl?: string
-    slug?: string
-    path?: string
-  }) => {
+  const openFromProduct = (
+    product: {
+      id: string
+      title: string
+      imageUrl?: string
+      slug?: string
+      path?: string
+    },
+    options?: { origins?: EnquiryFlyRect[] | null },
+  ) => {
     prepareOpen()
     source.value = 'product'
-    flyOrigins.value = null
+    flyOrigins.value = options?.origins?.length ? options.origins : null
     compositionImage.value = null
     previewItems.value = [
       {
@@ -189,11 +192,16 @@ export const useEnquiryForm = () => {
         imageUrl: product.imageUrl,
       },
     ]
-    const href =
-      product.path || (product.slug ? `/materials-and-forms/${product.slug}` : '')
-    form.value.message = href
-      ? `Enquiry about ${product.title} (${href})`
-      : `Enquiry about ${product.title}`
+    // Image preview already identifies the product — skip the boilerplate message.
+    if (product.imageUrl) {
+      form.value.message = ''
+    } else {
+      const href =
+        product.path || (product.slug ? `/materials-and-forms/${product.slug}` : '')
+      form.value.message = href
+        ? `Enquiry about ${product.title} (${href})`
+        : `Enquiry about ${product.title}`
+    }
     if (!isOpen.value) lockPageScroll()
     isOpen.value = true
   }

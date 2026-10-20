@@ -13,4 +13,12 @@
   background: var(--cream);
   color: var(--charcoal);
 }
+
+/*
+ * Typology ends at the last centered rail — don't let #app's stack/bucket
+ * padding add scroll past that midline stop.
+ */
+:global(#app:has(.curated-layout)) {
+  padding-bottom: 0;
+}
 </style>

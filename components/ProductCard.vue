@@ -15,6 +15,8 @@
         @focusin="prefetchActiveHero"
         @click="onOpen"
       >
+        <!-- Solid field behind transparent objects — hides page/WebGL through PNG alpha. -->
+        <span v-if="hasImage" class="product-card__mat" aria-hidden="true" />
         <img
           v-if="hasImage"
           class="product-card__image"
@@ -329,15 +331,17 @@ const onToggle = (event?: MouseEvent) => {
   cursor: pointer;
 }
 
-.product-card__media--image {
-  /* background: var(--cream); */
-}
-
-.product-card:hover .product-card__media {
-  /* background: var(--cream); */
+.product-card__mat {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--cream);
+  pointer-events: none;
 }
 
 .product-card__image {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;

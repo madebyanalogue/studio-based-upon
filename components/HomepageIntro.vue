@@ -30,20 +30,24 @@
         class="homepage-intro__piece"
         :data-key="piece.key"
       >
-        <p
-          v-for="(line, lineIndex) in piece.lines"
-          :key="line"
-          class="homepage-intro__type is-display"
-          :data-line="lineIndex"
-        >{{ line }}</p>
+        <DissolveText
+          class="homepage-intro__type is-display homepage-intro__dissolve"
+          interactive
+          fit="lines"
+          :lines="piece.lines"
+          data-line="0"
+        />
         <div v-if="piece.follow?.length" class="homepage-intro__follow">
-          <p
+          <DissolveText
             v-for="(line, lineIndex) in piece.follow"
             :key="line"
-            class="homepage-intro__type is-display"
+            class="homepage-intro__type is-display homepage-intro__dissolve"
+            interactive
+            fit="lines"
+            :lines="[line]"
             :data-line="lineIndex"
             :data-follow-index="lineIndex"
-          >{{ line }}</p>
+          />
         </div>
       </div>
     </div>
@@ -130,7 +134,6 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
-import { SplitText } from 'gsap/SplitText'
 import {
   clearHomepageIntroLock,
   useHomepageIntro,
@@ -233,13 +236,11 @@ const leaving = ref(false)
 let started = false
 let finished = false
 let logoRaf = 0
-let pluginsReady = false
 let failTimer = 0
 let releaseTimer = 0
 let veilTimer = 0
 let fadeVeil: (() => void) | null = null
-let splits: InstanceType<typeof SplitText>[] = []
-type LineGroup = { words: HTMLElement[]; follow: number | null }
+type LineGroup = { nodes: HTMLElement[]; follow: number | null }
 let linesByKey = new Map<string, LineGroup[]>()
 let stopPath: (() => void) | null = null
 /** Logo is alone for this long, then the figure and opening line take over. */
@@ -322,12 +323,6 @@ const finishSite = (immediate = false) => {
   }, 9000)
 }
 
-const ensurePlugins = () => {
-  if (pluginsReady || !import.meta.client) return
-  gsap.registerPlugin(SplitText)
-  pluginsReady = true
-}
-
 const typingTarget = (event: KeyboardEvent) => {
   const target = event.target
   return (
@@ -369,9 +364,6 @@ const FOLLOW_AFTER = 0.18
 const FOLLOW_STAGGER = 0.32
 const FOLLOW_SPAN = 0.28
 /** Last slide: each word fades in on its own. */
-const WORD_STAGGER = 0.08
-const WORD_SPAN = 0.2
-
 const minHold = (index: number) => {
   const followCount = FRAMES[index]?.follow?.length ?? 0
   if (!followCount) return 0.4
@@ -420,13 +412,11 @@ const stageAt = (t: number) => {
   return 0
 }
 
-/** Path time when the last line's words have finished fading in. */
+/** Path time when the last title block has finished fading in. */
 const lastWordsDone = () => {
   const index = FRAMES.length - 1
-  const frame = FRAMES[index]
-  const wordCount = frame?.lines.join(' ').split(/\s+/).filter(Boolean).length ?? 1
   const enterStart = enterStartFor(index)
-  return enterStart + Math.max(0, wordCount - 1) * WORD_STAGGER + WORD_SPAN
+  return enterStart + enterSpanFor(index)
 }
 /** Brief pause after that line, then the rule draws down to Enter. */
 const CLOSING_AFTER = 0.28
@@ -443,26 +433,15 @@ const paintProgress = (pathT: number) => {
 const bindPieces = () => {
   const root = rootEl.value
   if (!root) return
-  ensurePlugins()
   linesByKey = new Map()
-  for (const split of splits) {
-    try {
-      split.revert()
-    } catch {
-      /* already reverted */
-    }
-  }
-  splits = []
-  root.querySelectorAll<HTMLElement>('.homepage-intro__type').forEach((el) => {
-    const split = new SplitText(el, { type: 'words', wordsClass: 'homepage-intro__word' })
-    splits.push(split)
+  root.querySelectorAll<HTMLElement>('.homepage-intro__dissolve').forEach((el) => {
     const key = el.closest<HTMLElement>('[data-key]')?.dataset.key
     if (!key) return
     const followRaw = el.dataset.followIndex
     const parsed = followRaw == null || followRaw === '' ? null : Number(followRaw)
     const follow = parsed == null || Number.isNaN(parsed) ? null : parsed
     const groups = linesByKey.get(key) ?? []
-    groups.push({ words: split.words as HTMLElement[], follow })
+    groups.push({ nodes: [el], follow })
     linesByKey.set(key, groups)
   })
   motionOn.value = true
@@ -478,35 +457,38 @@ const paintLogo = (t: number, reduced: boolean) => {
 
 /** Fade whatever slide type is on screen. */
 const meltVisibleType = () => {
-  const words: HTMLElement[] = []
+  const nodes: HTMLElement[] = []
   for (const groups of linesByKey.values()) {
     for (const group of groups) {
-      for (const word of group.words) {
-        if (parseFloat(word.style.opacity || '0') > 0.02) words.push(word)
+      for (const node of group.nodes) {
+        if (parseFloat(node.style.opacity || '0') > 0.02) nodes.push(node)
       }
     }
   }
   const product = productEl.value
   if (product) {
     product.style.animation = 'none'
-    words.push(product)
+    nodes.push(product)
   }
   const enter = enterEl.value
   if (enter) {
     enter.style.animation = 'none'
-    words.push(enter)
+    nodes.push(enter)
   }
-  if (!words.length) return
+  if (!nodes.length) return
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (reduced) {
-    gsap.set(words, { opacity: 0, filter: 'none' })
+    gsap.set(nodes, { opacity: 0, filter: 'none', pointerEvents: 'none' })
     return
   }
-  gsap.to(words, {
+  gsap.to(nodes, {
     opacity: 0,
     duration: 0.42,
     ease: 'power2.in',
     overwrite: 'auto',
+    onStart: () => {
+      for (const node of nodes) node.style.pointerEvents = 'none'
+    },
   })
 }
 
@@ -558,30 +540,13 @@ const paint = (t: number) => {
     }
     const groups = linesByKey.get(piece.key)
     if (!groups) continue
-    if (piece.frame === FRAMES.length - 1) {
-      const words = groups.flatMap((group) => group.words)
-      const textT = t - textOrigin()
-      const enterStart = enterStartFor(piece.frame)
-      const exitStart = exitStartFor(piece.frame)
-      const exit = reduced ? 1 : 1 - along(textT, exitStart, exitStart + EXIT_SPAN)
-      words.forEach((word, index) => {
-        const start = enterStart + index * WORD_STAGGER
-        const enter = reduced
-          ? stage === piece.frame
-            ? 1
-            : 0
-          : along(textT, start, start + WORD_SPAN)
-        word.style.opacity = String(enter * exit)
-        word.style.filter = 'none'
-      })
-      continue
-    }
     for (const group of groups) {
       let lineAmount = group.follow == null ? amount : followAmount(piece, group.follow, t)
       if (reduced) lineAmount = amount
-      for (const word of group.words) {
-        word.style.opacity = String(lineAmount)
-        word.style.filter = 'none'
+      for (const node of group.nodes) {
+        node.style.opacity = String(lineAmount)
+        node.style.filter = 'none'
+        node.style.pointerEvents = lineAmount > 0.12 ? 'auto' : 'none'
       }
     }
   }
@@ -758,14 +723,6 @@ onUnmounted(() => {
   window.clearTimeout(veilTimer)
   window.clearTimeout(failTimer)
   cancelAnimationFrame(logoRaf)
-  for (const split of splits) {
-    try {
-      split.revert()
-    } catch {
-      /* already reverted */
-    }
-  }
-  splits = []
   if (!finished) finishSite(true)
 })
 </script>
@@ -1066,6 +1023,7 @@ onUnmounted(() => {
   gap: 0.35em;
   padding: 0 8vw;
   text-align: center;
+  pointer-events: none;
 }
 
 .homepage-intro__follow {
@@ -1078,27 +1036,26 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.35em;
   text-align: center;
+  pointer-events: none;
 }
 
 .homepage-intro__type {
   margin: 0;
-  max-width: 100%;
+  max-width: min(84vw, 920px);
   opacity: 0;
   color: inherit;
+  will-change: opacity;
 }
 
-.homepage-intro.is-motion .homepage-intro__type {
-  opacity: 1;
-}
-
-.homepage-intro__type.is-display {
+.homepage-intro__type.is-display,
+.homepage-intro__dissolve :deep(.dissolve-text__measure) {
   font-family: var(--mono);
   font-size: clamp(1.48rem, 2.5vw, 1.6rem);
   font-weight: 400;
-  line-height: 0.92;
+  line-height: 1.15;
   letter-spacing: -0.02em;
   text-align: center;
-  text-wrap: balance;
+  color: inherit;
 }
 
 .homepage-intro__type.is-copy {
@@ -1116,11 +1073,6 @@ onUnmounted(() => {
   line-height: 1.35;
   text-transform: uppercase;
   pointer-events: none;
-}
-
-.homepage-intro :deep(.homepage-intro__word) {
-  display: inline-block;
-  will-change: opacity;
 }
 
 </style>

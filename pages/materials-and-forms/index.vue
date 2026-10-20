@@ -770,7 +770,8 @@ const parkTitleSharp = () => {
 }
 
 const dockEl = ref<HTMLElement | null>(null)
-const dockAway = ref(false)
+/** Starts away so the filter + grid select rise in on first paint. */
+const dockAway = ref(true)
 let dockTween: gsap.core.Tween | null = null
 let headerTween: gsap.core.Tween | null = null
 
@@ -781,6 +782,37 @@ const dockTravel = () => {
   if (!dock) return 180
   const bottom = parseFloat(getComputedStyle(dock).bottom) || 0
   return dock.offsetHeight + bottom + 24
+}
+
+const parkArchiveDockOffscreen = () => {
+  const dock = dockEl.value
+  if (!dock) return
+  dockTween?.kill()
+  dockAway.value = true
+  gsap.set(dock, { y: dockTravel() })
+}
+
+const riseArchiveDock = () => {
+  const dock = dockEl.value
+  if (!dock) return Promise.resolve()
+  dockTween?.kill()
+  if (prefersReducedMotion()) {
+    gsap.set(dock, { y: 0 })
+    dockAway.value = false
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    dockTween = gsap.to(dock, {
+      y: 0,
+      duration: 1.05,
+      ease: 'power3.out',
+      overwrite: true,
+      onComplete: () => {
+        dockAway.value = false
+        resolve()
+      },
+    })
+  })
 }
 
 const headerTravel = () => {
@@ -883,13 +915,26 @@ const meltTitleForProduct = async () => {
   if (!titleRestoreStarted) titleFront.value = false
 }
 
+/** Scroll melt wins over the title coming back after a PDP close. */
+const releaseTitleFromProductForScroll = (effect: number) => {
+  abortTitleSwapTween()
+  titleSwapGen += 1
+  titleSwapLock = false
+  titleFront.value = false
+  titleHeldForProduct = false
+  titleRestoreStarted = false
+  titlePaintReady.value = true
+  applyTitleGooey(effect)
+}
+
 const restoreTitleAfterProduct = async () => {
   if (!titleHeldForProduct || titleRestoreStarted) return
   const gen = titleProductGen
   titleRestoreStarted = true
   titleFront.value = true
   await playTitleGooeyIn()
-  if (gen !== titleProductGen) return
+  // Scroll may have already released the title during the gooey-in.
+  if (gen !== titleProductGen || !titleHeldForProduct) return
   titleFront.value = false
   titleHeldForProduct = false
   titleRestoreStarted = false
@@ -932,8 +977,15 @@ const setupTitleGooey = async (opts?: { startHidden?: boolean }) => {
     scrub: 0.55,
     invalidateOnRefresh: true,
     onUpdate: (self) => {
-      if (titleHeldForProduct) return
       const effect = 1 - self.progress
+      // After a PDP close, the title may still be melting back in above the grid.
+      // Once the user scrolls, that restore yields to the sticky melt.
+      if (titleHeldForProduct) {
+        if (titleRestoreStarted && self.progress > 0.04) {
+          releaseTitleFromProductForScroll(effect)
+        }
+        return
+      }
       if (titleSwapLock) {
         // Hard-load + immediate scroll: don't let the intro tween keep a solid
         // title while scrub has already melted past — drop the tween and follow.
@@ -1382,7 +1434,10 @@ const archiveMeta = (item: LibraryItem, index: number) => {
   const fallbackSize = index % 3 === 2 ? 'medium' : 'small'
   const size = item.gridSize || fallbackSize
   const ratioKey = item.gridRatio || 'square'
-  const ar = GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square
+  const ar =
+    evenGrid.value && (ratioKey === 'square' || ratioKey === 'portrait')
+      ? 0.7
+      : (GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square)
 
   return {
     className: `product-card--archive-${size}`,
@@ -1827,9 +1882,11 @@ const runPageIntro = async () => {
 
   gridAnimating.value = true
   titleSwapLock = true
+  parkArchiveDockOffscreen()
 
   await bootTitleGooey({ startHidden: true })
   await nextTick()
+  parkArchiveDockOffscreen()
 
   const cards = Array.from(visibleGridCards())
   gsap.registerPlugin(SplitText)
@@ -1841,6 +1898,7 @@ const runPageIntro = async () => {
 
   await Promise.all([
     animateCardsIn(prepared),
+    riseArchiveDock(),
     (async () => {
       await waitMs(INTRO_TITLE_DELAY_MS)
       await playTitleGooeyIn(1)
@@ -2202,6 +2260,11 @@ useHead(() => ({
   pointer-events: none;
 }
 
+.products__dock--away {
+  /* Below the viewport until the intro (or PDP close) lifts it back. */
+  transform: translateY(calc(100% + 120px));
+}
+
 .products__dock--away,
 .products__dock--away .products__mode,
 .products__dock--away .products__filter-tool {
@@ -2332,6 +2395,7 @@ useHead(() => ({
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  transform: translateX(-1px);
 }
 
 .products__search-input {
@@ -2467,7 +2531,7 @@ useHead(() => ({
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--products-grid-gap);
-  align-items: end;
+  align-items: start;
   margin: 0 var(--gutter);
   opacity: 0;
   grid-auto-flow: dense;

@@ -203,13 +203,6 @@ const TRIGGER_GAP = 10
 const CARET_W = 14
 const OPTION_PAD_X = 34
 const LIST_PAD_X = 10
-/**
- * Morph blob + open list fill.
- * Hard black — do not use --charcoal (it inverts to cream in dark theme).
- * White chip stays on the crisp layer only.
- */
-const INK_COLOR = '#111111'
-
 const selectedIndex = computed(() => {
   const index = props.options.findIndex((option) => option.value === props.modelValue)
   return index >= 0 ? index : 0
@@ -284,18 +277,23 @@ const lockedPanelWidth = () => {
   return panelWidth.value || 160
 }
 
+/** Black layers extend this far past the chip / list on every side. */
+const INK_PAD = 5
+
 const resetPanelBg = () => {
   const trigger = triggerEl.value
   const panelBg = panelBgEl.value
   if (!trigger || !panelBg) return
-  const w = currentChipWidth() || trigger.offsetWidth
-  const h = trigger.offsetHeight
+  const w = (currentChipWidth() || trigger.offsetWidth) + INK_PAD * 2
+  const h = trigger.offsetHeight + INK_PAD * 2
   gsap.set(panelBg, {
     width: w,
     height: h,
     y: 0,
+    right: 0,
+    top: props.direction === 'up' ? 'auto' : 0,
+    bottom: props.direction === 'up' ? 0 : 'auto',
     borderRadius: h / 2,
-    backgroundColor: INK_COLOR,
     force3D: true,
   })
 }
@@ -498,23 +496,30 @@ const openMenu = async () => {
   const duration = reduced ? 0.01 : props.duration
   const ease = reduced ? 'none' : openEase
   const travel =
-    (trigger.offsetHeight + props.gap) * (props.direction === 'up' ? -1 : 1)
-  const fromW = currentChipWidth() || trigger.offsetWidth
-  const toW = lockedPanelWidth()
+    (trigger.offsetHeight + props.gap + INK_PAD) *
+    (props.direction === 'up' ? -1 : 1)
+  const fromW = (currentChipWidth() || trigger.offsetWidth) + INK_PAD * 2
+  const toW = lockedPanelWidth() + INK_PAD * 2
+  const toH = (size.h || panelEl.value?.offsetHeight || 0) + INK_PAD * 2
 
   timeline = gsap.timeline({ defaults: { force3D: true } })
   spinCaret(true)
-  // Black blob expands into the black list — white chip stays on the crisp layer.
-  gsap.set(panelBg, { width: fromW, backgroundColor: INK_COLOR })
+  // Ink blob expands into the list — chip stays on the crisp layer.
+  gsap.set(panelBg, {
+    width: fromW,
+    right: 0,
+    top: props.direction === 'up' ? 'auto' : 0,
+    bottom: props.direction === 'up' ? 0 : 'auto',
+  })
   timeline
     .to(panelBg, { y: travel, duration, ease }, 0)
     .to(
       panelBg,
       {
         width: toW,
-        height: size.h || panelEl.value?.offsetHeight || 0,
-        borderRadius: panelRadiusPx(),
-        backgroundColor: INK_COLOR,
+        height: toH,
+        right: 0,
+        borderRadius: panelRadiusPx() + INK_PAD,
         duration,
         ease,
       },
@@ -622,14 +627,15 @@ const closeMenu = (
       0.12,
     )
   }
-  // Collapse the black list back under the white chip.
+  // Collapse the list ink back under the chip.
+  const closeH = trigger.offsetHeight + INK_PAD * 2
   timeline.to(
     panelBg,
     {
-      width: targetW,
-      height: trigger.offsetHeight,
-      borderRadius: trigger.offsetHeight / 2,
-      backgroundColor: INK_COLOR,
+      width: targetW + INK_PAD * 2,
+      height: closeH,
+      right: 0,
+      borderRadius: closeH / 2,
       duration,
       ease,
     },
@@ -741,9 +747,12 @@ const onResize = () => {
       const panelBg = panelBgEl.value
       if (!trigger || !panelBg) return
       gsap.set(panelBg, {
-        width: lockedPanelWidth(),
-        height: size.h,
-        y: (trigger.offsetHeight + props.gap) * (props.direction === 'up' ? -1 : 1),
+        width: lockedPanelWidth() + INK_PAD * 2,
+        height: size.h + INK_PAD * 2,
+        right: 0,
+        y:
+          (trigger.offsetHeight + props.gap + INK_PAD) *
+          (props.direction === 'up' ? -1 : 1),
       })
       moveHighlight(activeIndex.value, true)
       return
@@ -806,12 +815,13 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
 
 <style scoped>
 .msel {
-  /* Glass shell + white chip; hard-black morph/list (not --charcoal — theme-inverted). */
+  /* Dark UI — hard-black ink, white chip (not --charcoal). */
   --msel-ink: #111;
   --msel-chip: #fff;
   --msel-fg: #111;
   --msel-fg-soft: rgba(241, 237, 228, 0.72);
   --msel-highlight: #fff;
+  --msel-hot: #111;
   --msel-shell-pad: 4px;
   /* Option pill ~half-height; panel radius = pad + that. */
   --msel-pill-radius: 1.1rem;
@@ -850,8 +860,9 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
 }
 
 .msel__goo {
+  /* Room for the ink layers that extend 5px past the chip. */
   position: absolute;
-  inset: 0;
+  inset: -5px;
   z-index: 0;
   overflow: visible;
   pointer-events: none;
@@ -873,16 +884,17 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
 }
 
 .msel__trigger-bg {
-  /* Ink under the white crisp chip so the goo morph stays black→black. */
-  left: 0;
-  width: 100%;
-  height: 100%;
+  /* Fills the expanded goo — 5px wider than the chip on every side. */
+  inset: 0;
+  width: auto;
+  height: auto;
   border-radius: 999px;
   background: var(--msel-ink);
   transform-origin: 50% 0%;
 }
 
 .msel__trigger-bg-crisp {
+  /* Chip stays on the stack footprint; blacks live in the expanded goo. */
   position: absolute;
   inset: 0;
   border-radius: 999px;
@@ -971,9 +983,9 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
 }
 
 .msel__panel {
-  /* Black list shell; radius sized to the inner pills. */
+  /* List shell; clear the 5px ink halo on the chip. */
   position: absolute;
-  top: calc(100% + var(--msel-gap));
+  top: calc(100% + var(--msel-gap) + 5px);
   right: 0;
   left: auto;
   width: var(--msel-panel-width, max-content);
@@ -991,7 +1003,7 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
 
 .msel--up .msel__panel {
   top: auto;
-  bottom: calc(100% + var(--msel-gap));
+  bottom: calc(100% + var(--msel-gap) + 5px);
 }
 
 .msel__menu {
@@ -1051,10 +1063,10 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
   transition: color 0.18s ease;
 }
 
-/* White selector on black list → black type. */
+/* Highlighted option — ink-on-chip contrast. */
 .msel__option--hot .msel__option-inner,
 .msel__option:hover .msel__option-inner {
-  color: #111;
+  color: var(--msel-hot);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1066,5 +1078,30 @@ defineExpose({ open: openMenu, close: closeMenu, toggle })
   .msel__highlight {
     transition: none;
   }
+}
+</style>
+
+<style>
+/* Unscoped: follow early <html> theme script on hard load (Vue state lags). */
+html:not(.dark) .msel {
+  /* Ink / list = same frosted shell as SlidingPill; chip = toggle blob. */
+  --msel-ink: color-mix(in srgb, var(--background-color, var(--cream)) 88%, transparent);
+  --msel-chip: var(--charcoal);
+  --msel-fg: var(--cream);
+  --msel-fg-soft: color-mix(in srgb, var(--charcoal) 55%, transparent);
+  --msel-highlight: var(--charcoal);
+  --msel-hot: var(--cream);
+}
+
+html:not(.dark) .msel__trigger-bg,
+html:not(.dark) .msel__panel-bg,
+html:not(.dark) .msel__panel {
+  background: var(--msel-ink);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+html:not(.dark) .msel__panel {
+  border-color: var(--grid-line);
 }
 </style>

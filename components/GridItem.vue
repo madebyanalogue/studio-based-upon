@@ -345,7 +345,8 @@ onMounted(() => {
 
 .grid-item__media--image {
   padding: 0;
-  background: transparent;
+  /* Match typology / materials — solid field behind transparent objects. */
+  background: var(--cream);
 }
 
 .grid-item:hover .grid-item__media {
@@ -353,7 +354,7 @@ onMounted(() => {
 }
 
 .grid-item:hover .grid-item__media--image {
-  background: transparent;
+  background: var(--cream);
 }
 
 .grid-item__image {

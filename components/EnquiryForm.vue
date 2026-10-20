@@ -36,7 +36,10 @@
             <div
               v-if="previewItems.length"
               class="enquiry__grid"
-              :class="{ 'enquiry__grid--lines': gridLines }"
+              :class="{
+                'enquiry__grid--lines': gridLines && !soloProductPreview,
+                'enquiry__grid--solo': soloProductPreview,
+              }"
             >
               <div
                 v-for="item in previewItems"
@@ -290,6 +293,13 @@ const gridLines = ref(false)
 /** Pile has landed in the media column — clip it to that box. */
 const previewClipped = ref(false)
 
+/** Single PDP enquiry with a product image — full-width centered cell, no grid. */
+const soloProductPreview = computed(() => {
+  if (source.value !== 'product' || previewItems.value.length !== 1) return false
+  const item = previewItems.value[0]
+  return item?.kind === 'image' && Boolean(item.imageUrl)
+})
+
 const clipFlyersToPreview = () => {
   const root = enquiryFlyLayer()
   const column = document.querySelector<HTMLElement>('.enquiry__preview')
@@ -378,7 +388,9 @@ const showFlyers = (visible: boolean) => {
 const flyHome = async (id: number) => {
   releasePreviewClip()
   const bridge = getEnquiryFlyBridge()
-  const homes = bridge?.measure() ?? []
+  const measured = bridge?.measure() ?? []
+  // Product PDP has no stack bridge — fly back to the stored open origin.
+  const homes = measured.length ? measured : flyOrigins.value ?? []
   const byId = new Map(homes.map((rect) => [rect.id, rect]))
   const ids = enquiryFlyImages().map((img) => img.dataset.flyId || '')
   if (ids.length && homes.length) {
@@ -390,8 +402,6 @@ const flyHome = async (id: number) => {
   if (id !== runId) return
   bridge?.setParked(false)
   await nextTick()
-  if (id !== runId) return
-  clearEnquiryFlyers()
 }
 
 const returnToStack = async (id: number) => {
@@ -437,7 +447,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   if (!enquiryFlyImages().length) {
     formShown.value = true
     gridCover.value = false
-    gridLines.value = true
+    gridLines.value = !soloProductPreview.value
     getEnquiryFlyBridge()?.setParked(false)
     phase = 'idle'
     return
@@ -447,24 +457,51 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
   const sample = grid.values().next().value
   const size = sample?.width || 120
   const ids = origins.map((origin) => origin.id)
+  const solo = soloProductPreview.value
 
   setEnquiryFlyFront(true)
-  await tweenEnquiryFlyers(pileBoxes(origins, size, mediaColumnCenter()), GATHER_S)
+
+  if (solo) {
+    // Single PDP image — fly straight into the media column (no pile).
+    phase = 'covered'
+    clipFlyersToPreview()
+    formShown.value = true
+    await wait(FORM_FADE_MS)
+    if (id !== runId) return
+    await frames(2)
+    if (id !== runId) return
+    phase = 'spread'
+    // Land on the padded frame — figure size can be 0 before the bitmap settles.
+    const frameTargets = new Map<string, { left: number; top: number; width: number; height: number }>()
+    for (const el of document.querySelectorAll<HTMLElement>('.enquiry__grid--solo [data-enquiry-id]')) {
+      const itemId = el.dataset.enquiryId || ''
+      const frame = el.querySelector<HTMLElement>('.enquiry__frame') || el
+      const rect = frame.getBoundingClientRect()
+      if (!itemId || rect.width < 2 || rect.height < 2) continue
+      frameTargets.set(itemId, boxOf(rect))
+    }
+    await tweenEnquiryFlyers(
+      boxesFor(ids, frameTargets.size ? frameTargets : measureGridContent()),
+      GATHER_S,
+    )
+  } else {
+    await tweenEnquiryFlyers(pileBoxes(origins, size, mediaColumnCenter()), GATHER_S)
+    if (id !== runId) return
+
+    phase = 'covered'
+    clipFlyersToPreview()
+    // Form fades in under the pile. The layer starts behind the dialog.
+    setEnquiryFlyFront(true)
+    formShown.value = true
+    await wait(FORM_FADE_MS)
+    if (id !== runId) return
+
+    phase = 'spread'
+    await tweenEnquiryFlyers(boxesFor(ids, measureGridContent()), SPREAD_S)
+  }
   if (id !== runId) return
 
-  phase = 'covered'
-  clipFlyersToPreview()
-  // Form fades in under the pile. The layer starts behind the dialog.
-  setEnquiryFlyFront(true)
-  formShown.value = true
-  await wait(FORM_FADE_MS)
-  if (id !== runId) return
-
-  phase = 'spread'
-  await tweenEnquiryFlyers(boxesFor(ids, measureGridContent()), SPREAD_S)
-  if (id !== runId) return
-
-  gridLines.value = true
+  gridLines.value = !solo
   gridCover.value = false
   await nextTick()
   await frames(1)
@@ -493,14 +530,16 @@ const close = async () => {
   } finally {
     if (id === runId) {
       getEnquiryFlyBridge()?.setParked(false)
-      clearEnquiryFlyers()
       releasePreviewClip()
       phase = 'idle'
       gridCover.value = false
       closing.value = false
+      // Reveal the source thumb under the landed flyer, then drop the flyer.
       closeEnquiry()
       formShown.value = false
       attempted.value = false
+      await nextTick()
+      clearEnquiryFlyers()
     }
   }
 }
@@ -1022,6 +1061,57 @@ onUnmounted(() => {
 .enquiry__grid--lines .enquiry__grid-item {
   border-right-color: #111;
   border-bottom-color: #111;
+}
+
+.enquiry__preview:has(.enquiry__grid--solo) .enquiry__preview-scroll {
+  position: relative;
+  height: 100%;
+  min-height: 100%;
+}
+
+.enquiry__grid--solo {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+.enquiry__grid--solo .enquiry__grid-item {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  border-color: transparent;
+}
+
+.enquiry__grid--solo .enquiry__frame {
+  position: absolute;
+  inset: var(--enquire-pad, 35px);
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  container-type: size;
+}
+
+.enquiry__grid--solo .enquiry__figure,
+.enquiry__grid--solo .enquiry__hit {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.enquiry__grid--solo .enquiry__image {
+  width: auto;
+  height: auto;
+  max-width: 100cqi;
+  max-height: 100cqb;
+  object-fit: contain;
 }
 
 .enquire__field textarea {

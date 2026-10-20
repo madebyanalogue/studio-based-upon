@@ -361,6 +361,8 @@ import { PRODUCT_TYPE_FILTERS, isPrecraftedItem } from '~/composables/demoData'
 import { IMAGE_WIDTH, imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 import { productCoverFrame, productGalleryFrames } from '~/composables/productImages'
 import { preloadLoupeBitmaps } from '~/components/Loupe.vue'
+import type { EnquiryFlyRect } from '~/composables/useEnquiryForm'
+import { mountEnquiryFlyers } from '~/composables/useEnquiryFlyLayer'
 import {
   ARCHIVE_PDP_CLOSE_EASE,
   ARCHIVE_PDP_CLOSE_S,
@@ -419,7 +421,12 @@ const {
   signalArchiveMotion,
   nextSequence,
 } = useProductOverlay()
-const { openFromProduct } = useEnquiryForm()
+const {
+  openFromProduct,
+  isOpen: enquiryOpen,
+} = useEnquiryForm()
+let enquiryFlyTeardown: (() => void) | null = null
+let stopEnquiryFlyWatch: (() => void) | null = null
 const { items: libraryItems } = await useLibraryCatalog()
 
 // Stable key so in-PDP nav never clears `product` (which would unmount the
@@ -1068,6 +1075,10 @@ const syncSelectedFromScroll = () => {
 }
 
 const onStripScroll = () => {
+  if (frozenGalleryScroll != null) {
+    pinFrozenGalleryScroll()
+    return
+  }
   if (stripScrollRaf) cancelAnimationFrame(stripScrollRaf)
   stripScrollRaf = requestAnimationFrame(() => {
     stripScrollRaf = 0
@@ -1150,6 +1161,9 @@ const initGalleryLenis = () => {
 
 const resizeGalleryLenis = () => {
   galleryLenis?.resize()
+  // Content ResizeObserver / rail tweens can snap Lenis to a zeroed
+  // native scrollTop while a mid-gallery frame is hidden for zoom.
+  if (frozenGalleryScroll != null) pinFrozenGalleryScroll()
 }
 
 watch(imageExpanded, async () => {
@@ -1200,28 +1214,105 @@ const clearZoomFlyer = () => {
 /** The frame hidden for the open zoom. Close always reveals this node. */
 let hiddenZoomFrame: HTMLElement | null = null
 
+const hideZoomFrame = (frame: HTMLElement) => {
+  hiddenZoomFrame = frame
+  // Opacity keeps layout; visibility:hidden was letting the strip jump to 0.
+  frame.style.opacity = '0'
+  frame.style.pointerEvents = 'none'
+}
+
 const showZoomFrame = (frame?: HTMLElement | null) => {
   const target = frame ?? hiddenZoomFrame
-  target?.style.removeProperty('visibility')
+  if (target) {
+    target.style.removeProperty('opacity')
+    target.style.removeProperty('pointer-events')
+    target.style.removeProperty('visibility')
+  }
   if (!frame || frame === hiddenZoomFrame) hiddenZoomFrame = null
 }
 
-const hideZoomFrame = (frame: HTMLElement) => {
-  hiddenZoomFrame = frame
-  frame.style.visibility = 'hidden'
+/** Strip scroll locked for the open zoom / flyer flight. */
+let frozenGalleryScroll: number | null = null
+/** Viewport Y of the zoomed frame — preferred lock over scrollTop alone. */
+let frozenFrameViewportTop: number | null = null
+let frozenFrameEl: HTMLElement | null = null
+let freezePinRaf = 0
+
+const applyStripScroll = (top: number) => {
+  const strip = stripRef.value
+  if (strip) strip.scrollTop = top
+  const lenis = galleryLenis
+  if (!lenis) return
+  lenis.animatedScroll = top
+  lenis.targetScroll = top
+  // Avoid lenis.stop()/start() — stop() resets from actualScroll and can snap to 0.
+  if (!lenis.isStopped) {
+    lenis.scrollTo(top, { immediate: true, force: true })
+  } else if (strip) {
+    strip.scrollTop = top
+  }
 }
 
-/** Commit the on-screen offset, then ignore wheel so the frame cannot drift. */
-const freezeGalleryScroll = () => {
-  const lenis = galleryLenis
-  if (!lenis || lenis.isStopped) return
-  lenis.scrollTo(lenis.animatedScroll, { immediate: true, force: true })
-  lenis.stop()
+/** Re-apply the frozen offset after DOM/Lenis mutations that can snap to 0. */
+const pinFrozenGalleryScroll = () => {
+  if (frozenGalleryScroll == null) return
+  const frame = frozenFrameEl
+  const targetTop = frozenFrameViewportTop
+  const strip = stripRef.value
+  if (frame && targetTop != null && strip) {
+    const delta = frame.getBoundingClientRect().top - targetTop
+    if (Math.abs(delta) > 0.5) {
+      const next = Math.max(0, strip.scrollTop + delta)
+      frozenGalleryScroll = next
+      applyStripScroll(next)
+    }
+    return
+  }
+  if (strip && Math.abs(strip.scrollTop - frozenGalleryScroll) > 0.5) {
+    applyStripScroll(frozenGalleryScroll)
+  }
+}
+
+const stopFreezePinLoop = () => {
+  if (!freezePinRaf) return
+  cancelAnimationFrame(freezePinRaf)
+  freezePinRaf = 0
+}
+
+const startFreezePinLoop = () => {
+  stopFreezePinLoop()
+  const tick = () => {
+    if (frozenGalleryScroll == null) {
+      freezePinRaf = 0
+      return
+    }
+    pinFrozenGalleryScroll()
+    freezePinRaf = requestAnimationFrame(tick)
+  }
+  freezePinRaf = requestAnimationFrame(tick)
+}
+
+/** Commit the on-screen offset. Wheel is blocked via Lenis `prevent` while zoomed. */
+const freezeGalleryScroll = (frame?: HTMLElement | null) => {
+  const strip = stripRef.value
+  const native = strip?.scrollTop ?? 0
+  const lenisTop = galleryLenis?.animatedScroll
+  // Prefer native when it looks real; otherwise Lenis (can be ahead mid-lerp).
+  const top =
+    native > 1 || lenisTop == null ? native : lenisTop
+  frozenGalleryScroll = top
+  frozenFrameEl = frame ?? null
+  frozenFrameViewportTop = frame?.getBoundingClientRect().top ?? null
+  applyStripScroll(top)
+  startFreezePinLoop()
 }
 
 const thawGalleryScroll = () => {
-  if (!galleryLenis?.isStopped) return
-  galleryLenis.start()
+  stopFreezePinLoop()
+  pinFrozenGalleryScroll()
+  frozenGalleryScroll = null
+  frozenFrameEl = null
+  frozenFrameViewportTop = null
 }
 
 /** Size the zoom image so it covers the viewport, then apply pinch. */
@@ -1439,18 +1530,23 @@ const expandImageZoom = async (
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   imageZooming = true
   zoomDimmed.value = true
-  freezeGalleryScroll()
-  zoomLayerShown.value = reduced
   const from = img.getBoundingClientRect()
-  // Gallery frame stays in its padded slot, hidden, for the whole zoom.
+  // Lock scroll to this frame's on-screen position before any hide/fade.
+  freezeGalleryScroll(frame)
+  zoomLayerShown.value = reduced
+  // Gallery frame stays in its padded slot, faded, for the whole zoom.
   hideZoomFrame(frame)
+  pinFrozenGalleryScroll()
   const flyer = spawnZoomFlyer(img, from, frameRadiusPx(frame))
   imageExpanded.value = true
   await nextTick()
+  pinFrozenGalleryScroll()
   await ensureZoomImageReady()
   await nextFrame()
+  pinFrozenGalleryScroll()
   layoutZoomToFocus()
   await nextFrame()
+  pinFrozenGalleryScroll()
   const zoomImage = zoomImageRef.value
   // Fly to the focused region of the covered image (viewport centre), not
   // the top-left of a width-only layout — that was jumping lower frames up.
@@ -1485,10 +1581,13 @@ const collapseImageZoom = async () => {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const from = zoomImage.getBoundingClientRect()
   imageZooming = true
+  pinFrozenGalleryScroll()
   const flyer = spawnZoomFlyer(zoomImage, from, 0)
   imageExpanded.value = false
   await nextTick()
+  pinFrozenGalleryScroll()
   await nextFrame()
+  pinFrozenGalleryScroll()
   const to = zoomTargetInFrame(frame).getBoundingClientRect()
   if (reduced || from.width < 2 || to.width < 2) {
     finishZoomClose(frame, flyer)
@@ -1596,6 +1695,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  stopEnquiryFlyWatch?.()
+  stopEnquiryFlyWatch = null
+  enquiryFlyTeardown?.()
   clearZoomFlyer()
   releaseFadedHeart()
   destroyGalleryLenis()
@@ -1728,13 +1830,56 @@ const sendEnquiry = () => {
   const cover = productCoverFrame(product.value)
   const image =
     activeEntry.value?.src || (cover ? imageUrl(cover, 900) : undefined) || undefined
-  openFromProduct({
-    id: product.value._id,
-    title: product.value.title,
-    imageUrl: image,
-    slug: product.value.slug,
-    path: productDetailPath(product.value.slug, product.value),
-  })
+  const productId = product.value._id
+
+  enquiryFlyTeardown?.()
+  enquiryFlyTeardown = null
+  stopEnquiryFlyWatch?.()
+  stopEnquiryFlyWatch = null
+
+  const reduceMotion =
+    import.meta.client && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const hero = heroRef.value
+  let origins: EnquiryFlyRect[] | null = null
+
+  if (!reduceMotion && hero && image) {
+    const rect = hero.getBoundingClientRect()
+    if (rect.width > 2 && rect.height > 2) {
+      origins = [
+        {
+          id: productId,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+      ]
+      mountEnquiryFlyers([{ ...origins[0]!, src: image }])
+      hero.style.visibility = 'hidden'
+      enquiryFlyTeardown = () => {
+        const el = heroRef.value
+        if (el) el.style.visibility = ''
+        enquiryFlyTeardown = null
+      }
+      stopEnquiryFlyWatch = watch(enquiryOpen, (open) => {
+        if (open) return
+        enquiryFlyTeardown?.()
+        stopEnquiryFlyWatch?.()
+        stopEnquiryFlyWatch = null
+      })
+    }
+  }
+
+  openFromProduct(
+    {
+      id: productId,
+      title: product.value.title,
+      imageUrl: image,
+      slug: product.value.slug,
+      path: productDetailPath(product.value.slug, product.value),
+    },
+    { origins },
+  )
 }
 
 const downloadSpec = () => {
@@ -2238,9 +2383,13 @@ const runFlipClose = async () => {
       ? 'power3.out'
       : 'power2.inOut'
 
+  // Width/height (not scale) so cover crops match the thumb instead of
+  // stretching then snapping when the flyer is removed.
   Flip.from(state, {
     duration: closeDuration,
     ease: closeEase,
+    absolute: true,
+    scale: false,
     onComplete: () => {
       // Restore thumb under the flyer, then unmount the overlay immediately.
       // A body-level veil (pointer-events: none) continues the cream fade so
@@ -2534,6 +2683,8 @@ watch(
   -ms-overflow-style: none;
   /* Don't inherit the stage close cursor into image gaps / strip chrome */
   cursor: auto;
+  /* Zoom hides the active frame; without this the browser can jump the strip to 0. */
+  overflow-anchor: none;
 }
 
 .pdp__strip-track {
@@ -3274,12 +3425,13 @@ watch(
 
 .pdp__next {
   margin-top: 3rem;
+  border-top: 1px solid var(--grid-line);
   text-align: center;
 }
 
 .pdp__next-label {
   display: inline-block;
-  margin-bottom: 1rem;
+  margin: 15px 0;
   font-size: var(--text-sm);
   color: var(--charcoal);
 }
@@ -3298,6 +3450,10 @@ watch(
 }
 
 @media (max-width: 1000px) {
+  .pdp__next {
+    display: none;
+  }
+
   /* First paint, before the phone override is applied: keep specs shut. */
   .pdp:not(.pdp--specs-live) .pdp__spec-panel,
   .pdp:not(.pdp--specs-live) .pdp__spec-panel.is-open {

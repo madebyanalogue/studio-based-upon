@@ -467,7 +467,8 @@ const resumeLabel = (text: string) => {
 }
 
 const syncLabel = (text: string) => {
-  if (!text && suppressLabel.value) {
+  // Header/nav suppress, or PDP/typology close hold — drop in the same frame.
+  if (!text && (suppressLabel.value || typologyCloseLabelHeld.value)) {
     dropLabelNow()
     return
   }

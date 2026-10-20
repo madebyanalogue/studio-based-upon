@@ -183,11 +183,17 @@ const settings = {
   revealOverlap: 0.5,
 }
 /** Distance to an aligned frame, as a fraction of one slide, that eases shut. */
-const SNAP_TOLERANCE = 0.1
+const SNAP_TOLERANCE = 0.2
 /** Wait after the last scroll before the settle starts. */
 const SNAP_IDLE_MS = 480
+/** Touch settles sooner — less float after a finger lift. */
+const SNAP_IDLE_MS_TOUCH = 90
 /** How quickly the target drifts onto the frame. The picture follows via smoothness. */
 const SNAP_EASE = 0.035
+/** Touch ease onto the frame — snappier than wheel. */
+const SNAP_EASE_TOUCH = 0.16
+/** Follow the snap target a bit harder while a touch settle is running. */
+const SNAP_SMOOTHNESS_TOUCH = 0.14
 
 const blurFilterId = 'split-slider-blur-matrix'
 const titleFilter = `url(#${blurFilterId}) blur(0.25px)`
@@ -225,6 +231,9 @@ const onCompactChange = (event: MediaQueryListEvent) => {
   updateSlider()
 }
 let lastTouchY = 0
+/** Last scroll input was a finger — use the snappier settle. */
+let lastInputWasTouch = false
+let touchSettling = false
 let rafId = 0
 let running = false
 let titleSplitInstance: InstanceType<typeof SplitText> | null = null
@@ -1020,12 +1029,16 @@ const onWheel = (event: WheelEvent) => {
     if (leftEl.value) leftEl.value.scrollLeft += delta
     return
   }
+  lastInputWasTouch = false
+  touchSettling = false
   lastScrollInputAt = performance.now()
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
 
 const onTouchStart = (event: TouchEvent) => {
   lastTouchY = event.touches[0]?.clientY ?? 0
+  lastInputWasTouch = true
+  touchSettling = false
 }
 
 const onTouchMove = (event: TouchEvent) => {
@@ -1033,29 +1046,56 @@ const onTouchMove = (event: TouchEvent) => {
   cancelIntro()
   const y = event.touches[0]?.clientY ?? lastTouchY
   if (y !== lastTouchY) dismissScrollHint()
+  lastInputWasTouch = true
+  touchSettling = false
   lastScrollInputAt = performance.now()
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
   lastTouchY = y
 }
 
+/** Finger up — start settling onto the nearest frame immediately. */
+const onTouchEnd = () => {
+  if (compact || leaving || openingProduct.value) return
+  lastInputWasTouch = true
+  touchSettling = true
+  // Don't wait out the idle window; snap on the next ticks.
+  lastScrollInputAt = performance.now() - SNAP_IDLE_MS_TOUCH
+  const nearest = Math.round(scrollTarget)
+  if (Math.abs(scrollTarget - nearest) <= SNAP_TOLERANCE * 1.35) {
+    scrollTarget = nearest
+  }
+}
+
 /** Ease onto a frame after the scroll has rested inside the tolerance. */
 const snapIfClose = () => {
-  if (compact || performance.now() - lastScrollInputAt < SNAP_IDLE_MS) return
+  const idle = lastInputWasTouch ? SNAP_IDLE_MS_TOUCH : SNAP_IDLE_MS
+  if (compact || performance.now() - lastScrollInputAt < idle) return
   const nearest = Math.round(scrollPosition)
-  if (Math.abs(scrollPosition - nearest) > SNAP_TOLERANCE) return
-  if (Math.abs(scrollTarget - nearest) > SNAP_TOLERANCE) return
+  const tol = lastInputWasTouch ? SNAP_TOLERANCE * 1.25 : SNAP_TOLERANCE
+  if (Math.abs(scrollPosition - nearest) > tol) return
+  if (Math.abs(scrollTarget - nearest) > tol) return
   const gap = nearest - scrollTarget
   if (Math.abs(gap) < 0.0006) {
     scrollTarget = nearest
+    touchSettling = false
     return
   }
-  scrollTarget += gap * SNAP_EASE
+  scrollTarget += gap * (lastInputWasTouch ? SNAP_EASE_TOUCH : SNAP_EASE)
+  if (lastInputWasTouch) touchSettling = true
 }
 
 const tick = () => {
   if (!running || leaving) return
   snapIfClose()
-  scrollPosition += (scrollTarget - scrollPosition) * settings.smoothness
+  const follow =
+    touchSettling && lastInputWasTouch
+      ? SNAP_SMOOTHNESS_TOUCH
+      : settings.smoothness
+  scrollPosition += (scrollTarget - scrollPosition) * follow
+  if (touchSettling && Math.abs(scrollPosition - scrollTarget) < 0.002) {
+    scrollPosition = scrollTarget
+    touchSettling = false
+  }
   updateSlider()
   rafId = requestAnimationFrame(tick)
 }
@@ -1168,12 +1208,17 @@ const openSide = async (side: Side, slideIndex: number) => {
   }
 
   const clicked = columns[side].visibleSlides.get(picked.slideIndex) || null
-  // Flip measures this box. object-fit makes the flyer crop like the slide image.
-  if (clicked) clicked.style.objectFit = 'cover'
+  // Flip the img, not the slide shell — the bitmap is 112% tall (−6% top),
+  // so landing on the slide box then revealing the img causes a scale jump.
+  const flipTarget =
+    (clicked?.querySelector('img') as HTMLElement | null) || clicked
+  if (flipTarget instanceof HTMLImageElement) {
+    flipTarget.style.transform = 'translateY(0%)'
+  }
   const flipSrc = side === 'left' ? picked.slide.leftImage : picked.slide.rightImage
   if (flipSrc) void prefetchImage(flipSrc)
   openProduct(picked.side.productSlug, {
-    source: clicked,
+    source: flipTarget,
     imageIndex: picked.side.imageIndex ?? 0,
     flipSrc: flipSrc || null,
     productId: picked.side.productId || null,
@@ -1251,6 +1296,8 @@ onMounted(() => {
   window.addEventListener('wheel', onWheel, { passive: false })
   root?.addEventListener('touchstart', onTouchStart, { passive: true })
   root?.addEventListener('touchmove', onTouchMove, { passive: true })
+  root?.addEventListener('touchend', onTouchEnd, { passive: true })
+  root?.addEventListener('touchcancel', onTouchEnd, { passive: true })
   leftEl.value?.addEventListener('scroll', onCompactColumnScroll, { passive: true })
   rightEl.value?.addEventListener('scroll', onCompactColumnScroll, { passive: true })
   leftEl.value?.addEventListener('click', onLeftColumnClick)
@@ -1289,6 +1336,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('wheel', onWheel)
   root?.removeEventListener('touchstart', onTouchStart)
   root?.removeEventListener('touchmove', onTouchMove)
+  root?.removeEventListener('touchend', onTouchEnd)
+  root?.removeEventListener('touchcancel', onTouchEnd)
   leftEl.value?.removeEventListener('scroll', onCompactColumnScroll)
   rightEl.value?.removeEventListener('scroll', onCompactColumnScroll)
   leftEl.value?.removeEventListener('click', onLeftColumnClick)
@@ -1480,7 +1529,8 @@ watch(
   white-space: nowrap;
 }
 
-.split-slider__caption-title {
+.split-slider__caption-title,
+.split-slider__caption-subtitle {
   display: none;
 }
 

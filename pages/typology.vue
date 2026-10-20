@@ -641,12 +641,25 @@ const syncCenterPad = () => {
       : railRect.bottom - centerY
   }
 
-  const mid = window.innerHeight / 2
+  const mid =
+    (window.visualViewport?.height ?? window.innerHeight) / 2
+  // Any leftover #app bottom padding still extends scroll past the pad.
+  const app = document.getElementById('app')
+  const appPadBottom = app
+    ? Number.parseFloat(getComputedStyle(app).paddingBottom) || 0
+    : 0
+
   const padTop = Math.max(0, mid - thumbCenterOffset(firstCard, 'top'))
-  const padBottom = Math.max(0, mid - thumbCenterOffset(lastCard, 'bottom'))
+  const padBottom = Math.max(
+    0,
+    mid - thumbCenterOffset(lastCard, 'bottom') - appPadBottom,
+  )
 
   pageEl.value.style.setProperty('--rail-center-pad-top', `${padTop}px`)
   pageEl.value.style.setProperty('--rail-center-pad-bottom', `${padBottom}px`)
+
+  const lenis = useNuxtApp().$lenis as { resize?: () => void } | undefined
+  lenis?.resize?.()
 }
 
 const observeCenterPad = () => {
@@ -673,6 +686,11 @@ onMounted(() => {
     window.setTimeout(observeCenterPad, 300)
   })
   window.addEventListener('resize', syncCenterPad)
+  window.visualViewport?.addEventListener('resize', syncCenterPad)
+})
+
+watch(pageSettled, (settled) => {
+  if (settled) nextTick(() => observeCenterPad())
 })
 
 watch(
@@ -730,6 +748,7 @@ onBeforeUnmount(() => {
   titleSplitInstance?.revert()
   titleSplitInstance = null
   window.removeEventListener('resize', syncCenterPad)
+  window.visualViewport?.removeEventListener('resize', syncCenterPad)
   centerPadObserver?.disconnect()
   centerPadObserver = null
 })
@@ -792,16 +811,29 @@ onBeforeUnmount(() => {
 
 .discover-page__content :deep(.collection-rail) {
   transition:
-    opacity 0.15s ease,
     filter 0.15s ease,
     --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Hovering or activating a row fades / grays every other row */
+.discover-page__content :deep(.discover-card__image),
+.discover-page__content :deep(.discover-card__meta) {
+  transition: opacity 0.15s ease;
+}
+
+/*
+ * Dim sibling rows by fading the image only — keep the media mat opaque
+ * (background-color) so WebGL never shows through.
+ */
 .discover-page__content--row-hot
   :deep(.collection-rail:not(.collection-rail--hot)) {
-  opacity: 0.1;
   filter: grayscale(1);
+}
+
+.discover-page__content--row-hot
+  :deep(.collection-rail:not(.collection-rail--hot) .discover-card__image),
+.discover-page__content--row-hot
+  :deep(.collection-rail:not(.collection-rail--hot) .discover-card__meta) {
+  opacity: 0.1;
 }
 
 /* An open row stays put. Only another row's trigger cell can be opened. */
@@ -809,7 +841,6 @@ onBeforeUnmount(() => {
   :deep(.collection-rail:not(.collection-rail--hot)) {
   pointer-events: none;
   transition:
-    opacity 0.5s ease,
     filter 0.5s ease,
     --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -823,8 +854,21 @@ onBeforeUnmount(() => {
   :deep(
     .collection-rail:not(.collection-rail--hot):has(.collection-rail__card--trigger:hover)
   ) {
-  opacity: 0.5;
   filter: grayscale(1);
+}
+
+.discover-page__content--row-locked
+  :deep(
+    .collection-rail:not(.collection-rail--hot):has(.collection-rail__card--trigger:hover)
+      .discover-card__image
+  ),
+.discover-page__content--row-locked
+  :deep(
+    .collection-rail:not(.collection-rail--hot):has(.collection-rail__card--trigger:hover)
+      .discover-card__meta
+  ) {
+  opacity: 0.5;
+  transition: opacity 0.5s ease;
 }
 
 @media (max-width: 899px) {

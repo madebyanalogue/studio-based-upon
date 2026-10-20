@@ -118,15 +118,11 @@ const isActive = ref(false)
 const controlsReady = ref(false)
 /** Close animation is running. Other rows stay inert until it finishes. */
 const isClosing = ref(false)
-/** True after the user scrolls an open row. Thumbnails then use product titles. */
-const railScrolled = ref(false)
-
-/** Every closed trigger says Explore. Scrolled thumbnails use the product title. */
-const cardCursorLabel = (index: number, title: string) => {
+/** Closed / locked triggers say Explore. Product titles sit under the image, not on the cursor. */
+const cardCursorLabel = (index: number, _title: string) => {
   const otherRowOpen = typologyRowsLocked.value && !isActive.value && !isClosing.value
   if (otherRowOpen) return index === 0 ? 'Explore' : ''
   if (index === 0 && !controlsReady.value) return 'Explore'
-  if (controlsReady.value && railScrolled.value) return title.trim()
   return ''
 }
 
@@ -180,7 +176,6 @@ const armRailScrollHint = () => {
   const origin = scroller.scrollLeft
   const onScroll = () => {
     if (Math.abs(scroller.scrollLeft - origin) < 2) return
-    railScrolled.value = true
     dismissRailScrollHint()
   }
   scroller.addEventListener('scroll', onScroll, { passive: true })
@@ -447,7 +442,6 @@ const deactivate = () => {
   controlsReady.value = false
   isActive.value = false
   isPreview.value = false
-  railScrolled.value = false
   dismissRailScrollHint()
   typologyCloseLabelHeld.value = true
   typologyRowsLocked.value = true
@@ -551,7 +545,6 @@ const onActiveWheel = (event: WheelEvent) => {
   }
   const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy
   if (!delta) return
-  railScrolled.value = true
   dismissRailScrollHint()
   const next = railLenis.targetScroll + delta
   if (prefersReducedMotion()) {
@@ -772,10 +765,8 @@ watch(
 
 <style scoped>
 .collection-rail {
-  --discover-rail-gap-rest: 5px;
-  --discover-rail-gap: calc(
-    var(--discover-rail-gap-rest) + (60px - var(--discover-rail-gap-rest)) * var(--rail-open)
-  );
+  --discover-rail-gap-rest: 15px;
+  --discover-rail-gap: 15px;
   --rail-cols: 5;
   --rail-gaps: 4;
   --rail-card-size: calc(
@@ -842,7 +833,7 @@ watch(
   gap: var(--discover-rail-gap);
   width: max-content;
   padding-block: calc(
-    (var(--discover-rail-gap-rest) / 2) + (50px - var(--discover-rail-gap-rest) / 2) * var(--rail-open)
+    (var(--discover-rail-gap-rest) / 2) + (70px - var(--discover-rail-gap-rest) / 2) * var(--rail-open)
   );
   box-sizing: content-box;
 }
@@ -873,6 +864,7 @@ watch(
 .collection-rail__card {
   --card-aspect: 1.5;
   --rail-card-open: calc(var(--rail-open-height) * var(--card-aspect));
+  position: relative;
   flex: 0 0 auto;
   box-sizing: border-box;
   width: calc(
@@ -882,6 +874,7 @@ watch(
   max-width: none;
   opacity: 0;
   pointer-events: none;
+  overflow: visible;
   transition: opacity 0.35s ease;
 }
 
@@ -901,8 +894,45 @@ watch(
   pointer-events: auto;
 }
 
+/* Match materials & forms meta: under the image, hover-reveal. */
+.collection-rail__card :deep(.discover-card) {
+  position: relative;
+  overflow: visible;
+}
+
 .collection-rail__card :deep(.discover-card__meta) {
-  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 16px 0;
+  border-top: 1px dashed var(--ui-border-color);
+  background: transparent;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .collection-rail__card :deep(.discover-card__meta) {
+    opacity: 0;
+  }
+
+  .collection-rail__card:has(.discover-card__media:hover) :deep(.discover-card__meta),
+  .collection-rail__card:has(.discover-card__media:focus-within) :deep(.discover-card__meta) {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .collection-rail__card :deep(.discover-card__meta) {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 899px) {

@@ -399,7 +399,7 @@ export const useProductOverlay = () => {
     pendingGridSwap.value = { shellId, closingId }
   }
 
-  /** Let the cursor's Close word type out instead of vanishing with the overlay. */
+  /** Drop the cursor's Close label immediately — hold keeps it from reappearing mid-close. */
   const dismissCloseCursorLabel = () => {
     if (!import.meta.client) return
     typologyCloseLabelHeld.value = true

@@ -350,7 +350,6 @@
           class="stack__freeform"
           data-cursor="default"
           data-lenis-prevent
-          @pointerenter="dismissFreeformTip"
         >
           <div
             class="stack__freeform-tip"
@@ -360,8 +359,15 @@
             }"
             aria-hidden="true"
           >
-            <p>Resize, arrange your saved items.</p>
-            <p>Then send them as an enquiry.</p>
+            <DissolveText
+              v-if="freeformTipReady && !freeformTipGone"
+              :key="freeformTipKey"
+              class="stack__freeform-dissolve"
+              fit="lines"
+              interactive
+              :lines="FREEFORM_TIP_LINES"
+              @clear="dismissFreeformTip"
+            />
           </div>
           <div ref="freeformPlane" class="stack__freeform-plane">
             <div
@@ -803,6 +809,19 @@
 
           <div class="stack__toolbar-actions">
             <div class="stack__toolbar-send">
+              <div
+                v-if="showSendOnboarding"
+                class="stack__send-note"
+                aria-hidden="true"
+              >
+                <DissolveText
+                  class="stack__send-dissolve"
+                  fit="lines"
+                  interactive
+                  :lines="SEND_ONBOARD_LINES"
+                  @clear="dismissSendOnboarding"
+                />
+              </div>
               <button
                 type="button"
                 class="stack__toolbar-create interface"
@@ -880,9 +899,19 @@
             Tidy
           </button>
           <div class="stack__upload">
-            <p v-if="showUploadOnboarding" class="stack__upload-note">
-              Upload your own source material
-            </p>
+            <div
+              v-if="showUploadOnboarding"
+              class="stack__upload-note"
+              aria-hidden="true"
+            >
+              <DissolveText
+                class="stack__upload-dissolve"
+                fit="lines"
+                interactive
+                :lines="UPLOAD_ONBOARD_LINES"
+                @clear="dismissUploadOnboarding"
+              />
+            </div>
             <label class="stack__upload-global interface" data-cursor="default" aria-label="Upload">
               <input
                 type="file"
@@ -1610,13 +1639,27 @@ const fileToCartImage = (file: File) =>
   })
 
 const UPLOAD_ONBOARD_KEY = 'cart-upload-onboarded'
+const SEND_ONBOARD_KEY = 'cart-send-onboarded'
+const UPLOAD_ONBOARD_LINES = ['Upload Media']
+const SEND_ONBOARD_LINES = ['Then send us a brief']
 const showUploadOnboarding = ref(false)
+const showSendOnboarding = ref(false)
 
 const dismissUploadOnboarding = () => {
   if (!showUploadOnboarding.value) return
   showUploadOnboarding.value = false
   try {
     localStorage.setItem(UPLOAD_ONBOARD_KEY, '1')
+  } catch {
+    /* private mode */
+  }
+}
+
+const dismissSendOnboarding = () => {
+  if (!showSendOnboarding.value) return
+  showSendOnboarding.value = false
+  try {
+    localStorage.setItem(SEND_ONBOARD_KEY, '1')
   } catch {
     /* private mode */
   }
@@ -2808,6 +2851,9 @@ const freeformDotsSuppress = ref(false)
 let freeformDotsLeaveTimer = 0
 const freeformTipReady = ref(false)
 const freeformTipGone = ref(false)
+/** Remount dissolve text when the tip is shown again. */
+const freeformTipKey = ref(0)
+const FREEFORM_TIP_LINES = ['Gather your material here and arrange']
 
 const beginFreeformDotsLeave = (ms = 200) => {
   if (!freeformDotsOn.value) return
@@ -2832,7 +2878,10 @@ watch([showFreeform, viewFlipBusy, isFlipping], () => {
     window.clearTimeout(freeformDotsLeaveTimer)
     freeformDotsLeaving.value = false
     freeformDotsOn.value = true
+    // Fresh tip each time freeform settles (was killed by pointerenter on open).
+    freeformTipGone.value = false
     freeformTipReady.value = true
+    freeformTipKey.value += 1
     return
   }
   if (showFreeform.value || !freeformDotsOn.value || freeformDotsLeaving.value) return
@@ -8471,9 +8520,14 @@ const onNavHeartLeave = () => {
 
 onMounted(() => {
   try {
-    showUploadOnboarding.value = localStorage.getItem(UPLOAD_ONBOARD_KEY) !== '1'
+    // Reset so dissolve tips are visible again while iterating.
+    localStorage.removeItem(UPLOAD_ONBOARD_KEY)
+    localStorage.removeItem(SEND_ONBOARD_KEY)
+    showUploadOnboarding.value = true
+    showSendOnboarding.value = true
   } catch {
     showUploadOnboarding.value = true
+    showSendOnboarding.value = true
   }
   registerAnimatedClose(() => {
     void closeToPile()
@@ -10295,8 +10349,38 @@ onBeforeUnmount(() => {
 }
 
 .stack__toolbar-send {
+  position: relative;
   display: flex;
   align-items: center;
+  overflow: visible;
+}
+
+.stack__send-note {
+  position: absolute;
+  top: calc(100% + 30px);
+  right: 0;
+  bottom: auto;
+  z-index: 1;
+  margin: 0;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.stack__send-dissolve {
+  overflow: visible;
+  font-family: var(--lacquer);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
+  white-space: nowrap;
+}
+
+.stack__send-dissolve :deep(.dissolve-text__measure) {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
 }
 
 .stack__toolbar-create {
@@ -10492,6 +10576,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 20px;
+  overflow: visible;
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
@@ -10508,34 +10593,40 @@ onBeforeUnmount(() => {
 
 .stack__upload {
   position: relative;
+  overflow: visible;
 }
 
 .stack__upload-note {
+  /* Sit close to the button; tall fall-pad hangs behind it (z-index). */
   position: absolute;
   right: 0;
-  bottom: var(--above);
-  z-index: 1;
+  bottom: calc(100% - 5.5rem);
+  z-index: 0;
   margin: 0;
-  font-family: var(--lacquer);
-  font-size: 18px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  color: var(--text-color);
-  pointer-events: none;
+  overflow: visible;
+  pointer-events: auto;
 }
 
-.stack__upload-note::after {
-  content: '';
-  position: absolute;
-  right: 28px;
-  top: calc(100% + 4px);
-  width: 7px;
-  height: 7px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg);
+.stack__upload-global {
+  position: relative;
+  z-index: 1;
+}
+
+.stack__upload-dissolve {
+  overflow: visible;
+  font-family: var(--lacquer);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
+  white-space: nowrap;
+}
+
+.stack__upload-dissolve :deep(.dissolve-text__measure) {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
 }
 
 .stack__undo-global,
@@ -10693,15 +10784,22 @@ onBeforeUnmount(() => {
   transition-duration: 1.1s;
 }
 
-.stack__freeform-tip p {
-  margin: 0;
-  max-width: 18em;
+.stack__freeform-dissolve {
+  max-width: none;
+  width: max-content;
   font-family: var(--lacquer);
   font-size: clamp(1.35rem, 2.8vw, 1.85rem);
   font-weight: 400;
   line-height: 1.25;
   letter-spacing: 0.01em;
   color: var(--charcoal);
+  overflow: visible;
+}
+
+.stack__freeform-dissolve :deep(.dissolve-text__measure) {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
 }
 
 .stack__freeform-plane {
@@ -11076,7 +11174,8 @@ onBeforeUnmount(() => {
   }
 
   .stack__dock .stack__upload-global span,
-  .stack__upload-note {
+  .stack__upload-note,
+  .stack__send-note {
     display: none;
   }
 

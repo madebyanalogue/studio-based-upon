@@ -5,17 +5,31 @@
     role="dialog"
     aria-label="Introduction"
   >
-    <p ref="firstEl" class="image-intro__statement">
-      <span>Two decades of making</span>
-      <span>for extraordinary spaces</span>
-      <span>around the world.</span>
-    </p>
-    <p ref="secondEl" class="image-intro__statement">
-      <span>Everything starts from somewhere.</span>
-      <span>Lets explore what it can become.</span>
-    </p>
+    <div ref="firstEl" class="image-intro__statement">
+      <DissolveText
+        class="image-intro__dissolve"
+        :interactive="live === 'first'"
+        fit="lines"
+        :lines="FIRST_LINES"
+      />
+    </div>
+    <div ref="secondEl" class="image-intro__statement">
+      <DissolveText
+        class="image-intro__dissolve"
+        :interactive="live === 'second'"
+        fit="lines"
+        :lines="SECOND_LINES"
+      />
+    </div>
     <div ref="logoEl" class="image-intro__logo">
-      <BasedUponLogoSansSerif />
+      <DissolveText
+        class="image-intro__dissolve image-intro__dissolve--logo"
+        :interactive="live === 'logo'"
+        fit="fill"
+        graphic
+      >
+        <BasedUponLogoSansSerif />
+      </DissolveText>
     </div>
   </div>
 </template>
@@ -27,10 +41,22 @@ import { useHomepageIntro } from '~/composables/useHomepagePreloader'
 const GROUND =
   'https://cdn.sanity.io/images/k8gpyc57/production/1e9cc54fa247edcffae1d0808da32d7429c30d14-3000x2055.jpg?auto=format&q=80&w=2400'
 
+const FIRST_LINES = [
+  'Two decades of making',
+  'for extraordinary spaces',
+  'around the world.',
+]
+
+const SECOND_LINES = [
+  'Everything starts from somewhere.',
+  'Explore what it can become.',
+]
+
 const rootEl = ref<HTMLElement | null>(null)
 const firstEl = ref<HTMLElement | null>(null)
 const secondEl = ref<HTMLElement | null>(null)
 const logoEl = ref<HTMLElement | null>(null)
+const live = ref<'logo' | 'first' | 'second' | null>(null)
 const { phase, ground } = useHomepageIntro()
 
 let finished = false
@@ -63,6 +89,7 @@ const handoff = () => {
   finished = true
   timeline?.kill()
   timeline = null
+  live.value = null
 
   for (const el of [logoEl.value, firstEl.value, secondEl.value]) {
     if (!el) continue
@@ -83,10 +110,20 @@ const handoff = () => {
   })
 }
 
-const beat = (target: gsap.TweenTarget, hold: number) => {
+const beat = (
+  target: gsap.TweenTarget,
+  hold: number,
+  key: 'logo' | 'first' | 'second',
+) => {
   const line = gsap.timeline()
+  line.call(() => {
+    live.value = key
+  })
   line.to(target, { opacity: 1, duration: 0.9, ease: 'power2.out' })
   line.to(target, { opacity: 0, duration: 0.8, ease: 'power2.inOut' }, `+=${hold}`)
+  line.call(() => {
+    if (live.value === key) live.value = null
+  })
   return line
 }
 
@@ -122,7 +159,7 @@ const play = async () => {
     if (!finished) ground.value = { active: true, live: true }
   })
   await run((line) => {
-    line.add(beat(logo, 0.95))
+    line.add(beat(logo, 0.95, 'logo'))
   })
   if (finished) return
 
@@ -132,8 +169,8 @@ const play = async () => {
   await run((line) => {
     // Brief beat after the logo, then “Two decades” comes in.
     line.to({}, { duration: 0.55 })
-    line.add(beat(first, 1.55))
-    line.add(beat(second, 1.7), '+=0.2')
+    line.add(beat(first, 1.55, 'first'))
+    line.add(beat(second, 1.7, 'second'), '+=0.2')
   })
   if (!finished) handoff()
 }
@@ -178,21 +215,30 @@ onUnmounted(() => {
   left: 50%;
   top: 50%;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2em;
   margin: 0;
   color: #f1ede4;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.image-intro__dissolve {
   font-family: var(--mono);
   font-size: clamp(1.48rem, 2.5vw, 1.6rem);
   font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.02em;
+  color: #f1ede4;
   text-align: center;
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.45);
+  filter: drop-shadow(0 1px 18px rgba(0, 0, 0, 0.45));
+}
+
+.image-intro__dissolve :deep(.dissolve-text__measure) {
+  font-family: var(--mono);
+  font-size: clamp(1.48rem, 2.5vw, 1.6rem);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #f1ede4;
 }
 
 .image-intro__logo {
@@ -201,8 +247,20 @@ onUnmounted(() => {
   top: 50%;
   z-index: 3;
   width: min(220px, 40vw);
-  color: var(--charcoal);
+  aspect-ratio: 2972.52 / 1142;
+  color: #f1ede4;
   opacity: 0;
   transform: translate(-50%, -50%);
+}
+
+.image-intro__dissolve--logo {
+  width: 100%;
+  height: 100%;
+  color: #f1ede4;
+  filter: drop-shadow(0 1px 18px rgba(0, 0, 0, 0.45));
+}
+
+.image-intro__dissolve--logo :deep(.dissolve-text__measure) {
+  color: #f1ede4;
 }
 </style>

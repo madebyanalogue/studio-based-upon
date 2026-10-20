@@ -37,10 +37,10 @@
 
       <div class="enquire__aside-block flex flex-col gap-2">
         <div class="enquire__aside-head">
-          <h2 class="h6 muted">Working with clients</h2>
+          <h2 class="h6 muted">Working with Us</h2>
         </div>
         <p class="mono-copy">
-          The client is a critical part of the process. We collaborate with designers
+          The client is a critical part of our process. We collaborate closely with our clients, designers
           and architects to realise work for private residences, yachts, hotels,
           restaurants and fashion houses.
         </p>

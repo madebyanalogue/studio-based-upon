@@ -1,60 +1,103 @@
 <template>
-  <article class="enquire" :class="{ 'enquire--open': sheetIn, 'enquire--intro': introOpen, 'enquire--clients-out': clientsOut }" data-lenis-prevent>
+  <article
+    class="enquire"
+    :class="{
+      'enquire--open': sheetIn,
+      'enquire--intro': introOpen,
+      'enquire--closing': sheetClosing,
+      'enquire--dragging': windowDragging,
+    }"
+    data-lenis-prevent
+  >
     <button
       type="button"
       class="enquire__overlay"
       aria-label="Close enquire"
       @click="closeSheet"
     />
-    <div class="enquire__columns">
+    <div
+      ref="windowEl"
+      class="enquire__columns"
+      :style="windowStyle"
+    >
+      <div
+        class="enquire__sheet-head"
+        data-cursor="grab"
+        @pointerdown="onWindowDragStart"
+      >
+        <h1 id="enquire-sheet-title" class="enquire__sheet-title">Enquire</h1>
+        <button
+          type="button"
+          class="enquire__close"
+          aria-label="Close enquire"
+          data-cursor="pointer"
+          @pointerdown.stop
+          @click.stop="closeSheet"
+        >
+          <span class="enquire__close-icon" aria-hidden="true" />
+        </button>
+      </div>
     <aside v-if="introOpen" class="enquire__clients">
-      <div class="enquire__clients-body">
-        <div class="enquire__clients-head">
-          <p class="interface muted">Working with clients</p>
-          <button type="button" class="enquire__clients-x" aria-label="Close introduction" @click="introOpen = false">
-            <span class="enquire__close-icon" aria-hidden="true" />
-          </button>
-        </div>
-        <div class="enquire__clients-copy flex flex-col gap-2">
-          <p class="mono-copy">
-            You are a critical part of the process. We collaborate with designers
+      <header class="enquire__clients-head">
+        <p class="interface muted enquire__clients-title">Working with Us</p>
+      </header>
+      <div class="enquire__clients-stack">
+        <div class="enquire__clients-body">
+          <div class="enquire__clients-copy flex flex-col gap-2">
+            <p class="mono-copy">
+              You are a critical part of our process. We collaborate closely with our clients, designers
             and architects to realise work for private residences, yachts, hotels,
             restaurants and fashion houses.
-          </p>
-          <p class="mono-copy">
-            Share a selection, a drawing, or a few words about the project. We will be
-            in touch to talk through material, scale and how the work is made.
-          </p>
+            </p>
+            <p class="mono-copy">
+              Share a selection, a drawing, or a few words about the project. We will be
+              in touch to talk through material, scale and how the work is made.
+            </p>
+          </div>
+          <div class="enquire__clients-details">
+            <p class="interface muted enquire__clients-title">Contact details</p>
+            <div class="enquire__clients-copy flex flex-col">
+              <p class="mono-copy enquire__aside-line">
+                <a :href="`tel:${phoneTel}`">{{ phone }}</a>
+              </p>
+              <p class="mono-copy enquire__aside-line">
+                <a :href="`mailto:${enquiryEmail}`">{{ enquiryEmail }}</a>
+              </p>
+              <p v-if="studioAddress" class="mono-copy enquire__aside-line">
+                {{ studioAddress }}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
-      <img
-        class="enquire__clients-image"
-        src="https://cdn.sanity.io/images/k8gpyc57/production/ceb3a72ee6af212efbbd181ca2500edf59cc38fe-2250x3000.jpg?auto=format&w=920"
-        alt="Untitled 28"
-        width="2250"
-        height="3000"
-      />
-      <div class="enquire__contact">
-        <a class="enquire__contact-email interface" :href="`mailto:${enquiryEmail}`">
-          <span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span>
-        </a>
-        <div class="enquire__contact-social">
-          <a
-            class="enquire__contact-link interface"
-            href="https://www.instagram.com/studiobasedupon"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Ig
+        <img
+          class="enquire__clients-image"
+          src="https://cdn.sanity.io/images/k8gpyc57/production/ceb3a72ee6af212efbbd181ca2500edf59cc38fe-2250x3000.jpg?auto=format&w=920"
+          alt="Untitled 28"
+          width="2250"
+          height="3000"
+        />
+        <div class="enquire__contact">
+          <a class="enquire__contact-email interface" :href="`mailto:${enquiryEmail}`">
+            {{ enquiryEmail }}
           </a>
-          <a
-            class="enquire__contact-link interface"
-            href="https://www.pinterest.com/Studio_Based_Upon/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Pi
-          </a>
+          <div class="enquire__contact-social">
+            <a
+              class="enquire__contact-link interface"
+              href="https://www.instagram.com/studiobasedupon"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ig
+            </a>
+            <a
+              class="enquire__contact-link interface"
+              href="https://www.pinterest.com/Studio_Based_Upon/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Pi
+            </a>
+          </div>
         </div>
       </div>
     </aside>
@@ -67,12 +110,6 @@
       data-lenis-prevent
       :inert="!stageVisible"
     >
-      <div class="enquire__sheet-head">
-        <h1 id="enquire-sheet-title" class="enquire__sheet-title">Enquire</h1>
-        <button type="button" class="enquire__close" aria-label="Close enquire" @click="closeSheet">
-          <span class="enquire__close-icon" aria-hidden="true" />
-        </button>
-      </div>
       <div class="enquire__copy">
       <header class="enquire__heading">
         <svg class="enquire__title-filter" viewBox="0 0 0 0" aria-hidden="true" focusable="false">
@@ -107,13 +144,13 @@
         <div class="enquire__aside-block flex flex-col gap-2">
           <h2 class="h6 muted">Contact</h2>
           <p class="mono-copy enquire__aside-line">
-            Telephone <a :href="`tel:${phoneTel}`"><span class="enquire__aside-bracket">[</span>{{ phone }}<span class="enquire__aside-bracket">]</span></a>
+            <a :href="`tel:${phoneTel}`">{{ phone }}</a>
           </p>
           <p class="mono-copy enquire__aside-line">
-            Email <a :href="`mailto:${enquiryEmail}`"><span class="enquire__aside-bracket">[</span>{{ enquiryEmail }}<span class="enquire__aside-bracket">]</span></a>
+            <a :href="`mailto:${enquiryEmail}`">{{ enquiryEmail }}</a>
           </p>
           <p v-if="studioAddress" class="mono-copy enquire__aside-line">
-            Address <span class="enquire__aside-bracket">[</span>{{ studioAddress }}<span class="enquire__aside-bracket">]</span>
+            {{ studioAddress }}
           </p>
         </div>
       </aside>
@@ -493,10 +530,74 @@ const titleEl = ref<HTMLElement | null>(null)
 const titlePaintReady = ref(false)
 const stageVisible = ref(false)
 const sheetIn = ref(false)
+const sheetClosing = ref(false)
 const introOpen = ref(true)
-const clientsOut = ref(false)
+const windowEl = ref<HTMLElement | null>(null)
+const windowDragging = ref(false)
+const windowDrag = ref({ x: 0, y: 0 })
 const attachmentsOpen = ref(false)
 const selectionsOpen = ref(false)
+
+const WINDOW_CLIP_MS = 700
+/** Overlay fade-out; keep the sheet mounted until this finishes. */
+const OVERLAY_FADE_MS = 1400
+
+const windowStyle = computed(() => {
+  const { x, y } = windowDrag.value
+  return {
+    transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+  }
+})
+
+let windowPointerId = 0
+let windowDragOrigin = { x: 0, y: 0, px: 0, py: 0 }
+
+const onWindowDragStart = (event: PointerEvent) => {
+  if (event.button !== 0) return
+  const target = event.target
+  if (target instanceof Element && target.closest('button, a')) return
+  const handle = event.currentTarget
+  if (!(handle instanceof HTMLElement)) return
+  event.preventDefault()
+  windowDragging.value = true
+  windowPointerId = event.pointerId
+  windowDragOrigin = {
+    x: windowDrag.value.x,
+    y: windowDrag.value.y,
+    px: event.clientX,
+    py: event.clientY,
+  }
+  handle.setPointerCapture(event.pointerId)
+  window.addEventListener('pointermove', onWindowDragMove)
+  window.addEventListener('pointerup', onWindowDragEnd)
+  window.addEventListener('pointercancel', onWindowDragEnd)
+}
+
+const onWindowDragMove = (event: PointerEvent) => {
+  if (!windowDragging.value || event.pointerId !== windowPointerId) return
+  windowDrag.value = {
+    x: windowDragOrigin.x + (event.clientX - windowDragOrigin.px),
+    y: windowDragOrigin.y + (event.clientY - windowDragOrigin.py),
+  }
+}
+
+const onWindowDragEnd = (event: PointerEvent) => {
+  if (event.pointerId !== windowPointerId) return
+  windowDragging.value = false
+  const handle = event.target
+  if (handle instanceof HTMLElement && handle.hasPointerCapture?.(event.pointerId)) {
+    handle.releasePointerCapture(event.pointerId)
+  }
+  window.removeEventListener('pointermove', onWindowDragMove)
+  window.removeEventListener('pointerup', onWindowDragEnd)
+  window.removeEventListener('pointercancel', onWindowDragEnd)
+}
+
+const resetWindow = () => {
+  sheetClosing.value = false
+  windowDragging.value = false
+  windowDrag.value = { x: 0, y: 0 }
+}
 
 const toggleAttachments = () => {
   attachmentsOpen.value = !attachmentsOpen.value
@@ -531,32 +632,18 @@ watch(selectionsSheetEl, (sheet, _, onCleanup) => {
   onCleanup(() => observer.disconnect())
 })
 
-const CLIENTS_OUT_MS = 550
-const STAGE_OUT_MS = 1250
-const STAGE_OUT_DELAY_MS = 120
-
 let closeTimer = 0
 
-const clientsPanelVisible = () =>
-  introOpen.value && window.matchMedia('(min-width: 768px)').matches
-
 const closeSheet = () => {
-  if (!sheetIn.value || clientsOut.value) return
+  if (!sheetIn.value || sheetClosing.value) return
   window.clearTimeout(closeTimer)
   const reduced = prefersReducedMotion()
-  const startStage = () => {
+  sheetClosing.value = true
+  const wait = reduced ? 0 : Math.max(WINDOW_CLIP_MS, OVERLAY_FADE_MS)
+  closeTimer = window.setTimeout(() => {
     sheetIn.value = false
-    const wait = reduced ? 0 : STAGE_OUT_MS + STAGE_OUT_DELAY_MS
-    closeTimer = window.setTimeout(() => {
-      closeEnquireSheet()
-    }, wait)
-  }
-  if (!clientsPanelVisible() || reduced) {
-    startStage()
-    return
-  }
-  clientsOut.value = true
-  closeTimer = window.setTimeout(startStage, CLIENTS_OUT_MS)
+    closeEnquireSheet()
+  }, wait)
 }
 const titleFilterId = `enquire-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
@@ -651,6 +738,7 @@ onMounted(() => {
   document.documentElement.classList.add('enquire-open')
   const lenis = useNuxtApp().$lenis as { stop?: () => void } | undefined
   lenis?.stop?.()
+  resetWindow()
   void playTitleGooeyIn()
   requestAnimationFrame(() => {
     sheetIn.value = true
@@ -662,6 +750,9 @@ onUnmounted(() => {
   const lenis = useNuxtApp().$lenis as { start?: () => void } | undefined
   lenis?.start?.()
   window.clearTimeout(closeTimer)
+  window.removeEventListener('pointermove', onWindowDragMove)
+  window.removeEventListener('pointerup', onWindowDragEnd)
+  window.removeEventListener('pointercancel', onWindowDragEnd)
   titleGen += 1
   titleTween?.kill()
   titleSplit?.revert()
@@ -685,6 +776,7 @@ useHead(() => {
   pointer-events: none;
   --grid-line: rgba(0, 0, 0, 0.15);
   --enquire-inset: 15px;
+  --enquire-form-height: 1040px;
   --enquire-open-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --enquire-stage-in: 0.8s;
 }
@@ -705,26 +797,43 @@ useHead(() => {
   opacity: 0;
   pointer-events: auto;
   cursor: pointer;
-  transition: opacity 1.4s ease;
+  transition: opacity 0.65s ease;
 }
 
 .enquire--open .enquire__overlay {
   opacity: 1;
-  transition: opacity 0.65s ease;
+}
+
+.enquire--open.enquire--closing .enquire__overlay {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.4s ease;
 }
 
 .enquire__sheet-head {
   display: flex;
+  grid-column: 1 / -1;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 2;
   margin: 0;
-  padding: var(--enquire-pad);
+  padding: 27px var(--enquire-pad);
   border-bottom: var(--enquire-border-style);
   background: white;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.enquire--dragging .enquire__sheet-head {
+  cursor: grabbing;
+}
+
+.enquire__sheet-head .enquire__sheet-title {
+  pointer-events: none;
 }
 
 .enquire__close {
@@ -809,36 +918,60 @@ useHead(() => {
 }
 
 .enquire__columns {
-  position: absolute;
-  top: var(--enquire-inset);
-  right: var(--enquire-inset);
-  bottom: var(--enquire-inset);
+  position: fixed;
+  left: 50%;
+  top: 50%;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  width: min(840px, calc(100% - calc(2 * var(--enquire-inset))));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  --enquire-pad: 35px;
+  --grid-line: #bbb;
+  --enquire-border-style: 1px dotted var(--grid-line);
+  width: min(1180px, calc(100vw - 40px));
+  max-height: min(var(--enquire-form-height), calc(100dvh - 48px));
+  height: min(var(--enquire-form-height), calc(100dvh - 48px));
   pointer-events: none;
-  transition: none;
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 0.7s var(--enquire-open-ease);
+  will-change: clip-path, transform;
 }
 
 .enquire--intro .enquire__columns {
-  width: min(840px, calc(100% - 501px));
+  width: min(1180px, calc(100vw - 40px));
+  grid-template-columns: minmax(0, min(400px, 38%)) minmax(0, 1fr);
+}
+
+.enquire--open .enquire__columns {
+  clip-path: inset(0 0 0 0);
+  pointer-events: auto;
+}
+
+.enquire--open.enquire--closing .enquire__columns {
+  clip-path: inset(0 0 100% 0);
+  transition: clip-path 0.55s var(--enquire-open-ease);
+}
+
+.enquire--dragging .enquire__columns {
+  transition: none;
 }
 
 .enquire__stage {
   position: relative;
   z-index: 1;
-  
   display: flex;
-    flex-direction: column;
-  flex: 1;
-  width: 100%;
+  flex-direction: column;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
   min-height: 0;
   max-width: none;
-  max-height: calc(100dvh - calc(2 * var(--enquire-inset)));
+  max-height: none;
+  height: auto;
   overflow: auto;
   overscroll-behavior: contain;
-  border-radius: 0px;
+  border-radius: 0;
   box-sizing: border-box;
   --enquire-pad: 35px;
   --enquire-copy: 14px;
@@ -857,13 +990,7 @@ useHead(() => {
   --muted: rgba(17, 17, 17, 0.55);
   text-align: left;
   pointer-events: auto;
-  transform: translateX(calc(100vw + 20px));
-  transition: transform 1.25s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
-}
-
-.enquire--open .enquire__stage {
   transform: none;
-  transition: transform var(--enquire-stage-in) var(--enquire-open-ease);
 }
 
 .enquire__heading {
@@ -927,10 +1054,6 @@ useHead(() => {
   text-decoration: none;
 }
 
-.enquire__aside-bracket {
-  color: var(--muted);
-}
-
 .enquire__half {
   display: flex;
   flex-direction: column;
@@ -958,78 +1081,71 @@ useHead(() => {
 }
 
 .enquire__clients {
-  position: absolute;
-  /* top: 0; */
-  bottom: 0;
-  right: calc(100% + 1px);
-  z-index: 1;
+  position: relative;
+  z-index: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 50px;
-  width: 460px;
+  gap: 0;
+  flex: 0 0 400px;
+  width: 400px;
+  min-height: 0;
   box-sizing: border-box;
   padding: 0;
+  border-right: var(--enquire-border-style, 1px dotted #bbb);
   background: white;
   color: #111;
   --charcoal: #111;
   --text-color: #111;
   --muted: rgba(17, 17, 17, 0.55);
-  --enquire-copy: 14px;
+  --grid-line: #bbb;
+  --enquire-border-style: 1px dotted var(--grid-line);
+  --enquire-pad: 35px;
+  --enquire-copy: 13px;
   overflow: auto;
+  overscroll-behavior: contain;
   pointer-events: auto;
-  clip-path: inset(0 0 0 100%);
-  transition: clip-path 0.4s var(--enquire-open-ease);
-}
-
-.enquire--open .enquire__clients {
-  clip-path: inset(0 0 0 0);
-  transition: clip-path 0.7s var(--enquire-open-ease) var(--enquire-stage-in);
-}
-
-.enquire--open.enquire--clients-out .enquire__clients {
-  clip-path: inset(0 0 0 100%);
-  transition: clip-path 0.55s var(--enquire-open-ease);
-}
-
-.enquire__clients-body {
-  padding: 50px 50px 0;
 }
 
 .enquire__clients-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 35px;
-}
-
-.enquire__clients-head > .interface {
-  margin: 0;
-}
-
-.enquire__clients-x {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 11px;
-  height: 11px;
   margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
+  padding: 35px var(--enquire-pad) 0;
+  box-sizing: border-box;
 }
 
-.enquire__clients-x .enquire__close-icon {
-  width: 11px;
-  height: 11px;
+.enquire__clients-title {
+  margin: 0;
+  padding-bottom: 18px;
+  color: var(--muted);
+}
+
+.enquire__clients-stack {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+}
+
+.enquire__clients-body {
+  display: flex;
+  flex-direction: column;
+  gap: 55px;
+  padding: 0 var(--enquire-pad) 0;
+}
+
+.enquire__clients-details {
+  display: none;
+  min-width: 0;
+}
+
+.enquire__clients-details .enquire__clients-copy {
+  gap: 7px;
 }
 
 .enquire__clients-copy {
   font-size: var(--enquire-copy);
-  padding-right: 20px;
+  padding-right: 10px;
 }
 
 .enquire__clients-copy .mono-copy {
@@ -1041,12 +1157,13 @@ useHead(() => {
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: 0.8;
+  object-fit: cover;
   margin: 0;
 }
 
 .enquire__clients .enquire__contact {
-  position: absolute;
-  bottom: 0;
+  position: relative;
   width: 100%;
   box-sizing: border-box;
   padding: 20px 35px;
@@ -1544,20 +1661,20 @@ useHead(() => {
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .enquire__clients {
     display: none;
   }
 
   .enquire__columns,
   .enquire--intro .enquire__columns {
-    top: 10px;
-    right: 10px;
-    width: min(840px, calc(100% - 20px));
+    grid-template-columns: minmax(0, 1fr);
+    width: min(840px, calc(100vw - 24px));
+    max-height: min(90dvh, calc(100dvh - 24px));
+    height: min(90dvh, calc(100dvh - 24px));
   }
 
   .enquire__stage {
-    max-height: calc(100dvh - 20px);
     --enquire-copy: 16px;
   }
 
@@ -1579,14 +1696,13 @@ useHead(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .enquire__overlay,
-  .enquire__stage,
-  .enquire__clients,
+  .enquire__columns,
   .enquire__aside-block,
   .enquire__panel {
     transition: none;
   }
 
-  .enquire__clients {
+  .enquire__columns {
     clip-path: none;
   }
 }

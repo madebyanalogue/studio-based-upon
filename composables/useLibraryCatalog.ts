@@ -80,11 +80,11 @@ const PRIMARY_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'orig
 const GRID_RATIO_PRESETS = [
   { key: 'portrait' as const, ar: 3 / 4 },
   { key: 'square' as const, ar: 1 },
-  { key: 'landscape' as const, ar: 4 / 3 },
-  { key: 'wide' as const, ar: 1.75 },
+  { key: 'landscape' as const, ar: 3 / 2 },
+  { key: 'wide' as const, ar: 3 / 2 },
 ]
 
-/** Closest of portrait (3:4), square (1:1), landscape (4:3), wide (1.75). */
+/** Closest of portrait (3:4), square (1:1), landscape/wide (3:2). */
 export const closestGridRatio = (
   aspectRatio: number,
 ): NonNullable<FormalItem['gridRatio']> => {
@@ -108,8 +108,8 @@ export const GRID_RATIO_AR: Record<
 > = {
   portrait: 3 / 4,
   square: 1,
-  landscape: 4 / 3,
-  wide: 1.75,
+  landscape: 3 / 2,
+  wide: 3 / 2,
 }
 
 const assetAspect = (asset?: LibraryImageAsset | null) => {

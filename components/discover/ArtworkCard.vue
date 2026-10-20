@@ -5,6 +5,8 @@
     :style="{ '--discover-card-ratio': cardRatioCss }"
   >
     <div class="discover-card__media">
+      <!-- Solid field behind transparent objects — hides page/WebGL through PNG alpha. -->
+      <div class="discover-card__mat" aria-hidden="true" />
       <component
         :is="hitTag"
         v-bind="hitProps"
@@ -251,8 +253,17 @@ const onToggle = (event?: MouseEvent) => {
   overflow: hidden;
 }
 
+.discover-card__mat {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: var(--background-color, var(--cream));
+  pointer-events: none;
+}
+
 .discover-card__hit {
   position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
