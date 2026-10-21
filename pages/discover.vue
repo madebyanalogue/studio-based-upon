@@ -1,7 +1,7 @@
 <template>
   <div class="d3-page">
     <ClientOnly>
-      <D3Tunnel :items="discoveryItems" :start-scroll="1700" ratio="7:9" />
+      <D3Tunnel :items="discoveryItems" :start-scroll="1700" ratio="7:9" mode-toggle auto-play />
       <template #fallback>
         <div class="d3-page__fallback" aria-hidden="true" />
       </template>

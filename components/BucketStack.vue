@@ -3012,11 +3012,11 @@ const hash01 = (id: string, salt: number) => {
   return ((h >>> 0) % 10000) / 10000
 }
 
-/** Same pitch as `.stack__freeform-dots`. First three arrive large, next three medium, then original. */
+/** Same pitch as `.stack__freeform-dots`. First three arrive large, next three medium, then a smaller default. */
 const MATRIX_DOT = 48
 const LARGE_CELLS = 8
 const MEDIUM_CELLS = 6
-const SMALL_CELLS = 3
+const SMALL_CELLS = 5
 const ARRIVAL_CELLS = SMALL_CELLS
 const FREEFORM_SPREAD_VERSION = '6'
 
