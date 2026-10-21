@@ -124,10 +124,7 @@ export const useSiteSettings = () => {
   )
 
   const MAIN_NAV_ORDER = [
-    { path: '/discovery', text: 'Discovery' },
-    { path: '/d2', text: 'D2' },
-    { path: '/d3', text: 'D3' },
-    { path: '/d4', text: 'D4' },
+    { path: '/discover', text: 'Discover' },
     { path: '/typology', text: 'Typology' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
     { path: '/curate', text: 'Pairings' },
@@ -155,10 +152,18 @@ export const useSiteSettings = () => {
         item.path === '/enquire' ||
         item.path === '/gs' ||
         item.path === '/infinite-slider' ||
+        item.path === '/d1' ||
+        item.path === '/d2' ||
+        item.path === '/d3' ||
+        item.path === '/d4' ||
         item.text === 'Home' ||
         item.text === 'Showcase' ||
         item.text === 'Infinite Slider' ||
-        item.text === 'Flow State'
+        item.text === 'Flow State' ||
+        item.text === 'D1' ||
+        item.text === 'D2' ||
+        item.text === 'D3' ||
+        item.text === 'D4'
       ) {
         continue
       }
@@ -172,17 +177,8 @@ export const useSiteSettings = () => {
         text === 'Discovery' ||
         text === 'Discover'
       ) {
-        path = '/discovery'
-        text = 'Discovery'
-      } else if (path === '/d4' || text === 'D4') {
-        path = '/d4'
-        text = 'D4'
-      } else if (path === '/d3' || text === 'D3') {
-        path = '/d3'
-        text = 'D3'
-      } else if (path === '/d2' || text === 'D2') {
-        path = '/d2'
-        text = 'D2'
+        path = '/discover'
+        text = 'Discover'
       } else if (path === '/products' || path === '/materials-and-forms') {
         path = '/materials-and-forms'
         text = 'Materials & Forms'

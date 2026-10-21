@@ -40,7 +40,6 @@ export const CURSOR_LIBRARY: Record<string, CursorPreset> = {
   /** Heart replaces the disc on a thumbnail save control. */
   'add-selection': {
     id: 'add-selection',
-    tooltip: 'Gather',
     icon: 'heart',
   },
   'remove-selection': {

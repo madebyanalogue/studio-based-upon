@@ -1,5 +1,6 @@
 <template>
   <div class="d4-page">
+    <LabSubnav />
     <ClientOnly>
       <D4Tunnel :items="discoveryItems" />
       <template #fallback>

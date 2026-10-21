@@ -23,6 +23,10 @@ const links = [
   { to: '/webgl-home', label: 'WebGL home' },
   { to: '/webgl-metallic', label: 'WebGL metallic' },
   { to: '/intro-lab', label: 'Intro lab' },
+  { to: '/d1', label: 'D1' },
+  { to: '/d2', label: 'D2' },
+  { to: '/d3', label: 'D3' },
+  { to: '/d4', label: 'D4' },
   { to: '/d3-pick', label: 'D3 pick' },
 ] as const
 

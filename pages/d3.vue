@@ -1,7 +1,8 @@
 <template>
   <div class="d3-page">
+    <LabSubnav />
     <ClientOnly>
-      <D3Tunnel :items="discoveryItems" />
+      <D3Tunnel :items="discoveryItems" controls :start-scroll="1700" />
       <template #fallback>
         <div class="d3-page__fallback" aria-hidden="true" />
       </template>
@@ -19,7 +20,7 @@ definePageMeta({
 const { items: discoveryItems } = await useDiscoveryCatalog()
 
 useHead(() => ({
-  title: 'Discovery — Studio Based Upon',
+  title: 'D3 — Studio Based Upon',
   bodyAttrs: {
     class: 'd3-active',
   },

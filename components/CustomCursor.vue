@@ -689,6 +689,8 @@ const syncHeartSize = (clientX: number, clientY: number) => {
     }
     return
   }
+  heart.style.removeProperty('width')
+  heart.style.removeProperty('height')
 }
 
 const onPointerLeave = (event: PointerEvent) => {
@@ -986,11 +988,13 @@ html.dark.homepage-intro .site-cursor--on-slider .site-cursor__chev {
 }
 
 .site-cursor__heart {
+  --heart-size: calc(var(--thumb-ctrl-size, 28px) * 13 / 21 * 1.5);
   position: absolute;
   top: 0;
   left: 0;
-  width: calc(var(--thumb-ctrl-size, 28px) * 13 / 21);
-  height: calc(var(--thumb-ctrl-size, 28px) * 13 / 21);
+  width: var(--heart-size);
+  height: var(--heart-size);
+  overflow: visible;
   color: #fff;
   mix-blend-mode: difference;
   pointer-events: none;

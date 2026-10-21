@@ -171,6 +171,7 @@ html.bucket-push #app {
 /* Full-bleed canvases stay viewport-locked. Their own controls clear the pile. */
 body.infinite-slider-active #app,
 body.discovery-active #app,
+body.d1-active #app,
 body.d2-active #app,
 body.d3-active #app,
 body.d4-active #app,

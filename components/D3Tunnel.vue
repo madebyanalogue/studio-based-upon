@@ -109,6 +109,19 @@
           />
           <span class="d3-tunnel__control-value">{{ nearCut }}</span>
         </label>
+        <label class="d3-tunnel__control interface">
+          <span>Start</span>
+          <input
+            type="range"
+            :min="CONFIG.startMin"
+            :max="CONFIG.startMax"
+            :step="CONFIG.startStep"
+            :value="startScroll"
+            aria-label="Initial scroll"
+            @input="onStartInput"
+          />
+          <span class="d3-tunnel__control-value">{{ startScroll }}</span>
+        </label>
       </div>
     </div>
     </Teleport>
@@ -141,7 +154,6 @@
           class="d3-tunnel__item"
           :class="{
             'd3-tunnel__item--gathered': isGathered(card.frameId),
-            'd3-tunnel__item--dragging': draggingId === card.frameId,
             'd3-tunnel__item--wide': card.colSpan > 1,
           }"
           :style="{
@@ -152,7 +164,7 @@
           }"
           data-cursor="add-selection"
           :aria-label="`Gather ${card.title}`"
-          @pointerdown="onItemPointerDown(card, $event)"
+          @pointerdown="onItemPointerDown"
           @click.stop.prevent="onGather(card, $event)"
         >
           <img :src="card.src" :alt="card.title" draggable="false" />
@@ -241,6 +253,7 @@ const PRESETS = {
     cellGap: 0,
     fadeFar: 2,
     nearCut: 1500,
+    startScroll: 1700,
     colSpan: false,
   },
   gallery: {
@@ -253,6 +266,20 @@ const PRESETS = {
     cellGap: 0,
     fadeFar: 2,
     nearCut: 1500,
+    startScroll: 1700,
+    colSpan: true,
+  },
+  tall: {
+    id: 'tall',
+    label: 'Tall',
+    layout: '2×5' as const,
+    ratio: '7:10' as const,
+    itemsPerLayer: 2 as LayerDensity,
+    layerGap: 600,
+    cellGap: 0,
+    fadeFar: 2,
+    nearCut: 1500,
+    startScroll: 1700,
     colSpan: true,
   },
 } as const
@@ -285,6 +312,9 @@ const CONFIG = {
   nearCutMin: 200,
   nearCutMax: 2500,
   nearCutStep: 150,
+  startMin: 0,
+  startMax: 8000,
+  startStep: 100,
 }
 
 const openSlotsFor = (cols: number, rows: number) => {
@@ -381,6 +411,9 @@ const totalLayerCountFor = (total: number, perLayer: number) =>
 
 const props = defineProps<{
   items?: TunnelItem[]
+  controls?: boolean
+  startScroll?: number
+  ratio?: CellRatio
 }>()
 
 const { imageUrl, getImageSrc } = useSanityImage()
@@ -394,7 +427,7 @@ const heldIds = new Set<string>()
 const heldGhosts = new Map<string, HTMLImageElement>()
 const holdTick = ref(0)
 const showGuides = ref(false)
-const showControls = ref(false)
+const showControls = ref(!!props.controls)
 const pageEntering = ref(true)
 const pageLeaving = ref(false)
 const layerGap = ref(PRESETS.gallery.layerGap)
@@ -405,7 +438,9 @@ const layoutOptions = (Object.keys(LAYOUTS) as GridLayout[]).map((id) => ({
   id,
   label: id,
 }))
-const ratio = ref<CellRatio>('7:10')
+const ratio = ref<CellRatio>(
+  props.ratio && props.ratio in RATIOS ? props.ratio : PRESETS.gallery.ratio,
+)
 const ratioOptions = (Object.keys(RATIOS) as CellRatio[]).map((id) => ({
   id,
   label: id,
@@ -438,6 +473,11 @@ const SLOT_GUIDES = computed(() => {
 const fadeFar = ref(CONFIG.fadeFar)
 /** Close-up cards stay solid until this z, then cut. `;` / `'`. */
 const nearCut = ref(CONFIG.nearCut)
+const startScroll = ref(
+  props.startScroll != null
+    ? Math.min(CONFIG.startMax, Math.max(CONFIG.startMin, Math.round(props.startScroll)))
+    : PRESETS.gallery.startScroll,
+)
 const mode = ref<'control' | 'surrender'>('surrender')
 const modeOptions = [
   { id: 'control', label: 'Control' },
@@ -471,7 +511,7 @@ const presetOptions = (Object.keys(PRESETS) as FieldPreset[]).map((id) => ({
 const shuffleSeed = ref(1)
 
 const applyPreset = (id: string) => {
-  if (id === 'selected' || id === 'gallery') {
+  if (id === 'selected' || id === 'gallery' || id === 'tall') {
     const next = PRESETS[id]
     layout.value = next.layout
     ratio.value = next.ratio
@@ -481,6 +521,7 @@ const applyPreset = (id: string) => {
     fadeFar.value = next.fadeFar
     nearCut.value = next.nearCut
     colSpanOn.value = next.colSpan
+    setStartScroll(next.startScroll)
     preset.value = id
     shuffleSeed.value += 1
     return
@@ -517,22 +558,7 @@ const setItemsPerLayer = (id: string) => {
   preset.value = 'free'
   shuffleSeed.value += 1
 }
-const offsets = reactive<Record<string, { x: number; y: number }>>({})
 let flights = 0
-
-type ItemDrag = {
-  pointerId: number
-  productId: string
-  startX: number
-  startY: number
-  originX: number
-  originY: number
-  scaleX: number
-  scaleY: number
-}
-
-const draggingId = ref('')
-let drag: ItemDrag | null = null
 
 const fromTypingField = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -557,10 +583,27 @@ const onGapInput = (event: Event) => {
   if (Number.isFinite(value)) setLayerGap(value)
 }
 
+const clampStart = (next: number) =>
+  Math.min(CONFIG.startMax, Math.max(CONFIG.startMin, Math.round(next)))
+
+const setStartScroll = (next: number) => {
+  const clamped = clampStart(next)
+  startScroll.value = clamped
+  targetScroll = clamped
+  currentScroll = clamped
+}
+
+const onStartInput = (event: Event) => {
+  const value = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(value)) return
+  setStartScroll(value)
+  preset.value = 'free'
+}
+
 const onKeyDown = (event: KeyboardEvent) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return
   if (fromTypingField(event.target)) return
-  if (event.key === 'g' || event.key === 'G') {
+  if ((event.key === 'g' || event.key === 'G') && props.controls) {
     event.preventDefault()
     showGuides.value = !showGuides.value
     return
@@ -680,7 +723,6 @@ const layers = computed(() => {
       const place = places[i]
       if (!image || place == null) break
       const { x, y } = slotCenter(place.slot, cols, rows, width, height, gap)
-      const offset = offsets[image.frameId]
       const cellWidth = place.colSpan * width + (place.colSpan - 1) * gap
       placed.push({
         ...image,
@@ -689,8 +731,8 @@ const layers = computed(() => {
         cellWidth,
         cellHeight: height,
         key: `${index}-${image.frameId}-${place.slot}`,
-        left: `${x - width / 2 + (offset?.x || 0)}px`,
-        top: `${y - height / 2 + (offset?.y || 0)}px`,
+        left: `${x - width / 2}px`,
+        top: `${y - height / 2}px`,
       })
     }
     return { index, baseZ: -index * layerGap.value, cards: placed }
@@ -710,11 +752,10 @@ const tunnelDepth = () => {
 }
 
 const exitPoint = 1500
-const initialScroll = 3000
 const CLICK_DRAG = 6
 
-let targetScroll = initialScroll
-let currentScroll = initialScroll
+let targetScroll = startScroll.value
+let currentScroll = startScroll.value
 let pointerY = 0
 let pointerDown: { x: number; y: number } | null = null
 let pointerDragged = false
@@ -788,17 +829,13 @@ const onWheel = (event: WheelEvent) => {
 }
 
 const onTouchStart = (event: TouchEvent) => {
-  if (isOpen.value || fromUi(event.target) || drag) return
+  if (isOpen.value || fromUi(event.target)) return
   const touch = event.touches[0]
   if (!touch) return
   pointerY = touch.clientY
 }
 
 const onTouchMove = (event: TouchEvent) => {
-  if (drag) {
-    event.preventDefault()
-    return
-  }
   if (isOpen.value || fromUi(event.target)) return
   const touch = event.touches[0]
   if (!touch) return
@@ -807,55 +844,13 @@ const onTouchMove = (event: TouchEvent) => {
   event.preventDefault()
 }
 
-const onItemPointerDown = (card: TunnelCard, event: PointerEvent) => {
+const onItemPointerDown = (event: PointerEvent) => {
   if (event.button !== 0) return
-  const el = event.currentTarget
-  if (!(el instanceof HTMLElement)) return
-  event.preventDefault()
   pointerDown = { x: event.clientX, y: event.clientY }
   pointerDragged = false
-  const rect = el.getBoundingClientRect()
-  const current = offsets[card.frameId] || { x: 0, y: 0 }
-  drag = {
-    pointerId: event.pointerId,
-    productId: card.frameId,
-    startX: event.clientX,
-    startY: event.clientY,
-    originX: current.x,
-    originY: current.y,
-    scaleX: rect.width / card.cellWidth || 1,
-    scaleY: rect.height / card.cellHeight || 1,
-  }
-  draggingId.value = card.frameId
-  el.setPointerCapture?.(event.pointerId)
-}
-
-const moveDrag = (event: PointerEvent) => {
-  if (!drag || event.pointerId !== drag.pointerId) return
-  const dx = (event.clientX - drag.startX) / drag.scaleX
-  const dy = (event.clientY - drag.startY) / drag.scaleY
-  if (!pointerDragged && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > CLICK_DRAG) {
-    pointerDragged = true
-  }
-  if (!pointerDragged) return
-  offsets[drag.productId] = {
-    x: drag.originX + dx,
-    y: drag.originY + dy,
-  }
-}
-
-const endDrag = (event?: PointerEvent) => {
-  if (event && drag && event.pointerId !== drag.pointerId) return
-  drag = null
-  draggingId.value = ''
-  pointerDown = null
 }
 
 const onItemPointerMove = (event: PointerEvent) => {
-  if (drag) {
-    moveDrag(event)
-    return
-  }
   if (!pointerDown) return
   if (
     Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > CLICK_DRAG
@@ -864,8 +859,8 @@ const onItemPointerMove = (event: PointerEvent) => {
   }
 }
 
-const onItemPointerUp = (event: PointerEvent) => {
-  endDrag(event)
+const onItemPointerUp = () => {
+  pointerDown = null
 }
 
 const releaseHold = (id: string) => {
@@ -1202,10 +1197,6 @@ onUnmounted(() => {
   cursor: none;
   touch-action: none;
   user-select: none;
-}
-
-.d3-tunnel__item--dragging {
-  z-index: 3;
 }
 
 .d3-tunnel__item--gathered {

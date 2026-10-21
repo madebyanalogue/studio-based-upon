@@ -1,5 +1,6 @@
 <template>
   <div class="d2-page">
+    <LabSubnav />
     <ClientOnly>
       <D2Field :items="fieldItems" />
       <template #fallback>

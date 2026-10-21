@@ -1644,8 +1644,8 @@ const fileToCartImage = (file: File) =>
 
 const UPLOAD_ONBOARD_KEY = 'cart-upload-onboarded'
 const SEND_ONBOARD_KEY = 'cart-send-onboarded'
-const UPLOAD_ONBOARD_LINES = ['Upload Media']
-const SEND_ONBOARD_LINES = ['Then send us a brief']
+const UPLOAD_ONBOARD_LINES = ['Add Media']
+const SEND_ONBOARD_LINES = ['Send us a brief']
 const showUploadOnboarding = ref(false)
 const showSendOnboarding = ref(false)
 const onboardingHiding = ref(false)
@@ -3012,13 +3012,13 @@ const hash01 = (id: string, salt: number) => {
   return ((h >>> 0) % 10000) / 10000
 }
 
-/** Same pitch as `.stack__freeform-dots`. First three arrive large, next three medium, then small. */
+/** Same pitch as `.stack__freeform-dots`. First three arrive large, next three medium, then original. */
 const MATRIX_DOT = 48
-const LARGE_CELLS = 6
-const MEDIUM_CELLS = 4
+const LARGE_CELLS = 8
+const MEDIUM_CELLS = 6
 const SMALL_CELLS = 3
-const ARRIVAL_CELLS = MEDIUM_CELLS
-const FREEFORM_SPREAD_VERSION = '5'
+const ARRIVAL_CELLS = SMALL_CELLS
+const FREEFORM_SPREAD_VERSION = '6'
 
 const sizeForArrival = (order: number): FreeformSize => {
   if (order <= 3) return 'large'
