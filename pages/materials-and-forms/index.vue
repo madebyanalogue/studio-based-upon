@@ -118,12 +118,9 @@
           <div
             v-if="row.empty"
             class="products__spacer"
-            :class="[
-              archiveMeta(row.item, rowIndex).className,
-              { 'is-filtered-out': visibilitySeeded && !visibleIds.has(row.item._id) },
-            ]"
-            :style="archiveMeta(row.item, rowIndex).style"
-            :data-flip-id="row.item._id"
+            :class="spacerClass(row, rowIndex)"
+            :style="spacerStyle(row, rowIndex)"
+            :data-flip-id="row.slotKey"
             aria-hidden="true"
           />
           <ProductCard
@@ -209,6 +206,8 @@ type GridRow = {
   lockImage: boolean
   /** Blank spacer after an expanded gallery. */
   empty?: boolean
+  /** Uniform-grid rest cell — not tied to a product. */
+  hole?: boolean
 }
 
 type FacetId = 'series' | 'feature' | 'materiality' | 'colour'
@@ -515,6 +514,66 @@ const galleryImageCount = (item: LibraryItem) => {
   return urls.length
 }
 
+const hashSeed = (value: string) => {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+const mulberry32 = (seed: number) => {
+  let a = seed
+  return () => {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** Drop 2–4 empty cells into each 7-up row. Seeded so the same set stays still. */
+const packUniformHoles = (rows: GridRow[]) => {
+  if (!rows.length) return rows
+  const rand = mulberry32(hashSeed(rows.map((row) => row.slotKey).join('|')))
+  const packed: GridRow[] = []
+  let index = 0
+  let holeN = 0
+  while (index < rows.length) {
+    const remaining = rows.length - index
+    let holeCount = 2 + Math.floor(rand() * 3)
+    let take = 7 - holeCount
+    if (take > remaining) {
+      take = remaining
+      holeCount = Math.max(0, Math.min(4, 7 - take))
+    }
+    const total = take + holeCount
+    const holeAt = new Set<number>()
+    while (holeAt.size < holeCount) holeAt.add(Math.floor(rand() * total))
+    let taken = 0
+    for (let cell = 0; cell < total; cell += 1) {
+      if (holeAt.has(cell)) {
+        packed.push({
+          slotKey: `hole-${holeN}`,
+          item: rows[index]!.item,
+          forcedImageIndex: null,
+          lockImage: true,
+          empty: true,
+          hole: true,
+        })
+        holeN += 1
+      } else {
+        packed.push(rows[index + taken]!)
+        taken += 1
+      }
+    }
+    index += take
+  }
+  return packed
+}
+
 const displayRows = computed<GridRow[]>(() => {
   const rows: GridRow[] = []
   orderedItems.value.forEach((item, slotIndex) => {
@@ -544,7 +603,14 @@ const displayRows = computed<GridRow[]>(() => {
       lockImage: false,
     })
   })
-  return rows
+  if (!evenGrid.value) return rows
+  const visible = rows.filter(
+    (row) => !visibilitySeeded.value || visibleIds.value.has(row.item._id),
+  )
+  const hidden = rows.filter(
+    (row) => visibilitySeeded.value && !visibleIds.value.has(row.item._id),
+  )
+  return [...packUniformHoles(visible), ...hidden]
 })
 
 const expandGallery = (productId: string) => {
@@ -1323,9 +1389,13 @@ const setGridMode = (uniform: boolean) => {
   }
   // Move the image frame, not the whole card. The caption under it is a
   // fixed height, so scaling the card stretches the picture and snaps at the end.
+  const wideEven = window.matchMedia('(min-width: 1400px)').matches
+  const spacerSel = wideEven
+    ? '.products__spacer:not(.is-filtered-out)'
+    : '.products__spacer:not(.is-filtered-out):not(.products__spacer--hole)'
   const targets = Array.from(
     grid.querySelectorAll<HTMLElement>(
-      '.product-card:not(.is-filtered-out) .product-card__media, .products__spacer:not(.is-filtered-out)',
+      `.product-card:not(.is-filtered-out) .product-card__media, ${spacerSel}`,
     ),
   )
   if (!targets.length) {
@@ -1401,7 +1471,11 @@ const setGridMode = (uniform: boolean) => {
         duration: 0.75,
         ease: 'power3.inOut',
         absolute: false,
-        scale: true,
+        // Size the frame, don't scale it — scaleX/scaleY would stretch the photo.
+        scale: false,
+        onEnter: (elements) => {
+          gsap.fromTo(elements, { opacity: 0 }, { opacity: 1, duration: 0.45, ease: 'power2.out' })
+        },
         onComplete: () => {
           if (gen !== gridModeGen) return
           gridAnimating.value = false
@@ -1430,6 +1504,17 @@ const setGridMode = (uniform: boolean) => {
  * Tile layout from CMS `gridSize` + cover snap to portrait / square / landscape.
  * Size fallback rhythm when unset: two small, one medium, repeat.
  */
+const spacerClass = (row: GridRow, index: number) => {
+  if (row.hole) return ['products__spacer--hole', 'product-card--archive-small']
+  return [
+    archiveMeta(row.item, index).className,
+    { 'is-filtered-out': visibilitySeeded.value && !visibleIds.value.has(row.item._id) },
+  ]
+}
+
+const spacerStyle = (row: GridRow, index: number) =>
+  row.hole ? { '--thumb-ar': '0.7' } : archiveMeta(row.item, index).style
+
 const archiveMeta = (item: LibraryItem, index: number) => {
   const fallbackSize = index % 3 === 2 ? 'medium' : 'small'
   const size = item.gridSize || fallbackSize
@@ -2197,6 +2282,7 @@ useHead(() => ({
 <style scoped>
 .products {
   padding-bottom: 5rem;
+  --products-grid-gap: 5px;
 }
 
 .products__header {
@@ -2522,7 +2608,7 @@ useHead(() => ({
 
 @media (max-width: 767px) {
   .products {
-    --products-grid-gap: 15px;
+    --products-grid-gap: 5px;
   }
 
   .products__mode {
@@ -2556,7 +2642,8 @@ useHead(() => ({
   }
 
   .products__grid--even {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-auto-flow: row;
   }
 }
 @media (min-width: 2080px) {
@@ -2577,6 +2664,17 @@ useHead(() => ({
 
 .products__grid--animating {
   pointer-events: none;
+}
+
+.products__grid--animating :deep(.product-card__media) {
+  overflow: hidden;
+}
+
+.products__grid--animating :deep(.product-card__image) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
 }
 
 /* Titles stay hidden while a product flies home. Hover fade resumes after. */
@@ -2639,6 +2737,8 @@ useHead(() => ({
 }
 
 .products__grid :deep(.product-card__image) {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   object-position: center center;
 }
@@ -2665,6 +2765,12 @@ useHead(() => ({
 
 .products__spacer.is-filtered-out {
   display: none !important;
+}
+
+@media (max-width: 1399px) {
+  .products__spacer--hole {
+    display: none !important;
+  }
 }
 
 .products__grid :deep(.product-card__type) {
