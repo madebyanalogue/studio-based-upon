@@ -8,10 +8,10 @@
 
   <div v-if="preloaderReady" id="app">
     <ClientOnly>
-      <WebglHome v-if="webglHomeOn" backdrop />
       <IntroLabStage
         v-if="introGroundOn"
         :active="introGround.live"
+        :mono="introGroundMono"
         :overlay="true"
         :overlay-anim="true"
         :overlay-size="0.9"
@@ -79,28 +79,42 @@ const introActive = computed(
     introPhase.value === 'type' ||
     introPhase.value === 'chrome',
 )
-/** Step-2 image sits under the slider. WebGL stays off while that layer is up. */
+const isOwnScenePath = (path: string) =>
+  path === '/webgl' ||
+  path === '/webgl-home' ||
+  path === '/webgl-metallic' ||
+  path.startsWith('/webgl/') ||
+  path === '/intro-lab'
+
+/** Intro field stays under the site. Dedicated lab pages keep their own scenes. */
 const introGroundOn = computed(
-  () => introGround.value.active && isHomepagePath(route.path),
+  () => introGround.value.active && !isOwnScenePath(route.path),
 )
-const webglHomeOn = computed(
-  () =>
-    !introActive.value &&
-    !introGroundOn.value &&
-    route.path !== '/webgl' &&
-    route.path !== '/webgl-home' &&
-    route.path !== '/webgl-metallic',
-)
+const introGroundMono = computed(() => !isHomepagePath(route.path))
+
+const keepIntroGround = (path: string) => {
+  if (isOwnScenePath(path)) {
+    if (introGround.value.active) introGround.value = { active: false, live: false }
+    return
+  }
+  if (introActive.value) return
+  if (!introGround.value.active || !introGround.value.live) {
+    introGround.value = { active: true, live: true }
+  }
+}
 
 watch(
   () => route.path,
   (path) => {
     if (path === '/enquire') closeEnquire()
-    if (!isHomepagePath(path) && introGround.value.active) {
-      introGround.value = { active: false, live: false }
-    }
+    keepIntroGround(path)
   },
+  { immediate: true },
 )
+
+watch(introActive, (on) => {
+  if (!on) keepIntroGround(route.path)
+})
 
 onMounted(() => {
   initBucketUi()

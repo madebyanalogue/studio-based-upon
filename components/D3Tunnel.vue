@@ -16,15 +16,38 @@
     }"
   >
     <Teleport to="body">
+    <div
+      v-if="showOnboard"
+      class="d3-tunnel__onboard"
+      :class="{
+        'd3-tunnel__onboard--ready': onboardReady,
+        'd3-tunnel__onboard--gone': onboardGone,
+      }"
+      aria-hidden="true"
+    >
+      <DissolveText
+        v-if="onboardReady && !onboardGone"
+        ref="onboardText"
+        class="d3-tunnel__onboard-text"
+        fit="lines"
+        interactive
+        :fall-room="false"
+        :auto-dissolve-ms="4000"
+        :lines="ONBOARD_LINES"
+        @clear="onOnboardClear"
+      />
+    </div>
     <div class="d3-tunnel__toggles">
       <div class="d3-tunnel__mode">
-        <div
-          class="d3-tunnel__meta mono"
-          :class="{ 'is-on': metaOn }"
-          aria-hidden="true"
-        >
-          <p class="d3-tunnel__meta-title">{{ hoverCard?.title }}</p>
-          <p class="d3-tunnel__meta-provenance">{{ hoverProvenance }}</p>
+        <div class="d3-tunnel__caption">
+          <div
+            class="d3-tunnel__meta mono"
+            :class="{ 'is-on': metaOn && metaAllowed }"
+            aria-hidden="true"
+          >
+            <p class="d3-tunnel__meta-title">{{ hoverCard?.title }}</p>
+            <p class="d3-tunnel__meta-provenance">{{ hoverProvenance }}</p>
+          </div>
         </div>
         <SlidingPill
           v-show="showModeToggle || showControls"
@@ -189,7 +212,15 @@
           @click.stop.prevent="onGather(card, $event)"
         >
           <span class="d3-tunnel__backing" aria-hidden="true" />
-          <img :src="card.src" :alt="card.title" draggable="false" />
+          <img
+            :src="card.priority ? card.src : undefined"
+            :data-src="card.src"
+            :alt="card.title"
+            draggable="false"
+            :loading="card.priority ? 'eager' : 'lazy'"
+            :fetchpriority="card.priority ? 'high' : 'low'"
+            decoding="async"
+          />
           <span class="d3-tunnel__veil" aria-hidden="true" />
         </button>
       </div>
@@ -242,6 +273,7 @@ type TunnelCard = {
   rowSpan: number
   cellWidth: number
   cellHeight: number
+  priority: boolean
 }
 
 const LAYOUTS = {
@@ -504,7 +536,7 @@ const props = defineProps<{
 const initialPreset = namedPreset(props.preset) ?? 'columns'
 const initial = PRESETS[initialPreset]
 
-const { imageUrl, getImageSrc } = useSanityImage()
+const { imageUrl, getImageSrc, prefetchImage } = useSanityImage()
 const { isOpen } = useProductOverlay()
 const { requestSave, items: pileItems, registerPileFly } = useBucket()
 
@@ -527,7 +559,7 @@ const onItemHover = (
   card: { title: string },
   event: PointerEvent,
 ) => {
-  if (event.pointerType === 'touch') return
+  if (event.pointerType === 'touch' || !metaAllowed.value) return
   window.clearTimeout(metaHideTimer)
   hoverCard.value = card
   metaOn.value = true
@@ -541,6 +573,19 @@ const onItemUnhover = () => {
 }
 const pageEntering = ref(true)
 const pageLeaving = ref(false)
+const ONBOARD_LINES = ['Discover and gather']
+const showOnboard = computed(() => !!props.autoPlay)
+const onboardReady = ref(false)
+const onboardGone = ref(false)
+const onboardText = ref<{ scatter: (force?: number) => void } | null>(null)
+const metaAllowed = computed(() => !showOnboard.value || onboardGone.value)
+const onOnboardClear = () => {
+  onboardGone.value = true
+}
+const washOnboard = (delta: number) => {
+  if (!showOnboard.value || !onboardReady.value || onboardGone.value) return
+  onboardText.value?.scatter(Math.abs(delta) / 90)
+}
 const layerGap = ref(initial.layerGap)
 const cellGap = ref(initial.cellGap)
 
@@ -599,6 +644,7 @@ const modeOptions = [
 
 const autoAllowed = () =>
   !!props.autoPlay &&
+  (!showOnboard.value || onboardGone.value) &&
   !pageEntering.value &&
   !pageLeaving.value &&
   !isOpen.value &&
@@ -834,6 +880,41 @@ const isGathered = (frameId: string) => {
   return gatheredIds.value.has(frameId) && !heldIds.has(frameId)
 }
 
+const tunnelDepth = () => {
+  const total = cards.value.length
+  const gap = layerGap.value
+  if (!total) return gap
+  return totalLayerCountFor(total, itemsPerLayer.value) * gap
+}
+
+const exitPoint = 1500
+
+const zForLayer = (index: number, scroll: number) => {
+  const depth = tunnelDepth()
+  if (!depth) return 0
+  let z = -index * layerGap.value + scroll
+  z = ((z % depth) + depth) % depth
+  return z - depth + exitPoint
+}
+
+const frontCut = () => (props.autoPlay ? exitPoint - layerGap.value : nearCut.value)
+
+const overlayFor = (z: number) => {
+  if (z > frontCut()) return 1
+  if (z > 0) return 0
+  const gap = layerGap.value
+  if (gap <= 0) return 0
+  const layersBack = Math.abs(z) / gap
+  /** Cream veil on the plane one gap behind — big step off the nearest. */
+  const first = 0.82
+  if (layersBack <= 1) return first * layersBack
+  // fadeFar ~2 still leaves layers 2–3 readable, then cuts to hidden.
+  const far = Math.max(fadeFar.value, 1) * 1.75
+  if (layersBack >= far) return 1
+  const t = (layersBack - 1) / (far - 1)
+  return first + (1 - first) * t * t
+}
+
 const layers = computed(() => {
   const images = cards.value
   const total = images.length
@@ -842,6 +923,7 @@ const layers = computed(() => {
   const seed = shuffleSeed.value
   const contentLayers = contentLayerCountFor(total, perLayer)
   const count = totalLayerCountFor(total, perLayer)
+  const arrival = startScroll.value
   return Array.from({ length: count }, (_, index) => {
     const sourceIndex = index % contentLayers
     const start = sourceIndex * perLayer
@@ -857,6 +939,7 @@ const layers = computed(() => {
       rows,
       colSpanOn.value,
     )
+    const priority = overlayFor(zForLayer(index, arrival)) < 1
     const placed: TunnelCard[] = []
     for (let i = 0; i < places.length; i += 1) {
       const image = images[start + i]
@@ -872,6 +955,7 @@ const layers = computed(() => {
         rowSpan: place.rowSpan,
         cellWidth,
         cellHeight,
+        priority,
         key: `${index}-${image.frameId}-${place.slot}`,
         left: `${x - width / 2}px`,
         top: `${y - height / 2}px`,
@@ -886,14 +970,6 @@ const setLayerEl = (index: number, el: unknown) => {
   else if (!el) delete layerEls[index]
 }
 
-const tunnelDepth = () => {
-  const total = cards.value.length
-  const gap = layerGap.value
-  if (!total) return gap
-  return totalLayerCountFor(total, itemsPerLayer.value) * gap
-}
-
-const exitPoint = 1500
 const CLICK_DRAG = 6
 
 let targetScroll = startScroll.value
@@ -906,20 +982,11 @@ let autoHeld = false
 const lookTarget = { x: 0, y: 0 }
 const lookCurrent = { x: 0, y: 0 }
 
-const overlayFor = (z: number) => {
-  if (z > nearCut.value) return 1
-  if (z > 0) return 0
-  const gap = layerGap.value
-  if (gap <= 0) return 0
-  const layersBack = Math.abs(z) / gap
-  /** Cream veil on the plane one gap behind — big step off the nearest. */
-  const first = 0.82
-  if (layersBack <= 1) return first * layersBack
-  // fadeFar ~2 still leaves layers 2–3 readable, then cuts to hidden.
-  const far = Math.max(fadeFar.value, 1) * 1.75
-  if (layersBack >= far) return 1
-  const t = (layersBack - 1) / (far - 1)
-  return first + (1 - first) * t * t
+const hydrateLayerImages = (el: HTMLElement) => {
+  el.querySelectorAll<HTMLImageElement>('img[data-src]').forEach((img) => {
+    const src = img.dataset.src
+    if (src && img.getAttribute('src') !== src) img.src = src
+  })
 }
 
 const step = () => {
@@ -959,12 +1026,15 @@ const step = () => {
       '--fade': overlay,
       visibility: overlay >= 1 ? 'hidden' : 'visible',
     })
+    if (overlay < 1) hydrateLayerImages(el)
   })
 }
 
-const fromUi = (target: EventTarget | null) =>
-  target instanceof Element &&
-  !!target.closest('.header, .bucket, .product-overlay, .d3-tunnel__toggles')
+const fromUi = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false
+  if (target.closest('.d3-tunnel__onboard')) return false
+  return !!target.closest('.header, .bucket, .product-overlay, .d3-tunnel__toggles')
+}
 
 const setMode = (id: string) => {
   const next = id === 'control' ? 'columns' : 'freeflow'
@@ -975,6 +1045,7 @@ const setMode = (id: string) => {
 const onWheel = (event: WheelEvent) => {
   if (isOpen.value || pageEntering.value || pageLeaving.value || fromUi(event.target)) return
   event.preventDefault()
+  washOnboard(event.deltaY)
   noteTunnelIntent(event.deltaY)
   targetScroll += event.deltaY * CONFIG.scrollSpeed
 }
@@ -991,6 +1062,7 @@ const onTouchMove = (event: TouchEvent) => {
   const touch = event.touches[0]
   if (!touch) return
   const delta = pointerY - touch.clientY
+  washOnboard(delta)
   noteTunnelIntent(delta)
   targetScroll += delta * CONFIG.scrollSpeed
   pointerY = touch.clientY
@@ -1147,19 +1219,37 @@ const wipeLayers = (to: number, duration: number, from = to === 0 ? 100 : 0) => 
 let clipTween: gsap.core.Timeline | null = null
 let leavePromise: Promise<void> | null = null
 
+const waitForPriorityImages = async () => {
+  const srcs = [
+    ...new Set(
+      layers.value.flatMap((layer) =>
+        layer.cards.filter((card) => card.priority).map((card) => card.src),
+      ),
+    ),
+  ].slice(0, 12)
+  if (!srcs.length) return
+  await Promise.race([
+    Promise.all(srcs.map((src) => prefetchImage(src))),
+    new Promise<void>((resolve) => window.setTimeout(resolve, 1400)),
+  ])
+}
+
 const playPageEnter = async () => {
   if (!import.meta.client || !pageEntering.value) return
   await nextTick()
   await nextFrame()
   step()
+  await waitForPriorityImages()
   if (prefersReducedMotion()) {
     visibleLayersByNear().forEach((layer) => layerItems(layer).forEach(clearItemClip))
     pageEntering.value = false
+    if (showOnboard.value) onboardReady.value = true
     return
   }
   await wipeLayers(0, 0.95, 100)
   visibleLayersByNear().forEach((layer) => layerItems(layer).forEach(clearItemClip))
   pageEntering.value = false
+  if (showOnboard.value) onboardReady.value = true
 }
 
 const playPageLeave = () => {
@@ -1263,17 +1353,23 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.d3-tunnel__meta {
+.d3-tunnel__caption {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 4vh + 40px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.d3-tunnel__meta {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
   width: max-content;
   max-width: min(72vw, 360px);
-  transform: translateX(-50%);
   color: var(--charcoal);
   text-align: center;
   opacity: 0;
@@ -1331,6 +1427,50 @@ onUnmounted(() => {
   min-width: 2.6rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.d3-tunnel__onboard {
+  position: fixed;
+  left: 50%;
+  bottom: calc(60px + var(--bucket-push, 0px) + 4vh + 40px);
+  z-index: 89;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(8px);
+  transition:
+    opacity 0.9s ease,
+    filter 0.9s ease;
+}
+
+.d3-tunnel__onboard--ready {
+  opacity: 1;
+  filter: blur(0);
+}
+
+.d3-tunnel__onboard--gone {
+  opacity: 0;
+  filter: blur(10px);
+  transition-duration: 1.1s;
+}
+
+.d3-tunnel__onboard-text {
+  max-width: none;
+  width: max-content;
+  font-family: var(--lacquer);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.d3-tunnel__onboard-text :deep(.dissolve-text__measure) {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
 }
 
 .d3-tunnel__rig {

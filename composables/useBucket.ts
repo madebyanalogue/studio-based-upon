@@ -727,25 +727,33 @@ export const useBucket = () => {
   }
 
   /** Point a selection entry at a gallery frame (e.g. PDP Flip-close handoff). */
-  const setItemImageIndex = (itemId: string, imageIndex: number) => {
+  const setItemImageIndex = (itemId: string, imageIndex: number, src?: string) => {
     moodboards.value = moodboards.value.map((board) => ({
       ...board,
       items: board.items.map((item) => {
         if (item.id !== itemId) return item
-        const urls = uniqueImageUrls(...(item.imageUrls || []))
-        if (urls.length < 2) return item
-        const idx = Math.min(Math.max(0, imageIndex), urls.length - 1)
+        const urls = uniqueImageUrls(...(item.imageUrls || []), src)
+        let idx = urls.length
+          ? Math.min(Math.max(0, imageIndex), urls.length - 1)
+          : 0
+        if (src) {
+          const match = urls.findIndex(
+            (url) => imageAssetKey(url) === imageAssetKey(src),
+          )
+          if (match >= 0) idx = match
+        }
+        const nextUrl = urls[idx] || src || item.imageUrl
         if (
           item.imageIndex === idx &&
-          imageAssetKey(item.imageUrl) === imageAssetKey(urls[idx])
+          imageAssetKey(item.imageUrl) === imageAssetKey(nextUrl)
         ) {
           return item
         }
         return {
           ...item,
-          imageUrls: urls,
+          imageUrls: urls.length ? urls : item.imageUrls,
           imageIndex: idx,
-          imageUrl: urls[idx],
+          imageUrl: nextUrl,
         }
       }),
     }))

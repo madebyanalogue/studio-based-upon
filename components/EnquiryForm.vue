@@ -927,7 +927,7 @@ onUnmounted(() => {
   height: 100%;
   max-height: 100%;
   padding: 0;
-  background: #222;
+  background: #111;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1059,8 +1059,8 @@ onUnmounted(() => {
 }
 
 .enquiry__grid--lines .enquiry__grid-item {
-  border-right-color: #111;
-  border-bottom-color: #111;
+  border-right-color: #222;
+  border-bottom-color: #222;
 }
 
 .enquiry__preview:has(.enquiry__grid--solo) .enquiry__preview-scroll {

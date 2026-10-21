@@ -522,6 +522,28 @@ const lift = () => {
   lastStampY = Number.NaN
 }
 
+/** Random bites — for scroll wash. Not a left-to-right sweep. */
+const scatter = (force = 1) => {
+  if (!glyph || cleared || ink <= 0) return
+  const amount = Math.min(3, Math.max(0.35, Math.abs(force)))
+  const band = glyph.height * (props.fit === 'lines' && props.fallRoom ? 0.36 : 0.72)
+  const clusters = Math.max(1, Math.round(amount * 1.6))
+  const stamps = Math.max(3, Math.round(7 * amount))
+  for (let c = 0; c < clusters; c += 1) {
+    const cx = Math.random() * glyph.width
+    const cy = Math.random() * Math.max(brushR, band)
+    for (let i = 0; i < stamps; i += 1) {
+      stamp(
+        cx + (Math.random() - 0.5) * brushR * 2.6,
+        cy + (Math.random() - 0.5) * brushR * 1.5,
+      )
+    }
+  }
+  lastStampX = Number.NaN
+  lastStampY = Number.NaN
+  if (touched) ensureLoop()
+}
+
 const onMove = (event: PointerEvent) => {
   if (!props.interactive) return
   wash(event.clientX, event.clientY)
@@ -559,7 +581,7 @@ watch(
   },
 )
 
-defineExpose({ wash, lift, repaint, reset })
+defineExpose({ wash, lift, scatter, repaint, reset })
 
 let resizeObserver: ResizeObserver | null = null
 const onPageShow = (event: PageTransitionEvent) => {

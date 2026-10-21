@@ -280,7 +280,6 @@
                   playsinline
                   preload="metadata"
                   draggable="false"
-                  data-cursor="default"
                   @loadedmetadata="onStripVideoMeta(i, $event)"
                   @click.stop="onGalleryMediaClick"
                 />
@@ -296,9 +295,8 @@
                     'pdp__hero-image--saved': isFrameSaved(i),
                   }"
                   draggable="false"
-                  :data-cursor="i === selectedIndex && imageExpanded ? undefined : 'default'"
                   @load="onStripImageLoad(i)"
-                  @click.stop="onGalleryMediaClick(i, $event)"
+                  @click.stop="onGalleryMediaClick"
                 />
                 <AddButton
                   class="pdp__frame-add"
@@ -1422,23 +1420,7 @@ const onPinchWheel = (event: WheelEvent) => {
   event.preventDefault()
   event.stopPropagation()
   if (imageZooming) return
-  if (!imageExpanded.value) {
-    const host =
-      event.target instanceof Element ? event.target.closest('[data-strip-index]') : null
-    const index = host
-      ? Number(host.getAttribute('data-strip-index'))
-      : selectedIndex.value
-    const img = host?.querySelector('img')
-    let focusX = 0.5
-    let focusY = 0.5
-    if (img) {
-      const rect = img.getBoundingClientRect()
-      if (rect.width > 0) focusX = (event.clientX - rect.left) / rect.width
-      if (rect.height > 0) focusY = (event.clientY - rect.top) / rect.height
-    }
-    if (Number.isFinite(index)) void expandImageZoom(index, focusY, focusX)
-    return
-  }
+  if (!imageExpanded.value) return
   scaleZoomAtPinch(event)
 }
 
@@ -1609,28 +1591,7 @@ const collapseImage = () => {
 
 const homeScrollHint = useHomeScrollHint()
 
-const onGalleryMediaClick = (index?: number, event?: MouseEvent) => {
-  if (typeof index === 'number' && !isNarrowPdp()) {
-    const entry = galleryEntries.value[index]
-    if (entry?.kind === 'image') {
-      if (imageExpanded.value) {
-        void collapseImageZoom()
-        return
-      }
-      const img = event?.currentTarget
-      const rect = img instanceof HTMLElement ? img.getBoundingClientRect() : null
-      const focusX =
-        rect && rect.width > 0 && event
-          ? (event.clientX - rect.left) / rect.width
-          : 0.5
-      const focusY =
-        rect && rect.height > 0 && event
-          ? (event.clientY - rect.top) / rect.height
-          : 0.5
-      void expandImageZoom(index, focusY, focusX)
-      return
-    }
-  }
+const onGalleryMediaClick = () => {
   requestPdpClose()
 }
 

@@ -431,8 +431,9 @@ html.header-menu-open .header {
   transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Curate surrender — recenter within the pushed content column */
-.showcase__surrender {
+/* Curate surrender + onboard — recenter within the pushed content column */
+.showcase__mode,
+.showcase__onboard {
   left: calc(
     var(--selections-panel-width) +
       var(--boards-panel-width) +
@@ -440,9 +441,7 @@ html.header-menu-open .header {
   ) !important;
   transition:
     left 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s ease,
-    background 0.2s ease,
-    border-color 0.2s ease;
+    bottom var(--bucket-close-ms, 0.35s) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Curate colour wash — same inset as the page */

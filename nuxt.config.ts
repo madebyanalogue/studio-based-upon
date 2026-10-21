@@ -9,6 +9,9 @@ export default defineNuxtConfig({
   devServer: {
     port: 3002,
   },
+  routeRules: {
+    '/discovery': { redirect: { to: '/discover', statusCode: 301 } },
+  },
   modules: ['@nuxtjs/sanity', '@nuxt/image'],
   sanity: {
     projectId: 'k8gpyc57',

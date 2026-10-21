@@ -2,23 +2,26 @@
   <div
     ref="stageEl"
     class="intro-lab-stage"
-    :class="{ 'is-in': visible }"
+    :class="{ 'is-in': visible, 'is-mono': mono }"
     aria-hidden="true"
   >
-    <canvas v-show="!overlay" ref="baseEl" class="intro-lab-stage__base" />
-    <canvas v-show="overlay" ref="revealEl" class="intro-lab-stage__reveal" />
-    <canvas
-      v-show="bloom"
-      ref="bloomEl"
-      class="intro-lab-stage__bloom"
-      :style="{ mixBlendMode: bloomBlend }"
-    />
-    <canvas
-      v-show="darken"
-      ref="darkenEl"
-      class="intro-lab-stage__darken"
-      :style="{ mixBlendMode: darkenBlend }"
-    />
+    <div class="intro-lab-stage__field">
+      <canvas v-show="!overlay" ref="baseEl" class="intro-lab-stage__base" />
+      <canvas v-show="overlay" ref="revealEl" class="intro-lab-stage__reveal" />
+      <canvas
+        v-show="bloom"
+        ref="bloomEl"
+        class="intro-lab-stage__bloom"
+        :style="{ mixBlendMode: bloomBlend }"
+      />
+      <canvas
+        v-show="darken"
+        ref="darkenEl"
+        class="intro-lab-stage__darken"
+        :style="{ mixBlendMode: darkenBlend }"
+      />
+    </div>
+    <div class="intro-lab-stage__wash" />
   </div>
 </template>
 
@@ -80,6 +83,8 @@ const props = withDefaults(
     darkenBlend?: DarkenBlend
     /** When false, stage sleeps (homepage ground handoff). */
     active?: boolean
+    /** Desaturate the field on non-home pages. */
+    mono?: boolean
   }>(),
   {
     overlay: true,
@@ -98,8 +103,12 @@ const props = withDefaults(
     darkenStrength: 2,
     darkenBlend: 'soft-light',
     active: true,
+    mono: false,
   },
 )
+
+/** Idle ghost-wand. Mouse reveal stays on in grayscale. */
+const overlayAnimLive = () => props.overlay && props.overlayAnim && !props.mono
 
 const REVEAL_BRUSH = 0.112
 const REVEAL_IDLE_AFTER = 500
@@ -468,7 +477,7 @@ const paintRevealLayer = () => {
 }
 
 const tickRevealIdle = (now: number) => {
-  if (!props.overlay || !props.overlayAnim) return
+  if (!overlayAnimLive()) return
   if (now - lastUserMove <= REVEAL_IDLE_AFTER) {
     idlePainting = false
     idleFrame = 0
@@ -831,7 +840,7 @@ const seedOverlayAuto = () => {
   idlePainting = false
   idleFrame = 0
 
-  if (!props.overlayAnim) {
+  if (!overlayAnimLive()) {
     mouseX = -1
     mouseY = -1
     driftX = -1
@@ -931,6 +940,13 @@ watch(
   },
 )
 
+watch(
+  () => props.mono,
+  () => {
+    if (props.overlay) seedOverlayAuto()
+  },
+)
+
 onMounted(() => {
   window.addEventListener('resize', resize)
   if (props.active) void start()
@@ -956,6 +972,31 @@ onUnmounted(() => {
 
 .intro-lab-stage.is-in {
   opacity: 1;
+}
+
+.intro-lab-stage__field {
+  position: absolute;
+  inset: 0;
+  filter: grayscale(0);
+  transition: filter 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.intro-lab-stage.is-mono .intro-lab-stage__field {
+  filter: grayscale(1);
+}
+
+.intro-lab-stage__wash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--background-color);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.intro-lab-stage.is-mono .intro-lab-stage__wash {
+  opacity: 0.3;
 }
 
 .intro-lab-stage__base,

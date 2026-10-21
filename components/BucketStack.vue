@@ -902,7 +902,7 @@
           </button>
           <div class="stack__upload">
             <div
-              v-if="showUploadOnboarding"
+              v-if="showUploadOnboarding && controlsVisible"
               class="stack__upload-note"
               :class="{ 'stack__upload-note--leaving': onboardingHiding }"
               aria-hidden="true"
@@ -911,6 +911,7 @@
                 class="stack__upload-dissolve"
                 fit="lines"
                 interactive
+                :fall-room="false"
                 :lines="UPLOAD_ONBOARD_LINES"
                 @clear="dismissUploadOnboarding"
               />
@@ -1644,7 +1645,7 @@ const fileToCartImage = (file: File) =>
 
 const UPLOAD_ONBOARD_KEY = 'cart-upload-onboarded'
 const SEND_ONBOARD_KEY = 'cart-send-onboarded'
-const UPLOAD_ONBOARD_LINES = ['Add Media']
+const UPLOAD_ONBOARD_LINES = ['Upload images']
 const SEND_ONBOARD_LINES = ['Send us a brief']
 const showUploadOnboarding = ref(false)
 const showSendOnboarding = ref(false)
@@ -4439,6 +4440,7 @@ const onFreeImageLoad = (id: string, event: Event) => {
   const img = event.target
   if (!(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
   noteFreeformAspect(id, img.naturalWidth / img.naturalHeight)
+  if (showLightbox.value) layoutLightbox()
 }
 
 /** Gallery cycling keeps the card's current width instead of reapplying the arrival cap. */
@@ -6440,13 +6442,16 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   })
 }
 
-watch(returnImage, (value) => {
+watch(returnImage, async (value) => {
   if (!value) return
   const targetId =
     value.bucketItemId ||
     items.value.find((item) => productIdFromBucketId(item.id) === value.productId)?.id
   if (!targetId) return
-  setItemImageIndex(targetId, value.index)
+  setItemImageIndex(targetId, value.index, value.src)
+  if (!showLightbox.value) return
+  await nextTick()
+  layoutLightbox()
 })
 
 watch(productOverlayOpen, (on) => {
@@ -10647,16 +10652,19 @@ onBeforeUnmount(() => {
 }
 
 .stack__upload-note {
-  /* Sit close to the button; tall fall-pad hangs behind it (z-index). */
   position: absolute;
   right: 0;
-  bottom: calc(100% - 5.5rem);
+  bottom: calc(100% + 8px);
   z-index: 0;
   margin: 0;
   overflow: visible;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 1;
   transition: opacity 0.16s ease;
+}
+
+.stack__corner--visible .stack__upload-dissolve {
+  pointer-events: auto;
 }
 
 .stack__upload-note--leaving {

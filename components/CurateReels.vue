@@ -26,7 +26,10 @@
         v-for="(column, slotIndex) in columns"
         :key="column.instanceId"
         class="showcase__column-wrap"
-        :class="{ 'showcase__column-wrap--pending': pendingColumns[column.instanceId] }"
+        :class="{
+          'showcase__column-wrap--pending': pendingColumns[column.instanceId],
+          'showcase__column-wrap--held': column.locked || isUploadColumn(column),
+        }"
       >
       <div
         class="showcase__column-shell"
@@ -99,6 +102,7 @@
 
         <div class="showcase__remove-zone">
           <button
+            v-if="!isUploadColumn(column)"
             type="button"
             class="showcase__lock"
             :class="{ 'showcase__lock--on': column.locked }"
@@ -341,15 +345,36 @@
       aria-hidden="true"
     />
 
-    <button
-      type="button"
-      class="showcase__surrender interface"
-      data-cursor="default"
-      :disabled="!columnCount"
-      @click="surrenderColumns"
+    <div
+      class="showcase__onboard"
+      :class="{
+        'showcase__onboard--ready': onboardReady,
+        'showcase__onboard--gone': onboardGone,
+      }"
+      aria-hidden="true"
     >
-      Surrender
-    </button>
+      <DissolveText
+        v-if="onboardReady && !onboardGone"
+        ref="onboardText"
+        class="showcase__onboard-text"
+        fit="lines"
+        interactive
+        :fall-room="false"
+        :lines="ONBOARD_LINES"
+        @clear="onOnboardClear"
+      />
+    </div>
+    <div class="showcase__mode">
+      <button
+        type="button"
+        class="showcase__surrender interface"
+        data-cursor="default"
+        :disabled="!columnCount"
+        @click="surrenderColumns"
+      >
+        Surrender
+      </button>
+    </div>
   </section>
 </template>
 
@@ -486,6 +511,20 @@ const columns = ref<ShowcaseColumn[]>([])
 const arrived = ref(false)
 /** Column titles wait until the entrance wipe has finished, then fade in together. */
 const metaReady = ref(false)
+const ONBOARD_LINES = ['Materials in combination']
+const onboardReady = ref(false)
+const onboardGone = ref(false)
+const onboardText = ref<{ scatter: (force?: number) => void } | null>(null)
+const onOnboardClear = () => {
+  onboardGone.value = true
+}
+const washOnboard = (delta: number) => {
+  if (!onboardReady.value || onboardGone.value) return
+  onboardText.value?.scatter(Math.abs(delta) / 90)
+}
+const revealOnboard = () => {
+  if (!onboardGone.value) onboardReady.value = true
+}
 const pageClipping = ref(false)
 /** True while a column is fading and its width is easing open or closed. */
 const columnMotion = ref(false)
@@ -521,8 +560,13 @@ let surrenderMotion = 0
 const finishSurrenderClip = () => {
   surrenderMotion = Math.max(0, surrenderMotion - 1)
   if (surrenderMotion > 0) return
-  surrendering.value = false
-  showcaseEl.value?.classList.remove('showcase--surrendering')
+  // Dim while still clipped, then unclip so neighbors never flash.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      surrendering.value = false
+      showcaseEl.value?.classList.remove('showcase--surrendering')
+    })
+  })
 }
 /** Top edge of the flex zone under the selected cell (px from shell top). */
 const removeZoneTops = ref<number[]>(Array.from({ length: MAX_COLUMNS }, () => 0))
@@ -865,6 +909,11 @@ const createColumnFromBucket = (bucket: ShowcaseBucket): ShowcaseColumn | null =
     images: shuffleImages(bucket.images),
   }
 }
+
+const isUploadColumn = (column: ShowcaseColumn) =>
+  Boolean(column.objectUrl) ||
+  column.instanceId.startsWith('upload-') ||
+  column.productId.startsWith('upload-')
 
 const createUploadColumn = (file: File, src: string): ShowcaseColumn => {
   instanceSeq += 1
@@ -1519,7 +1568,7 @@ const surrenderImageIndex = (slotIndex: number) => {
  */
 const retargetSingleColumn = (slotIndex: number) => {
   const column = columns.value[slotIndex]
-  if (!column || column.images.length > 1 || column.objectUrl) return false
+  if (!column || column.images.length > 1 || isUploadColumn(column)) return false
   const currentSrc = column.images[0]?.src
   const pool = bucketPool.value.filter((bucket) =>
     bucket.images?.some((image) => image.src && image.src !== currentSrc),
@@ -1562,7 +1611,7 @@ const surrenderColumns = async () => {
   await refreshColumnMetrics()
 
   const targets = columns.value.flatMap((column, slotIndex) =>
-    column.locked || column.objectUrl || !column.images.length ? [] : [slotIndex],
+    column.locked || isUploadColumn(column) || !column.images.length ? [] : [slotIndex],
   )
   if (!targets.length) return
 
@@ -1648,7 +1697,7 @@ const onColumnPointerLeave = (event: PointerEvent) => {
 
 const toggleColumnLock = (slotIndex: number) => {
   const column = columns.value[slotIndex]
-  if (!column) return
+  if (!column || isUploadColumn(column)) return
   if (column.locked) {
     lockSnapPending[slotIndex] = false
     setColumnScrollBlocked(slotIndex, false)
@@ -2225,6 +2274,7 @@ const initLenisForSlot = (slotIndex: number) => {
         return
       }
       if (event.deltaX || event.deltaY) {
+        washOnboard(event.deltaY)
         dismissScrollHint()
         dismissColumnScrollHint()
       }
@@ -2571,7 +2621,10 @@ const playArrival = async () => {
   if (reduced || !targets.length) {
     pageClipping.value = false
     arrivalAnimating = false
-    if (!pageLeaving) metaReady.value = true
+    if (!pageLeaving) {
+      metaReady.value = true
+      revealOnboard()
+    }
     showScrollHint()
     return
   }
@@ -2587,6 +2640,7 @@ const playArrival = async () => {
   pageClipping.value = false
   arrivalAnimating = false
   metaReady.value = true
+  revealOnboard()
   showScrollHint()
 }
 
@@ -2645,10 +2699,20 @@ watch(returnImage, (value) => {
 })
 
 const onSelect = (column: ShowcaseColumn, imageIndex: number, event: MouseEvent) => {
+  const slotIndex = columns.value.findIndex((entry) => entry.instanceId === column.instanceId)
+  const settled = slotIndex >= 0 ? settledIndexes.value[slotIndex] : null
+  const cell = event.currentTarget
+  const hovering =
+    cell instanceof HTMLElement &&
+    !!cell.closest('.showcase__column-shell--hot')
+  if (
+    settled != null &&
+    settled !== imageIndex &&
+    (column.locked || !hovering)
+  ) return
   const image = column.images[imageIndex]
   const slug = image?.slug || column.slug
   if (!slug) return
-  const cell = event.currentTarget
   const source =
     cell instanceof HTMLElement
       ? (cell.querySelector<HTMLImageElement>('.showcase__img') ?? cell)
@@ -3395,8 +3459,8 @@ onBeforeUnmount(() => {
   --showcase-dim-opacity: 0;
   --showcase-dim-delay: 0s;
   --showcase-dim-duration: 0.12s;
-  --showcase-surrender-dim-delay: 0.15s;
-  --showcase-surrender-dim-duration: 0.22s;
+  --showcase-surrender-dim-delay: 0s;
+  --showcase-surrender-dim-duration: 0s;
   --showcase-reveal-duration: 0.55s;
   --showcase-adder-width: 60px;
   --showcase-ctrl-size: 44px;
@@ -3455,11 +3519,15 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.showcase--surrendering .showcase__column-meta,
+.showcase--surrendering .showcase__column-wrap:not(.showcase__column-wrap--held) .showcase__column-meta,
 .showcase--meta .showcase__column-meta--out,
 .showcase__column-meta--out {
   opacity: 0;
   transition-duration: 0.28s;
+}
+
+.showcase--surrendering .showcase__column-shell {
+  overflow: hidden;
 }
 
 .showcase__column-title,
@@ -3488,7 +3556,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: auto;
   max-height: 100%;
-  overflow: hidden !important;
 }
 
 .showcase__slot {
@@ -3595,6 +3662,7 @@ onBeforeUnmount(() => {
 .showcase__column--settled .showcase__cell:not(.showcase__cell--active) {
   opacity: var(--showcase-dim-opacity);
   filter: grayscale(1);
+  pointer-events: none;
   transition-delay: 0s;
   transition-duration: 0s;
 }
@@ -3703,8 +3771,17 @@ onBeforeUnmount(() => {
   .showcase__column-shell--hot .showcase__column--settled:not(.showcase__column--locked) .showcase__cell {
     opacity: 1;
     filter: grayscale(0);
+    pointer-events: auto;
     transition-delay: 0s;
     transition-duration: 0.45s;
+  }
+
+  .showcase--surrendering .showcase__column-shell--hot .showcase__column--settled:not(.showcase__column--locked) .showcase__cell:not(.showcase__cell--active) {
+    opacity: var(--showcase-dim-opacity);
+    filter: grayscale(1);
+    pointer-events: none;
+    transition-duration: 0s;
+    transition-delay: 0s;
   }
 
   .showcase__column-shell--hot .showcase__remove,
@@ -4193,11 +4270,65 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
-.showcase__surrender {
+.showcase__mode {
   position: fixed;
   left: 50%;
   bottom: calc(60px + var(--bucket-push, 0px));
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  transition: bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.showcase__onboard {
+  position: fixed;
+  left: 50%;
+  bottom: calc(60px + var(--bucket-push, 0px) + var(--showcase-ctrl-size) + 4vh + 40px);
+  z-index: 19;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  opacity: 0;
+  filter: blur(8px);
+  transition:
+    opacity 0.9s ease,
+    filter 0.9s ease,
+    bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.showcase__onboard--ready {
+  opacity: 1;
+  filter: blur(0);
+}
+
+.showcase__onboard--gone {
+  opacity: 0;
+  filter: blur(10px);
+  transition-duration: 1.1s;
+}
+
+.showcase__onboard-text {
+  max-width: none;
+  width: max-content;
+  font-family: var(--lacquer);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.showcase__onboard-text :deep(.dissolve-text__measure) {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.showcase__surrender {
+  position: relative;
   box-sizing: border-box;
   min-height: var(--showcase-ctrl-size);
   margin: 0;
@@ -4211,9 +4342,7 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
   letter-spacing: 0.04em;
   cursor: pointer;
-  transform: translateX(-50%);
   transition:
-    bottom var(--bucket-close-ms) cubic-bezier(0.22, 1, 0.36, 1),
     color 0.2s ease,
     background 0.2s ease,
     border-color 0.2s ease;
@@ -4258,8 +4387,12 @@ onBeforeUnmount(() => {
 
 @media (max-width: 860px) {
   .showcase__adder,
-  .showcase__surrender {
+  .showcase__mode {
     bottom: calc(16px + var(--stack-clearance, 0px));
+  }
+
+  .showcase__onboard {
+    bottom: calc(16px + var(--stack-clearance, 0px) + var(--showcase-ctrl-size) + 4vh + 40px);
   }
 
   .showcase__adder {
@@ -4267,8 +4400,12 @@ onBeforeUnmount(() => {
   }
 
   :global(html.bucket-push) .showcase__adder,
-  :global(html.bucket-push) .showcase__surrender {
+  :global(html.bucket-push) .showcase__mode {
     bottom: calc(16px + var(--bucket-push, 0px));
+  }
+
+  :global(html.bucket-push) .showcase__onboard {
+    bottom: calc(16px + var(--bucket-push, 0px) + var(--showcase-ctrl-size) + 4vh + 40px);
   }
 }
 

@@ -462,7 +462,7 @@ watch(returnImage, (value) => {
     value.bucketItemId ||
     items.value.find((item) => productIdFromBucketId(item.id) === value.productId)?.id
   if (!targetId) return
-  setItemImageIndex(targetId, value.index)
+  setItemImageIndex(targetId, value.index, value.src)
 })
 
 const startEdit = () => {
