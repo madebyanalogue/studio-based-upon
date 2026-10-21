@@ -1434,10 +1434,9 @@ const archiveMeta = (item: LibraryItem, index: number) => {
   const fallbackSize = index % 3 === 2 ? 'medium' : 'small'
   const size = item.gridSize || fallbackSize
   const ratioKey = item.gridRatio || 'square'
-  const ar =
-    evenGrid.value && (ratioKey === 'square' || ratioKey === 'portrait')
-      ? 0.7
-      : (GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square)
+  const ar = evenGrid.value
+    ? 0.7
+    : (GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square)
 
   return {
     className: `product-card--archive-${size}`,
@@ -2525,6 +2524,10 @@ useHead(() => ({
   .products {
     --products-grid-gap: 15px;
   }
+
+  .products__mode {
+    display: none;
+  }
 }
 
 .products__grid {
@@ -2704,6 +2707,31 @@ useHead(() => ({
 .products__grid--even :deep(.product-card),
 .products__grid--even .products__spacer {
   grid-column: span 1 !important;
+}
+
+@media (min-width: 768px) {
+  .products__grid--even :deep(.product-card__media) {
+    height: auto;
+    aspect-ratio: 0.7 !important;
+  }
+
+  .products__grid--even .products__spacer {
+    aspect-ratio: 0.7 !important;
+  }
+}
+
+/* Phone: one landscape layout, 2-up / 1-up / 2-up among visible tiles. */
+@media (max-width: 767px) {
+  .products__grid :deep(.product-card),
+  .products__grid .products__spacer {
+    --thumb-ar: 1.5 !important;
+    grid-column: span 1 !important;
+  }
+
+  .products__grid :deep(.product-card:nth-child(3n of :not(.is-filtered-out))),
+  .products__grid .products__spacer:nth-child(3n of :not(.is-filtered-out)) {
+    grid-column: span 2 !important;
+  }
 }
 
 @media (max-width: 860px) {

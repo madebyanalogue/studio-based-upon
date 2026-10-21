@@ -429,12 +429,18 @@ const onToggle = (event?: MouseEvent) => {
   /* position: absolute; */
   inset: auto 0 0 0;
   z-index: 1;
-  padding: 16px 0;
+  padding: 14px 0;
   min-width: 0;
   opacity: 1;
   transition: opacity 0.6s ease;
   pointer-events: none;
   border-top: 1px dashed var(--ui-border-color);
+}
+
+@media (min-width: 1101px) {
+  .product-card__meta {
+    padding: 16px 0 22px;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
