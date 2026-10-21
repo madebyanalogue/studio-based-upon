@@ -162,6 +162,8 @@ export const createD2Canvas = (
   let gridH = GRID_CELL
   let layoutCols = 1
   let layoutRows = 1
+  /** Product order from the first Control layout. Gathered tiles keep their cell. */
+  let controlOrder: string[] | null = null
   let framingCamera = false
   let panPointer = false
   let panScrollKey = ''
@@ -243,11 +245,7 @@ export const createD2Canvas = (
     camera.updateProjectionMatrix()
     renderer.setSize(width, height, false)
     if (mode !== 'control' || !particles.length) return
-    const visible = new Set<string>()
-    for (const particle of particles) {
-      if (!particle.concealed) visible.add(particle.productId)
-    }
-    const next = gridShape(visible.size, camera.aspect)
+    const next = gridShape(controlRoster().length, camera.aspect)
     if (next.cols !== layoutCols || next.rows !== layoutRows) {
       const intro = phase !== 'live'
       beginMorph('control', intro, intro)
@@ -553,6 +551,43 @@ export const createD2Canvas = (
     return { cols: bestCols, rows: Math.ceil(safe / bestCols) }
   }
 
+  /**
+   * Control cells stay put after a gather. The first visit records who is on
+   * the grid; later visits keep those cells, including ones that are now empty.
+   */
+  const controlRoster = () => {
+    const first = new Map<string, Particle>()
+    for (const particle of particles) {
+      if (!first.has(particle.productId)) first.set(particle.productId, particle)
+    }
+    if (!controlOrder) {
+      const seen = new Set<string>()
+      controlOrder = []
+      for (const particle of particles) {
+        if (particle.concealed || seen.has(particle.productId)) continue
+        seen.add(particle.productId)
+        controlOrder.push(particle.productId)
+      }
+    } else {
+      const seen = new Set<string>()
+      const next: string[] = []
+      for (const id of controlOrder) {
+        if (!first.has(id) || seen.has(id)) continue
+        seen.add(id)
+        next.push(id)
+      }
+      for (const particle of particles) {
+        if (particle.concealed || seen.has(particle.productId)) continue
+        seen.add(particle.productId)
+        next.push(particle.productId)
+      }
+      controlOrder = next
+    }
+    return controlOrder
+      .map((id) => first.get(id))
+      .filter((particle): particle is Particle => !!particle)
+  }
+
   const assignGoals = (next: D2Mode) => {
     if (next === 'surrender') {
       for (const particle of particles) {
@@ -570,13 +605,7 @@ export const createD2Canvas = (
       return
     }
 
-    const primaries: Particle[] = []
-    const seen = new Set<string>()
-    for (const particle of particles) {
-      if (particle.concealed || seen.has(particle.productId)) continue
-      seen.add(particle.productId)
-      primaries.push(particle)
-    }
+    const primaries = controlRoster()
 
     const count = primaries.length
     const shape = gridShape(count, Math.max(camera.aspect || 1, 0.01))
@@ -598,7 +627,7 @@ export const createD2Canvas = (
       particle.goalPos.set(x, y, 0)
       particle.goalRot.set(0, 0, 0)
       particle.goalScale.copy(containedScale(particle.mesh))
-      particle.goalOpacity = 1
+      particle.goalOpacity = particle.concealed ? 0 : 1
       particle.goalOrder = index
       slot.set(particle.productId, { pos: particle.goalPos, scale: particle.goalScale })
     })

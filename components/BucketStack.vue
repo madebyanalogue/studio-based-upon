@@ -356,6 +356,7 @@
             :class="{
               'stack__freeform-tip--ready': freeformTipReady,
               'stack__freeform-tip--gone': freeformTipGone,
+              'stack__freeform-tip--leaving': onboardingHiding,
             }"
             aria-hidden="true"
           >
@@ -812,6 +813,7 @@
               <div
                 v-if="showSendOnboarding"
                 class="stack__send-note"
+                :class="{ 'stack__send-note--leaving': onboardingHiding }"
                 aria-hidden="true"
               >
                 <DissolveText
@@ -902,6 +904,7 @@
             <div
               v-if="showUploadOnboarding"
               class="stack__upload-note"
+              :class="{ 'stack__upload-note--leaving': onboardingHiding }"
               aria-hidden="true"
             >
               <DissolveText
@@ -1441,6 +1444,7 @@ const confirmingDelete = ref(false)
 const BACKDROP_OPEN_MS = 350
 const BACKDROP_CLOSE_MS = 800
 const GRID_LINES_MS = 320
+const ONBOARD_HIDE_MS = 160
 const CONTROLS_FADE_IN_DELAY_MS = 400
 const CONTROLS_FADE_OUT_DELAY_MS = 100
 const pdpFocusItemId = ref<string | null>(null)
@@ -1644,6 +1648,20 @@ const UPLOAD_ONBOARD_LINES = ['Upload Media']
 const SEND_ONBOARD_LINES = ['Then send us a brief']
 const showUploadOnboarding = ref(false)
 const showSendOnboarding = ref(false)
+const onboardingHiding = ref(false)
+
+const anyOnboardingVisible = () =>
+  (freeformTipReady.value && !freeformTipGone.value) ||
+  showUploadOnboarding.value ||
+  showSendOnboarding.value
+
+/** Fade tips off before the cart itself starts to leave. */
+const hideOnboardingForClose = async () => {
+  if (onboardingHiding.value || !anyOnboardingVisible()) return
+  onboardingHiding.value = true
+  await nextTick()
+  await wait(ONBOARD_HIDE_MS)
+}
 
 const dismissUploadOnboarding = () => {
   if (!showUploadOnboarding.value) return
@@ -2911,6 +2929,7 @@ const freeformPileBox = (rect: DOMRect) => {
     height: side,
   }
 }
+type FreeformSize = 'large' | 'medium' | 'small'
 type FreeformPlace = {
   x: number
   y: number
@@ -2918,7 +2937,8 @@ type FreeformPlace = {
   z: number
   image?: boolean
   fitted?: boolean
-  /** Every 5th arrival starts one cell larger than the usual four. */
+  /** Arrival size. Older saves used `accent` for the larger every-5th card. */
+  size?: FreeformSize
   accent?: boolean
 }
 type FreeformCorner = 'tl' | 'tr' | 'bl' | 'br'
@@ -2992,11 +3012,28 @@ const hash01 = (id: string, salt: number) => {
   return ((h >>> 0) % 10000) / 10000
 }
 
-/** Same pitch as `.stack__freeform-dots`. Arrival width is four cells; every 5th is five. */
+/** Same pitch as `.stack__freeform-dots`. First three arrive large, next three medium, then small. */
 const MATRIX_DOT = 48
-const ARRIVAL_CELLS = 4
-const ACCENT_CELLS = 5
+const LARGE_CELLS = 6
+const MEDIUM_CELLS = 4
+const SMALL_CELLS = 3
+const ARRIVAL_CELLS = MEDIUM_CELLS
 const FREEFORM_SPREAD_VERSION = '5'
+
+const sizeForArrival = (order: number): FreeformSize => {
+  if (order <= 3) return 'large'
+  if (order <= 6) return 'medium'
+  return 'small'
+}
+
+const cellsForSize = (size?: FreeformSize, accent = false) => {
+  if (size === 'large' || (!size && accent)) return LARGE_CELLS
+  if (size === 'small') return SMALL_CELLS
+  return MEDIUM_CELLS
+}
+
+const cellsForPlace = (place?: Pick<FreeformPlace, 'size' | 'accent'>) =>
+  cellsForSize(place?.size, place?.accent)
 
 const planeExtent = () => {
   const rect = freeformPlane.value?.getBoundingClientRect()
@@ -3023,11 +3060,11 @@ const scatterPlace = (
   id: string,
   z: number,
   taken: Record<string, FreeformPlace>,
-  accent = false,
+  size: FreeformSize = 'medium',
 ): FreeformPlace => {
   const { w: sw, h: sh } = planeExtent()
   const aspect = freeformAspects.value[id] || 1
-  const wf = cappedWidthFraction(aspect, sw, sh, accent ? ACCENT_CELLS : ARRIVAL_CELLS)
+  const wf = cappedWidthFraction(aspect, sw, sh, cellsForSize(size))
   const width = wf * sw
   const height = width / aspect
   const gap = MATRIX_DOT
@@ -3084,7 +3121,7 @@ const scatterPlace = (
     z,
     image: true,
     fitted: true,
-    ...(accent ? { accent: true } : {}),
+    size,
   }
 }
 
@@ -3114,8 +3151,9 @@ const syncFreeformPlacements = () => {
       changed = true
     }
   }
-  ids.forEach((id, index) => {
-    if (current[id]) return
+  const newcomers = ids.filter((id) => !current[id])
+  const existingCount = Object.keys(current).length
+  newcomers.forEach((id, index) => {
     // Uploads stay at the end of the grid, so they sit under the pile too.
     let z = maxZ + 1
     if (id.startsWith('upload-')) {
@@ -3127,9 +3165,9 @@ const syncFreeformPlacements = () => {
     } else {
       maxZ = z
     }
-    // Selection order is newest-first, so the 5th added sits at the end of each group of five.
-    const addedOrder = ids.length - index
-    current[id] = scatterPlace(id, z, current, addedOrder % 5 === 0)
+    // Selection is newest-first. Size follows the order they were added.
+    const addedOrder = existingCount + (newcomers.length - index)
+    current[id] = scatterPlace(id, z, current, sizeForArrival(addedOrder))
     changed = true
   })
   // An upload used to be stacked on top. Drop those under the other cards.
@@ -3323,7 +3361,7 @@ const tidyFreeform = () => {
   const arrival: Record<string, number> = {}
   for (const id of ids) {
     aspects[id] = freeformAspects.value[id] || 1
-    const cells = board[id]?.accent ? ACCENT_CELLS : ARRIVAL_CELLS
+    const cells = cellsForPlace(board[id])
     arrival[id] = cappedWidthFraction(aspects[id], sw, sh, cells) * sw
   }
 
@@ -4374,7 +4412,7 @@ const freeformStyle = (id: string) => {
   // or, once resized, wider than the screen. Keep every card inside the plane.
   if (sw >= 2 && sw <= 767) {
     const maxW = Math.max(48, sw - 24)
-    const cells = place.accent ? ACCENT_CELLS : ARRIVAL_CELLS
+    const cells = cellsForPlace(place)
     const floor = Math.min(maxW, MATRIX_DOT * cells)
     width = Math.min(maxW, Math.max(width, floor))
     left = Math.min(Math.max(8, left), Math.max(8, sw - width - 8))
@@ -4449,7 +4487,7 @@ const refitFittedPlace = (id: string) => {
   const { w: sw, h: sh } = planeExtent()
   if (sw < 2 || sh < 2) return false
   const aspect = freeformAspects.value[id] || 1
-  const wf = cappedWidthFraction(aspect, sw, sh, place.accent ? ACCENT_CELLS : ARRIVAL_CELLS)
+  const wf = cappedWidthFraction(aspect, sw, sh, cellsForPlace(place))
   if (Math.abs(wf - place.w) < 0.004) return false
   patchFreeform(id, { w: wf })
   return true
@@ -4486,7 +4524,7 @@ const spreadStoredFreeform = () => {
     const ids = Object.keys(board).sort((a, b) => (board[a]?.z || 0) - (board[b]?.z || 0))
     const next: Record<string, FreeformPlace> = {}
     ids.forEach((id, index) => {
-      next[id] = scatterPlace(id, board[id]?.z || 0, next, (index + 1) % 5 === 0)
+      next[id] = scatterPlace(id, board[id]?.z || 0, next, sizeForArrival(index + 1))
     })
     layouts[boardId] = next
   }
@@ -7052,6 +7090,7 @@ const fadeOutStage = async () => {
 }
 
 const revealStage = async () => {
+  onboardingHiding.value = false
   gridLinesVisible.value = false
   stagePresent.value = true
   await nextTick()
@@ -7085,6 +7124,7 @@ const scheduleControlsFadeIn = () => {
 
 const openFromPile = async () => {
   if (!import.meta.client || isOpen.value || isFlipping.value) return
+  onboardingHiding.value = false
   freeformDotsSuppress.value = false
   // Hide name tip for the whole open → close cycle (re-arms on mouse-out after close)
   lightboxHandoff.value = false
@@ -7512,6 +7552,7 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
   const hasFlipContent = items.value.length > 0
 
   if (!import.meta.client || isFlipping.value) {
+    onboardingHiding.value = true
     clearAllCellPhases()
     settlePendingRemovals()
     dismissDrawer()
@@ -7535,9 +7576,11 @@ const closeToPile = async (opts?: { handoffBackdrop?: boolean }) => {
       settlePendingRemovals()
       return
     }
+    await hideOnboardingForClose()
     await finishClose()
     return
   }
+  await hideOnboardingForClose()
   if (panelTab.value === 'boards') {
     void wait(CONTROLS_FADE_OUT_DELAY_MS).then(() => {
       controlsVisible.value = false
@@ -10364,6 +10407,13 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow: visible;
   pointer-events: auto;
+  opacity: 1;
+  transition: opacity 0.16s ease;
+}
+
+.stack__send-note--leaving {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .stack__send-dissolve {
@@ -10605,6 +10655,13 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow: visible;
   pointer-events: auto;
+  opacity: 1;
+  transition: opacity 0.16s ease;
+}
+
+.stack__upload-note--leaving {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .stack__upload-global {
@@ -10782,6 +10839,13 @@ onBeforeUnmount(() => {
   opacity: 0;
   filter: blur(10px);
   transition-duration: 1.1s;
+}
+
+.stack__freeform-tip--leaving {
+  opacity: 0;
+  filter: none;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
 }
 
 .stack__freeform-dissolve {

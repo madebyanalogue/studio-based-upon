@@ -48,7 +48,7 @@
       <div class="products__filter-tool interface" role="search" aria-label="Filter materials and forms">
         <MorphingSelect
           label="Filter by type"
-          direction="up"
+          :direction="filterMenuDirection"
           :options="filterSelectOptions"
           :model-value="activeFilter"
           @update:model-value="selectFilter"
@@ -534,7 +534,7 @@ const mulberry32 = (seed: number) => {
   }
 }
 
-/** Drop 2–4 empty cells into each 7-up row. Seeded so the same set stays still. */
+/** Drop 2–3 empty cells into each 7-up row. Seeded so the same set stays still. */
 const packUniformHoles = (rows: GridRow[]) => {
   if (!rows.length) return rows
   const rand = mulberry32(hashSeed(rows.map((row) => row.slotKey).join('|')))
@@ -543,11 +543,11 @@ const packUniformHoles = (rows: GridRow[]) => {
   let holeN = 0
   while (index < rows.length) {
     const remaining = rows.length - index
-    let holeCount = 2 + Math.floor(rand() * 3)
+    let holeCount = 2 + Math.floor(rand() * 2)
     let take = 7 - holeCount
     if (take > remaining) {
       take = remaining
-      holeCount = Math.max(0, Math.min(4, 7 - take))
+      holeCount = Math.max(0, Math.min(3, 7 - take))
     }
     const total = take + holeCount
     const holeAt = new Set<number>()
@@ -838,6 +838,14 @@ const parkTitleSharp = () => {
 const dockEl = ref<HTMLElement | null>(null)
 /** Starts away so the filter + grid select rise in on first paint. */
 const dockAway = ref(true)
+/** Filter sits in document flow on mobile, so the menu opens down. */
+const filterMenuDirection = ref<'up' | 'down'>('up')
+const ARCHIVE_INLINE_DOCK_MQ = '(max-width: 860px)'
+const archiveDockIsInline = () =>
+  import.meta.client && window.matchMedia(ARCHIVE_INLINE_DOCK_MQ).matches
+const syncFilterMenuDirection = () => {
+  filterMenuDirection.value = archiveDockIsInline() ? 'down' : 'up'
+}
 let dockTween: gsap.core.Tween | null = null
 let headerTween: gsap.core.Tween | null = null
 
@@ -854,6 +862,11 @@ const parkArchiveDockOffscreen = () => {
   const dock = dockEl.value
   if (!dock) return
   dockTween?.kill()
+  if (archiveDockIsInline()) {
+    dockAway.value = false
+    gsap.set(dock, { y: 0, clearProps: 'transform' })
+    return
+  }
   dockAway.value = true
   gsap.set(dock, { y: dockTravel() })
 }
@@ -862,8 +875,8 @@ const riseArchiveDock = () => {
   const dock = dockEl.value
   if (!dock) return Promise.resolve()
   dockTween?.kill()
-  if (prefersReducedMotion()) {
-    gsap.set(dock, { y: 0 })
+  if (archiveDockIsInline() || prefersReducedMotion()) {
+    gsap.set(dock, { y: 0, clearProps: archiveDockIsInline() ? 'transform' : '' })
     dockAway.value = false
     return Promise.resolve()
   }
@@ -904,11 +917,11 @@ const hideArchiveDock = () => {
     document.documentElement.classList.add('archive-header-shift')
   }
   if (prefersReducedMotion()) {
-    if (dock) gsap.set(dock, { y: dockTravel() })
+    if (dock && !archiveDockIsInline()) gsap.set(dock, { y: dockTravel() })
     if (header) gsap.set(header, { y: headerTravel() })
     return
   }
-  if (dock) {
+  if (dock && !archiveDockIsInline()) {
     dockTween = gsap.to(dock, {
       y: dockTravel(),
       duration: ARCHIVE_PDP_OPEN_S,
@@ -2039,6 +2052,8 @@ const onPageShow = () => scrollPageToTop()
 onMounted(() => {
   seedVisibility()
   scrollPageToTop()
+  syncFilterMenuDirection()
+  window.matchMedia(ARCHIVE_INLINE_DOCK_MQ).addEventListener('change', syncFilterMenuDirection)
   window.addEventListener('pageshow', onPageShow)
   document.addEventListener('pointerdown', onSearchPointerDown)
 
@@ -2077,6 +2092,7 @@ onBeforeUnmount(() => {
   releaseDocumentHeight()
   clearScatteredTiles()
   gridEl.value?.classList.remove('products__grid--meta-hold')
+  window.matchMedia(ARCHIVE_INLINE_DOCK_MQ).removeEventListener('change', syncFilterMenuDirection)
   window.removeEventListener('pageshow', onPageShow)
   document.removeEventListener('pointerdown', onSearchPointerDown)
   history.scrollRestoration = 'auto'
@@ -2841,22 +2857,33 @@ useHead(() => ({
 }
 
 @media (max-width: 860px) {
-  .products__header {
-    padding-bottom: 4.5rem;
+  .products {
+    padding-bottom: 2rem;
   }
 
-  .products__dock {
-    left: var(--gutter, 16px);
-    right: var(--gutter, 16px);
-    bottom: calc(16px + var(--stack-clearance, 0px));
+  .products__header {
+    position: relative;
+    top: auto;
+    padding-bottom: 20px;
+  }
+
+  .products__dock,
+  .products__dock--away {
+    position: relative;
+    left: unset;
+    right: unset;
+    bottom: unset;
+    z-index: 2;
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-end;
     gap: 0.5rem;
-    padding: 0;
+    padding: var(--gutter);
+    transform: none;
   }
 
   .products__mode {
+    display: none;
     position: relative;
     left: auto;
     align-self: flex-start;
@@ -2883,8 +2910,8 @@ useHead(() => ({
     max-width: none;
   }
 
-  :global(html.bucket-push) .products__dock {
-    bottom: calc(16px + var(--bucket-push, 0px));
+  .products__grid-wrap {
+    padding-bottom: 2rem;
   }
 }
 </style>

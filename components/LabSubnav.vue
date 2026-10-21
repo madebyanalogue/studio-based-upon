@@ -23,6 +23,7 @@ const links = [
   { to: '/webgl-home', label: 'WebGL home' },
   { to: '/webgl-metallic', label: 'WebGL metallic' },
   { to: '/intro-lab', label: 'Intro lab' },
+  { to: '/d3-pick', label: 'D3 pick' },
 ] as const
 
 const isActive = (to: string) =>

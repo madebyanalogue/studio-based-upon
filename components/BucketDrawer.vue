@@ -372,7 +372,10 @@ const galleryIndex = (item: BucketItem) => {
 const hydrateGalleries = async () => {
   const token = ++galleryHydrateToken
   const pending = items.value.filter(
-    (item) => (item.imageUrls?.length || 0) < 2 && productSlug(item),
+    (item) =>
+      (item.imageUrls?.length || 0) < 2 &&
+      typeof item.imageIndex !== 'number' &&
+      productSlug(item),
   )
   for (const item of pending) {
     if (token !== galleryHydrateToken) return

@@ -200,7 +200,7 @@
         />
       </label>
 
-      <div class="enquire__field enquire__attach" :class="{ 'enquire__attach--open': attachmentsOpen }">
+      <div class="enquire__field enquire__attach enquire__attach--files" :class="{ 'enquire__attach--open': attachmentsOpen }">
         <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
           <span class="interface">Attachments</span>
           <span class="enquire__attach-mark" aria-hidden="true" />
@@ -256,7 +256,7 @@
         </div>
       </div>
 
-      <div class="enquire__field enquire__attach" :class="{ 'enquire__attach--open': selectionsOpen }">
+      <div class="enquire__field enquire__attach enquire__attach--picks" :class="{ 'enquire__attach--open': selectionsOpen }">
         <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
           <span class="interface">Include selections</span>
           <span class="enquire__attach-mark" aria-hidden="true" />
@@ -312,6 +312,96 @@
             </div>
           </div>
         </div>
+        </div>
+      </div>
+
+      <div
+        class="enquire__field enquire__attach enquire__attach--info enquire__attach--about"
+        :class="{ 'enquire__attach--open': aboutOpen }"
+      >
+        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
+          <span class="interface">Working with Us</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div class="enquire__attach-sheet">
+          <button
+            type="button"
+            class="enquire__attach-trigger"
+            :aria-expanded="aboutOpen"
+            @click="toggleAbout"
+          >
+            <span class="interface">Working with Us</span>
+            <span class="enquire__attach-mark" aria-hidden="true" />
+          </button>
+          <div class="enquire__attach-panel">
+            <div class="enquire__attach-panel-inner">
+              <div class="enquire__attach-body enquire__info-copy">
+                <p class="mono-copy">
+                  You are a critical part of our process. We collaborate closely with our clients, designers
+                  and architects to realise work for private residences, yachts, hotels,
+                  restaurants and fashion houses.
+                </p>
+                <p class="mono-copy">
+                  Share a selection, a drawing, or a few words about the project. We will be
+                  in touch to talk through material, scale and how the work is made.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="enquire__field enquire__attach enquire__attach--info enquire__attach--contact"
+        :class="{ 'enquire__attach--open': contactOpen }"
+      >
+        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
+          <span class="interface">Contact</span>
+          <span class="enquire__attach-mark" aria-hidden="true" />
+        </button>
+        <div class="enquire__attach-sheet">
+          <button
+            type="button"
+            class="enquire__attach-trigger"
+            :aria-expanded="contactOpen"
+            @click="toggleContact"
+          >
+            <span class="interface">Contact</span>
+            <span class="enquire__attach-mark" aria-hidden="true" />
+          </button>
+          <div class="enquire__attach-panel">
+            <div class="enquire__attach-panel-inner">
+              <div class="enquire__attach-body enquire__info-copy">
+                <p class="mono-copy enquire__aside-line">
+                  <a :href="`tel:${phoneTel}`">{{ phone }}</a>
+                </p>
+                <p class="mono-copy enquire__aside-line">
+                  <a :href="`mailto:${enquiryEmail}`">{{ enquiryEmail }}</a>
+                </p>
+                <p v-if="studioAddress" class="mono-copy enquire__aside-line">
+                  {{ studioAddress }}
+                </p>
+                <div class="enquire__info-links">
+                  <a
+                    class="interface"
+                    href="https://www.instagram.com/studiobasedupon"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Ig
+                  </a>
+                  <a
+                    class="interface"
+                    href="https://www.pinterest.com/Studio_Based_Upon/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Pi
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       </div>
@@ -537,6 +627,8 @@ const windowDragging = ref(false)
 const windowDrag = ref({ x: 0, y: 0 })
 const attachmentsOpen = ref(false)
 const selectionsOpen = ref(false)
+const aboutOpen = ref(false)
+const contactOpen = ref(false)
 
 const WINDOW_CLIP_MS = 700
 /** Overlay fade-out; keep the sheet mounted until this finishes. */
@@ -599,14 +691,35 @@ const resetWindow = () => {
   windowDrag.value = { x: 0, y: 0 }
 }
 
+const closeAccordions = () => {
+  aboutOpen.value = false
+  contactOpen.value = false
+  attachmentsOpen.value = false
+  selectionsOpen.value = false
+}
+
+const toggleAbout = () => {
+  const next = !aboutOpen.value
+  closeAccordions()
+  aboutOpen.value = next
+}
+
+const toggleContact = () => {
+  const next = !contactOpen.value
+  closeAccordions()
+  contactOpen.value = next
+}
+
 const toggleAttachments = () => {
-  attachmentsOpen.value = !attachmentsOpen.value
-  if (attachmentsOpen.value) selectionsOpen.value = false
+  const next = !attachmentsOpen.value
+  closeAccordions()
+  attachmentsOpen.value = next
 }
 
 const toggleSelections = () => {
-  selectionsOpen.value = !selectionsOpen.value
-  if (selectionsOpen.value) attachmentsOpen.value = false
+  const next = !selectionsOpen.value
+  closeAccordions()
+  selectionsOpen.value = next
 }
 
 const selectionsSheetEl = ref<HTMLElement | null>(null)
@@ -1379,6 +1492,31 @@ useHead(() => {
   position: relative;
 }
 
+.enquire__attach--info {
+  display: none;
+}
+
+.enquire__info-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 var(--enquire-pad) var(--enquire-title-pad);
+}
+
+.enquire__info-copy .mono-copy {
+  min-width: 0;
+}
+
+.enquire__info-links {
+  display: flex;
+  gap: 16px;
+}
+
+.enquire__info-copy a {
+  color: currentColor;
+  text-decoration: none;
+}
+
 .enquire__field input:hover,
 .enquire__field textarea:hover,
 .enquire__field input:focus,
@@ -1666,6 +1804,55 @@ useHead(() => {
     display: none;
   }
 
+  .enquire__attach--info {
+    display: block;
+  }
+
+  .enquire__message-block > .enquire__field:not(.enquire__attach) {
+    order: 0;
+  }
+
+  .enquire__attach--about {
+    order: 1;
+  }
+
+  .enquire__attach--contact {
+    order: 2;
+  }
+
+  .enquire__attach--files {
+    order: 3;
+  }
+
+  .enquire__attach--picks {
+    order: 4;
+  }
+
+  .enquire__attach-sizer {
+    display: none;
+  }
+
+  .enquire__attach-sheet {
+    position: relative;
+    inset: auto;
+    max-height: none;
+    transform: none !important;
+  }
+
+  .enquire__message-block > .enquire__attach,
+  .enquire__message-block > .enquire__attach:first-of-type {
+    border-bottom: 0;
+  }
+
+  .enquire__message-block > .enquire__attach .enquire__attach-sheet,
+  .enquire__message-block > .enquire__attach:first-of-type .enquire__attach-sheet,
+  .enquire__message-block > .enquire__attach:first-of-type.enquire__attach--open .enquire__attach-sheet,
+  .enquire__attach--open + .enquire__attach .enquire__attach-sheet,
+  .enquire__message-block > .enquire__attach + .enquire__attach .enquire__attach-sheet {
+    border-top: var(--enquire-border-style);
+    border-bottom: 0;
+  }
+
   .enquire__columns,
   .enquire--intro .enquire__columns {
     grid-template-columns: minmax(0, 1fr);
@@ -1676,6 +1863,10 @@ useHead(() => {
 
   .enquire__stage {
     --enquire-copy: 16px;
+  }
+
+  .enquire__field textarea {
+    min-height: 8rem;
   }
 
   .enquire__fields {

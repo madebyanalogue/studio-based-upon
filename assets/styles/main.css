@@ -58,7 +58,7 @@
   --pdp-gallery-padding:60px;
   --pdp-gallery-gap: 8px;
   --products-grid-gap: 30px;
-  --products-grid-gap: 2px;
+  --products-grid-gap: 15px;
 
   --pdp-aside-left: 30px;
   --pdp-aside-top: 30px;
@@ -173,6 +173,7 @@ body.infinite-slider-active #app,
 body.discovery-active #app,
 body.d2-active #app,
 body.d3-active #app,
+body.d4-active #app,
 body:has(.curate-page) #app {
   padding-bottom: var(--bucket-push);
 }

@@ -2,20 +2,62 @@
   <section
     ref="rootEl"
     class="d3-tunnel"
+    :class="{
+      'd3-tunnel--clear': fieldBg === 'webgl',
+      'd3-tunnel--enter': pageEntering,
+      'd3-tunnel--leave': pageLeaving,
+    }"
     data-cursor="default"
     data-d3-gather
     aria-label="D3 tunnel"
     :style="{
-      '--item-w': `${CONFIG.itemWidth}px`,
-      '--item-h': `${CONFIG.itemHeight}px`,
+      '--item-w': `${itemSize.width}px`,
+      '--item-h': `${itemSize.height}px`,
     }"
   >
-    <div class="d3-tunnel__toggles">
+    <Teleport to="body">
+    <div v-show="showControls" class="d3-tunnel__toggles">
+      <SlidingPill
+        label="Preset"
+        :options="presetOptions"
+        :model-value="preset"
+        @update:model-value="applyPreset"
+      />
       <SlidingPill
         label="Field mode"
         :options="modeOptions"
         :model-value="mode"
         @update:model-value="mode = $event === 'control' ? 'control' : 'surrender'"
+      />
+      <SlidingPill
+        label="Backdrop"
+        :options="fieldBgOptions"
+        :model-value="fieldBg"
+        @update:model-value="setFieldBg"
+      />
+      <SlidingPill
+        label="Items per layer"
+        :options="densityOptions"
+        :model-value="String(itemsPerLayer)"
+        @update:model-value="setItemsPerLayer"
+      />
+      <SlidingPill
+        label="Landscape span"
+        :options="spanOptions"
+        :model-value="colSpanOn ? 'on' : 'off'"
+        @update:model-value="setColSpan"
+      />
+      <SlidingPill
+        label="Grid layout"
+        :options="layoutOptions"
+        :model-value="layout"
+        @update:model-value="setLayout"
+      />
+      <SlidingPill
+        label="Cell ratio"
+        :options="ratioOptions"
+        :model-value="ratio"
+        @update:model-value="setRatio"
       />
       <div class="d3-tunnel__panel" data-cursor="default">
         <label class="d3-tunnel__control interface">
@@ -30,6 +72,18 @@
             @input="onGapInput"
           />
           <span class="d3-tunnel__control-value">{{ layerGap }}</span>
+        </label>
+        <label class="d3-tunnel__control interface">
+          <span>Distance</span>
+          <input
+            v-model.number="cellGap"
+            type="range"
+            :min="CONFIG.cellGapMin"
+            :max="CONFIG.cellGapMax"
+            :step="CONFIG.cellGapStep"
+            aria-label="Cell distance"
+          />
+          <span class="d3-tunnel__control-value">{{ cellGap }}</span>
         </label>
         <label class="d3-tunnel__control interface">
           <span>Fade</span>
@@ -57,6 +111,7 @@
         </label>
       </div>
     </div>
+    </Teleport>
     <div ref="rigEl" class="d3-tunnel__rig">
       <div
         v-for="layer in layers"
@@ -68,15 +123,7 @@
           v-if="showGuides"
           class="d3-tunnel__grid"
           aria-hidden="true"
-          :style="{ '--orbit': `${CONFIG.orbit}px` }"
         >
-          <span class="d3-tunnel__grid-ring" />
-          <span
-            v-for="guide in SLOT_GUIDES"
-            :key="`ray-${guide.slot}`"
-            class="d3-tunnel__grid-ray"
-            :style="{ transform: `rotate(${guide.deg - 90}deg)` }"
-          />
           <span
             v-for="guide in SLOT_GUIDES"
             :key="`slot-${guide.slot}`"
@@ -93,10 +140,16 @@
           type="button"
           class="d3-tunnel__item"
           :class="{
-            'd3-tunnel__item--gathered': isGathered(card.productId),
-            'd3-tunnel__item--dragging': draggingId === card.productId,
+            'd3-tunnel__item--gathered': isGathered(card.frameId),
+            'd3-tunnel__item--dragging': draggingId === card.frameId,
+            'd3-tunnel__item--wide': card.colSpan > 1,
           }"
-          :style="{ left: card.left, top: card.top }"
+          :style="{
+            left: card.left,
+            top: card.top,
+            width: `${card.cellWidth}px`,
+            height: `${card.cellHeight}px`,
+          }"
           data-cursor="add-selection"
           :aria-label="`Gather ${card.title}`"
           @pointerdown="onItemPointerDown(card, $event)"
@@ -121,7 +174,7 @@ import {
   productPath,
   productSlug,
 } from '~/composables/useProductCatalog'
-import { productIdFromBucketId } from '~/composables/useBucket'
+import { bucketItemId } from '~/composables/useBucket'
 
 type TunnelItem = {
   _id: string
@@ -133,6 +186,8 @@ type TunnelItem = {
   linkType?: string
   image?: { asset?: { url?: string; _id?: string } }
   gallery?: { asset?: { url?: string; _id?: string } }[]
+  imageIndex?: number
+  frameAssetId?: string
 }
 
 type TunnelCard = {
@@ -144,15 +199,69 @@ type TunnelCard = {
   itemType: string
   link: string | null
   imageUrls: string[]
+  imageIndex: number
+  frameId: string
   left: string
   top: string
   slot: number
+  colSpan: number
+  cellWidth: number
+  cellHeight: number
 }
 
-const SLOTS = 8
-const FILLED_SLOTS = [4, 5]
-const ITEMS_PER_LAYER = FILLED_SLOTS.length
-const PAIR_GAP = 5
+const LAYOUTS = {
+  '3×3': { cols: 3, rows: 3 },
+  '2×3': { cols: 3, rows: 2 },
+  '2×5': { cols: 5, rows: 2 },
+  '5×2': { cols: 2, rows: 5 },
+  '3×5': { cols: 5, rows: 3 },
+  '5×3': { cols: 3, rows: 5 },
+} as const
+type GridLayout = keyof typeof LAYOUTS
+const RATIOS = {
+  '1:1': { w: 1, h: 1 },
+  '3:2': { w: 3, h: 2 },
+  '2:3': { w: 2, h: 3 },
+  '7:9': { w: 7, h: 9 },
+  '7:10': { w: 7, h: 10 },
+  '4:3': { w: 4, h: 3 },
+} as const
+type CellRatio = keyof typeof RATIOS
+const DENSITY_VALUES = [2, 3, 4] as const
+type LayerDensity = (typeof DENSITY_VALUES)[number]
+const PRESETS = {
+  free: { id: 'free', label: 'Free' },
+  selected: {
+    id: 'selected',
+    label: 'Selected',
+    layout: '2×5' as const,
+    ratio: '7:9' as const,
+    itemsPerLayer: 3 as LayerDensity,
+    layerGap: 600,
+    cellGap: 0,
+    fadeFar: 2,
+    nearCut: 1500,
+    colSpan: false,
+  },
+  gallery: {
+    id: 'gallery',
+    label: 'Gallery',
+    layout: '2×5' as const,
+    ratio: '7:10' as const,
+    itemsPerLayer: 4 as LayerDensity,
+    layerGap: 800,
+    cellGap: 0,
+    fadeFar: 2,
+    nearCut: 1500,
+    colSpan: true,
+  },
+} as const
+type FieldPreset = keyof typeof PRESETS
+type SlotPlace = {
+  slot: number
+  colSpan: 1 | 2
+}
+const ITEM_BASE = 240
 const CONFIG = {
   scrollSpeed: 2.4,
   layerGap: 600,
@@ -160,14 +269,15 @@ const CONFIG = {
   layerGapMax: 4000,
   layerGapStep: 200,
   lerp: 0.08,
-  itemWidth: 180,
-  itemHeight: 240,
-  orbit: 380,
+  cellGap: 0,
+  cellGapMin: 0,
+  cellGapMax: 160,
+  cellGapStep: 4,
   lookEnabled: false,
   lookTilt: 14,
   lookShift: 56,
   lookLerp: 0.1,
-  fadeFar: 3,
+  fadeFar: 2,
   fadeFarMin: 1,
   fadeFarMax: 10,
   fadeFarStep: 0.5,
@@ -177,41 +287,97 @@ const CONFIG = {
   nearCutStep: 150,
 }
 
-const slotCenter = (slot: number) => {
-  const angle = (slot / SLOTS) * Math.PI * 2 - Math.PI / 2
-  let x = Math.cos(angle) * CONFIG.orbit
-  let y = Math.sin(angle) * CONFIG.orbit
-  // 5 sits 5px to the right of 6; 4 sits 5px to the left of 2.
-  if (slot === 5) {
-    const left = slotCenter(6)
-    x = left.x + CONFIG.itemWidth + PAIR_GAP
-    y = left.y
-  } else if (slot === 4) {
-    const right = slotCenter(2)
-    x = right.x - CONFIG.itemWidth - PAIR_GAP
-    y = right.y
-  }
-  const ray = Math.atan2(y, x)
+const openSlotsFor = (cols: number, rows: number) => {
+  const total = cols * rows
+  const centerCol = Math.floor(cols / 2)
+  const centerRow = Math.floor(rows / 2)
+  return Array.from({ length: total }, (_, slot) => slot).filter((slot) => {
+    const col = slot % cols
+    const row = Math.floor(slot / cols)
+    if (cols % 2 === 1 && rows % 2 === 1) {
+      return !(col === centerCol && row === centerRow)
+    }
+    if (cols % 2 === 1) return col !== centerCol
+    if (rows % 2 === 1) return row !== centerRow
+    return true
+  })
+}
+
+const slotCenter = (
+  slot: number,
+  cols: number,
+  rows: number,
+  width: number,
+  height: number,
+  gap: number,
+) => {
+  const col = slot % cols
+  const row = Math.floor(slot / cols)
+  const gridW = cols * width + (cols - 1) * gap
+  const gridH = rows * height + (rows - 1) * gap
   return {
-    angle: ray,
-    deg: (ray * 180) / Math.PI,
-    x,
-    y,
+    x: -gridW / 2 + col * (width + gap) + width / 2,
+    y: -gridH / 2 + row * (height + gap) + height / 2,
   }
 }
 
-const SLOT_GUIDES = Array.from({ length: SLOTS }, (_, slot) => {
-  const { deg, x, y } = slotCenter(slot)
-  return {
-    slot,
-    deg,
-    left: `${x - CONFIG.itemWidth / 2}px`,
-    top: `${y - CONFIG.itemHeight / 2}px`,
+const mulberry32 = (seed: number) => {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
-})
+}
 
-const contentLayerCountFor = (total: number) => Math.ceil(total / ITEMS_PER_LAYER)
-const totalLayerCountFor = (total: number) => Math.max(contentLayerCountFor(total), 6)
+const pickSlots = (count: number, layer: number, seed: number, openSlots: number[]) => {
+  const rand = mulberry32(seed * 1009 + layer * 9176 + count * 13 + 1)
+  const pool = [...openSlots]
+  for (let i = pool.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1))
+    const swap = pool[i]!
+    pool[i] = pool[j]!
+    pool[j] = swap
+  }
+  return pool.slice(0, count)
+}
+
+const placesForLayer = (
+  layer: number,
+  count: number,
+  seed: number,
+  open: number[],
+  cols: number,
+  span: boolean,
+): SlotPlace[] => {
+  const asSingle = (slots: number[]): SlotPlace[] =>
+    slots.map((slot) => ({ slot, colSpan: 1 }))
+  if (!span || cols < 2 || count < 1) {
+    return asSingle(pickSlots(count, layer, seed, open))
+  }
+  const spannable = open.filter((slot) => {
+    const col = slot % cols
+    return col + 1 < cols && open.includes(slot + 1)
+  })
+  if (!spannable.length) return asSingle(pickSlots(count, layer, seed, open))
+  const rand = mulberry32(seed * 1009 + layer * 9176 + 41)
+  const spanSlot = spannable[Math.floor(rand() * spannable.length)]!
+  const blocked = new Set([spanSlot, spanSlot + 1])
+  const rest = pickSlots(
+    Math.max(0, count - 1),
+    layer,
+    seed,
+    open.filter((slot) => !blocked.has(slot)),
+  )
+  return [{ slot: spanSlot, colSpan: 2 }, ...asSingle(rest)]
+}
+
+const contentLayerCountFor = (total: number, perLayer: number) =>
+  Math.ceil(total / perLayer)
+const totalLayerCountFor = (total: number, perLayer: number) =>
+  Math.max(contentLayerCountFor(total, perLayer), 6)
 
 const props = defineProps<{
   items?: TunnelItem[]
@@ -228,7 +394,46 @@ const heldIds = new Set<string>()
 const heldGhosts = new Map<string, HTMLImageElement>()
 const holdTick = ref(0)
 const showGuides = ref(false)
-const layerGap = ref(CONFIG.layerGap)
+const showControls = ref(false)
+const pageEntering = ref(true)
+const pageLeaving = ref(false)
+const layerGap = ref(PRESETS.gallery.layerGap)
+const cellGap = ref(CONFIG.cellGap)
+
+const layout = ref<GridLayout>('2×5')
+const layoutOptions = (Object.keys(LAYOUTS) as GridLayout[]).map((id) => ({
+  id,
+  label: id,
+}))
+const ratio = ref<CellRatio>('7:10')
+const ratioOptions = (Object.keys(RATIOS) as CellRatio[]).map((id) => ({
+  id,
+  label: id,
+}))
+
+const grid = computed(() => LAYOUTS[layout.value])
+const itemSize = computed(() => {
+  const { w, h } = RATIOS[ratio.value]
+  return {
+    width: ITEM_BASE,
+    height: Math.round((ITEM_BASE * h) / w),
+  }
+})
+const openSlots = computed(() => openSlotsFor(grid.value.cols, grid.value.rows))
+
+const SLOT_GUIDES = computed(() => {
+  const { cols, rows } = grid.value
+  const { width, height } = itemSize.value
+  const gap = cellGap.value
+  return Array.from({ length: cols * rows }, (_, slot) => {
+    const { x, y } = slotCenter(slot, cols, rows, width, height, gap)
+    return {
+      slot,
+      left: `${x - width / 2}px`,
+      top: `${y - height / 2}px`,
+    }
+  })
+})
 /** How many layer-gaps until distant cards are fully veiled. `,` / `.` */
 const fadeFar = ref(CONFIG.fadeFar)
 /** Close-up cards stay solid until this z, then cut. `;` / `'`. */
@@ -238,6 +443,80 @@ const modeOptions = [
   { id: 'control', label: 'Control' },
   { id: 'surrender', label: 'Surrender' },
 ]
+const fieldBg = ref<'cream' | 'webgl'>('cream')
+const fieldBgOptions = [
+  { id: 'cream', label: 'Cream' },
+  { id: 'webgl', label: 'WebGL' },
+]
+const setFieldBg = (id: string) => {
+  fieldBg.value = id === 'webgl' ? 'webgl' : 'cream'
+}
+const syncFieldBgClass = () => {
+  if (!import.meta.client) return
+  document.body.classList.toggle('d3-clear', fieldBg.value === 'webgl')
+}
+watch(fieldBg, syncFieldBgClass)
+const itemsPerLayer = ref<LayerDensity>(PRESETS.gallery.itemsPerLayer)
+const densityOptions = DENSITY_VALUES.map((n) => ({ id: String(n), label: String(n) }))
+const colSpanOn = ref(PRESETS.gallery.colSpan)
+const spanOptions = [
+  { id: 'off', label: 'Off' },
+  { id: 'on', label: '2 cells' },
+]
+const preset = ref<FieldPreset>('gallery')
+const presetOptions = (Object.keys(PRESETS) as FieldPreset[]).map((id) => ({
+  id,
+  label: PRESETS[id].label,
+}))
+const shuffleSeed = ref(1)
+
+const applyPreset = (id: string) => {
+  if (id === 'selected' || id === 'gallery') {
+    const next = PRESETS[id]
+    layout.value = next.layout
+    ratio.value = next.ratio
+    itemsPerLayer.value = next.itemsPerLayer
+    setLayerGap(next.layerGap)
+    cellGap.value = next.cellGap
+    fadeFar.value = next.fadeFar
+    nearCut.value = next.nearCut
+    colSpanOn.value = next.colSpan
+    preset.value = id
+    shuffleSeed.value += 1
+    return
+  }
+  preset.value = 'free'
+}
+
+const setColSpan = (id: string) => {
+  const next = id === 'on'
+  if (next === colSpanOn.value) return
+  colSpanOn.value = next
+  shuffleSeed.value += 1
+}
+
+const setLayout = (id: string) => {
+  if (!(id in LAYOUTS) || id === layout.value) return
+  layout.value = id as GridLayout
+  preset.value = 'free'
+  shuffleSeed.value += 1
+}
+
+const setRatio = (id: string) => {
+  if (!(id in RATIOS)) return
+  ratio.value = id as CellRatio
+  const current = PRESETS[preset.value]
+  if ('ratio' in current && id !== current.ratio) preset.value = 'free'
+}
+
+const setItemsPerLayer = (id: string) => {
+  const next = Number(id)
+  if (next !== 2 && next !== 3 && next !== 4) return
+  if (next === itemsPerLayer.value) return
+  itemsPerLayer.value = next
+  preset.value = 'free'
+  shuffleSeed.value += 1
+}
 const offsets = reactive<Record<string, { x: number; y: number }>>({})
 let flights = 0
 
@@ -286,6 +565,11 @@ const onKeyDown = (event: KeyboardEvent) => {
     showGuides.value = !showGuides.value
     return
   }
+  if (event.key === 'c' || event.key === 'C') {
+    event.preventDefault()
+    showControls.value = !showControls.value
+    return
+  }
   if (event.key === '[' || event.key === '-') {
     event.preventDefault()
     setLayerGap(layerGap.value - CONFIG.layerGapStep)
@@ -317,21 +601,38 @@ const onKeyDown = (event: KeyboardEvent) => {
   }
 }
 
+const pickFrame = (item: TunnelItem) => {
+  const frames = productGalleryFrames(item)
+  const assetId = item.frameAssetId
+  const matched = assetId
+    ? frames.findIndex((frame) => frame.asset?._id === assetId)
+    : -1
+  const index =
+    matched >= 0
+      ? matched
+      : typeof item.imageIndex === 'number'
+        ? item.imageIndex
+        : 0
+  const frame = frames[index] || productCoverFrame(item) || frames[0]
+  return { frames, frame, index: frames.indexOf(frame) >= 0 ? frames.indexOf(frame) : index }
+}
+
 const cards = computed(() => {
-  const next: Omit<TunnelCard, 'key' | 'left' | 'top' | 'slot'>[] = []
+  const next: Omit<TunnelCard, 'key' | 'left' | 'top' | 'slot' | 'colSpan' | 'cellWidth' | 'cellHeight'>[] = []
   for (const item of props.items || []) {
     const slug = productSlug(item) || (typeof item.slug === 'string' ? item.slug : item.slug?.current) || item._id
     if (!slug) continue
-    const cover = productCoverFrame(item)
-    const src = (cover ? imageUrl(cover, 900) : '') || (cover?.asset ? getImageSrc(cover.asset) : '')
+    const { frames, frame, index } = pickFrame(item)
+    const src = (frame ? imageUrl(frame, 900) : '') || (frame?.asset ? getImageSrc(frame.asset) : '')
     if (!src) continue
-    const frames = productGalleryFrames(item)
     const imageUrls = galleryFromAssets(frames, (source) => imageUrl(source, 1600) || '').filter(Boolean)
     next.push({
       src,
       title: item.title || 'Untitled',
       slug,
       productId: item._id,
+      frameId: bucketItemId(item._id, index),
+      imageIndex: index,
       itemType: item.category || item.type || 'Work',
       link: productPath(item),
       imageUrls: imageUrls.length ? imageUrls : [src],
@@ -342,36 +643,54 @@ const cards = computed(() => {
 
 const gatheredIds = computed(() => {
   const ids = new Set<string>()
-  for (const item of pileItems.value) ids.add(productIdFromBucketId(item.id))
+  for (const item of pileItems.value) ids.add(item.id)
   return ids
 })
 
-const isGathered = (productId: string) => {
+const isGathered = (frameId: string) => {
   void holdTick.value
-  return gatheredIds.value.has(productId) && !heldIds.has(productId)
+  return gatheredIds.value.has(frameId) && !heldIds.has(frameId)
 }
 
 const layers = computed(() => {
   const images = cards.value
   const total = images.length
   if (!total) return []
-  const contentLayers = contentLayerCountFor(total)
-  const count = totalLayerCountFor(total)
+  const perLayer = itemsPerLayer.value
+  const seed = shuffleSeed.value
+  const contentLayers = contentLayerCountFor(total, perLayer)
+  const count = totalLayerCountFor(total, perLayer)
   return Array.from({ length: count }, (_, index) => {
-    const start = (index % contentLayers) * ITEMS_PER_LAYER
+    const sourceIndex = index % contentLayers
+    const start = sourceIndex * perLayer
+    const { cols, rows } = grid.value
+    const { width, height } = itemSize.value
+    const gap = cellGap.value
+    const places = placesForLayer(
+      sourceIndex,
+      perLayer,
+      seed,
+      openSlots.value,
+      cols,
+      colSpanOn.value,
+    )
     const placed: TunnelCard[] = []
-    for (let i = 0; i < FILLED_SLOTS.length; i += 1) {
-      const slot = FILLED_SLOTS[i]
+    for (let i = 0; i < places.length; i += 1) {
       const image = images[start + i]
-      if (!image) break
-      const { x, y } = slotCenter(slot)
-      const offset = offsets[image.productId]
+      const place = places[i]
+      if (!image || place == null) break
+      const { x, y } = slotCenter(place.slot, cols, rows, width, height, gap)
+      const offset = offsets[image.frameId]
+      const cellWidth = place.colSpan * width + (place.colSpan - 1) * gap
       placed.push({
         ...image,
-        slot,
-        key: `${index}-${image.productId}-${slot}`,
-        left: `${x - CONFIG.itemWidth / 2 + (offset?.x || 0)}px`,
-        top: `${y - CONFIG.itemHeight / 2 + (offset?.y || 0)}px`,
+        slot: place.slot,
+        colSpan: place.colSpan,
+        cellWidth,
+        cellHeight: height,
+        key: `${index}-${image.frameId}-${place.slot}`,
+        left: `${x - width / 2 + (offset?.x || 0)}px`,
+        top: `${y - height / 2 + (offset?.y || 0)}px`,
       })
     }
     return { index, baseZ: -index * layerGap.value, cards: placed }
@@ -387,7 +706,7 @@ const tunnelDepth = () => {
   const total = cards.value.length
   const gap = layerGap.value
   if (!total) return gap
-  return totalLayerCountFor(total) * gap
+  return totalLayerCountFor(total, itemsPerLayer.value) * gap
 }
 
 const exitPoint = 1500
@@ -404,14 +723,19 @@ const lookTarget = { x: 0, y: 0 }
 const lookCurrent = { x: 0, y: 0 }
 
 const overlayFor = (z: number) => {
-  const visibleDepth = fadeFar.value * layerGap.value
   if (z > nearCut.value) return 1
   if (z > 0) return 0
-  if (z > -visibleDepth) {
-    const progress = Math.abs(z) / visibleDepth
-    return progress * progress
-  }
-  return 1
+  const gap = layerGap.value
+  if (gap <= 0) return 0
+  const layersBack = Math.abs(z) / gap
+  /** Cream veil on the plane one gap behind — big step off the nearest. */
+  const first = 0.82
+  if (layersBack <= 1) return first * layersBack
+  // fadeFar ~2 still leaves layers 2–3 readable, then cuts to hidden.
+  const far = Math.max(fadeFar.value, 1) * 1.75
+  if (layersBack >= far) return 1
+  const t = (layersBack - 1) / (far - 1)
+  return first + (1 - first) * t * t
 }
 
 const step = () => {
@@ -443,9 +767,11 @@ const step = () => {
     z = ((z % depth) + depth) % depth
     z = z - depth + exitPoint
     const overlay = Math.min(1, Math.max(0, overlayFor(z)))
+    const webgl = fieldBg.value === 'webgl'
     gsap.set(el, {
       z,
-      '--overlay': overlay,
+      '--overlay': webgl ? 0 : overlay,
+      '--fade': overlay,
       visibility: overlay >= 1 ? 'hidden' : 'visible',
     })
   })
@@ -453,10 +779,10 @@ const step = () => {
 
 const fromUi = (target: EventTarget | null) =>
   target instanceof Element &&
-  !!target.closest('.header, .bucket, .product-overlay')
+  !!target.closest('.header, .bucket, .product-overlay, .d3-tunnel__toggles')
 
 const onWheel = (event: WheelEvent) => {
-  if (isOpen.value || fromUi(event.target)) return
+  if (isOpen.value || pageEntering.value || pageLeaving.value || fromUi(event.target)) return
   event.preventDefault()
   targetScroll += event.deltaY * CONFIG.scrollSpeed
 }
@@ -489,18 +815,18 @@ const onItemPointerDown = (card: TunnelCard, event: PointerEvent) => {
   pointerDown = { x: event.clientX, y: event.clientY }
   pointerDragged = false
   const rect = el.getBoundingClientRect()
-  const current = offsets[card.productId] || { x: 0, y: 0 }
+  const current = offsets[card.frameId] || { x: 0, y: 0 }
   drag = {
     pointerId: event.pointerId,
-    productId: card.productId,
+    productId: card.frameId,
     startX: event.clientX,
     startY: event.clientY,
     originX: current.x,
     originY: current.y,
-    scaleX: rect.width / CONFIG.itemWidth || 1,
-    scaleY: rect.height / CONFIG.itemHeight || 1,
+    scaleX: rect.width / card.cellWidth || 1,
+    scaleY: rect.height / card.cellHeight || 1,
   }
-  draggingId.value = card.productId
+  draggingId.value = card.frameId
   el.setPointerCapture?.(event.pointerId)
 }
 
@@ -551,7 +877,7 @@ const releaseHold = (id: string) => {
 
 const onPileFly = (phase: 'shown' | 'done', itemId?: string) => {
   if (phase === 'shown') {
-    const id = itemId ? productIdFromBucketId(itemId) : heldIds.values().next().value
+    const id = itemId || heldIds.values().next().value
     if (id) releaseHold(id)
     return
   }
@@ -565,7 +891,7 @@ const onGather = (card: TunnelCard, event: MouseEvent) => {
   pointerDown = null
   pointerDragged = false
   if (dragged || event.button !== 0) return
-  if (gatheredIds.value.has(card.productId) || heldIds.has(card.productId)) return
+  if (gatheredIds.value.has(card.frameId) || heldIds.has(card.frameId)) return
   const source =
     (event.currentTarget instanceof HTMLElement &&
       event.currentTarget.querySelector<HTMLElement>('img')) ||
@@ -574,7 +900,7 @@ const onGather = (card: TunnelCard, event: MouseEvent) => {
   const rect = source.getBoundingClientRect()
   if (rect.width < 2 || rect.height < 2) return
 
-  heldIds.add(card.productId)
+  heldIds.add(card.frameId)
   holdTick.value += 1
   flights += 1
   const ghost = document.createElement('img')
@@ -595,29 +921,125 @@ const onGather = (card: TunnelCard, event: MouseEvent) => {
     zIndex: '400',
   })
   document.body.appendChild(ghost)
-  heldGhosts.set(card.productId, ghost)
+  heldGhosts.set(card.frameId, ghost)
 
   const flying = requestSave(
     {
-      id: card.productId,
+      id: card.frameId,
       title: card.title,
       imageUrl: card.src,
       itemType: card.itemType,
       link: card.link,
-      imageUrls: card.imageUrls,
+      imageUrls: [card.src],
+      imageIndex: card.imageIndex,
     },
     { source: ghost },
   )
   if (flying) return
   flights = Math.max(0, flights - 1)
-  releaseHold(card.productId)
+  releaseHold(card.frameId)
 }
+
+const prefersReducedMotion = () =>
+  import.meta.client && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+
+const setItemClip = (el: HTMLElement, top: number) => {
+  el.style.clipPath = `inset(${top}% 0% 0% 0%)`
+}
+
+const clearItemClip = (el: HTMLElement) => {
+  el.style.removeProperty('clip-path')
+}
+
+const visibleLayersByNear = () =>
+  layerEls
+    .filter((el): el is HTMLElement => !!el && getComputedStyle(el).visibility !== 'hidden')
+    .sort((a, b) => Number(gsap.getProperty(b, 'z')) - Number(gsap.getProperty(a, 'z')))
+
+const layerItems = (layer: HTMLElement) =>
+  [...layer.querySelectorAll<HTMLElement>('.d3-tunnel__item')]
+
+const wipeLayers = (to: number, duration: number, from = to === 0 ? 100 : 0) => {
+  const layers = visibleLayersByNear()
+  if (!layers.length) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    clipTween?.kill()
+    clipTween = gsap.timeline({
+      onComplete: () => {
+        clipTween = null
+        resolve()
+      },
+    })
+    layers.forEach((layer, index) => {
+      const items = layerItems(layer)
+      if (!items.length) return
+      const state = { amount: from }
+      const apply = () => items.forEach((el) => setItemClip(el, state.amount))
+      apply()
+      clipTween!.to(
+        state,
+        {
+          amount: to,
+          duration,
+          ease: 'power3.inOut',
+          onUpdate: apply,
+        },
+        index * 0.05,
+      )
+    })
+  })
+}
+
+let clipTween: gsap.core.Timeline | null = null
+let leavePromise: Promise<void> | null = null
+
+const playPageEnter = async () => {
+  if (!import.meta.client || !pageEntering.value) return
+  await nextTick()
+  await nextFrame()
+  step()
+  if (prefersReducedMotion()) {
+    visibleLayersByNear().forEach((layer) => layerItems(layer).forEach(clearItemClip))
+    pageEntering.value = false
+    return
+  }
+  await wipeLayers(0, 0.95, 100)
+  visibleLayersByNear().forEach((layer) => layerItems(layer).forEach(clearItemClip))
+  pageEntering.value = false
+}
+
+const playPageLeave = () => {
+  if (leavePromise) return leavePromise
+  leavePromise = (async () => {
+    pageLeaving.value = true
+    pageEntering.value = false
+    if (prefersReducedMotion()) {
+      visibleLayersByNear().forEach((layer) =>
+        layerItems(layer).forEach((el) => setItemClip(el, 100)),
+      )
+      return
+    }
+    await wipeLayers(100, 0.5, 0)
+  })()
+  return leavePromise
+}
+
+onBeforeRouteLeave((to, from) => {
+  if (isOverlayHistoryRestore() || to.path === from.path) return
+  return playPageLeave()
+})
 
 onMounted(() => {
   if (!tickerOn) {
     gsap.ticker.add(step)
     tickerOn = true
   }
+  syncFieldBgClass()
   registerPileFly(onPileFly)
   window.addEventListener('wheel', onWheel, { passive: false })
   window.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -626,9 +1048,12 @@ onMounted(() => {
   window.addEventListener('pointerup', onItemPointerUp)
   window.addEventListener('pointercancel', onItemPointerUp)
   window.addEventListener('keydown', onKeyDown)
+  void playPageEnter()
 })
 
 onUnmounted(() => {
+  clipTween?.kill()
+  clipTween = null
   if (tickerOn) gsap.ticker.remove(step)
   tickerOn = false
   registerPileFly(null)
@@ -640,6 +1065,7 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onItemPointerUp)
   window.removeEventListener('pointercancel', onItemPointerUp)
   window.removeEventListener('keydown', onKeyDown)
+  document.body.classList.remove('d3-clear')
 })
 </script>
 
@@ -652,11 +1078,27 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.d3-tunnel--clear {
+  background: transparent;
+}
+
+.d3-tunnel--enter .d3-tunnel__item,
+.d3-tunnel--leave .d3-tunnel__item {
+  clip-path: inset(100% 0% 0% 0%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .d3-tunnel--enter .d3-tunnel__item,
+  .d3-tunnel--leave .d3-tunnel__item {
+    clip-path: none;
+  }
+}
+
 .d3-tunnel__toggles {
   position: fixed;
   left: 50%;
   bottom: calc(60px + var(--bucket-push, 0px));
-  z-index: 40;
+  z-index: 90;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -725,35 +1167,10 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-.d3-tunnel__grid-ring {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: calc(var(--orbit, 420px) * 2);
-  height: calc(var(--orbit, 420px) * 2);
-  margin-left: calc(var(--orbit, 420px) * -1);
-  margin-top: calc(var(--orbit, 420px) * -1);
-  border: 1px dashed color-mix(in srgb, var(--charcoal) 45%, transparent);
-  border-radius: 50%;
-  box-sizing: border-box;
-}
-
-.d3-tunnel__grid-ray {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 1px;
-  height: var(--orbit, 420px);
-  margin-left: -0.5px;
-  transform-origin: 50% 0;
-  background: color-mix(in srgb, var(--charcoal) 28%, transparent);
-}
-
 .d3-tunnel__grid-slot {
   position: absolute;
   width: var(--item-w, 180px);
   height: var(--item-h, 240px);
-  aspect-ratio: 3 / 4;
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--charcoal) 55%, transparent);
   background: color-mix(in srgb, var(--charcoal) 6%, transparent);
@@ -774,7 +1191,6 @@ onUnmounted(() => {
   z-index: 1;
   width: var(--item-w, 180px);
   height: var(--item-h, 240px);
-  aspect-ratio: 3 / 4;
   margin: 0;
   padding: 0;
   border: 0;
@@ -813,5 +1229,18 @@ onUnmounted(() => {
   background: var(--cream);
   opacity: var(--overlay, 1);
   pointer-events: none;
+}
+
+.d3-tunnel--clear .d3-tunnel__veil {
+  background: transparent;
+  opacity: 0;
+}
+
+.d3-tunnel--clear .d3-tunnel__item {
+  opacity: calc(1 - var(--fade, 0));
+}
+
+.d3-tunnel--clear .d3-tunnel__item--gathered {
+  opacity: 0;
 }
 </style>

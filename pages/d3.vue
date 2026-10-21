@@ -12,22 +12,14 @@
 <script setup lang="ts">
 import D3Tunnel from '~/components/D3Tunnel.vue'
 
-const INCLUDED_TYPES = new Set(['forms', 'surface', 'decorative', 'spirit', 'origin'])
+definePageMeta({
+  pageTransition: false,
+})
 
-const { discoveryItems: catalogItems } = await useLibraryCatalog()
-
-const discoveryItems = computed(() =>
-  catalogItems.value.filter((item) => {
-    if (item.precrafted) return false
-    const keys = [item.category, ...(item.categories || [])]
-      .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z]/g, ''))
-      .filter(Boolean)
-    return keys.some((key) => INCLUDED_TYPES.has(key))
-  }),
-)
+const { items: discoveryItems } = await useDiscoveryCatalog()
 
 useHead(() => ({
-  title: 'D3 — Studio Based Upon',
+  title: 'Discovery — Studio Based Upon',
   bodyAttrs: {
     class: 'd3-active',
   },
@@ -47,5 +39,14 @@ html:has(body.d3-active),
 body.d3-active {
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+html:has(body.d3-clear),
+body.d3-clear,
+body.d3-clear #app,
+body.d3-clear .page-wrapper,
+body.d3-clear .d3-page,
+body.d3-clear .d3-page__fallback {
+  background: transparent;
 }
 </style>

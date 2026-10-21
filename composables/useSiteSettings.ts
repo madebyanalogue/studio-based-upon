@@ -127,6 +127,7 @@ export const useSiteSettings = () => {
     { path: '/discovery', text: 'Discovery' },
     { path: '/d2', text: 'D2' },
     { path: '/d3', text: 'D3' },
+    { path: '/d4', text: 'D4' },
     { path: '/typology', text: 'Typology' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
     { path: '/curate', text: 'Pairings' },
@@ -173,6 +174,9 @@ export const useSiteSettings = () => {
       ) {
         path = '/discovery'
         text = 'Discovery'
+      } else if (path === '/d4' || text === 'D4') {
+        path = '/d4'
+        text = 'D4'
       } else if (path === '/d3' || text === 'D3') {
         path = '/d3'
         text = 'D3'
