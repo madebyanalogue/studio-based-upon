@@ -138,6 +138,7 @@
           @pointerdown="onItemPointerDown(card, $event)"
           @click.stop.prevent="onGather(card, $event)"
         >
+          <span class="d4-tunnel__backing" aria-hidden="true" />
           <img :src="card.src" :alt="card.title" draggable="false" />
           <span class="d4-tunnel__veil" aria-hidden="true" />
         </button>
@@ -1149,7 +1150,16 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+.d4-tunnel__backing {
+  position: absolute;
+  inset: 0;
+  background-color: var(--background-color, var(--cream));
+  opacity: 1;
+  pointer-events: none;
+}
+
 .d4-tunnel__item img {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -1172,11 +1182,12 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.d4-tunnel--clear .d4-tunnel__item {
+.d4-tunnel--clear .d4-tunnel__item img {
   opacity: calc(1 - var(--fade, 0));
 }
 
-.d4-tunnel--clear .d4-tunnel__item--gathered {
+.d4-tunnel--clear .d4-tunnel__item--gathered,
+.d4-tunnel--clear .d4-tunnel__item--gathered img {
   opacity: 0;
 }
 </style>

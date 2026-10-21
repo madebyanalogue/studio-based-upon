@@ -345,25 +345,51 @@ const columns: Record<
 
 const { returnImage } = useProductOverlay()
 
+/** Which half of which slide opened the overlay — same product can sit on both sides. */
+let openedHome: { side: Side; dataIndex: number } | null = null
+let pinnedFlipImg: HTMLImageElement | null = null
+
+const dataIndexFor = (slideIndex: number) => {
+  const len = props.slides.length
+  if (!len) return 0
+  return ((slideIndex % len) + len) % len
+}
+
+/** Match Flip to the visible crop, not the 112% bitmap that pokes out of the column. */
+const pinSplitFlipImage = (img: HTMLImageElement) => {
+  img.style.transform = 'translateY(0%)'
+  img.style.top = '0'
+  img.style.height = '100%'
+  pinnedFlipImg = img
+}
+
+const unpinSplitFlipImage = () => {
+  const img = pinnedFlipImg
+  pinnedFlipImg = null
+  if (!img) return
+  img.style.removeProperty('transform')
+  img.style.removeProperty('top')
+  img.style.removeProperty('height')
+}
+
 /** Keep the gallery frame that flew home. Flip lands on it; the slide must not snap back. */
 watch(returnImage, (value) => {
   if (!value?.productId || !value.src) return
-  for (const slide of props.slides) {
-    if (slide.left.productId === value.productId) {
-      slide.leftImage = value.src
-      slide.left.imageIndex = value.index
-    }
-    if (slide.right.productId === value.productId) {
-      slide.rightImage = value.src
-      slide.right.imageIndex = value.index
-    }
+  const home = openedHome
+  if (!home) return
+  const slide = props.slides[home.dataIndex]
+  if (!slide || slide[home.side].productId !== value.productId) return
+  if (home.side === 'left') {
+    slide.leftImage = value.src
+    slide.left.imageIndex = value.index
+  } else {
+    slide.rightImage = value.src
+    slide.right.imageIndex = value.index
   }
-  for (const side of ['left', 'right'] as const) {
-    for (const el of columns[side].visibleSlides.values()) {
-      if (el.dataset.productId !== value.productId) continue
-      const img = el.querySelector('img')
-      if (img) img.src = value.src
-    }
+  for (const [index, el] of columns[home.side].visibleSlides) {
+    if (dataIndexFor(index) !== home.dataIndex) continue
+    const img = el.querySelector('img')
+    if (img) img.src = value.src
   }
 })
 
@@ -1152,6 +1178,7 @@ const completeReveal = (slideIndex: number) =>
 
 const restoreAfterProduct = () => {
   openingProduct.value = false
+  unpinSplitFlipImage()
   for (const el of [leftEl.value, rightEl.value]) {
     if (!el) continue
     gsap.killTweensOf(el)
@@ -1212,9 +1239,8 @@ const openSide = async (side: Side, slideIndex: number) => {
   // so landing on the slide box then revealing the img causes a scale jump.
   const flipTarget =
     (clicked?.querySelector('img') as HTMLElement | null) || clicked
-  if (flipTarget instanceof HTMLImageElement) {
-    flipTarget.style.transform = 'translateY(0%)'
-  }
+  if (flipTarget instanceof HTMLImageElement) pinSplitFlipImage(flipTarget)
+  openedHome = { side, dataIndex: dataIndexFor(picked.slideIndex) }
   const flipSrc = side === 'left' ? picked.slide.leftImage : picked.slide.rightImage
   if (flipSrc) void prefetchImage(flipSrc)
   openProduct(picked.side.productSlug, {

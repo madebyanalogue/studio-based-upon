@@ -4,7 +4,6 @@
     class="d3-tunnel"
     :class="{
       'd3-tunnel--clear': fieldBg === 'webgl',
-      'd3-tunnel--control': mode === 'control',
       'd3-tunnel--enter': pageEntering,
       'd3-tunnel--leave': pageLeaving,
     }"
@@ -17,7 +16,7 @@
     }"
   >
     <Teleport to="body">
-    <div v-show="showModeToggle || showControls" class="d3-tunnel__toggles">
+    <div class="d3-tunnel__toggles">
       <div class="d3-tunnel__mode">
         <div
           class="d3-tunnel__meta mono"
@@ -28,7 +27,7 @@
           <p class="d3-tunnel__meta-provenance">{{ hoverProvenance }}</p>
         </div>
         <SlidingPill
-          v-show="showModeToggle"
+          v-show="showModeToggle || showControls"
           label="Field mode"
           :options="modeOptions"
           :model-value="mode"
@@ -143,11 +142,7 @@
       </div>
     </div>
     </Teleport>
-    <div
-      ref="rigEl"
-      class="d3-tunnel__rig"
-      :class="{ 'is-parked': planeActive }"
-    >
+    <div ref="rigEl" class="d3-tunnel__rig">
       <div
         v-for="layer in layers"
         :key="layer.index"
@@ -177,6 +172,7 @@
           :class="{
             'd3-tunnel__item--gathered': isGathered(card.frameId),
             'd3-tunnel__item--wide': card.colSpan > 1,
+            'd3-tunnel__item--tall': card.rowSpan > 1,
           }"
           :data-frame-id="card.frameId"
           :style="{
@@ -192,34 +188,9 @@
           @pointerdown="onItemPointerDown"
           @click.stop.prevent="onGather(card, $event)"
         >
+          <span class="d3-tunnel__backing" aria-hidden="true" />
           <img :src="card.src" :alt="card.title" draggable="false" />
           <span class="d3-tunnel__veil" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-    <div
-      ref="planeEl"
-      class="d3-tunnel__plane"
-      :class="{ 'is-parked': !planeActive }"
-      @pointerdown="onPlanePointerDown"
-    >
-      <div class="d3-tunnel__tiles" :style="planeTransform">
-        <button
-          v-for="(card, index) in cards"
-          :key="card.frameId"
-          type="button"
-          class="d3-tunnel__item"
-          :class="{ 'd3-tunnel__item--gathered': isGathered(card.frameId) }"
-          :data-frame-id="card.frameId"
-          :style="controlItemStyle(index)"
-          data-cursor="add-selection"
-          :aria-label="`Gather ${card.title}`"
-          @pointerenter="onItemHover(card, $event)"
-          @pointerleave="onItemUnhover"
-          @pointerdown="onItemPointerDown"
-          @click.stop.prevent="onGather(card, $event)"
-        >
-          <img :src="card.src" :alt="card.title" draggable="false" />
         </button>
       </div>
     </div>
@@ -228,7 +199,6 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
-import Lenis from 'lenis'
 import {
   galleryFromAssets,
   productCoverFrame,
@@ -269,6 +239,7 @@ type TunnelCard = {
   top: string
   slot: number
   colSpan: number
+  rowSpan: number
   cellWidth: number
   cellHeight: number
 }
@@ -284,6 +255,8 @@ const LAYOUTS = {
 type GridLayout = keyof typeof LAYOUTS
 const RATIOS = {
   '1:1': { w: 1, h: 1 },
+  '6:5': { w: 6, h: 5 },
+  '5:4': { w: 5, h: 4 },
   '3:2': { w: 3, h: 2 },
   '2:3': { w: 2, h: 3 },
   '7:9': { w: 7, h: 9 },
@@ -312,7 +285,7 @@ const PRESETS = {
     id: 'gallery',
     label: 'Gallery',
     layout: '2×5' as const,
-    ratio: '7:10' as const,
+    ratio: '7:9' as const,
     itemsPerLayer: 4 as LayerDensity,
     layerGap: 800,
     cellGap: 0,
@@ -334,11 +307,38 @@ const PRESETS = {
     startScroll: 1700,
     colSpan: true,
   },
+  columns: {
+    id: 'columns',
+    label: 'Columns',
+    layout: '2×3' as const,
+    ratio: '4:3' as const,
+    itemsPerLayer: 4 as LayerDensity,
+    layerGap: 600,
+    cellGap: 0,
+    fadeFar: 2,
+    nearCut: 1500,
+    startScroll: 1700,
+    colSpan: false,
+  },
+  freeflow: {
+    id: 'freeflow',
+    label: 'Freeflow',
+    layout: '3×5' as const,
+    ratio: '7:9' as const,
+    itemsPerLayer: 4 as LayerDensity,
+    layerGap: 800,
+    cellGap: 0,
+    fadeFar: 2,
+    nearCut: 1500,
+    startScroll: 1700,
+    colSpan: true,
+  },
 } as const
 type FieldPreset = keyof typeof PRESETS
 type SlotPlace = {
   slot: number
   colSpan: 1 | 2
+  rowSpan: 1 | 2
 }
 const ITEM_BASE = 240
 const CONFIG = {
@@ -367,6 +367,7 @@ const CONFIG = {
   startMin: 0,
   startMax: 8000,
   startStep: 100,
+  autoTunnel: 1.2,
 }
 
 const openSlotsFor = (cols: number, rows: number) => {
@@ -432,28 +433,42 @@ const placesForLayer = (
   seed: number,
   open: number[],
   cols: number,
+  rows: number,
   span: boolean,
 ): SlotPlace[] => {
   const asSingle = (slots: number[]): SlotPlace[] =>
-    slots.map((slot) => ({ slot, colSpan: 1 }))
-  if (!span || cols < 2 || count < 1) {
-    return asSingle(pickSlots(count, layer, seed, open))
-  }
-  const spannable = open.filter((slot) => {
+    slots.map((slot) => ({ slot, colSpan: 1, rowSpan: 1 }))
+  if (!span || count < 1) return asSingle(pickSlots(count, layer, seed, open))
+  const across = open.filter((slot) => {
     const col = slot % cols
     return col + 1 < cols && open.includes(slot + 1)
   })
+  const down = open.filter((slot) => {
+    const row = Math.floor(slot / cols)
+    return row + 1 < rows && open.includes(slot + cols)
+  })
+  const vertical = across.length === 0 && down.length > 0
+  const spannable = vertical ? down : across
   if (!spannable.length) return asSingle(pickSlots(count, layer, seed, open))
   const rand = mulberry32(seed * 1009 + layer * 9176 + 41)
   const spanSlot = spannable[Math.floor(rand() * spannable.length)]!
-  const blocked = new Set([spanSlot, spanSlot + 1])
+  const blocked = new Set(
+    vertical ? [spanSlot, spanSlot + cols] : [spanSlot, spanSlot + 1],
+  )
   const rest = pickSlots(
     Math.max(0, count - 1),
     layer,
     seed,
     open.filter((slot) => !blocked.has(slot)),
   )
-  return [{ slot: spanSlot, colSpan: 2 }, ...asSingle(rest)]
+  return [
+    {
+      slot: spanSlot,
+      colSpan: vertical ? 1 : 2,
+      rowSpan: vertical ? 2 : 1,
+    },
+    ...asSingle(rest),
+  ]
 }
 
 const contentLayerCountFor = (total: number, perLayer: number) =>
@@ -461,51 +476,47 @@ const contentLayerCountFor = (total: number, perLayer: number) =>
 const totalLayerCountFor = (total: number, perLayer: number) =>
   Math.max(contentLayerCountFor(total, perLayer), 6)
 
+const namedPreset = (
+  id: string | undefined,
+): Exclude<FieldPreset, 'free'> | null => {
+  if (
+    id === 'selected' ||
+    id === 'gallery' ||
+    id === 'tall' ||
+    id === 'columns' ||
+    id === 'freeflow'
+  ) {
+    return id
+  }
+  return null
+}
+
 const props = defineProps<{
   items?: TunnelItem[]
   controls?: boolean
   modeToggle?: boolean
   startScroll?: number
   ratio?: CellRatio
+  preset?: FieldPreset
   autoPlay?: boolean
 }>()
+
+const initialPreset = namedPreset(props.preset) ?? 'columns'
+const initial = PRESETS[initialPreset]
 
 const { imageUrl, getImageSrc } = useSanityImage()
 const { isOpen } = useProductOverlay()
 const { requestSave, items: pileItems, registerPileFly } = useBucket()
 
-const CONTROL = {
-  gap: 16,
-  gutter: 112,
-  aspect: 16 / 9,
-  morph: 0.9,
-  hold: 0.4,
-  zoom: 0.85,
-  zoomRows: 2.7,
-  ease: 'power3.inOut',
-  lenisDuration: 0.48,
-  wheelGain: 1.7,
-  flickMin: 0.12,
-  flickMax: 2.2,
-  flickMs: 260,
-  parallax: 28,
-  parallaxItem: 14,
-  parallaxLerp: 0.12,
-  autoTunnel: 1.2,
-  autoPan: 0.42,
-} as const
-const controlLenisEase = (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t))
-
 const rootEl = ref<HTMLElement | null>(null)
 const rigEl = ref<HTMLElement | null>(null)
-const planeEl = ref<HTMLElement | null>(null)
 const layerEls: HTMLElement[] = []
 const heldIds = new Set<string>()
 const heldGhosts = new Map<string, HTMLImageElement>()
 const holdTick = ref(0)
 const showGuides = ref(false)
 const showControls = ref(!!props.controls)
-const showModeToggle = computed(() => !!props.modeToggle || showControls.value)
+const showModeToggle = ref(false)
 /** Same placeholder as Materials & Forms product cards. */
 const hoverProvenance = "Sotheby's London, 2020"
 const hoverCard = ref<{ title: string } | null>(null)
@@ -530,16 +541,16 @@ const onItemUnhover = () => {
 }
 const pageEntering = ref(true)
 const pageLeaving = ref(false)
-const layerGap = ref(PRESETS.gallery.layerGap)
-const cellGap = ref(CONFIG.cellGap)
+const layerGap = ref(initial.layerGap)
+const cellGap = ref(initial.cellGap)
 
-const layout = ref<GridLayout>('2×5')
+const layout = ref<GridLayout>(initial.layout)
 const layoutOptions = (Object.keys(LAYOUTS) as GridLayout[]).map((id) => ({
   id,
   label: id,
 }))
 const ratio = ref<CellRatio>(
-  props.ratio && props.ratio in RATIOS ? props.ratio : PRESETS.gallery.ratio,
+  props.ratio && props.ratio in RATIOS ? props.ratio : initial.ratio,
 )
 const ratioOptions = (Object.keys(RATIOS) as CellRatio[]).map((id) => ({
   id,
@@ -576,285 +587,33 @@ const nearCut = ref(CONFIG.nearCut)
 const startScroll = ref(
   props.startScroll != null
     ? Math.min(CONFIG.startMax, Math.max(CONFIG.startMin, Math.round(props.startScroll)))
-    : PRESETS.gallery.startScroll,
+    : initial.startScroll,
 )
-const mode = ref<'control' | 'surrender'>('surrender')
-const planeActive = ref(false)
+const mode = ref<'control' | 'surrender'>(
+  initialPreset === 'freeflow' ? 'surrender' : 'control',
+)
 const modeOptions = [
   { id: 'control', label: 'Control' },
   { id: 'surrender', label: 'Surrender' },
 ]
-const viewport = reactive({ w: 1440, h: 900 })
-const view = reactive({ x: 0, y: 0, scale: 1 })
-const look = reactive({ x: 0, y: 0 })
-const lookGoal = { x: 0, y: 0 }
-const gridMetrics = reactive({ cols: 4, rows: 1, w: 1, h: 1 })
-let modeLock = false
-let measuringTunnel = false
-let modeTween: gsap.core.Animation | null = null
-let planeDrag: { x: number; y: number; viewX: number; viewY: number } | null = null
-let panPointer = false
-let panScrollKey = ''
-const panSamples: { t: number; x: number; y: number }[] = []
-type PanLenis = { wrapper: HTMLElement; content: HTMLElement; lenis: Lenis }
-let panX: PanLenis | null = null
-let panY: PanLenis | null = null
-
-const gridLeft = (index: number) =>
-  `${(index % gridMetrics.cols) * (itemSize.value.width + CONTROL.gap)}px`
-const gridTop = (index: number) =>
-  `${Math.floor(index / gridMetrics.cols) * (itemSize.value.height + CONTROL.gap)}px`
-
-const controlItemStyle = (index: number) => {
-  const cols = Math.max(1, gridMetrics.cols)
-  const rows = Math.max(1, gridMetrics.rows)
-  const col = index % cols
-  const row = Math.floor(index / cols)
-  const depth =
-    0.45 +
-    Math.hypot(col - (cols - 1) / 2, row - (rows - 1) / 2) * 0.18
-  return {
-    left: gridLeft(index),
-    top: gridTop(index),
-    width: `${itemSize.value.width}px`,
-    height: `${itemSize.value.height}px`,
-    transform: `translate3d(${-look.x * CONTROL.parallaxItem * depth}px, ${-look.y * CONTROL.parallaxItem * depth}px, 0)`,
-  }
-}
-
-const planeTransform = computed(() => ({
-  transform: `translate3d(${viewport.w / 2 + view.x - look.x * CONTROL.parallax}px, ${viewport.h / 2 + view.y - look.y * CONTROL.parallax}px, 0) scale(${view.scale}) translate3d(${-gridMetrics.w / 2}px, ${-gridMetrics.h / 2}px, 0)`,
-}))
-
-const syncViewport = () => {
-  if (!import.meta.client) return
-  viewport.w = window.innerWidth
-  viewport.h = window.innerHeight
-}
-
-const gridShape = (count: number, aspect: number) => {
-  const safe = Math.max(1, count)
-  const target = Math.max(aspect, 0.01)
-  const stepW = itemSize.value.width + CONTROL.gap
-  const stepH = itemSize.value.height + CONTROL.gap
-  let bestCols = 1
-  let bestScore = Infinity
-  for (let cols = 1; cols <= safe; cols += 1) {
-    const rows = Math.ceil(safe / cols)
-    const width = cols * stepW - CONTROL.gap
-    const height = rows * stepH - CONTROL.gap
-    const shape = width / Math.max(height, 0.001)
-    const last = safe - (rows - 1) * cols
-    const score =
-      Math.abs(Math.log(shape / target)) + (rows > 1 && last / cols < 0.45 ? 0.12 : 0)
-    if (score < bestScore) {
-      bestScore = score
-      bestCols = cols
-    }
-  }
-  return { cols: bestCols, rows: Math.ceil(safe / bestCols) }
-}
-
-const insetBox = () => ({
-  w: Math.max(1, viewport.w - CONTROL.gutter * 2),
-  h: Math.max(1, viewport.h - CONTROL.gutter * 2),
-})
-
-const overviewScale = () => {
-  const { w, h } = insetBox()
-  return Math.min(w / Math.max(gridMetrics.w, 1), h / Math.max(gridMetrics.h, 1), 1)
-}
-
-const closeScale = () => {
-  const { h } = insetBox()
-  return (
-    (h / Math.max(CONTROL.zoomRows * (itemSize.value.height + CONTROL.gap), 1)) *
-    0.8
-  )
-}
-
-const panLimits = () => {
-  const { w, h } = insetBox()
-  return {
-    x: Math.max(0, (gridMetrics.w * view.scale - w) / 2),
-    y: Math.max(0, (gridMetrics.h * view.scale - h) / 2),
-  }
-}
-
-const clampView = () => {
-  const { x: limitX, y: limitY } = panLimits()
-  view.x = Math.min(limitX, Math.max(-limitX, view.x))
-  view.y = Math.min(limitY, Math.max(-limitY, view.y))
-}
-
-const makePanLenis = (orientation: 'vertical' | 'horizontal'): PanLenis => {
-  const wrapper = document.createElement('div')
-  const content = document.createElement('div')
-  wrapper.appendChild(content)
-  wrapper.setAttribute('aria-hidden', 'true')
-  wrapper.setAttribute('data-lenis-prevent', '')
-  Object.assign(wrapper.style, {
-    position: 'absolute',
-    left: '0',
-    top: '0',
-    width: '8px',
-    height: '8px',
-    overflow: 'scroll',
-    scrollbarWidth: 'none',
-    pointerEvents: 'none',
-    opacity: '0',
-  })
-  ;(planeEl.value || rootEl.value || document.body).appendChild(wrapper)
-  const lenis = new Lenis({
-    wrapper,
-    content,
-    eventsTarget: wrapper,
-    orientation,
-    gestureOrientation: orientation,
-    smoothWheel: true,
-    duration: CONTROL.lenisDuration,
-    easing: controlLenisEase,
-    overscroll: false,
-    autoRaf: false,
-    naiveDimensions: true,
-  })
-  return { wrapper, content, lenis }
-}
-
-const writeLenisFromView = () => {
-  if (!panX || !panY) return
-  const { x: limitX, y: limitY } = panLimits()
-  panX.lenis.scrollTo(view.x + limitX, { immediate: true, force: true })
-  panY.lenis.scrollTo(limitY - view.y, { immediate: true, force: true })
-}
-
-const applyLenisToView = () => {
-  if (!panX || !panY) return
-  const { x: limitX, y: limitY } = panLimits()
-  if (panX.lenis.limit > 1) view.x = -limitX + panX.lenis.animatedScroll
-  if (panY.lenis.limit > 1) view.y = limitY - panY.lenis.animatedScroll
-}
-
-const syncPanScrollRange = (fromView = false) => {
-  if (!panX || !panY) return
-  const { x: limitX, y: limitY } = panLimits()
-  const key = `${limitX.toFixed(2)}|${limitY.toFixed(2)}|${view.scale.toFixed(4)}`
-  if (key !== panScrollKey) {
-    panY.content.style.height = `${limitY * 2 + Math.max(1, panY.wrapper.clientHeight)}px`
-    panX.content.style.width = `${limitX * 2 + Math.max(1, panX.wrapper.clientWidth)}px`
-    panY.lenis.resize()
-    panX.lenis.resize()
-    fromView = true
-  }
-  panScrollKey = key
-  if (fromView) writeLenisFromView()
-}
-
-const setLookFromPointer = (clientX: number, clientY: number) => {
-  if (mode.value !== 'control' || modeLock) return
-  const nx = viewport.w ? (clientX / viewport.w) * 2 - 1 : 0
-  const ny = viewport.h ? (clientY / viewport.h) * 2 - 1 : 0
-  lookGoal.x = Math.max(-1, Math.min(1, nx))
-  lookGoal.y = Math.max(-1, Math.min(1, ny))
-}
-
-const stepLook = () => {
-  if (mode.value !== 'control') {
-    lookGoal.x = 0
-    lookGoal.y = 0
-  }
-  look.x += (lookGoal.x - look.x) * CONTROL.parallaxLerp
-  look.y += (lookGoal.y - look.y) * CONTROL.parallaxLerp
-}
-
-const tickControlLenis = () => {
-  stepLook()
-  if (mode.value !== 'control' || modeLock || !panX || !panY) return
-  const now = performance.now()
-  panY.lenis.raf(now)
-  panX.lenis.raf(now)
-  const gliding =
-    panY.lenis.isScrolling === 'smooth' || panX.lenis.isScrolling === 'smooth'
-  if (gliding && !panPointer) applyLenisToView()
-  else writeLenisFromView()
-}
-
-const rememberPanSample = (x: number, y: number) => {
-  const now = performance.now()
-  panSamples.push({ t: now, x, y })
-  const cutoff = now - 100
-  while (panSamples.length > 1 && panSamples[0]!.t < cutoff) panSamples.shift()
-}
-
-const releasePanFlick = () => {
-  if (!pointerDragged || panSamples.length < 2 || !panX || !panY || modeLock) {
-    panSamples.length = 0
-    return
-  }
-  const first = panSamples[0]!
-  const last = panSamples[panSamples.length - 1]!
-  panSamples.length = 0
-  const dt = Math.max(16, last.t - first.t)
-  let vx = (last.x - first.x) / dt
-  let vy = (last.y - first.y) / dt
-  const speed = Math.hypot(vx, vy)
-  if (speed < CONTROL.flickMin) return
-  const cap = Math.min(speed, CONTROL.flickMax) / speed
-  vx *= cap
-  vy *= cap
-  syncPanScrollRange()
-  const glide = {
-    programmatic: false,
-    duration: CONTROL.lenisDuration,
-    easing: controlLenisEase,
-  }
-  panX.lenis.scrollTo(panX.lenis.targetScroll + vx * CONTROL.flickMs, glide)
-  panY.lenis.scrollTo(panY.lenis.targetScroll - vy * CONTROL.flickMs, glide)
-}
 
 const autoAllowed = () =>
   !!props.autoPlay &&
-  !modeLock &&
   !pageEntering.value &&
   !pageLeaving.value &&
   !isOpen.value &&
   !prefersReducedMotion()
 
-const tickAuto = () => {
-  if (!autoAllowed()) return
-  if (mode.value === 'control') {
-    const { x: limitX, y: limitY } = panLimits()
-    if (limitY > 1) {
-      view.y += autoDir * CONTROL.autoPan
-      if (view.y >= limitY) {
-        view.y = limitY
-        autoDir = -1
-      } else if (view.y <= -limitY) {
-        view.y = -limitY
-        autoDir = 1
-      }
-    } else if (limitX > 1) {
-      view.x += autoDir * CONTROL.autoPan
-      if (view.x >= limitX) {
-        view.x = limitX
-        autoDir = -1
-      } else if (view.x <= -limitX) {
-        view.x = -limitX
-        autoDir = 1
-      }
-    }
-    writeLenisFromView()
-    return
-  }
-  targetScroll += CONTROL.autoTunnel
+const noteTunnelIntent = (delta: number) => {
+  if (delta < -0.5) autoHeld = true
+  else if (delta > 0.5) autoHeld = false
 }
 
-const hideTunnelLayers = () => {
-  layers.value.forEach((_, index) => {
-    const el = layerEls[index]
-    if (el) gsap.set(el, { visibility: 'hidden', '--overlay': 1 })
-  })
+const tickAuto = () => {
+  if (!autoAllowed() || autoHeld) return
+  targetScroll += CONFIG.autoTunnel
 }
+
 const fieldBg = ref<'cream' | 'webgl'>('cream')
 const fieldBgOptions = [
   { id: 'cream', label: 'Cream' },
@@ -868,14 +627,14 @@ const syncFieldBgClass = () => {
   document.body.classList.toggle('d3-clear', fieldBg.value === 'webgl')
 }
 watch(fieldBg, syncFieldBgClass)
-const itemsPerLayer = ref<LayerDensity>(PRESETS.gallery.itemsPerLayer)
+const itemsPerLayer = ref<LayerDensity>(initial.itemsPerLayer)
 const densityOptions = DENSITY_VALUES.map((n) => ({ id: String(n), label: String(n) }))
-const colSpanOn = ref(PRESETS.gallery.colSpan)
+const colSpanOn = ref(initial.colSpan)
 const spanOptions = [
   { id: 'off', label: 'Off' },
   { id: 'on', label: '2 cells' },
 ]
-const preset = ref<FieldPreset>('gallery')
+const preset = ref<FieldPreset>(initialPreset)
 const presetOptions = (Object.keys(PRESETS) as FieldPreset[]).map((id) => ({
   id,
   label: PRESETS[id].label,
@@ -883,22 +642,25 @@ const presetOptions = (Object.keys(PRESETS) as FieldPreset[]).map((id) => ({
 const shuffleSeed = ref(1)
 
 const applyPreset = (id: string) => {
-  if (id === 'selected' || id === 'gallery' || id === 'tall') {
-    const next = PRESETS[id]
-    layout.value = next.layout
-    ratio.value = next.ratio
-    itemsPerLayer.value = next.itemsPerLayer
-    setLayerGap(next.layerGap)
-    cellGap.value = next.cellGap
-    fadeFar.value = next.fadeFar
-    nearCut.value = next.nearCut
-    colSpanOn.value = next.colSpan
-    setStartScroll(next.startScroll)
-    preset.value = id
-    shuffleSeed.value += 1
+  const named = namedPreset(id)
+  if (!named) {
+    preset.value = 'free'
     return
   }
-  preset.value = 'free'
+  const next = PRESETS[named]
+  layout.value = next.layout
+  ratio.value = next.ratio
+  itemsPerLayer.value = next.itemsPerLayer
+  setLayerGap(next.layerGap)
+  cellGap.value = next.cellGap
+  fadeFar.value = next.fadeFar
+  nearCut.value = next.nearCut
+  colSpanOn.value = next.colSpan
+  setStartScroll(next.startScroll)
+  preset.value = named
+  if (named === 'columns') mode.value = 'control'
+  if (named === 'freeflow') mode.value = 'surrender'
+  shuffleSeed.value += 1
 }
 
 const setColSpan = (id: string) => {
@@ -985,6 +747,11 @@ const onKeyDown = (event: KeyboardEvent) => {
     showControls.value = !showControls.value
     return
   }
+  if (event.key === 's' || event.key === 'S') {
+    event.preventDefault()
+    showModeToggle.value = !showModeToggle.value
+    return
+  }
   if (event.key === '[' || event.key === '-') {
     event.preventDefault()
     setLayerGap(layerGap.value - CONFIG.layerGapStep)
@@ -1033,7 +800,7 @@ const pickFrame = (item: TunnelItem) => {
 }
 
 const cards = computed(() => {
-  const next: Omit<TunnelCard, 'key' | 'left' | 'top' | 'slot' | 'colSpan' | 'cellWidth' | 'cellHeight'>[] = []
+  const next: Omit<TunnelCard, 'key' | 'left' | 'top' | 'slot' | 'colSpan' | 'rowSpan' | 'cellWidth' | 'cellHeight'>[] = []
   for (const item of props.items || []) {
     const slug = productSlug(item) || (typeof item.slug === 'string' ? item.slug : item.slug?.current) || item._id
     if (!slug) continue
@@ -1087,6 +854,7 @@ const layers = computed(() => {
       seed,
       openSlots.value,
       cols,
+      rows,
       colSpanOn.value,
     )
     const placed: TunnelCard[] = []
@@ -1096,12 +864,14 @@ const layers = computed(() => {
       if (!image || place == null) break
       const { x, y } = slotCenter(place.slot, cols, rows, width, height, gap)
       const cellWidth = place.colSpan * width + (place.colSpan - 1) * gap
+      const cellHeight = place.rowSpan * height + (place.rowSpan - 1) * gap
       placed.push({
         ...image,
         slot: place.slot,
         colSpan: place.colSpan,
+        rowSpan: place.rowSpan,
         cellWidth,
-        cellHeight: height,
+        cellHeight,
         key: `${index}-${image.frameId}-${place.slot}`,
         left: `${x - width / 2}px`,
         top: `${y - height / 2}px`,
@@ -1132,7 +902,7 @@ let pointerY = 0
 let pointerDown: { x: number; y: number } | null = null
 let pointerDragged = false
 let tickerOn = false
-let autoDir = 1
+let autoHeld = false
 const lookTarget = { x: 0, y: 0 }
 const lookCurrent = { x: 0, y: 0 }
 
@@ -1153,12 +923,7 @@ const overlayFor = (z: number) => {
 }
 
 const step = () => {
-  tickControlLenis()
   tickAuto()
-  if (planeActive.value && !measuringTunnel) {
-    hideTunnelLayers()
-    return
-  }
   const list = layers.value
   const depth = tunnelDepth()
   currentScroll += (targetScroll - currentScroll) * CONFIG.lerp
@@ -1201,246 +966,16 @@ const fromUi = (target: EventTarget | null) =>
   target instanceof Element &&
   !!target.closest('.header, .bucket, .product-overlay, .d3-tunnel__toggles')
 
-const layoutControlGrid = () => {
-  syncViewport()
-  const count = Math.max(1, cards.value.length)
-  const { cols, rows } = gridShape(count, CONTROL.aspect)
-  const { width, height } = itemSize.value
-  gridMetrics.cols = cols
-  gridMetrics.rows = rows
-  gridMetrics.w = cols * (width + CONTROL.gap) - CONTROL.gap
-  gridMetrics.h = rows * (height + CONTROL.gap) - CONTROL.gap
-}
-
-const snapshotFrameRects = (root: ParentNode | null) => {
-  const map = new Map<string, DOMRect>()
-  if (!root) return map
-  for (const el of root.querySelectorAll<HTMLElement>('[data-frame-id]')) {
-    const id = el.dataset.frameId
-    if (!id) continue
-    const layer = el.closest('.d3-tunnel__layer')
-    if (layer && getComputedStyle(layer).visibility === 'hidden') continue
-    if (getComputedStyle(el).visibility === 'hidden') continue
-    const rect = el.getBoundingClientRect()
-    if (rect.width < 2 || rect.height < 2) continue
-    const prev = map.get(id)
-    if (!prev || rect.width * rect.height > prev.width * prev.height) map.set(id, rect)
-  }
-  return map
-}
-
-const destFrameEls = (root: ParentNode | null) => {
-  const map = new Map<string, HTMLElement>()
-  if (!root) return map
-  for (const el of root.querySelectorAll<HTMLElement>('[data-frame-id]')) {
-    const id = el.dataset.frameId
-    if (!id || map.has(id)) continue
-    const layer = el.closest('.d3-tunnel__layer')
-    if (layer && getComputedStyle(layer).visibility === 'hidden') continue
-    map.set(id, el)
-  }
-  return map
-}
-
-const srcByFrameId = () => {
-  const map = new Map<string, string>()
-  for (const card of cards.value) map.set(card.frameId, card.src)
-  return map
-}
-
-let flightEls: HTMLElement[] = []
-
-const clearFlightEls = () => {
-  for (const el of flightEls) {
-    gsap.killTweensOf(el)
-    el.remove()
-  }
-  flightEls = []
-}
-
-const spawnFlyer = (src: string, rect: DOMRect, frameId?: string) => {
-  const el = document.createElement('img')
-  el.src = src
-  el.alt = ''
-  el.setAttribute('aria-hidden', 'true')
-  if (frameId) el.dataset.frameId = frameId
-  el.className = 'd3-tunnel__flyer'
-  Object.assign(el.style, {
-    position: 'fixed',
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-    objectFit: 'cover',
-    margin: '0',
-    padding: '0',
-    border: '0',
-    pointerEvents: 'none',
-    zIndex: '45',
-    willChange: 'left, top, width, height',
-  })
-  document.body.appendChild(el)
-  flightEls.push(el)
-  return el
-}
-
-const playMode = async (next: 'control' | 'surrender') => {
-  if (next === mode.value || modeLock) return
-  modeLock = true
-  modeTween?.kill()
-  clearFlightEls()
-  const finish = () => {
-    modeTween = null
-    modeLock = false
-  }
-  const sources = srcByFrameId()
-  if (next === 'control') {
-    const fromRects = snapshotFrameRects(rigEl.value)
-    layoutControlGrid()
-    view.x = 0
-    view.y = 0
-    view.scale = overviewScale()
-    mode.value = next
-    planeActive.value = true
-    hideTunnelLayers()
-    await nextTick()
-    const dests = destFrameEls(planeEl.value)
-    dests.forEach((el) => gsap.set(el, { opacity: 0 }))
-    if (prefersReducedMotion()) {
-      dests.forEach((el) => gsap.set(el, { clearProps: 'opacity' }))
-      view.scale = closeScale()
-      syncPanScrollRange(true)
-      finish()
-      return
-    }
-    await nextFrame()
-    const timeline = gsap.timeline({
-      onComplete: () => {
-        syncPanScrollRange(true)
-        finish()
-      },
-    })
-    modeTween = timeline
-    dests.forEach((el, id) => {
-      const from = fromRects.get(id)
-      const to = el.getBoundingClientRect()
-      const src = sources.get(id)
-      if (!from || !src || to.width < 2 || to.height < 2) return
-      const flyer = spawnFlyer(src, from, id)
-      timeline.to(
-        flyer,
-        {
-          left: to.left,
-          top: to.top,
-          width: to.width,
-          height: to.height,
-          duration: CONTROL.morph,
-          ease: CONTROL.ease,
-        },
-        0,
-      )
-    })
-    timeline.add(() => {
-      clearFlightEls()
-    }, CONTROL.morph)
-    dests.forEach((el) => {
-      timeline.to(el, { opacity: 1, duration: 0.4, ease: 'power2.out' }, CONTROL.morph)
-    })
-    timeline.to({}, { duration: CONTROL.hold }, CONTROL.morph + 0.4)
-    timeline.to(
-      view,
-      { scale: closeScale(), duration: CONTROL.zoom, ease: CONTROL.ease },
-      CONTROL.morph + 0.4 + CONTROL.hold,
-    )
-    return
-  }
-
-  const measureTunnelRects = () => {
-    const rig = rigEl.value
-    if (!rig) return new Map<string, DOMRect>()
-    measuringTunnel = true
-    rig.classList.remove('is-parked')
-    rig.style.opacity = '0'
-    step()
-    const rects = snapshotFrameRects(rig)
-    rig.classList.add('is-parked')
-    rig.style.removeProperty('opacity')
-    measuringTunnel = false
-    return rects
-  }
-  const gridEls = destFrameEls(planeEl.value)
-  const fromRects = snapshotFrameRects(planeEl.value)
-  const endSurrender = () => {
-    clearFlightEls()
-    gridEls.forEach((el) => gsap.set(el, { clearProps: 'opacity' }))
-    mode.value = 'surrender'
-    planeActive.value = false
-    step()
-    finish()
-  }
-  if (prefersReducedMotion()) {
-    endSurrender()
-    return
-  }
-  gridEls.forEach((el, id) => {
-    const from = fromRects.get(id)
-    const src = sources.get(id)
-    if (from && src) spawnFlyer(src, from, id)
-  })
-  const timeline = gsap.timeline({ onComplete: endSurrender })
-  modeTween = timeline
-  gridEls.forEach((el) => {
-    timeline.to(el, { opacity: 0, duration: 0.28, ease: 'power2.out' }, 0)
-  })
-  const toRects = measureTunnelRects()
-  const flyAt = 0.28
-  flightEls.forEach((flyer) => {
-    const id = flyer.dataset.frameId
-    const to = id ? toRects.get(id) : undefined
-    if (!to) {
-      timeline.to(flyer, { opacity: 0, duration: CONTROL.morph * 0.5, ease: 'power2.out' }, flyAt)
-      return
-    }
-    timeline.to(
-      flyer,
-      {
-        left: to.left,
-        top: to.top,
-        width: to.width,
-        height: to.height,
-        duration: CONTROL.morph,
-        ease: CONTROL.ease,
-      },
-      flyAt,
-    )
-  })
-  if (!timeline.getChildren().length) endSurrender()
-}
-
 const setMode = (id: string) => {
-  void playMode(id === 'control' ? 'control' : 'surrender')
+  const next = id === 'control' ? 'columns' : 'freeflow'
+  if (preset.value === next) return
+  applyPreset(next)
 }
 
 const onWheel = (event: WheelEvent) => {
   if (isOpen.value || pageEntering.value || pageLeaving.value || fromUi(event.target)) return
   event.preventDefault()
-  if (mode.value === 'control') {
-    if (modeLock || !panX || !panY) return
-    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.h : 1
-    const dx = event.deltaX * unit
-    const dy = event.deltaY * unit
-    if (!dx && !dy) return
-    syncPanScrollRange()
-    const glide = {
-      programmatic: false,
-      duration: CONTROL.lenisDuration,
-      easing: controlLenisEase,
-    }
-    if (dy) panY.lenis.scrollTo(panY.lenis.targetScroll + dy * CONTROL.wheelGain, glide)
-    if (dx) panX.lenis.scrollTo(panX.lenis.targetScroll - dx * CONTROL.wheelGain, glide)
-    return
-  }
-  if (modeLock) return
+  noteTunnelIntent(event.deltaY)
   targetScroll += event.deltaY * CONFIG.scrollSpeed
 }
 
@@ -1449,71 +984,26 @@ const onTouchStart = (event: TouchEvent) => {
   const touch = event.touches[0]
   if (!touch) return
   pointerY = touch.clientY
-  if (mode.value === 'control') {
-    panPointer = true
-    panSamples.length = 0
-    rememberPanSample(touch.clientX, touch.clientY)
-    planeDrag = { x: touch.clientX, y: touch.clientY, viewX: view.x, viewY: view.y }
-  }
 }
 
 const onTouchMove = (event: TouchEvent) => {
   if (isOpen.value || fromUi(event.target)) return
   const touch = event.touches[0]
   if (!touch) return
-  if (mode.value === 'control' && planeDrag) {
-    rememberPanSample(touch.clientX, touch.clientY)
-    view.x = planeDrag.viewX + touch.clientX - planeDrag.x
-    view.y = planeDrag.viewY + touch.clientY - planeDrag.y
-    clampView()
-    writeLenisFromView()
-    event.preventDefault()
-    return
-  }
-  targetScroll += (pointerY - touch.clientY) * CONFIG.scrollSpeed
+  const delta = pointerY - touch.clientY
+  noteTunnelIntent(delta)
+  targetScroll += delta * CONFIG.scrollSpeed
   pointerY = touch.clientY
   event.preventDefault()
-}
-
-const beginPlaneDrag = (event: PointerEvent) => {
-  pointerDown = { x: event.clientX, y: event.clientY }
-  pointerDragged = false
-  panPointer = true
-  panSamples.length = 0
-  rememberPanSample(event.clientX, event.clientY)
-  planeDrag = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y }
-  if (event.currentTarget instanceof HTMLElement) {
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-}
-
-const onPlanePointerDown = (event: PointerEvent) => {
-  if (event.button !== 0 || mode.value !== 'control' || modeLock || fromUi(event.target)) return
-  beginPlaneDrag(event)
 }
 
 const onItemPointerDown = (event: PointerEvent) => {
   if (event.button !== 0) return
   pointerDown = { x: event.clientX, y: event.clientY }
   pointerDragged = false
-  if (mode.value === 'control') beginPlaneDrag(event)
 }
 
 const onItemPointerMove = (event: PointerEvent) => {
-  if (mode.value === 'control') setLookFromPointer(event.clientX, event.clientY)
-  if (planeDrag && mode.value === 'control') {
-    rememberPanSample(event.clientX, event.clientY)
-    const dx = event.clientX - planeDrag.x
-    const dy = event.clientY - planeDrag.y
-    if (!pointerDragged && Math.hypot(dx, dy) > CLICK_DRAG) pointerDragged = true
-    if (pointerDragged) {
-      view.x = planeDrag.viewX + dx
-      view.y = planeDrag.viewY + dy
-      clampView()
-      writeLenisFromView()
-    }
-    return
-  }
   if (!pointerDown) return
   if (
     Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > CLICK_DRAG
@@ -1523,10 +1013,7 @@ const onItemPointerMove = (event: PointerEvent) => {
 }
 
 const onItemPointerUp = () => {
-  if (mode.value === 'control') releasePanFlick()
   pointerDown = null
-  planeDrag = null
-  panPointer = false
 }
 
 const releaseHold = (id: string) => {
@@ -1618,7 +1105,6 @@ const clearItemClip = (el: HTMLElement) => {
 }
 
 const visibleLayersByNear = () => {
-  if (mode.value === 'control' && planeEl.value) return [planeEl.value]
   return layerEls
     .filter((el): el is HTMLElement => !!el && getComputedStyle(el).visibility !== 'hidden')
     .sort((a, b) => Number(gsap.getProperty(b, 'z')) - Number(gsap.getProperty(a, 'z')))
@@ -1697,14 +1183,6 @@ onBeforeRouteLeave((to, from) => {
   return playPageLeave()
 })
 
-const onResize = () => {
-  if (mode.value !== 'control') return
-  layoutControlGrid()
-  if (!modeLock) view.scale = closeScale()
-  clampView()
-  syncPanScrollRange(true)
-}
-
 onMounted(() => {
   if (!tickerOn) {
     gsap.ticker.add(step)
@@ -1719,18 +1197,12 @@ onMounted(() => {
   window.addEventListener('pointerup', onItemPointerUp)
   window.addEventListener('pointercancel', onItemPointerUp)
   window.addEventListener('keydown', onKeyDown)
-  window.addEventListener('resize', onResize)
-  panY = makePanLenis('vertical')
-  panX = makePanLenis('horizontal')
   void playPageEnter()
 })
 
 onUnmounted(() => {
   clipTween?.kill()
   clipTween = null
-  modeTween?.kill()
-  modeTween = null
-  clearFlightEls()
   if (tickerOn) gsap.ticker.remove(step)
   tickerOn = false
   registerPileFly(null)
@@ -1742,13 +1214,6 @@ onUnmounted(() => {
   window.removeEventListener('pointerup', onItemPointerUp)
   window.removeEventListener('pointercancel', onItemPointerUp)
   window.removeEventListener('keydown', onKeyDown)
-  window.removeEventListener('resize', onResize)
-  panX?.lenis.destroy()
-  panY?.lenis.destroy()
-  panX?.wrapper.remove()
-  panY?.wrapper.remove()
-  panX = null
-  panY = null
   window.clearTimeout(metaHideTimer)
   document.body.classList.remove('d3-clear')
 })
@@ -1765,31 +1230,6 @@ onUnmounted(() => {
 
 .d3-tunnel--clear {
   background: transparent;
-}
-
-.d3-tunnel--control {
-  perspective: none;
-}
-
-.d3-tunnel__plane {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  overflow: hidden;
-  touch-action: none;
-  background: var(--cream);
-  perspective: 1400px;
-}
-
-.d3-tunnel__tiles {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  transform-origin: 0 0;
-  transform-style: preserve-3d;
-  will-change: transform;
 }
 
 .d3-tunnel--enter .d3-tunnel__item,
@@ -1902,17 +1342,6 @@ onUnmounted(() => {
   transform-style: preserve-3d;
 }
 
-.d3-tunnel__rig.is-parked,
-.d3-tunnel__plane.is-parked {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.d3-tunnel--clear .d3-tunnel__plane {
-  background: var(--cream);
-}
-
 .d3-tunnel__layer {
   position: absolute;
   transform-style: preserve-3d;
@@ -1972,14 +1401,16 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.d3-tunnel__flyer {
-  position: fixed;
-  display: block;
-  object-fit: cover;
+.d3-tunnel__backing {
+  position: absolute;
+  inset: 0;
+  background-color: var(--background-color, var(--cream));
+  opacity: 1;
   pointer-events: none;
 }
 
 .d3-tunnel__item img {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -2002,11 +1433,12 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.d3-tunnel--clear .d3-tunnel__item {
+.d3-tunnel--clear .d3-tunnel__item img {
   opacity: calc(1 - var(--fade, 0));
 }
 
-.d3-tunnel--clear .d3-tunnel__item--gathered {
+.d3-tunnel--clear .d3-tunnel__item--gathered,
+.d3-tunnel--clear .d3-tunnel__item--gathered img {
   opacity: 0;
 }
 </style>
