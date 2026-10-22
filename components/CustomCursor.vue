@@ -84,7 +84,7 @@
 <script setup lang="ts">
 import { typologyCloseLabelHeld, typologyRowsLocked } from '~/composables/useTypologyRowHover'
 
-const { preset, native, suppressLabel, bare, ink, overColumn, onMedia, onSlider, onEnquire, resolveFromPoint } = useCursor()
+const { preset, native, suppressLabel, bare, ink, overColumn, onMedia, onSlider, onEnquire, resolveFromPoint, labelCue } = useCursor()
 const { isOpen: cartOpen } = useBucket()
 const route = useRoute()
 
@@ -218,7 +218,7 @@ const markRef = ref<HTMLElement | null>(null)
 const chevRef = ref<HTMLElement | null>(null)
 const labelRef = ref<HTMLElement | null>(null)
 
-const SCROLL_HINT = 'Scroll to explore'
+const SCROLL_HINT = 'Scroll'
 const TYPOLOGY_ARRIVAL = 'Design your space'
 const TYPOLOGY_ARRIVAL_MS = 3000
 const typologyArrivalOn = ref(false)
@@ -467,6 +467,7 @@ const resumeLabel = (text: string) => {
 }
 
 const syncLabel = (text: string) => {
+  if (labelCue.value) return
   // Header/nav suppress, or PDP/typology close hold — drop in the same frame.
   if (!text && (suppressLabel.value || typologyCloseLabelHeld.value)) {
     dropLabelNow()
@@ -559,6 +560,12 @@ if (import.meta.client) {
   watch(cursorLabel, (text) => {
     syncLabel(text)
   }, { immediate: true })
+  watch(labelCue, (text) => {
+    if (!text) return
+    labelCue.value = ''
+    labelGeneration += 1
+    typeLabelOn(text, labelGeneration)
+  })
   watch(suppressLabel, (on) => {
     if (on) dropLabelNow()
   })

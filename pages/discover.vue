@@ -1,7 +1,7 @@
 <template>
   <div class="d3-page">
     <ClientOnly>
-      <D3Tunnel :items="discoveryItems" preset="columns" auto-play />
+      <D3Tunnel :items="discoveryItems" preset="columns" auto-play backdrop="webgl" />
       <template #fallback>
         <div class="d3-page__fallback" aria-hidden="true" />
       </template>
@@ -30,7 +30,12 @@ useHead(() => ({
 .d3-page,
 .d3-page__fallback {
   height: 100dvh;
-  background: var(--cream);
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.d3-page :deep(.d3-tunnel),
+.d3-page :deep(.d3-tunnel--clear) {
+  background: rgba(0, 0, 0, 0.65);
 }
 </style>
 

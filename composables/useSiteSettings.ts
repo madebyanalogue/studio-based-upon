@@ -125,7 +125,7 @@ export const useSiteSettings = () => {
 
   const MAIN_NAV_ORDER = [
     { path: '/discover', text: 'Discover' },
-    { path: '/typology', text: 'Typology' },
+    { path: '/typology', text: 'Spaces' },
     { path: '/materials-and-forms', text: 'Materials & Forms' },
     { path: '/curate', text: 'Pairings' },
     { path: '/pre-crafted', text: '(Pre)Crafted' },
@@ -186,10 +186,11 @@ export const useSiteSettings = () => {
         path === '/typology' ||
         path === '/curated-discovery' ||
         text === 'Typology' ||
+        text === 'Spaces' ||
         text === 'Curated Discovery'
       ) {
         path = '/typology'
-        text = 'Typology'
+        text = 'Spaces'
       } else if (
         path === '/curate' ||
         path === '/#curate' ||

@@ -1,5 +1,5 @@
 <template>
-  <article class="enquire">
+  <article class="enquire" data-cursor="native">
     <div
       class="enquire__stage"
       :class="{ 'enquire__stage--in': stageVisible }"

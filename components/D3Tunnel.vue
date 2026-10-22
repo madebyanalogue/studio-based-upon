@@ -343,7 +343,7 @@ const PRESETS = {
     id: 'columns',
     label: 'Columns',
     layout: '2×3' as const,
-    ratio: '4:3' as const,
+    ratio: '1:1' as const,
     itemsPerLayer: 4 as LayerDensity,
     layerGap: 600,
     cellGap: 0,
@@ -531,6 +531,7 @@ const props = defineProps<{
   ratio?: CellRatio
   preset?: FieldPreset
   autoPlay?: boolean
+  backdrop?: 'cream' | 'webgl'
 }>()
 
 const initialPreset = namedPreset(props.preset) ?? 'columns'
@@ -660,7 +661,9 @@ const tickAuto = () => {
   targetScroll += CONFIG.autoTunnel
 }
 
-const fieldBg = ref<'cream' | 'webgl'>('cream')
+const fieldBg = ref<'cream' | 'webgl'>(
+  props.backdrop === 'webgl' ? 'webgl' : 'cream',
+)
 const fieldBgOptions = [
   { id: 'cream', label: 'Cream' },
   { id: 'webgl', label: 'WebGL' },

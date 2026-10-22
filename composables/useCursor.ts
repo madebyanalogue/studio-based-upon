@@ -30,6 +30,13 @@ export const useCursor = () => {
   const onEnquire = useState<boolean>('site-cursor-on-enquire', () => false)
   /** Programmatic overlay for onboarding — wins over hover until cleared. */
   const overrideId = useState<string | null>('site-cursor-override', () => null)
+  /** Last mouse point — used to re-resolve after overlay / Flip mounts. */
+  const pointer = useState<{ x: number; y: number }>('site-cursor-point', () => ({
+    x: 0,
+    y: 0,
+  }))
+  /** One-shot: type this label in from the first letter, even if it is already showing. */
+  const labelCue = useState<string>('site-cursor-label-cue', () => '')
 
   const setCursor = (id: string | null) => {
     overrideId.value = id
@@ -57,6 +64,7 @@ export const useCursor = () => {
   }
 
   const resolveFromPoint = (x: number, y: number) => {
+    pointer.value = { x, y }
     ink.value = false
     if (overrideId.value) {
       overColumn.value = false
@@ -196,6 +204,8 @@ export const useCursor = () => {
     onSlider,
     onEnquire,
     overrideId,
+    pointer,
+    labelCue,
     setCursor,
     resolveFromPoint,
   }

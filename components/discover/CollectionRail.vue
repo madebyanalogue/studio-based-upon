@@ -11,6 +11,7 @@
       },
     ]"
     :aria-label="collection.title"
+    :style="{ '--rail-end-aspect': lastCardAspect }"
     :data-typology-rail="myId"
     :data-cursor="isActive || isClosing ? 'default' : undefined"
     @pointerleave="onRailPointerLeave"
@@ -104,6 +105,12 @@ const railSequence = computed(() =>
     })),
 )
 
+const lastCardAspect = computed(() => {
+  const artworks = props.collection?.artworks
+  const last = artworks?.[artworks.length - 1]
+  return Number(cardAspect(last?.cardRatio)) || 1.5
+})
+
 const rowHover = inject(typologyRowHoverKey, null)
 const myId = useId()
 
@@ -118,12 +125,11 @@ const isActive = ref(false)
 const controlsReady = ref(false)
 /** Close animation is running. Other rows stay inert until it finishes. */
 const isClosing = ref(false)
-/** Closed / locked triggers say Explore. Product titles sit under the image, not on the cursor. */
+/** Closed triggers say Explore. Drop it as soon as this row is opening. */
 const cardCursorLabel = (index: number, _title: string) => {
-  const otherRowOpen = typologyRowsLocked.value && !isActive.value && !isClosing.value
-  if (otherRowOpen) return index === 0 ? 'Explore' : ''
-  if (index === 0 && !controlsReady.value) return 'Explore'
-  return ''
+  if (index !== 0) return ''
+  if (isActive.value || isClosing.value || typologyActiveRailId.value === myId) return ''
+  return 'Explore'
 }
 
 let railLenis: Lenis | null = null
@@ -146,7 +152,7 @@ const ALIGN_SCROLL_MS = 1400
 let alignFrom = 0
 let alignStartedAt = 0
 const homeScrollHint = useHomeScrollHint()
-const { preset: cursorPreset } = useCursor()
+const { preset: cursorPreset, resolveFromPoint, pointer: cursorPoint } = useCursor()
 let scrollHintActive = false
 let unbindScrollHint: (() => void) | null = null
 
@@ -234,11 +240,21 @@ const pinRowCenter = () => {
   lenis.scrollTo(lenis.scroll + delta, { immediate: true, force: true })
 }
 
+/** Stop when the last open item’s center sits on the viewport midline. */
+const railScrollMax = () => {
+  const wrapper = scrollerEl.value
+  const last = getCards().at(-1)
+  if (!wrapper) return 0
+  const native = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth)
+  if (!isActive.value || !last) return native
+  const centerMax = last.offsetLeft + last.offsetWidth / 2 - wrapper.clientWidth / 2
+  return Math.max(0, Math.min(native, centerMax))
+}
+
 const applyRailScroll = (value: number) => {
   const wrapper = scrollerEl.value
   if (!wrapper) return
-  const max = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth)
-  const target = Math.min(max, Math.max(0, value))
+  const target = Math.min(railScrollMax(), Math.max(0, value))
   if (railLenis) railLenis.scrollTo(target, { immediate: true, force: true })
   if (Math.abs(wrapper.scrollLeft - target) > 1) wrapper.scrollLeft = target
 }
@@ -252,8 +268,7 @@ const scrollRailTo = (left: number, immediate = false) =>
     }
     const gen = ++scrollGen
     railLenis?.resize()
-    const max = Math.max(0, wrapper.scrollWidth - wrapper.clientWidth)
-    const target = Math.min(max, Math.max(0, left))
+    const target = Math.min(railScrollMax(), Math.max(0, left))
     const from = wrapper.scrollLeft
     if (immediate || Math.abs(from - target) < 1) {
       applyRailScroll(target)
@@ -316,7 +331,7 @@ const centerRowVertically = () =>
   })
 
 /** Keep the growing or shrinking row centered so neighbours move apart evenly. */
-const holdRowCentered = (ms: number) =>
+const holdRowCentered = (ms: number, align = true) =>
   new Promise<void>((resolve) => {
     if (ms <= 0) {
       resolve()
@@ -333,7 +348,7 @@ const holdRowCentered = (ms: number) =>
     const step = (now: number) => {
       if (settled) return
       pinRowCenter()
-      alignClickedCard()
+      if (align) alignClickedCard()
       if (now - start < ms) requestAnimationFrame(step)
       else finish()
     }
@@ -408,11 +423,9 @@ const waitForGrow = () =>
 
 const finishClose = async (gen: number) => {
   const ms = prefersReducedMotion() ? 0 : MOTION_MS
-  await Promise.all([
-    scrollRailTo(restScroll, ms === 0),
-    holdRowCentered(ms),
-    waitForGrow(),
-  ])
+  await Promise.all([holdRowCentered(ms, false), waitForGrow()])
+  if (gen !== activateGen) return
+  await scrollRailTo(restScroll, ms === 0)
   if (gen !== activateGen) return
   isClosing.value = false
   controlsReady.value = false
@@ -546,7 +559,7 @@ const onActiveWheel = (event: WheelEvent) => {
   const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy
   if (!delta) return
   dismissRailScrollHint()
-  const next = railLenis.targetScroll + delta
+  const next = Math.min(railScrollMax(), Math.max(0, railLenis.targetScroll + delta))
   if (prefersReducedMotion()) {
     applyRailScroll(next)
     return
@@ -626,6 +639,7 @@ const onActivate = async (cardIndex = 0) => {
   if (typologyRowsLocked.value && typologyActiveRailId.value !== myId) return
   engaged = true
   alignIndex = cardIndex
+  if (cursorPreset.value?.tooltip === '') cursorPreset.value = null
   showRailScrollHint()
   typologyPointerPaused.value = true
   const gen = ++activateGen
@@ -634,6 +648,8 @@ const onActivate = async (cardIndex = 0) => {
   typologyRowsLocked.value = true
   isPreview.value = true
   controlsReady.value = false
+  await nextTick()
+  resolveFromPoint(cursorPoint.value.x, cursorPoint.value.y)
   if (!outsideBound) {
     outsideBound = true
     window.addEventListener('pointerdown', onDocPointerDown, true)
@@ -775,6 +791,7 @@ watch(
   --rail-open: 0;
   /* Portrait card at 3× its resting width. Every open card aims at this height. */
   --rail-open-height: calc(var(--rail-card-size) * 2);
+  --rail-end-aspect: 1.5;
   padding: 0;
   margin-bottom: 0;
   transition: --rail-open 0.7s cubic-bezier(0.22, 1, 0.36, 1);
@@ -845,6 +862,16 @@ watch(
   align-self: stretch;
   width: calc(50vw - (var(--rail-card-size) / 2));
   pointer-events: none;
+}
+
+.collection-rail__tail {
+  width: calc(
+    50vw - (
+      var(--rail-card-size) +
+        (var(--rail-open-height) * var(--rail-end-aspect, 1.5) - var(--rail-card-size)) *
+        var(--rail-open)
+    ) / 2
+  );
 }
 
 .collection-rail--hot .collection-rail__lead,

@@ -650,9 +650,26 @@ const syncCenterPad = () => {
     : 0
 
   const padTop = Math.max(0, mid - thumbCenterOffset(firstCard, 'top'))
+  const desktop = window.matchMedia('(min-width: 768px)').matches
+  const restingTrigger =
+    pageEl.value.querySelector<HTMLElement>(
+      '.collection-rail:not(.collection-rail--active) .collection-rail__card--trigger',
+    ) || firstCard
+  const cardSize = restingTrigger.getBoundingClientRect().width
+  const lastRail = lastCard.closest('.collection-rail')
+  const gapRest = lastRail
+    ? Number.parseFloat(
+        getComputedStyle(lastRail).getPropertyValue('--discover-rail-gap-rest'),
+      ) || 15
+    : 15
+  // Closed rows share the open portrait height as their vertical reference.
+  const portraitCellHeight = cardSize * 2
+  const portraitBottomOffset = portraitCellHeight / 2 + gapRest / 2
   const padBottom = Math.max(
     0,
-    mid - thumbCenterOffset(lastCard, 'bottom') - appPadBottom,
+    mid -
+      (desktop ? portraitBottomOffset : thumbCenterOffset(lastCard, 'bottom')) -
+      appPadBottom,
   )
 
   pageEl.value.style.setProperty('--rail-center-pad-top', `${padTop}px`)
@@ -660,6 +677,18 @@ const syncCenterPad = () => {
 
   const lenis = useNuxtApp().$lenis as { resize?: () => void } | undefined
   lenis?.resize?.()
+}
+
+const scrollPageToTop = () => {
+  if (!import.meta.client) return
+  history.scrollRestoration = 'manual'
+  const lenis = useNuxtApp().$lenis as
+    | { scrollTo?: (value: number, opts?: { immediate?: boolean; force?: boolean }) => void }
+    | undefined
+  lenis?.scrollTo?.(0, { immediate: true, force: true })
+  window.scrollTo(0, 0)
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
 }
 
 const observeCenterPad = () => {
@@ -678,12 +707,22 @@ const observeCenterPad = () => {
   syncCenterPad()
 }
 
+if (import.meta.client) {
+  history.scrollRestoration = 'manual'
+  scrollPageToTop()
+  requestAnimationFrame(() => scrollPageToTop())
+}
+
 onMounted(() => {
   nextTick(() => {
     observeCenterPad()
+    scrollPageToTop()
     playPageEnter()
     // Images may settle aspect after decode
-    window.setTimeout(observeCenterPad, 300)
+    window.setTimeout(() => {
+      observeCenterPad()
+      scrollPageToTop()
+    }, 300)
   })
   window.addEventListener('resize', syncCenterPad)
   window.visualViewport?.addEventListener('resize', syncCenterPad)
@@ -762,6 +801,13 @@ onBeforeUnmount(() => {
   --rail-center-pad-bottom: calc(50dvh - 12vw);
   padding-top: var(--rail-center-pad-top);
   padding-bottom: var(--rail-center-pad-bottom);
+}
+
+@media (min-width: 768px) {
+  .discover-page {
+    /* Portrait open-cell height (~2 × 20vw) as the bottom scroll stop */
+    --rail-center-pad-bottom: calc(50dvh - 20vw);
+  }
 }
 
 .discover-page--enter .discover-page__content > * :deep(.discover-card__media),

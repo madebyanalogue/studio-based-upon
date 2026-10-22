@@ -2,6 +2,7 @@
   <div
     ref="rootEl"
     class="image-intro"
+    :class="{ 'image-intro--parked': parked }"
     role="dialog"
     aria-label="Introduction"
   >
@@ -13,12 +14,16 @@
         :lines="FIRST_LINES"
       />
     </div>
-    <div ref="secondEl" class="image-intro__statement">
+    <div
+      ref="secondEl"
+      class="image-intro__statement image-intro__statement--lead"
+    >
       <DissolveText
+        ref="secondDissolve"
         class="image-intro__dissolve"
         :interactive="live === 'second'"
         fit="lines"
-        :lines="SECOND_LINES"
+        :lines="HOME_PHONE_INTRO_LINES"
       />
     </div>
     <div ref="logoEl" class="image-intro__logo">
@@ -36,7 +41,7 @@
 
 <script setup lang="ts">
 import gsap from 'gsap'
-import { useHomepageIntro } from '~/composables/useHomepagePreloader'
+import { isHomepagePath, useHomepageIntro } from '~/composables/useHomepagePreloader'
 
 const GROUND =
   'https://cdn.sanity.io/images/k8gpyc57/production/1e9cc54fa247edcffae1d0808da32d7429c30d14-3000x2055.jpg?auto=format&q=80&w=2400'
@@ -47,20 +52,28 @@ const FIRST_LINES = [
   'around the world.',
 ]
 
-const SECOND_LINES = [
+/** Parked mobile headline — the second intro statement. */
+const HOME_PHONE_INTRO_LINES = [
   'Everything starts from somewhere.',
   'Explore what it can become.',
 ]
+
+const PHONE_QUERY = '(max-width: 767px)'
+const PARKED_TOP = 'calc(var(--header-height) + 80px)'
 
 const rootEl = ref<HTMLElement | null>(null)
 const firstEl = ref<HTMLElement | null>(null)
 const secondEl = ref<HTMLElement | null>(null)
 const logoEl = ref<HTMLElement | null>(null)
+const secondDissolve = ref<{ repaint?: () => void } | null>(null)
 const live = ref<'logo' | 'first' | 'second' | null>(null)
+const parked = ref(false)
 const { phase, ground } = useHomepageIntro()
 
 let finished = false
 let timeline: gsap.core.Timeline | null = null
+
+const isPhone = () => window.matchMedia(PHONE_QUERY).matches
 
 const preload = (url: string) =>
   new Promise<void>((resolve) => {
@@ -83,9 +96,47 @@ const releaseSite = () => {
   document.dispatchEvent(new CustomEvent('homepage-intro-complete'))
 }
 
+const syncPhoneCopyHeight = () => {
+  const copy = secondEl.value
+  if (!copy) return
+  document.documentElement.style.setProperty(
+    '--home-phone-copy-h',
+    `${Math.ceil(copy.getBoundingClientRect().height)}px`,
+  )
+}
+
+/** Keep the parked line on mobile; chrome can come up over it. */
+const finishPhoneLanding = () => {
+  if (finished) return
+  finished = true
+  timeline?.kill()
+  timeline = null
+  live.value = null
+  parked.value = true
+  const root = rootEl.value
+  if (root) root.style.pointerEvents = 'none'
+  gsap.set(secondEl.value, {
+    opacity: 1,
+    top: PARKED_TOP,
+    xPercent: -50,
+    yPercent: 0,
+  })
+  void nextTick(() => {
+    syncPhoneCopyHeight()
+    secondDissolve.value?.repaint?.()
+  })
+  document.documentElement.classList.add('homepage-intro-type')
+  if (phase.value !== 'done' && phase.value !== 'skipped') phase.value = 'chrome'
+  document.dispatchEvent(new CustomEvent('homepage-intro-complete'))
+}
+
 /** Texts leave. The ground stays under the slider. */
 const handoff = () => {
   if (finished) return
+  if (isPhone()) {
+    finishPhoneLanding()
+    return
+  }
   finished = true
   timeline?.kill()
   timeline = null
@@ -137,6 +188,31 @@ const run = (build: (line: gsap.core.Timeline) => void) =>
     build(line)
   })
 
+const parkLead = () =>
+  new Promise<void>((resolve) => {
+    const lead = secondEl.value
+    if (!lead) {
+      resolve()
+      return
+    }
+    const reduced = reducedMotion()
+    gsap.set(lead, { xPercent: -50, yPercent: reduced ? 0 : -50 })
+    if (reduced) {
+      gsap.set(lead, { top: PARKED_TOP, yPercent: 0 })
+      resolve()
+      return
+    }
+    gsap.to(lead, {
+      top: PARKED_TOP,
+      yPercent: 0,
+      duration: 1.05,
+      ease: 'power2.inOut',
+      overwrite: 'auto',
+      onUpdate: syncPhoneCopyHeight,
+      onComplete: resolve,
+    })
+  })
+
 const play = async () => {
   const logo = logoEl.value
   const first = firstEl.value
@@ -150,6 +226,11 @@ const play = async () => {
     gsap.set([logo, first, second], { opacity: 0 })
     await imageReady
     ground.value = { active: true, live: true }
+    if (isPhone()) {
+      gsap.set(second, { opacity: 1, top: PARKED_TOP, xPercent: -50, yPercent: 0 })
+      finishPhoneLanding()
+      return
+    }
     handoff()
     return
   }
@@ -166,6 +247,19 @@ const play = async () => {
   void imageReady
   if (!ground.value.live) ground.value = { active: true, live: true }
 
+  if (isPhone()) {
+    live.value = 'second'
+    gsap.set(second, { top: '50%', xPercent: -50, yPercent: -50 })
+    await run((line) => {
+      line.to(second, { opacity: 1, duration: 0.9, ease: 'power2.out' })
+      line.to({}, { duration: 0.4 })
+    })
+    if (finished) return
+    await parkLead()
+    if (!finished) finishPhoneLanding()
+    return
+  }
+
   await run((line) => {
     // Brief beat after the logo, then “Two decades” comes in.
     line.to({}, { duration: 0.55 })
@@ -180,8 +274,34 @@ const onKey = (event: KeyboardEvent) => {
   if (event.key !== 'Escape' && event.key !== 'Enter') return
   event.preventDefault()
   if (!ground.value.active) ground.value = { active: true, live: true }
+  if (isPhone()) {
+    timeline?.kill()
+    timeline = null
+    gsap.killTweensOf([logoEl.value, firstEl.value, secondEl.value])
+    if (logoEl.value) gsap.set(logoEl.value, { opacity: 0 })
+    if (firstEl.value) gsap.set(firstEl.value, { opacity: 0 })
+    if (secondEl.value) {
+      gsap.set(secondEl.value, {
+        opacity: 1,
+        top: PARKED_TOP,
+        xPercent: -50,
+        yPercent: 0,
+      })
+    }
+    finishPhoneLanding()
+    return
+  }
   handoff()
 }
+
+const route = useRoute()
+watch(
+  () => route.path,
+  (path) => {
+    if (!parked.value || isHomepagePath(path)) return
+    if (phase.value === 'chrome') phase.value = 'done'
+  },
+)
 
 onMounted(() => {
   window.addEventListener('keydown', onKey)
@@ -193,6 +313,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKey)
   timeline?.kill()
   if (rootEl.value) gsap.killTweensOf(rootEl.value)
+  document.documentElement.style.removeProperty('--home-phone-copy-h')
   if (!finished) {
     finished = true
     releaseSite()
@@ -208,6 +329,16 @@ onUnmounted(() => {
   overflow: hidden;
   background: transparent;
   pointer-events: none;
+}
+
+.image-intro--parked {
+  z-index: 4;
+  overflow: visible;
+}
+
+.image-intro--parked .image-intro__statement--lead {
+  top: calc(var(--header-height) + 80px);
+  transform: translate(-50%, 0);
 }
 
 .image-intro__statement {
@@ -262,5 +393,12 @@ onUnmounted(() => {
 
 .image-intro__dissolve--logo :deep(.dissolve-text__measure) {
   color: #f1ede4;
+}
+
+@media (max-width: 767px) {
+  .image-intro__statement--lead .image-intro__dissolve,
+  .image-intro__statement--lead .image-intro__dissolve :deep(.dissolve-text__measure) {
+    font-size: clamp(25px, 4vw, 40px);
+  }
 }
 </style>

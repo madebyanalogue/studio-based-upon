@@ -48,7 +48,13 @@ export type ProductReturnImage = {
   bucketItemId?: string
 }
 
-/** Cream fade before the open flyer moves. Keep in sync with ProductOverlay CSS. */
+/** Phone / compact — skip the GSAP Flip flight and land the PDP immediately. */
+export const PRODUCT_OVERLAY_INSTANT_MQ = '(max-width: 767px)'
+
+export const isInstantProductOverlay = () =>
+  import.meta.client && window.matchMedia(PRODUCT_OVERLAY_INSTANT_MQ).matches
+
+/** Cream fade behind the open flyer. Keep in sync with ProductOverlay CSS. */
 export const PRODUCT_OVERLAY_BACKDROP_OPEN_MS = 180
 /** Brief hold after the cream is in, before the thumbnail flies. */
 export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 0
@@ -56,14 +62,14 @@ export const PRODUCT_OVERLAY_FLIP_OPEN_S = 0.42
 export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 0.4
 /** Materials & Forms grid — same flight as MWG 119. */
 export const ARCHIVE_PDP_OPEN_S = 0.6
-export const ARCHIVE_PDP_OPEN_EASE = 'power4.inOut'
+export const ARCHIVE_PDP_OPEN_EASE = 'power4.out'
 export const ARCHIVE_PDP_CLOSE_S = 0.4
 export const ARCHIVE_PDP_CLOSE_EASE = 'power3.out'
-/** PDP chrome fade before the return flyer — keep in sync with ProductDetail CSS. */
-/** PDP chrome (index / aside / sibling frames) exit before the close flyer moves. */
+/** PDP chrome fade — keep in sync with ProductDetail CSS. */
+/** PDP chrome (index / aside / sibling frames) exit duration. */
 export const PRODUCT_OVERLAY_CHROME_EXIT_MS = 350
-/** Gap after the chrome has left, before the return flyer moves. */
-export const PRODUCT_OVERLAY_UI_FADE_MS = 60
+/** Gap after the chrome has left — flyer no longer waits on this. */
+export const PRODUCT_OVERLAY_UI_FADE_MS = 0
 
 /** Beat on the landed flyer before the cream clears, then the fade itself. */
 export const PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS = 60
@@ -111,6 +117,33 @@ const clearFlipOpenGate = () => {
   releaseFlipOpenGateFn?.()
 }
 
+const FLIP_MAT_SELECTOR = '.product-card__mat, .discover-card__mat'
+
+const matsForSource = (el: HTMLElement) => {
+  const host =
+    el.closest('.product-card__media, .discover-card, .product-card') || el.parentElement
+  if (!host) return [] as HTMLElement[]
+  return [...host.querySelectorAll<HTMLElement>(FLIP_MAT_SELECTOR)]
+}
+
+const hideFlipMats = (el: HTMLElement) => {
+  for (const mat of matsForSource(el)) {
+    mat.style.visibility = 'hidden'
+    mat.dataset.pdpFlipMat = '1'
+  }
+}
+
+const restoreFlipMats = (el?: HTMLElement | null) => {
+  if (!import.meta.client) return
+  const mats = el
+    ? matsForSource(el)
+    : [...document.querySelectorAll<HTMLElement>('[data-pdp-flip-mat]')]
+  for (const mat of mats) {
+    mat.style.removeProperty('visibility')
+    delete mat.dataset.pdpFlipMat
+  }
+}
+
 /** Keep thumb fully visible while opening — overlay steals :hover. */
 const lockFlipSourceFull = (el: HTMLElement) => {
   el.style.transition = 'none'
@@ -123,6 +156,7 @@ const hideFlipSource = (el: HTMLElement) => {
   el.style.opacity = '0'
   el.style.visibility = 'hidden'
   el.style.filter = 'grayscale(0)'
+  hideFlipMats(el)
 }
 
 const restoreFlipSource = () => {
@@ -131,6 +165,7 @@ const restoreFlipSource = () => {
 
   // Paint full, then let CSS ease a saved desktop thumb down to its dim.
   // Clearing opacity in the same frame as `transition: none` would skip that fade.
+  restoreFlipMats(el)
   el.style.transition = 'none'
   el.style.visibility = ''
   el.style.opacity = '1'
@@ -245,8 +280,9 @@ export const useProductOverlay = () => {
     closeVeilActive.value = false
     if (!import.meta.client) return
     document
-      .querySelectorAll('[data-pdp-close-flyer], [data-pdp-close-veil]')
+      .querySelectorAll('[data-pdp-open-flyer], [data-pdp-close-flyer], [data-pdp-close-veil]')
       .forEach((el) => el.remove())
+    restoreFlipMats()
   }
 
   const open = (slug: string, options: ProductOverlayOpenOptions = {}) => {
@@ -261,7 +297,7 @@ export const useProductOverlay = () => {
       returnUrl.value =
         window.location.pathname + window.location.search + window.location.hash
 
-      if (options.source) {
+      if (options.source && !isInstantProductOverlay()) {
         flipSourceEl = options.source
         flipImageUrl = options.flipSrc || null
         flipBucketItemId = options.bucketItemId || null
@@ -471,6 +507,12 @@ export const useProductOverlay = () => {
 
     const { relatedRailVisible, closeRelatedRail } = usePdpRelatedRail()
     const hadRelated = relatedRailVisible.value
+
+    if (isInstantProductOverlay()) {
+      closeRelatedRail()
+      finishClose()
+      return
+    }
 
     if (
       import.meta.client &&

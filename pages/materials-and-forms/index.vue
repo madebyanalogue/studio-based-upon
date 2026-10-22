@@ -112,6 +112,7 @@
           'products__grid--revealed': gridRevealed,
           'products__grid--animating': gridAnimating,
           'products__grid--even': evenGrid,
+          'products__grid--filtered': listFiltered,
         }"
       >
         <template v-for="(row, rowIndex) in displayRows" :key="row.slotKey">
@@ -1377,6 +1378,9 @@ const gridMode = useCookie<'organic' | 'uniform'>('sba-materials-grid', {
   sameSite: 'lax',
 })
 const evenGrid = ref(gridMode.value === 'uniform')
+const listFiltered = computed(
+  () => Boolean(activeFilter.value) || isSearchUiActive.value,
+)
 const gridModeOptions = [
   { id: 'organic', label: 'Organic' },
   { id: 'uniform', label: 'Uniform' },
@@ -2834,11 +2838,11 @@ useHead(() => ({
 @media (min-width: 768px) {
   .products__grid--even :deep(.product-card__media) {
     height: auto;
-    aspect-ratio: 0.7 !important;
+    aspect-ratio: 0.8 !important;
   }
 
   .products__grid--even .products__spacer {
-    aspect-ratio: 0.7 !important;
+    aspect-ratio: 0.8 !important;
   }
 }
 
@@ -2853,6 +2857,21 @@ useHead(() => ({
   .products__grid :deep(.product-card:nth-child(3n of :not(.is-filtered-out))),
   .products__grid .products__spacer:nth-child(3n of :not(.is-filtered-out)) {
     grid-column: span 2 !important;
+  }
+
+  .products__grid--filtered {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .products__grid--filtered :deep(.product-card),
+  .products__grid--filtered .products__spacer,
+  .products__grid--filtered :deep(.product-card:nth-child(3n of :not(.is-filtered-out))),
+  .products__grid--filtered .products__spacer:nth-child(3n of :not(.is-filtered-out)) {
+    grid-column: span 1 !important;
+  }
+
+  .products__grid--filtered .products__spacer {
+    display: none;
   }
 }
 

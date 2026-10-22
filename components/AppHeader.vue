@@ -6,9 +6,19 @@
       'header--scroll-hidden': headerScrollHidden,
       'header--menu-open': menuOpen,
       'header--precrafted': onPrecrafted,
+      'header--cart-open': isOpen,
     }"
   >
     <div class="header__inner">
+      <button
+        type="button"
+        class="header__menu-btn interface"
+        :aria-expanded="menuOpen"
+        :aria-label="menuOpen ? 'Close menu' : 'Open menu'"
+        @click="toggleMenu"
+      >
+        <span class="header__menu-bars" :class="{ 'is-open': menuOpen }" aria-hidden="true" />
+      </button>
       <NuxtLink
         v-if="logoStyle === 'text'"
         to="/"
@@ -47,15 +57,6 @@
         class="header__actions"
         :aria-hidden="isProductPage ? 'true' : undefined"
       >
-        <button
-          type="button"
-          class="header__menu-btn interface"
-          :aria-expanded="menuOpen"
-          :aria-label="menuOpen ? 'Close menu' : 'Open menu'"
-          @click="toggleMenu"
-        >
-          <span class="header__menu-bars" :class="{ 'is-open': menuOpen }" aria-hidden="true" />
-        </button>
         <div class="header__tools" role="group" aria-label="Site tools">
           <button
             type="button"
@@ -158,6 +159,38 @@
         </div>
 
         <div class="header__cta" role="group" aria-label="Contact">
+          <div class="header__mobile-cart">
+            <button
+              type="button"
+              class="header__heart-btn"
+              aria-label="Open selection"
+              @click="onSelectionsClick"
+            >
+              <svg
+                class="header__heart-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
+                />
+              </svg>
+            </button>
+            <span class="header__cart-rule" aria-hidden="true" />
+            <button
+              type="button"
+              class="header__cart-count interface"
+              :aria-label="`${count} ${count === 1 ? 'item' : 'items'} in selection`"
+              @click="onSelectionsClick"
+            >
+              {{ count }}
+            </button>
+          </div>
           <a
             class="header__phone interface"
             :href="`tel:${phoneTel}`"
@@ -172,7 +205,6 @@
     </div>
 
     <div
-      v-show="menuOpen"
       class="header__sheet"
       :aria-hidden="menuOpen ? undefined : 'true'"
     >
@@ -251,6 +283,7 @@ const { isOpen: productOverlayOpen } = useProductOverlay()
 const {
   isOpen,
   panelTab,
+  count,
   activeMoodboard,
   activeMoodboardId,
   moodboards,
@@ -496,13 +529,19 @@ const onNewSelection = () => {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 500;
   background: transparent;
   transition:
     left 0.4s cubic-bezier(0.22, 1, 0.36, 1),
     right 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     background var(--theme-ms) var(--theme-ease),
     color var(--theme-ms) var(--theme-ease);
+}
+
+/* Sit under the cart cream so the site nav doesn't paint over the grid. */
+.header--cart-open {
+  z-index: 250;
+  pointer-events: none;
 }
 
 .header__nav {
@@ -529,6 +568,7 @@ const onNewSelection = () => {
 
 .header--product-page .header__nav,
 .header--product-page .header__actions,
+.header--product-page .header__menu-btn,
 .header--product-page .header__logo,
 .header--product-page .header__wordmark {
   visibility: hidden;
@@ -538,6 +578,7 @@ const onNewSelection = () => {
 /* Finish open: fade with the product chrome instead of popping out. */
 .header--precrafted .header__nav,
 .header--precrafted .header__actions,
+.header--precrafted .header__menu-btn,
 .header--precrafted .header__logo,
 .header--precrafted .header__wordmark {
   transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1);
@@ -545,6 +586,7 @@ const onNewSelection = () => {
 
 .header--precrafted.header--product-page .header__nav,
 .header--precrafted.header--product-page .header__actions,
+.header--precrafted.header--product-page .header__menu-btn,
 .header--precrafted.header--product-page .header__logo,
 .header--precrafted.header--product-page .header__wordmark {
   visibility: visible;
@@ -554,6 +596,7 @@ const onNewSelection = () => {
 /* Archive open slides the whole bar up — don’t snap it out from under the tween. */
 html.archive-header-shift .header--product-page .header__nav,
 html.archive-header-shift .header--product-page .header__actions,
+html.archive-header-shift .header--product-page .header__menu-btn,
 html.archive-header-shift .header--product-page .header__logo,
 html.archive-header-shift .header--product-page .header__wordmark {
   visibility: visible;
@@ -567,6 +610,8 @@ html.archive-header-shift .header--product-page .header__wordmark {
 }
 
 .header__inner {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -626,17 +671,28 @@ html.archive-header-shift .header--product-page .header__wordmark {
   white-space: nowrap;
 }
 
-.header__enquire {
+.header__mobile-cart {
+  display: none;
+}
+
+.header__enquire,
+.header__cart-count {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   margin: 0;
   padding: 0.45rem 0.85rem;
   border-radius: var(--ui-border-radius);
   font-size: var(--text-sm);
-  color: var(--white);
-  background: var(--red);
+  line-height: 1.3;
   text-decoration: none;
   white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.header__enquire {
+  color: var(--white);
+  background: var(--red);
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
@@ -1060,54 +1116,101 @@ html.archive-header-shift .header--product-page .header__wordmark {
 
 @media (max-width: 1100px) {
   .header--menu-open {
-    background: color-mix(in srgb, var(--background-color) 50%, transparent);
+    bottom: 0;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--background-color) 88%, transparent);
     backdrop-filter: blur(11px);
     -webkit-backdrop-filter: blur(11px);
   }
 
   .header__menu-btn {
     display: grid;
+    justify-self: start;
   }
 
   .header__nav,
   .header__tools,
-  .header__phone {
+  .header__phone,
+  .header__logo,
+  .header__wordmark {
     display: none;
   }
 
   .header__inner {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto 1fr;
     gap: 0;
   }
 
   .header__actions {
-    gap: 0.75rem;
+    gap: 0.65rem;
   }
 
-  .header__logo {
-    width: 72px;
+  .header__cta {
+    align-items: stretch;
+    gap: 0.65rem;
   }
 
-  .header__logo-mark {
-    top: 16px;
-    width: 128px;
+  .header__mobile-cart {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .header__heart-btn {
+    display: grid;
+    place-items: center;
+    width: auto;
+    min-width: 1.7rem;
+    margin: 0;
+    padding: 0 0.15rem;
+    color: var(--charcoal);
+  }
+
+  .header__heart-icon {
+    display: block;
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
+  .header__cart-rule {
+    display: block;
+    align-self: center;
+    width: 1px;
+    height: 0.85em;
+    background: currentColor;
+    opacity: 0.35;
+  }
+
+  .header__cart-count {
+    min-width: 2.15rem;
+    padding-left: 0.7rem;
+    padding-right: 0.7rem;
+    color: #fff;
+    background: #6e6e6e;
+  }
+
+  .header__enquire,
+  .header__cart-count {
+    align-self: stretch;
   }
 
   .header__sheet {
-    display: flex;
+    display: none;
     flex-direction: column;
     justify-content: space-between;
-    position: fixed;
+    position: absolute;
     top: var(--header-height);
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 1;
     padding: 1.75rem var(--gutter) calc(1.25rem + env(safe-area-inset-bottom, 0px));
-    background: color-mix(in srgb, var(--background-color) 50%, transparent);
-    backdrop-filter: blur(11px);
-    -webkit-backdrop-filter: blur(11px);
-    overflow: hidden;
+    background: transparent;
+    overflow: auto;
+  }
+
+  .header--menu-open .header__sheet {
+    display: flex;
   }
 
   .header__sheet-columns {
@@ -1186,11 +1289,8 @@ html.archive-header-shift .header--product-page .header__wordmark {
 }
 
 @media (max-width: 767px) {
-  .header__logo-mark {
-    width: 108px;
-  }
-
-  .header__enquire {
+  .header__enquire,
+  .header__cart-count {
     padding: 0.4rem 0.65rem;
   }
 }

@@ -135,8 +135,7 @@ html.pdp-related-rail-open .product-overlay {
   opacity: 1;
 }
 
-/* Materials grid: the cream arrives with the PDP, after the thumbnails have left. */
-.product-overlay--archive:not(.product-overlay--closing) .product-overlay__backdrop,
+/* Materials grid: panel fill stays instant; cream still fades in behind the flyer. */
 .product-overlay--archive:not(.product-overlay--closing) .product-overlay__panel {
   transition: none;
 }
@@ -165,6 +164,13 @@ html.pdp-related-rail-open .product-overlay {
 .product-overlay-enter-from,
 .product-overlay-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 767px) {
+  .product-overlay-enter-active,
+  .product-overlay-leave-active {
+    transition: none;
+  }
 }
 </style>
 

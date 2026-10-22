@@ -270,6 +270,29 @@ img {
     cursor: auto !important;
   }
 
+  html.custom-cursor-on [data-cursor='native'] button,
+  html.custom-cursor-on [data-cursor='native'] a,
+  html.custom-cursor-on [data-cursor='native'] label,
+  html.custom-cursor-on [data-cursor='native'] select,
+  html.custom-cursor-on [data-cursor='native'] summary,
+  html.custom-cursor-on [data-cursor='native'] [role='button'] {
+    cursor: pointer !important;
+  }
+
+  html.custom-cursor-on [data-cursor='native'] input,
+  html.custom-cursor-on [data-cursor='native'] textarea,
+  html.custom-cursor-on [data-cursor='native'] [contenteditable='true'] {
+    cursor: text !important;
+  }
+
+  html.custom-cursor-on [data-cursor='native'] input[type='checkbox'],
+  html.custom-cursor-on [data-cursor='native'] input[type='radio'],
+  html.custom-cursor-on [data-cursor='native'] input[type='file'],
+  html.custom-cursor-on [data-cursor='native'] input[type='submit'],
+  html.custom-cursor-on [data-cursor='native'] input[type='button'] {
+    cursor: pointer !important;
+  }
+
   html.custom-cursor-on [data-resize='nwse'],
   html.custom-cursor-on[data-resize-cursor='nwse'],
   html.custom-cursor-on[data-resize-cursor='nwse'] * {
@@ -409,7 +432,7 @@ html.stack-chrome-hidden .stack__boards-rail {
 
 /* Mobile menu covers the selection pile (closed 200, open 280, PDP 350). */
 html.header-menu-open .header {
-  z-index: 360;
+  z-index: 500;
 }
 
 /* Fixed chrome that lives in the content column (right of left rails) */

@@ -282,6 +282,48 @@
   color: color-mix(in srgb, var(--charcoal) 55%, transparent);
 }
 
+.enquire__file-pick,
+.enquire__file-pick-note {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .enquire__drop {
+    min-height: 0;
+    padding: 1.35rem var(--enquire-pad);
+    gap: 0.7rem;
+  }
+
+  .enquire__drop-title,
+  .enquire__drop-note {
+    display: none;
+  }
+
+  .enquire__file-pick {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 10.5rem;
+    padding: 0.7rem 1.1rem;
+    border-radius: var(--ui-border-radius);
+    background: #111;
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .enquire__file-pick-note {
+    display: block;
+    max-width: 18rem;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--charcoal) 55%, transparent);
+  }
+}
+
 .enquire__files {
   list-style: none;
   margin: 0;

@@ -27,6 +27,29 @@
     <div ref="leftEl" class="split-slider__column split-slider__column--left" />
     <div ref="rightEl" class="split-slider__column split-slider__column--right" />
 
+    <div v-if="phoneLayout" class="split-slider__phone">
+      <div v-if="!introHoldsCopy" class="split-slider__phone-copy">
+        <p v-for="(line, i) in phoneIntroLines" :key="`phone-copy-${i}`">
+          {{ line }}
+        </p>
+      </div>
+      <div ref="phoneGridEl" class="split-slider__phone-grid">
+        <button
+          v-for="thumb in phoneThumbs"
+          :key="thumb.key"
+          type="button"
+          class="split-slider__phone-thumb"
+          :aria-label="thumb.title"
+          @click="onPhoneThumb(thumb, $event)"
+        >
+          <span class="split-slider__phone-media">
+            <img :src="thumb.src" :alt="thumb.title" draggable="false" />
+          </span>
+          <span class="split-slider__phone-meta">{{ thumb.title }}</span>
+        </button>
+      </div>
+    </div>
+
     <div
       class="split-slider__type"
       :style="{ color: activeSlide?.accent || '#e8e8e8' }"
@@ -83,12 +106,8 @@
     <div v-if="activeSlide" class="split-slider__type split-slider__type--caption">
       <a
         class="split-slider__caption-side"
+        :class="{ 'split-slider__caption-side--hot': hoverSide === 'left' }"
         :href="activeSlide.left.link"
-        :data-cursor-label="
-          userScrolled && !statementOn
-            ? activeSlide.left.title || activeSlide.title
-            : undefined
-        "
         @click="onCaptionClick('left', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.left.title }}</p>
@@ -98,12 +117,8 @@
       </a>
       <a
         class="split-slider__caption-side"
+        :class="{ 'split-slider__caption-side--hot': hoverSide === 'right' }"
         :href="activeSlide.right.link"
-        :data-cursor-label="
-          userScrolled && !statementOn
-            ? activeSlide.right.title || activeSlide.title
-            : undefined
-        "
         @click="onCaptionClick('right', $event)"
       >
         <p class="split-slider__caption-title">{{ activeSlide.right.title }}</p>
@@ -118,6 +133,9 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { SplitText } from 'gsap/SplitText'
+import { lockPageScroll, unlockPageScroll } from '~/composables/usePageScrollLock'
+import { useHomepageIntro } from '~/composables/useHomepagePreloader'
+import { isInstantProductOverlay } from '~/composables/useProductOverlay'
 
 export type SplitSliderSide = {
   title: string
@@ -185,22 +203,42 @@ const settings = {
 /** Distance to an aligned frame, as a fraction of one slide, that eases shut. */
 const SNAP_TOLERANCE = 0.2
 /** Wait after the last scroll before the settle starts. */
-const SNAP_IDLE_MS = 480
+const SNAP_IDLE_MS = 320
 /** Touch settles sooner — less float after a finger lift. */
 const SNAP_IDLE_MS_TOUCH = 90
 /** How quickly the target drifts onto the frame. The picture follows via smoothness. */
-const SNAP_EASE = 0.035
+const SNAP_EASE = 0.06
 /** Touch ease onto the frame — snappier than wheel. */
 const SNAP_EASE_TOUCH = 0.16
+/** Follow the snap target a bit harder while a wheel settle is running. */
+const SNAP_SMOOTHNESS = 0.09
 /** Follow the snap target a bit harder while a touch settle is running. */
 const SNAP_SMOOTHNESS_TOUCH = 0.14
 
 const blurFilterId = 'split-slider-blur-matrix'
 const titleFilter = `url(#${blurFilterId}) blur(0.25px)`
 
+const PHONE_INTRO_LINES = [
+  'Everything starts from somewhere.',
+  'Explore what it can become.',
+]
+
+type PhoneThumb = {
+  key: string
+  src: string
+  title: string
+  productSlug?: string
+  productId?: string
+  imageIndex: number
+  link: string
+  slideIndex: number
+  side: 'left' | 'right'
+}
+
 const rootEl = ref<HTMLElement | null>(null)
 const leftEl = ref<HTMLElement | null>(null)
 const rightEl = ref<HTMLElement | null>(null)
+const phoneGridEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLElement | null>(null)
 const locationEl = ref<HTMLElement | null>(null)
 const linkEl = ref<HTMLElement | null>(null)
@@ -223,17 +261,61 @@ let lastScrollInputAt = 0
 let compact = false
 let compactLaidOut = false
 const COMPACT_QUERY = '(max-width: 1100px)'
+const PHONE_QUERY = '(max-width: 767px)'
 let compactMedia: MediaQueryList | null = null
+let phoneMedia: MediaQueryList | null = null
+let phone = false
+const phoneLayout = ref(false)
+const { phase: introPhase } = useHomepageIntro()
+const introHoldsCopy = computed(
+  () => introPhase.value === 'cover' || introPhase.value === 'chrome' || introPhase.value === 'type',
+)
+const phoneIntroLines = PHONE_INTRO_LINES
+const phoneThumbs = computed<PhoneThumb[]>(() => {
+  const thumbs: PhoneThumb[] = []
+  props.slides.forEach((slide, slideIndex) => {
+    for (const side of ['left', 'right'] as const) {
+      const src = side === 'left' ? slide.leftImage : slide.rightImage
+      const meta = slide[side]
+      if (!src) continue
+      thumbs.push({
+        key: `${slideIndex}-${side}`,
+        src,
+        title: meta.title || slide.title,
+        productSlug: meta.productSlug,
+        productId: meta.productId,
+        imageIndex: meta.imageIndex ?? 0,
+        link: meta.link,
+        slideIndex,
+        side,
+      })
+    }
+  })
+  return thumbs
+})
 const onCompactChange = (event: MediaQueryListEvent) => {
   compact = event.matches
   compactLaidOut = false
   rootEl.value?.classList.toggle('split-slider--compact', compact)
-  updateSlider()
+  if (!phone) updateSlider()
+}
+const applyPhoneLayout = (matches: boolean) => {
+  phone = matches
+  phoneLayout.value = matches
+  rootEl.value?.classList.toggle('split-slider--phone', matches)
+}
+const onPhoneChange = (event: MediaQueryListEvent) => {
+  const wasPhone = phone
+  applyPhoneLayout(event.matches)
+  if (phone && !wasPhone) unlockPageScroll()
+  else if (!phone && wasPhone) lockPageScroll()
+  if (!phone) updateSlider()
 }
 let lastTouchY = 0
 /** Last scroll input was a finger — use the snappier settle. */
 let lastInputWasTouch = false
 let touchSettling = false
+let snapSettling = false
 let rafId = 0
 let running = false
 let titleSplitInstance: InstanceType<typeof SplitText> | null = null
@@ -254,6 +336,7 @@ const statementRef = ref<{ wash: (x: number, y: number) => void; lift: () => voi
 let pointerOverSlider = false
 let hoverX = 0
 let hoverY = 0
+const hoverSide = ref<'left' | 'right' | null>(null)
 let lastCursorScroll = -1
 let scrollHintReady = false
 let scrollHintTimer = 0
@@ -278,14 +361,37 @@ const syncScrollHint = () => {
   if (homeScrollHint.value !== show) homeScrollHint.value = show
 }
 
-const applyProjectLabels = () => {
-  if (statementOn.value) return
-  for (const side of ['left', 'right'] as const) {
-    for (const el of columns[side].visibleSlides.values()) {
-      const name = el.dataset.projectName
-      if (name) el.dataset.cursorLabel = name
-    }
+const sideFromPoint = (clientX: number, clientY: number): 'left' | 'right' | null => {
+  const left = leftEl.value?.getBoundingClientRect()
+  const right = rightEl.value?.getBoundingClientRect()
+  if (
+    left &&
+    clientX >= left.left &&
+    clientX <= left.right &&
+    clientY >= left.top &&
+    clientY <= left.bottom
+  ) {
+    return 'left'
   }
+  if (
+    right &&
+    clientX >= right.left &&
+    clientX <= right.right &&
+    clientY >= right.top &&
+    clientY <= right.bottom
+  ) {
+    return 'right'
+  }
+  const root = rootEl.value
+  if (!root) return null
+  const rect = root.getBoundingClientRect()
+  if (clientX < rect.left || clientX > rect.right) return null
+  const mid = left && right ? (left.right + right.left) / 2 : rect.left + rect.width / 2
+  return clientX < mid ? 'left' : 'right'
+}
+
+const syncHoverSide = (clientX = hoverX, clientY = hoverY) => {
+  hoverSide.value = pointerOverSlider ? sideFromPoint(clientX, clientY) : null
 }
 
 const dismissScrollHint = () => {
@@ -293,7 +399,6 @@ const dismissScrollHint = () => {
   if (userScrolled.value) return
   userScrolled.value = true
   homeScrollHint.value = false
-  applyProjectLabels()
   if (pointerOverSlider && !statementOn.value) nextTick(() => resolveFromPoint(hoverX, hoverY))
 }
 
@@ -312,6 +417,7 @@ const onSliderPointerEnter = (event: PointerEvent) => {
   pointerOverSlider = true
   hoverX = event.clientX
   hoverY = event.clientY
+  syncHoverSide(event.clientX, event.clientY)
   syncScrollHint()
 }
 
@@ -319,12 +425,14 @@ const onSliderPointerMove = (event: PointerEvent) => {
   pointerOverSlider = true
   hoverX = event.clientX
   hoverY = event.clientY
+  syncHoverSide(event.clientX, event.clientY)
   if (statementOn.value) statementRef.value?.wash(event.clientX, event.clientY)
   syncScrollHint()
 }
 
 const onSliderPointerLeave = () => {
   pointerOverSlider = false
+  hoverSide.value = null
   statementRef.value?.lift()
   syncScrollHint()
 }
@@ -412,10 +520,7 @@ const createSlide = (side: Side, index: number) => {
   // Clip immediately so buffer slides never flash full-bleed before updateSlider
   el.style.clipPath = getRevealShape(side, scrollPosition - index)
   const projectName = (data[side].title || data.title || '').trim()
-  if (projectName) {
-    el.dataset.projectName = projectName
-    if (userScrolled.value && !statementOn.value) el.dataset.cursorLabel = projectName
-  }
+  if (projectName) el.dataset.projectName = projectName
 
   const img = document.createElement('img')
   img.src = side === 'left' ? data.leftImage : data.rightImage
@@ -863,12 +968,46 @@ const revealIntroChrome = () => {
   }, 1800)
 }
 
+/** Phone: project thumbs rise in under the parked intro copy. */
+const playPhoneThumbs = () => {
+  const nodes = phoneGridEl.value?.querySelectorAll<HTMLElement>(
+    '.split-slider__phone-thumb',
+  )
+  if (!nodes?.length) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduced) {
+    gsap.set(nodes, { opacity: 1, y: 0 })
+    return
+  }
+  gsap.fromTo(
+    nodes,
+    { opacity: 0, y: 56 },
+    {
+      opacity: 1,
+      y: 0,
+      duration: 0.85,
+      stagger: 0.07,
+      ease: 'power3.out',
+      overwrite: 'auto',
+    },
+  )
+}
+
 /** Wipe the columns open, then bring the slide captions in. */
 const playEntrance = async () => {
   if (entranceStarted || leaving) return
   entranceStarted = true
   await prepareSurface()
   if (!running || leaving) return
+  if (phone) {
+    surfaceReady.value = true
+    revealIntroChrome()
+    await nextTick()
+    if (!running || leaving) return
+    playPhoneThumbs()
+    needsIntro = false
+    return
+  }
   if (compact) {
     surfaceReady.value = true
     for (const el of [leftEl.value, rightEl.value]) {
@@ -991,6 +1130,7 @@ const syncTypeLayer = () => {
 }
 
 const updateSlider = () => {
+  if (phone) return
   if (compact) {
     if (!compactLaidOut) layoutCompactSlides()
     syncTypeLayer()
@@ -1045,6 +1185,7 @@ const wheelOwnsItself = (event: WheelEvent) => {
 }
 
 const onWheel = (event: WheelEvent) => {
+  if (phone) return
   if (event.ctrlKey || wheelOwnsItself(event)) return
   event.preventDefault()
   if (event.deltaX || event.deltaY) dismissScrollHint()
@@ -1057,6 +1198,7 @@ const onWheel = (event: WheelEvent) => {
   }
   lastInputWasTouch = false
   touchSettling = false
+  snapSettling = false
   lastScrollInputAt = performance.now()
   scrollTarget += event.deltaY / settings.scrollSensitivity
 }
@@ -1065,6 +1207,7 @@ const onTouchStart = (event: TouchEvent) => {
   lastTouchY = event.touches[0]?.clientY ?? 0
   lastInputWasTouch = true
   touchSettling = false
+  snapSettling = false
 }
 
 const onTouchMove = (event: TouchEvent) => {
@@ -1074,6 +1217,7 @@ const onTouchMove = (event: TouchEvent) => {
   if (y !== lastTouchY) dismissScrollHint()
   lastInputWasTouch = true
   touchSettling = false
+  snapSettling = false
   lastScrollInputAt = performance.now()
   scrollTarget += ((lastTouchY - y) * 8) / settings.scrollSensitivity
   lastTouchY = y
@@ -1104,29 +1248,38 @@ const snapIfClose = () => {
   if (Math.abs(gap) < 0.0006) {
     scrollTarget = nearest
     touchSettling = false
+    snapSettling = false
     return
   }
   scrollTarget += gap * (lastInputWasTouch ? SNAP_EASE_TOUCH : SNAP_EASE)
+  snapSettling = true
   if (lastInputWasTouch) touchSettling = true
 }
 
 const tick = () => {
-  if (!running || leaving) return
+  if (!running || leaving || phone) return
   snapIfClose()
   const follow =
     touchSettling && lastInputWasTouch
       ? SNAP_SMOOTHNESS_TOUCH
-      : settings.smoothness
+      : snapSettling
+        ? SNAP_SMOOTHNESS
+        : settings.smoothness
   scrollPosition += (scrollTarget - scrollPosition) * follow
-  if (touchSettling && Math.abs(scrollPosition - scrollTarget) < 0.002) {
+  if (
+    (touchSettling || snapSettling) &&
+    Math.abs(scrollPosition - scrollTarget) < 0.002
+  ) {
     scrollPosition = scrollTarget
     touchSettling = false
+    snapSettling = false
   }
   updateSlider()
   rafId = requestAnimationFrame(tick)
 }
 
 const { open: openProduct, isOpen: productOpen } = useProductOverlay()
+const skipProductFlip = () => isInstantProductOverlay()
 
 const slideIndexFor = (side: Side, el: HTMLElement) => {
   for (const [index, slide] of columns[side].visibleSlides) {
@@ -1179,6 +1332,13 @@ const completeReveal = (slideIndex: number) =>
 const restoreAfterProduct = () => {
   openingProduct.value = false
   unpinSplitFlipImage()
+  if (phone) {
+    const nodes = phoneGridEl.value?.querySelectorAll<HTMLElement>(
+      '.split-slider__phone-thumb',
+    )
+    if (nodes?.length) gsap.to(nodes, { opacity: 1, y: 0, duration: 0.35, overwrite: 'auto' })
+    return
+  }
   for (const el of [leftEl.value, rightEl.value]) {
     if (!el) continue
     gsap.killTweensOf(el)
@@ -1239,14 +1399,15 @@ const openSide = async (side: Side, slideIndex: number) => {
   // so landing on the slide box then revealing the img causes a scale jump.
   const flipTarget =
     (clicked?.querySelector('img') as HTMLElement | null) || clicked
-  if (flipTarget instanceof HTMLImageElement) pinSplitFlipImage(flipTarget)
+  const instant = skipProductFlip()
+  if (!instant && flipTarget instanceof HTMLImageElement) pinSplitFlipImage(flipTarget)
   openedHome = { side, dataIndex: dataIndexFor(picked.slideIndex) }
   const flipSrc = side === 'left' ? picked.slide.leftImage : picked.slide.rightImage
   if (flipSrc) void prefetchImage(flipSrc)
   openProduct(picked.side.productSlug, {
-    source: flipTarget,
+    source: instant ? null : flipTarget,
     imageIndex: picked.side.imageIndex ?? 0,
-    flipSrc: flipSrc || null,
+    flipSrc: instant ? null : flipSrc || null,
     productId: picked.side.productId || null,
   })
 }
@@ -1264,6 +1425,32 @@ const onColumnClick = (side: Side, event: MouseEvent) => {
   const slideIndex = slideIndexFor(side, slideEl)
   if (slideIndex == null) return
   void openSide(side, slideIndex)
+}
+
+const onPhoneThumb = (thumb: PhoneThumb, event: MouseEvent) => {
+  if (openingProduct.value || leaving) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+    return
+  }
+  event.preventDefault()
+  const img = (event.currentTarget as HTMLElement | null)?.querySelector('img')
+  if (!thumb.productSlug) {
+    if (!thumb.link) return
+    if (thumb.link.startsWith('/')) void navigateTo(thumb.link)
+    else window.location.assign(thumb.link)
+    return
+  }
+  openingProduct.value = true
+  const instant = skipProductFlip()
+  if (!instant && img instanceof HTMLImageElement) pinSplitFlipImage(img)
+  openedHome = { side: thumb.side, dataIndex: thumb.slideIndex }
+  void preloadImage(thumb.src)
+  openProduct(thumb.productSlug, {
+    source: instant ? null : img instanceof HTMLElement ? img : null,
+    imageIndex: thumb.imageIndex,
+    flipSrc: instant ? null : thumb.src,
+    productId: thumb.productId || null,
+  })
 }
 
 const onCaptionClick = (side: Side, event: MouseEvent) => {
@@ -1294,6 +1481,25 @@ const playLeave = () => {
     columnWipe?.kill()
 
     void (async () => {
+      if (phone) {
+        const nodes = phoneGridEl.value?.querySelectorAll<HTMLElement>(
+          '.split-slider__phone-thumb',
+        )
+        if (nodes?.length) {
+          await new Promise<void>((done) => {
+            gsap.to(nodes, {
+              opacity: 0,
+              y: 24,
+              duration: motionDuration(0.35),
+              ease: 'power2.in',
+              overwrite: 'auto',
+              onComplete: () => done(),
+            })
+          })
+        }
+        resolve()
+        return
+      }
       const fade = typeLayerVisible.value
         ? fadeCaptions(0, WIPE_OUT_DURATION)
         : Promise.resolve()
@@ -1312,13 +1518,16 @@ onMounted(() => {
   columns.left.el = leftEl.value
   columns.right.el = rightEl.value
   running = true
-  lockPageScroll()
 
   const root = rootEl.value
   compactMedia = window.matchMedia(COMPACT_QUERY)
   compact = compactMedia.matches
   root?.classList.toggle('split-slider--compact', compact)
   compactMedia.addEventListener('change', onCompactChange)
+  phoneMedia = window.matchMedia(PHONE_QUERY)
+  applyPhoneLayout(phoneMedia.matches)
+  phoneMedia.addEventListener('change', onPhoneChange)
+  if (!phone) lockPageScroll()
   window.addEventListener('wheel', onWheel, { passive: false })
   root?.addEventListener('touchstart', onTouchStart, { passive: true })
   root?.addEventListener('touchmove', onTouchMove, { passive: true })
@@ -1329,10 +1538,13 @@ onMounted(() => {
   leftEl.value?.addEventListener('click', onLeftColumnClick)
   rightEl.value?.addEventListener('click', onRightColumnClick)
 
-  updateSlider()
-  rafId = requestAnimationFrame(tick)
-  if (props.holdEntrance) void prepareSurface()
-  else {
+  if (!phone) {
+    updateSlider()
+    rafId = requestAnimationFrame(tick)
+  }
+  if (props.holdEntrance) {
+    if (!phone) void prepareSurface()
+  } else {
     showScrollHint()
     void playEntrance()
   }
@@ -1359,6 +1571,7 @@ onBeforeUnmount(() => {
 
   const root = rootEl.value
   compactMedia?.removeEventListener('change', onCompactChange)
+  phoneMedia?.removeEventListener('change', onPhoneChange)
   window.removeEventListener('wheel', onWheel)
   root?.removeEventListener('touchstart', onTouchStart)
   root?.removeEventListener('touchmove', onTouchMove)
@@ -1539,7 +1752,7 @@ watch(
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 16px 0;
+  padding: 19px 0;
   text-align: center;
   text-decoration: none;
   color: inherit;
@@ -1555,9 +1768,17 @@ watch(
   white-space: nowrap;
 }
 
-.split-slider__caption-title,
-.split-slider__caption-subtitle {
-  display: none;
+@media (hover: hover) and (pointer: fine) {
+  .split-slider__caption-title,
+  .split-slider__caption-subtitle {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+
+  .split-slider__caption-side--hot .split-slider__caption-title,
+  .split-slider__caption-side--hot .split-slider__caption-subtitle {
+    opacity: 1;
+  }
 }
 
 .split-slider__caption-subtitle {
@@ -1660,5 +1881,103 @@ watch(
 
 .split-slider__link--pending {
   visibility: hidden;
+}
+
+@media (max-width: 767px) {
+  .split-slider.split-slider--phone {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    display: block;
+    overflow: visible;
+    touch-action: pan-y;
+    padding: calc(
+        var(--header-height) + 80px +
+          var(--home-phone-copy-h, calc(clamp(25px, 4vw, 40px) * 1.15 * 2)) + 80px
+      )
+      var(--gutter) calc(5rem + var(--bucket-push, 0px));
+    z-index: 2;
+  }
+
+  .split-slider--phone .split-slider__column,
+  .split-slider--phone .split-slider__type,
+  .split-slider--phone .split-slider__filter {
+    display: none;
+  }
+
+  .split-slider__phone-copy {
+    position: absolute;
+    left: var(--gutter);
+    right: var(--gutter);
+    top: calc(var(--header-height) + 80px);
+    margin: 0;
+    font-family: var(--mono);
+    font-size: clamp(25px, 4vw, 40px);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    text-align: center;
+    color: #f1ede4;
+    pointer-events: none;
+  }
+
+  .split-slider__phone-copy p {
+    margin: 0;
+  }
+
+  .split-slider__phone-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    align-items: start;
+  }
+
+  .split-slider__phone-thumb {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    opacity: 0;
+    appearance: none;
+  }
+
+  .split-slider__phone-thumb:nth-child(3n) {
+    grid-column: span 2;
+  }
+
+  .split-slider__phone-media {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1.5;
+    overflow: hidden;
+    background: var(--cream);
+    border-radius: var(--thumb-radius);
+  }
+
+  .split-slider__phone-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+  }
+
+  .split-slider__phone-meta {
+    padding: 16px 0 8px;
+    font-family: var(--mono);
+    font-size: clamp(8px, 1vw, 9.5px);
+    letter-spacing: 0.125em;
+    line-height: 1.3;
+    text-transform: uppercase;
+    color: #f1ede4;
+  }
 }
 </style>

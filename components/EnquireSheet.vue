@@ -8,6 +8,7 @@
       'enquire--dragging': windowDragging,
     }"
     data-lenis-prevent
+    data-cursor="native"
   >
     <button
       type="button"
@@ -34,6 +35,7 @@
           @pointerdown.stop
           @click.stop="closeSheet"
         >
+          <span class="enquire__close-label interface">Close</span>
           <span class="enquire__close-icon" aria-hidden="true" />
         </button>
       </div>
@@ -235,6 +237,8 @@
                 />
                 <span class="enquire__drop-title">Drop files here</span>
                 <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
+                <span class="enquire__file-pick">Add files</span>
+                <span class="enquire__file-pick-note">Images, PDF or Word · up to 10MB each</span>
               </label>
               <ul v-if="attachments.length" class="enquire__files">
                 <li v-for="file in attachments" :key="file.id" class="enquire__file">
@@ -315,95 +319,6 @@
         </div>
       </div>
 
-      <div
-        class="enquire__field enquire__attach enquire__attach--info enquire__attach--about"
-        :class="{ 'enquire__attach--open': aboutOpen }"
-      >
-        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
-          <span class="interface">Working with Us</span>
-          <span class="enquire__attach-mark" aria-hidden="true" />
-        </button>
-        <div class="enquire__attach-sheet">
-          <button
-            type="button"
-            class="enquire__attach-trigger"
-            :aria-expanded="aboutOpen"
-            @click="toggleAbout"
-          >
-            <span class="interface">Working with Us</span>
-            <span class="enquire__attach-mark" aria-hidden="true" />
-          </button>
-          <div class="enquire__attach-panel">
-            <div class="enquire__attach-panel-inner">
-              <div class="enquire__attach-body enquire__info-copy">
-                <p class="mono-copy">
-                  You are a critical part of our process. We collaborate closely with our clients, designers
-                  and architects to realise work for private residences, yachts, hotels,
-                  restaurants and fashion houses.
-                </p>
-                <p class="mono-copy">
-                  Share a selection, a drawing, or a few words about the project. We will be
-                  in touch to talk through material, scale and how the work is made.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="enquire__field enquire__attach enquire__attach--info enquire__attach--contact"
-        :class="{ 'enquire__attach--open': contactOpen }"
-      >
-        <button type="button" class="enquire__attach-trigger enquire__attach-sizer" tabindex="-1" aria-hidden="true">
-          <span class="interface">Contact</span>
-          <span class="enquire__attach-mark" aria-hidden="true" />
-        </button>
-        <div class="enquire__attach-sheet">
-          <button
-            type="button"
-            class="enquire__attach-trigger"
-            :aria-expanded="contactOpen"
-            @click="toggleContact"
-          >
-            <span class="interface">Contact</span>
-            <span class="enquire__attach-mark" aria-hidden="true" />
-          </button>
-          <div class="enquire__attach-panel">
-            <div class="enquire__attach-panel-inner">
-              <div class="enquire__attach-body enquire__info-copy">
-                <p class="mono-copy enquire__aside-line">
-                  <a :href="`tel:${phoneTel}`">{{ phone }}</a>
-                </p>
-                <p class="mono-copy enquire__aside-line">
-                  <a :href="`mailto:${enquiryEmail}`">{{ enquiryEmail }}</a>
-                </p>
-                <p v-if="studioAddress" class="mono-copy enquire__aside-line">
-                  {{ studioAddress }}
-                </p>
-                <div class="enquire__info-links">
-                  <a
-                    class="interface"
-                    href="https://www.instagram.com/studiobasedupon"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Ig
-                  </a>
-                  <a
-                    class="interface"
-                    href="https://www.pinterest.com/Studio_Based_Upon/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Pi
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
       </div>
 
       <p v-if="error" class="enquire__error" role="alert">{{ error }}</p>
@@ -414,6 +329,90 @@
         </button>
       </div>
     </form>
+
+      <div class="enquire__extras">
+        <div
+          class="enquire__field enquire__attach enquire__attach--info enquire__attach--about"
+          :class="{ 'enquire__attach--open': aboutOpen }"
+        >
+          <div class="enquire__attach-sheet">
+            <button
+              type="button"
+              class="enquire__attach-trigger"
+              :aria-expanded="aboutOpen"
+              @click="toggleAbout"
+            >
+              <span class="interface">Working with Us</span>
+              <span class="enquire__attach-mark" aria-hidden="true" />
+            </button>
+            <div class="enquire__attach-panel">
+              <div class="enquire__attach-panel-inner">
+                <div class="enquire__attach-body enquire__info-copy">
+                  <p class="mono-copy">
+                    You are a critical part of our process. We collaborate closely with our clients, designers
+                    and architects to realise work for private residences, yachts, hotels,
+                    restaurants and fashion houses.
+                  </p>
+                  <p class="mono-copy">
+                    Share a selection, a drawing, or a few words about the project. We will be
+                    in touch to talk through material, scale and how the work is made.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="enquire__field enquire__attach enquire__attach--info enquire__attach--contact"
+          :class="{ 'enquire__attach--open': contactOpen }"
+        >
+          <div class="enquire__attach-sheet">
+            <button
+              type="button"
+              class="enquire__attach-trigger"
+              :aria-expanded="contactOpen"
+              @click="toggleContact"
+            >
+              <span class="interface">Contact info</span>
+              <span class="enquire__attach-mark" aria-hidden="true" />
+            </button>
+            <div class="enquire__attach-panel">
+              <div class="enquire__attach-panel-inner">
+                <div class="enquire__attach-body enquire__info-copy">
+                  <p class="mono-copy enquire__aside-line">
+                    <a :href="`tel:${phoneTel}`">{{ phone }}</a>
+                  </p>
+                  <p class="mono-copy enquire__aside-line">
+                    <a :href="`mailto:${enquiryEmail}`">{{ enquiryEmail }}</a>
+                  </p>
+                  <p v-if="studioAddress" class="mono-copy enquire__aside-line">
+                    {{ studioAddress }}
+                  </p>
+                  <div class="enquire__info-links">
+                    <a
+                      class="interface"
+                      href="https://www.instagram.com/studiobasedupon"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Ig
+                    </a>
+                    <a
+                      class="interface"
+                      href="https://www.pinterest.com/Studio_Based_Upon/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Pi
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       </div>
       </div>
@@ -633,8 +632,18 @@ const contactOpen = ref(false)
 const WINDOW_CLIP_MS = 700
 /** Overlay fade-out; keep the sheet mounted until this finishes. */
 const OVERLAY_FADE_MS = 1400
+const MOBILE_ENQUIRE_MQ = '(max-width: 900px)'
+const mobileEnquire = ref(false)
+
+const isMobileEnquire = () => mobileEnquire.value
+
+let mobileEnquireMq: MediaQueryList | null = null
+const syncMobileEnquire = () => {
+  mobileEnquire.value = !!mobileEnquireMq?.matches
+}
 
 const windowStyle = computed(() => {
+  if (isMobileEnquire()) return { transform: 'none' }
   const { x, y } = windowDrag.value
   return {
     transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
@@ -645,6 +654,7 @@ let windowPointerId = 0
 let windowDragOrigin = { x: 0, y: 0, px: 0, py: 0 }
 
 const onWindowDragStart = (event: PointerEvent) => {
+  if (isMobileEnquire()) return
   if (event.button !== 0) return
   const target = event.target
   if (target instanceof Element && target.closest('button, a')) return
@@ -750,13 +760,17 @@ let closeTimer = 0
 const closeSheet = () => {
   if (!sheetIn.value || sheetClosing.value) return
   window.clearTimeout(closeTimer)
-  const reduced = prefersReducedMotion()
+  const instant = prefersReducedMotion() || isMobileEnquire()
+  if (instant) {
+    sheetIn.value = false
+    closeEnquireSheet()
+    return
+  }
   sheetClosing.value = true
-  const wait = reduced ? 0 : Math.max(WINDOW_CLIP_MS, OVERLAY_FADE_MS)
   closeTimer = window.setTimeout(() => {
     sheetIn.value = false
     closeEnquireSheet()
-  }, wait)
+  }, Math.max(WINDOW_CLIP_MS, OVERLAY_FADE_MS))
 }
 const titleFilterId = `enquire-title-goo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const titleBaseFilter = `url(#${titleFilterId}) blur(0.25px)`
@@ -780,7 +794,7 @@ const revealStage = () => {
 
 const playTitleGooeyIn = async () => {
   const gen = ++titleGen
-  if (!import.meta.client || !titleEl.value) {
+  if (!import.meta.client || !titleEl.value || isMobileEnquire()) {
     titlePaintReady.value = true
     revealStage()
     return
@@ -852,6 +866,15 @@ onMounted(() => {
   const lenis = useNuxtApp().$lenis as { stop?: () => void } | undefined
   lenis?.stop?.()
   resetWindow()
+  mobileEnquireMq = window.matchMedia(MOBILE_ENQUIRE_MQ)
+  syncMobileEnquire()
+  mobileEnquireMq.addEventListener('change', syncMobileEnquire)
+  if (isMobileEnquire()) {
+    titlePaintReady.value = true
+    stageVisible.value = true
+    sheetIn.value = true
+    return
+  }
   void playTitleGooeyIn()
   requestAnimationFrame(() => {
     sheetIn.value = true
@@ -859,6 +882,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  mobileEnquireMq?.removeEventListener('change', syncMobileEnquire)
+  mobileEnquireMq = null
   document.documentElement.classList.remove('enquire-open')
   const lenis = useNuxtApp().$lenis as { start?: () => void } | undefined
   lenis?.start?.()
@@ -884,7 +909,7 @@ useHead(() => {
 .enquire {
   position: fixed;
   inset: 0;
-  z-index: 470;
+  z-index: 540;
   max-width: none;
   pointer-events: none;
   --grid-line: rgba(0, 0, 0, 0.15);
@@ -962,6 +987,10 @@ useHead(() => {
   color: #111;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.enquire__close-label {
+  display: none;
 }
 
 .enquire__close:hover {
@@ -1496,6 +1525,15 @@ useHead(() => {
   display: none;
 }
 
+.enquire__extras {
+  display: none;
+}
+
+.enquire__file-pick,
+.enquire__file-pick-note {
+  display: none;
+}
+
 .enquire__info-copy {
   display: flex;
   flex-direction: column;
@@ -1800,32 +1838,27 @@ useHead(() => {
 }
 
 @media (max-width: 900px) {
+  .enquire__overlay {
+    display: none;
+    transition: none;
+  }
+
   .enquire__clients {
     display: none;
   }
 
+  .enquire__extras {
+    display: block;
+    margin-top: auto;
+    border-top: var(--enquire-border-style);
+  }
+
+  .enquire__extras .enquire__attach:first-child .enquire__attach-sheet {
+    border-top: 0;
+  }
+
   .enquire__attach--info {
     display: block;
-  }
-
-  .enquire__message-block > .enquire__field:not(.enquire__attach) {
-    order: 0;
-  }
-
-  .enquire__attach--about {
-    order: 1;
-  }
-
-  .enquire__attach--contact {
-    order: 2;
-  }
-
-  .enquire__attach--files {
-    order: 3;
-  }
-
-  .enquire__attach--picks {
-    order: 4;
   }
 
   .enquire__attach-sizer {
@@ -1854,15 +1887,99 @@ useHead(() => {
   }
 
   .enquire__columns,
-  .enquire--intro .enquire__columns {
+  .enquire--intro .enquire__columns,
+  .enquire--open .enquire__columns,
+  .enquire--open.enquire--closing .enquire__columns {
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    max-height: 100dvh;
     grid-template-columns: minmax(0, 1fr);
-    width: min(840px, calc(100vw - 24px));
-    max-height: min(90dvh, calc(100dvh - 24px));
-    height: min(90dvh, calc(100dvh - 24px));
+    clip-path: none;
+    transform: none !important;
+    transition: none;
+  }
+
+  .enquire__aside-block,
+  .enquire__panel {
+    opacity: 1;
+    transition: none;
+  }
+
+  .enquire__sheet-head {
+    min-height: var(--header-height);
+    padding: 0 var(--gutter);
+    cursor: default;
+    touch-action: auto;
+  }
+
+  .enquire__sheet-title {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .enquire__close {
+    width: auto;
+    height: auto;
+    padding: 0.4rem 0.65rem;
+    border-radius: var(--ui-border-radius);
+    background: #e6e6e6;
+    color: #111;
+  }
+
+  .enquire__close:hover {
+    color: #111;
+  }
+
+  .enquire__close-icon {
+    display: none;
+  }
+
+  .enquire__close-label {
+    display: block;
+    font-size: var(--text-sm);
+    line-height: 1.2;
+    color: inherit;
   }
 
   .enquire__stage {
     --enquire-copy: 16px;
+  }
+
+  .enquire__drop {
+    min-height: 0;
+    padding: 1.35rem var(--enquire-pad);
+    gap: 0.7rem;
+  }
+
+  .enquire__drop-title,
+  .enquire__drop-note {
+    display: none;
+  }
+
+  .enquire__file-pick {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 10.5rem;
+    padding: 0.7rem 1.1rem;
+    border-radius: var(--ui-border-radius);
+    background: #111;
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .enquire__file-pick-note {
+    display: block;
+    max-width: 18rem;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--charcoal) 55%, transparent);
   }
 
   .enquire__field textarea {

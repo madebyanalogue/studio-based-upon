@@ -75,9 +75,10 @@ const { isOpen: enquireOpen, close: closeEnquire } = useEnquireSheet()
 const { phase: introPhase, ground: introGround } = useHomepageIntro()
 const introActive = computed(
   () =>
-    introPhase.value === 'cover' ||
-    introPhase.value === 'type' ||
-    introPhase.value === 'chrome',
+    isHomepagePath(route.path) &&
+    (introPhase.value === 'cover' ||
+      introPhase.value === 'type' ||
+      introPhase.value === 'chrome'),
 )
 const isOwnScenePath = (path: string) =>
   path === '/webgl' ||

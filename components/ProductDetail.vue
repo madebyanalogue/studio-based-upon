@@ -367,15 +367,12 @@ import {
   ARCHIVE_PDP_OPEN_EASE,
   ARCHIVE_PDP_OPEN_S,
   PRODUCT_OVERLAY_BACKDROP_CLOSE_EASE,
-  PRODUCT_OVERLAY_BACKDROP_OPEN_MS,
-  PRODUCT_OVERLAY_CHROME_EXIT_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS,
   PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS,
   PRODUCT_OVERLAY_FLIP_CLOSE_S,
   PRODUCT_OVERLAY_FLIP_OPEN_S,
-  PRODUCT_OVERLAY_FLYER_PAUSE_MS,
   PRODUCT_OVERLAY_FLYER_Z,
-  PRODUCT_OVERLAY_UI_FADE_MS,
+  isInstantProductOverlay,
 } from '~/composables/useProductOverlay'
 
 const props = withDefaults(
@@ -394,6 +391,8 @@ const emit = defineEmits<{
 const { fetchProduct, getNextProduct } = useProductCatalog()
 const { imageUrl, fileUrl } = useSanityImage()
 const { requestSave, isSaved } = useBucket()
+const { preset: cursorPreset, native: cursorNative, resolveFromPoint, pointer: cursorPoint, labelCue } =
+  useCursor()
 const {
   close,
   finishClose,
@@ -528,6 +527,8 @@ const paneContentVisible = ref(true)
 let slugSwapToken = 0
 const flipStarted = ref(false)
 const flipCloseStarted = ref(false)
+let flipOpenGen = 0
+let flipOpenTween: gsap.core.Timeline | gsap.core.Tween | null = null
 const selectedIndex = ref(openImageIndex.value)
 /** Full-bleed gallery zoom. A second click collapses it. */
 const imageExpanded = ref(false)
@@ -1907,6 +1908,63 @@ const tweenCornerRadius = (
   )
 }
 
+const hideGalleryForFlip = () => {
+  galleryVisible.value = false
+  stripRef.value
+    ?.querySelectorAll<HTMLElement>('.pdp__hero-image')
+    .forEach((img) => {
+      gsap.set(img, { visibility: 'hidden' })
+    })
+}
+
+const flipOpenWasAborted = (gen: number) =>
+  gen !== flipOpenGen || flipCloseStarted.value || closingFlip.value
+
+const abortFlipOpenMotion = () => {
+  flipOpenGen += 1
+  flipOpenTween?.kill()
+  flipOpenTween = null
+  if (!import.meta.client) return
+  document.querySelectorAll<HTMLElement>('[data-pdp-open-flyer]').forEach((el) => {
+    gsap.killTweensOf(el)
+  })
+}
+
+/** Stop an in-flight open flyer and pin it so close can reverse from here. */
+const takeOpenFlyer = () => {
+  if (!import.meta.client) return null
+  const el = document.querySelector<HTMLElement>('[data-pdp-open-flyer]')
+  if (!el) return null
+  gsap.killTweensOf(el)
+  const from = el.getBoundingClientRect()
+  gsap.set(el, { clearProps: 'transform,x,y,top,left,width,height' })
+  Object.assign(el.style, {
+    position: 'fixed',
+    top: `${from.top}px`,
+    left: `${from.left}px`,
+    width: `${from.width}px`,
+    height: `${from.height}px`,
+    transform: 'none',
+    zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
+    pointerEvents: 'none',
+  })
+  el.setAttribute('data-pdp-close-flyer', '')
+  el.removeAttribute('data-pdp-open-flyer')
+  return { el, from }
+}
+
+/** After the flyer lands, type Close in letter by letter. */
+const cuePdpCloseCursor = () => {
+  if (!import.meta.client) return
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches === false) return
+  resolveFromPoint(cursorPoint.value.x, cursorPoint.value.y)
+  if (cursorNative.value || cursorPreset.value?.icon === 'heart') return
+  if (cursorPreset.value?.tooltip !== 'Close') {
+    cursorPreset.value = { id: 'cursor-label', tooltip: 'Close' }
+  }
+  labelCue.value = 'Close'
+}
+
 const revealWithoutFlip = () => {
   restoreFlipSource()
   heartHold.value = false
@@ -1923,7 +1981,10 @@ const revealWithoutFlip = () => {
     .forEach((img) => {
       gsap.set(img, { clearProps: 'visibility' })
     })
-  nextTick(() => scrollGalleryInitial())
+  nextTick(() => {
+    scrollGalleryInitial()
+    cuePdpCloseCursor()
+  })
 }
 
 const waitForImage = (img: HTMLImageElement) => {
@@ -1946,14 +2007,16 @@ const waitForImageLimited = (img: HTMLImageElement, ms = 1200) =>
 const runFlipOpen = async () => {
   if (flipStarted.value || !import.meta.client) return
   flipStarted.value = true
+  const gen = ++flipOpenGen
 
   const source = getFlipSource()
   const hero = heroRef.value
   // Cart fade prelude (if any) runs in parallel with image prep
   const gateP = waitForFlipOpenGate()
 
-  if (!source || !hero) {
+  if (!source || !hero || isInstantProductOverlay()) {
     await gateP
+    if (flipOpenWasAborted(gen)) return
     revealWithoutFlip()
     return
   }
@@ -1969,7 +2032,9 @@ const runFlipOpen = async () => {
   const fromPrecrafted = flipSourceIsPrecrafted()
   // Finish thumbs are already on screen. Don't hold the open on the hero file.
   if (!fromPrecrafted) await waitForImage(hero)
+  if (flipOpenWasAborted(gen)) return
   await nextTick()
+  if (flipOpenWasAborted(gen)) return
   // Let flex layout resolve real image boxes before Flip measures
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
@@ -2005,11 +2070,12 @@ const runFlipOpen = async () => {
   flyer.src = flipSrc
   flyer.alt = ''
   flyer.setAttribute('aria-hidden', 'true')
-  // Prep flyer while cart items/grid/info finish fading
-  await Promise.all([
-    flyer.complete ? Promise.resolve() : waitForImage(flyer),
-    gateP,
-  ])
+  flyer.setAttribute('data-pdp-open-flyer', '')
+  if (!flyer.complete) await waitForImage(flyer)
+  if (flipOpenWasAborted(gen)) {
+    flyer.remove()
+    return
+  }
 
   const from = source.getBoundingClientRect()
   const to = flipHero.getBoundingClientRect()
@@ -2042,22 +2108,18 @@ const runFlipOpen = async () => {
   })
   document.body.appendChild(flyer)
 
-  // Cover with flyer, then hide source — no blank frame / no hover-opacity dip
+  // Cover with flyer, then hide source + mat — no blank frame / no hover-opacity dip
   hideFlipSource(source)
 
-  // Backdrop fades in → hold → flyer scales → PDP UI.
-  // From the materials grid the flight starts immediately, with the demo ease.
-  const waitMs = (ms: number) =>
-    new Promise<void>((resolve) => {
-      window.setTimeout(resolve, ms)
-    })
-
+  // Cream fades behind the flyer. The flight starts on this frame.
   const fromArchive = flipSourceIsArchiveGrid()
   const fromCart = flipSourceIsCart()
-  const startImmediate = flipSourceStartsImmediately()
-  // Materials grid and (Pre)Crafted stay clear while the nav slides up.
-  if (!fromArchive && !fromPrecrafted) setBackdropReady(true)
+  setBackdropReady(true)
   await nextTick()
+  if (flipOpenWasAborted(gen)) {
+    flyer.remove()
+    return
+  }
   if (fromPrecrafted && !(flipHero.complete && flipHero.naturalWidth > 0)) {
     // Page stays up while the nav leaves. Give the hero a short head start.
     await waitForImageLimited(flipHero)
@@ -2066,6 +2128,10 @@ const runFlipOpen = async () => {
     // Start as soon as the hero frame has its real size — no cream hold.
     let stable = 0
     for (let i = 0; i < 24; i++) {
+      if (flipOpenWasAborted(gen)) {
+        flyer.remove()
+        return
+      }
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve())
       })
@@ -2074,9 +2140,10 @@ const runFlipOpen = async () => {
       else stable = 0
       if (stable >= 2) break
     }
-  } else if (!startImmediate) {
-    await waitMs(PRODUCT_OVERLAY_BACKDROP_OPEN_MS)
-    await waitMs(PRODUCT_OVERLAY_FLYER_PAUSE_MS)
+  }
+  if (flipOpenWasAborted(gen)) {
+    flyer.remove()
+    return
   }
 
   // Re-measure hero in case layout settled during the fade
@@ -2095,26 +2162,33 @@ const runFlipOpen = async () => {
   if (fromArchive) signalArchiveMotion('open')
 
   const openDuration = fromArchive ? ARCHIVE_PDP_OPEN_S : PRODUCT_OVERLAY_FLIP_OPEN_S
-  // Cart leaves on the click — power2.inOut holds the aspect still at the start.
   const openEase = fromArchive
     ? ARCHIVE_PDP_OPEN_EASE
     : flipSourceIsCart()
       ? 'power3.out'
-      : 'power2.inOut'
+      : 'power2.out'
 
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
-  Flip.from(state, {
+  flipOpenTween = Flip.from(state, {
     duration: openDuration,
     ease: openEase,
     absolute: true,
     scale: false,
     onComplete: () => {
+      flipOpenTween = null
+      if (flipOpenWasAborted(gen)) {
+        flyer.remove()
+        return
+      }
       const reveal = () => {
+        if (flipOpenWasAborted(gen)) {
+          flyer.remove()
+          return
+        }
         // Reveal strip + hero under the flyer before removing it — avoids a
         // blank frame and prevents the gallery from flashing ahead of Flip.
         gsap.set(flipHero, { visibility: 'visible' })
-        if (fromArchive || fromPrecrafted) setBackdropReady(true)
         requestAnimationFrame(() => {
           heartHold.value = false
         })
@@ -2124,7 +2198,12 @@ const runFlipOpen = async () => {
         galleryVisible.value = true
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
+            if (flipOpenWasAborted(gen)) {
+              flyer.remove()
+              return
+            }
             flyer.remove()
+            cuePdpCloseCursor()
           })
         })
       }
@@ -2156,15 +2235,9 @@ const runFlipClose = async () => {
 
   const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
   const FLYER_FADE_MS = PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
-  const waitMs = (ms: number) =>
-    new Promise<void>((resolve) => {
-      window.setTimeout(resolve, ms)
-    })
 
-  // 1) Chrome exits first (index + aside slide left, siblings fade) while the
-  // active hero stays put for the flyer. Keep sidesVisible so opacity chrome
-  // doesn’t kill the translate mid-flight.
-  const uiFadeStarted = performance.now()
+  // Chrome exits in parallel with the flyer. Keep sidesVisible so opacity
+  // chrome doesn’t kill the translate mid-flight.
   await nextTick()
 
   // After in-PDP nav, Flip still targets the original shell. Swap shell ↔
@@ -2199,16 +2272,11 @@ const runFlipClose = async () => {
 
   const fromArchive = flipSourceIsArchiveGrid()
   const startImmediate = flipSourceStartsImmediately()
-  if (!startImmediate) {
-    const chromeElapsed = performance.now() - uiFadeStarted
-    await waitMs(Math.max(0, PRODUCT_OVERLAY_CHROME_EXIT_MS - chromeElapsed))
-  }
 
   contentReady.value = false
   sidesVisible.value = false
   chromeEnterMotion.value = false
   await nextTick()
-  if (!startImmediate) await waitMs(PRODUCT_OVERLAY_UI_FADE_MS)
 
   // Panel cream can drop now that chrome is gone. The page backdrop stays
   // up until the return flyer is on screen, so closing doesn't flash empty.
@@ -2342,7 +2410,7 @@ const runFlipClose = async () => {
     ? ARCHIVE_PDP_CLOSE_EASE
     : flipSourceIsCart()
       ? 'power3.out'
-      : 'power2.inOut'
+      : 'power2.out'
 
   // Width/height (not scale) so cover crops match the thumb instead of
   // stretching then snapping when the flyer is removed.
@@ -3385,7 +3453,7 @@ watch(
 }
 
 .pdp__next {
-  margin-top: 3rem;
+  margin-top: 0;
   border-top: 1px solid var(--grid-line);
   text-align: center;
 }

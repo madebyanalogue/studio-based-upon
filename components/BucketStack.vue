@@ -266,6 +266,7 @@
           class="stack__grid"
           :class="{
             'stack__grid--lines': gridLinesVisible,
+            'stack__grid--list': showListCart,
             'stack__grid--pdp-focus': !!pdpFocusItemId,
           }"
           data-cursor="close-label"
@@ -275,6 +276,7 @@
           <div
             ref="gridTrackRef"
             class="stack__grid-track"
+            :class="gridTrackClass"
             :style="gridStyle"
           >
           <div
@@ -299,6 +301,15 @@
                 </button>
               </div>
             </div>
+            <button
+              v-if="entry.kind === 'undo'"
+              type="button"
+              class="stack__undo stack__undo--list interface"
+              data-cursor="default"
+              @click="onUndoClick(entry.key, entry.item)"
+            >
+              Undo
+            </button>
             <div
               v-else
               class="stack__cell-media"
@@ -340,7 +351,42 @@
                 </div>
               </div>
             </div>
+            <button
+              v-if="entry.kind !== 'undo'"
+              type="button"
+              class="stack__cell-copy"
+              data-cursor="default"
+              :aria-label="`Open ${entry.item.title}`"
+              @click="openProduct(entry.item, $event)"
+            >
+              <span class="stack__cell-name">{{ entry.item.title }}</span>
+              <span v-if="itemMateriality(entry.item)" class="stack__cell-meta muted">
+                {{ itemMateriality(entry.item) }}
+              </span>
+            </button>
+            <AddButton
+              v-if="entry.kind !== 'undo'"
+              class="stack__cell-minus"
+              variant="remove"
+              cursor="pointer"
+              :label="`Remove ${entry.item.title}`"
+              @click.stop="onRemoveClick(entry.item)"
+            />
           </div>
+          <label
+            v-if="showListCart"
+            class="stack__cell stack__cell--upload interface"
+            data-cursor="default"
+          >
+            <input
+              type="file"
+              class="stack__upload-input"
+              accept="image/*"
+              multiple
+              @change="onCartUpload"
+            />
+            <span>Upload</span>
+          </label>
           </div>
         </div>
 
@@ -351,25 +397,6 @@
           data-cursor="default"
           data-lenis-prevent
         >
-          <div
-            class="stack__freeform-tip"
-            :class="{
-              'stack__freeform-tip--ready': freeformTipReady,
-              'stack__freeform-tip--gone': freeformTipGone,
-              'stack__freeform-tip--leaving': onboardingHiding,
-            }"
-            aria-hidden="true"
-          >
-            <DissolveText
-              v-if="freeformTipReady && !freeformTipGone"
-              :key="freeformTipKey"
-              class="stack__freeform-dissolve"
-              fit="lines"
-              interactive
-              :lines="FREEFORM_TIP_LINES"
-              @clear="dismissFreeformTip"
-            />
-          </div>
           <div ref="freeformPlane" class="stack__freeform-plane">
             <div
               v-for="entry in freeformEntries"
@@ -529,6 +556,7 @@
           <div
             ref="gridTrackRef"
             class="stack__grid-track"
+            :class="gridTrackClass"
             :style="gridStyle"
           >
           <div
@@ -809,46 +837,31 @@
           </div>
 
           <div class="stack__toolbar-actions">
-            <div class="stack__toolbar-send">
-              <div
-                v-if="showSendOnboarding"
-                class="stack__send-note"
-                :class="{ 'stack__send-note--leaving': onboardingHiding }"
-                aria-hidden="true"
-              >
-                <DissolveText
-                  class="stack__send-dissolve"
-                  fit="lines"
-                  interactive
-                  :lines="SEND_ONBOARD_LINES"
-                  @clear="dismissSendOnboarding"
-                />
-              </div>
-              <button
-                type="button"
-                class="stack__toolbar-create interface"
-                data-cursor="default"
-                :disabled="!items.length"
-                @click="sendEnquiry"
-              >
-                <span class="stack__toolbar-create-long">Send as Enquiry</span>
-                <span class="stack__toolbar-create-short">Enquire</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="stack__toolbar-create stack__toolbar-create--close interface"
+              data-cursor="default"
+              @click="requestClose"
+            >
+              Close
+            </button>
           </div>
         </header>
 
         <div class="stack__dock">
         <button
+          v-if="cartIsFreeform"
           type="button"
-          class="stack__close-global interface"
-          :class="{ 'stack__close-global--visible': controlsVisible && !enquiryFormOpen }"
+          class="stack__tidy-global interface"
+          :class="{ 'stack__tidy-global--visible': controlsVisible && !enquiryFormOpen }"
           data-cursor="default"
-          @click="requestClose"
+          :disabled="!freeformEntries.length"
+          @click="tidyFreeform"
         >
-          Close
+          Tidy
         </button>
         <SlidingPill
+          v-if="!narrowCart"
           class="stack__view-toggle"
           :class="{ 'stack__view-toggle--visible': controlsVisible && !enquiryFormOpen }"
           label="Selection layout"
@@ -890,33 +903,13 @@
             :model-value="lightboxGlass ? 'on' : 'off'"
             @update:model-value="lightboxGlass = $event === 'on'"
           />
-          <button
-            v-if="cartIsFreeform"
-            type="button"
-            class="stack__tidy-global interface"
-            data-cursor="default"
-            :disabled="!freeformEntries.length"
-            @click="tidyFreeform"
-          >
-            Tidy
-          </button>
           <div class="stack__upload">
-            <div
-              v-if="showUploadOnboarding && controlsVisible"
-              class="stack__upload-note"
-              :class="{ 'stack__upload-note--leaving': onboardingHiding }"
-              aria-hidden="true"
+            <label
+              v-if="!narrowCart"
+              class="stack__upload-global interface"
+              data-cursor="default"
+              aria-label="Upload"
             >
-              <DissolveText
-                class="stack__upload-dissolve"
-                fit="lines"
-                interactive
-                :fall-room="false"
-                :lines="UPLOAD_ONBOARD_LINES"
-                @clear="dismissUploadOnboarding"
-              />
-            </div>
-            <label class="stack__upload-global interface" data-cursor="default" aria-label="Upload">
               <input
                 type="file"
                 class="stack__upload-input"
@@ -934,6 +927,16 @@
           </div>
         </div>
         </div>
+        <button
+          type="button"
+          class="stack__enquiry interface"
+          :class="{ 'stack__enquiry--visible': enquiryVisible && !enquiryFormOpen }"
+          :disabled="!items.length"
+          data-cursor="default"
+          @click="sendEnquiry"
+        >
+          Send as enquiry
+        </button>
       </template>
 
       <div
@@ -1048,6 +1051,7 @@ import type { SavedBoard, SelectionBoardEntry } from '~/composables/useBoards'
 import { uniqueImageUrls } from '~/composables/productImages'
 import { imageAssetKey, prefetchImage } from '~/composables/useSanityImage'
 import { findProductBySlug } from '~/composables/useProductCatalog'
+import { isInstantProductOverlay } from '~/composables/useProductOverlay'
 
 type CellPhase = 'scale-out' | 'scale-in' | 'scaled-in' | 'undo-ready' | 'undo-leaving'
 
@@ -1557,8 +1561,8 @@ const onRemoveClick = async (item: BucketItem) => {
   if (cellPhase.value[id] || !activeMoodboardId.value || bulkBusy.value) return
   if (freeformHandleId.value === id) freeformHandleId.value = null
   const undoKey = `${activeMoodboardId.value}::${id}`
-  // Lightbox has no scale-out pose. Drop the picture now so the row can close the gap.
-  if (!showLightbox.value) {
+  // Lightbox and the mobile list keep the row; skip the square scale-out.
+  if (!showLightbox.value && !showListCart.value) {
     setCellPhase(id, 'scale-out')
     await wait(CELL_SCALE_MS)
     if (cellPhase.value[id] !== 'scale-out') return
@@ -1568,6 +1572,10 @@ const onRemoveClick = async (item: BucketItem) => {
   await nextTick()
   await waitFrames(2)
   if (!selectionEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) return
+  if (showListCart.value) {
+    setCellPhase(undoKey, 'undo-ready')
+    return
+  }
   await wait(UNDO_ENTER_DELAY_MS)
   if (!selectionEntries.value.some((e) => e.kind === 'undo' && e.key === undoKey)) return
   setCellPhase(undoKey, 'undo-ready')
@@ -1644,17 +1652,13 @@ const fileToCartImage = (file: File) =>
   })
 
 const UPLOAD_ONBOARD_KEY = 'cart-upload-onboarded'
-const SEND_ONBOARD_KEY = 'cart-send-onboarded'
 const UPLOAD_ONBOARD_LINES = ['Upload images']
-const SEND_ONBOARD_LINES = ['Send us a brief']
 const showUploadOnboarding = ref(false)
-const showSendOnboarding = ref(false)
 const onboardingHiding = ref(false)
 
 const anyOnboardingVisible = () =>
   (freeformTipReady.value && !freeformTipGone.value) ||
-  showUploadOnboarding.value ||
-  showSendOnboarding.value
+  showUploadOnboarding.value
 
 /** Fade tips off before the cart itself starts to leave. */
 const hideOnboardingForClose = async () => {
@@ -1669,16 +1673,6 @@ const dismissUploadOnboarding = () => {
   showUploadOnboarding.value = false
   try {
     localStorage.setItem(UPLOAD_ONBOARD_KEY, '1')
-  } catch {
-    /* private mode */
-  }
-}
-
-const dismissSendOnboarding = () => {
-  if (!showSendOnboarding.value) return
-  showSendOnboarding.value = false
-  try {
-    localStorage.setItem(SEND_ONBOARD_KEY, '1')
   } catch {
     /* private mode */
   }
@@ -2545,7 +2539,7 @@ const showSelectionGrid = computed(
   () =>
     stagePresent.value &&
     panelTab.value === 'selections' &&
-    selectionEntries.value.length > 0,
+    (selectionEntries.value.length > 0 || narrowCart.value),
 )
 
 const CART_LAYOUTS = [
@@ -2580,8 +2574,8 @@ const normalizeCartView = (value: string | null | undefined): CartLayout => {
 const cartView = computed({
   get: () => {
     const view = normalizeCartView(cartViewStored.value)
-    // Phone keeps the desktop choice, but freeform is not offered there.
-    if (narrowCart.value && view === 'freeform') return 'grid'
+    // Phone is list-only — the desktop layout cookie stays put.
+    if (narrowCart.value) return 'grid'
     return view
   },
   set: (view: CartLayout) => {
@@ -2603,8 +2597,19 @@ const lightboxGlass = computed({
 })
 const lightboxGlassRef = ref<{ paint: () => void } | null>(null)
 const showOrderGrid = computed(() => showSelectionGrid.value && cartView.value === 'grid')
+const showListCart = computed(() => showOrderGrid.value && narrowCart.value)
 const showLightbox = computed(() => showSelectionGrid.value && cartView.value === 'lightbox')
 const showFreeform = computed(() => showSelectionGrid.value && cartIsFreeform.value)
+
+const itemMateriality = (item: BucketItem) => {
+  const stored = (item.materials || []).map((m) => String(m).trim()).filter(Boolean)
+  if (stored.length) return stored.join(', ')
+  const slug = productSlug(item)
+  if (!slug) return ''
+  const product = findProductBySlug(slug)
+  const mats = (product?.materials || []).map((m) => String(m).trim()).filter(Boolean)
+  return mats.length ? mats.join(', ') : ''
+}
 
 const freeformEntries = computed(() =>
   selectionEntries.value.filter(
@@ -2897,10 +2902,6 @@ watch([showFreeform, viewFlipBusy, isFlipping], () => {
     window.clearTimeout(freeformDotsLeaveTimer)
     freeformDotsLeaving.value = false
     freeformDotsOn.value = true
-    // Fresh tip each time freeform settles (was killed by pointerenter on open).
-    freeformTipGone.value = false
-    freeformTipReady.value = true
-    freeformTipKey.value += 1
     return
   }
   if (showFreeform.value || !freeformDotsOn.value || freeformDotsLeaving.value) return
@@ -5085,15 +5086,28 @@ const stackCssVars = computed(() => {
   }
 })
 
+const gridCols = computed(() =>
+  layoutLocked.value && frozenCols.value > 0
+    ? frozenCols.value
+    : stackCols.value,
+)
+
+const gridTrackClass = computed(() =>
+  showListCart.value ? undefined : `stack__grid-track--cols-${gridCols.value}`,
+)
+
 const gridStyle = computed(() => {
+  if (showListCart.value) {
+    return {
+      gridTemplateColumns: '1fr',
+      gridAutoRows: 'auto',
+    }
+  }
   const size =
     layoutLocked.value && frozenCellSize.value > 0
       ? frozenCellSize.value
       : cellSizePx.value
-  const cols =
-    layoutLocked.value && frozenCols.value > 0
-      ? frozenCols.value
-      : stackCols.value
+  const cols = gridCols.value
   const track = size > 0 ? `${size}px` : 'var(--stack-cell-size)'
   return {
     gridTemplateColumns: `repeat(${cols}, ${track})`,
@@ -6417,12 +6431,14 @@ const openProduct = async (item: BucketItem, event?: MouseEvent) => {
   // Leave the lightbox settled so the edge glass stays painted under the PDP.
   // Dropping it here clips the pictures back to a hard edge, and the warp
   // only returns after the close — that gap reads as a dark band.
-  pdpFocusItemId.value = item.id
-  pdpOpenedFromCart.value = true
-  controlsVisible.value = false
-  enquiryVisible.value = false
-  selectionMenuOpen.value = false
-  gridLinesVisible.value = false
+  if (!isInstantProductOverlay()) {
+    pdpFocusItemId.value = item.id
+    pdpOpenedFromCart.value = true
+    controlsVisible.value = false
+    enquiryVisible.value = false
+    selectionMenuOpen.value = false
+    gridLinesVisible.value = false
+  }
 
   // Warm ProductDetail's overlay useAsyncData cache so mount isn't cold
   const cacheKey = 'product-detail-overlay'
@@ -7822,7 +7838,7 @@ const onCartDeadClick = (event: MouseEvent) => {
   if (!(target instanceof Element)) return
   if (
     target.closest(
-      '.stack__cell-figure, .stack__undo, .stack__cell-ctrl, .stack__board-action, button, a',
+      '.stack__cell-figure, .stack__cell-copy, .stack__cell-minus, .stack__cell--upload, .stack__undo, .stack__cell-ctrl, .stack__board-action, button, a, label',
     )
   ) {
     return
@@ -8567,16 +8583,6 @@ const onNavHeartLeave = () => {
 }
 
 onMounted(() => {
-  try {
-    // Reset so dissolve tips are visible again while iterating.
-    localStorage.removeItem(UPLOAD_ONBOARD_KEY)
-    localStorage.removeItem(SEND_ONBOARD_KEY)
-    showUploadOnboarding.value = true
-    showSendOnboarding.value = true
-  } catch {
-    showUploadOnboarding.value = true
-    showSendOnboarding.value = true
-  }
   registerAnimatedClose(() => {
     void closeToPile()
   })
@@ -8675,6 +8681,13 @@ onBeforeUnmount(() => {
 .stack__rail,
 .stack__boards-rail {
   --stack-cell-pad: 17%;
+}
+
+.stack,
+.stack__toolbar,
+.stack__dock,
+.stack__enquiry {
+  --stack-enquiry-bar: calc(3.25rem + env(safe-area-inset-bottom, 0px));
 }
 
 .stack--open {
@@ -9656,20 +9669,20 @@ onBeforeUnmount(() => {
 
 .stack__grid {
   --stack-cell-pad: 17%;
+  --stack-enquiry-bar: calc(3.25rem + env(safe-area-inset-bottom, 0px));
   position: absolute;
   inset: 0;
   z-index: 1;
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: var(--header-height) 0 0;
+  padding: var(--header-height) 0 var(--stack-enquiry-bar);
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   border-top: 1px solid transparent;
-  border-left: 1px solid transparent;
   transition: border-color 0.32s ease;
 }
 
@@ -9732,7 +9745,6 @@ onBeforeUnmount(() => {
 
 .stack__grid--lines {
   border-top-color: var(--grid-line);
-  border-left-color: var(--grid-line);
 }
 
 /* Let product cells fill around pinned board tiles */
@@ -9923,6 +9935,17 @@ onBeforeUnmount(() => {
   border-bottom-color: var(--grid-line);
 }
 
+/* Last cell in each row: no outer right rule. */
+.stack__grid--lines .stack__grid-track--cols-1 .stack__cell,
+.stack__grid--lines .stack__grid-track--cols-2 .stack__cell:nth-child(2n),
+.stack__grid--lines .stack__grid-track--cols-3 .stack__cell:nth-child(3n),
+.stack__grid--lines .stack__grid-track--cols-4 .stack__cell:nth-child(4n),
+.stack__grid--lines .stack__grid-track--cols-5 .stack__cell:nth-child(5n),
+.stack__grid--lines .stack__grid-track--cols-6 .stack__cell:nth-child(6n),
+.stack__grid--lines .stack__grid-track--cols-7 .stack__cell:nth-child(7n) {
+  border-right-color: transparent;
+}
+
 /* Opening PDP from cart — other items fade before the flyer moves */
 .stack__grid--pdp-focus .stack__cell:not(.stack__cell--pdp-focus) {
   opacity: 0;
@@ -9942,6 +9965,43 @@ onBeforeUnmount(() => {
   inset: 0;
   min-width: 0;
   min-height: 0;
+}
+
+.stack__cell-copy,
+.stack__cell-minus,
+.stack__undo--list,
+.stack__cell--upload {
+  display: none;
+}
+
+.stack__cell-copy {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stack__cell-name,
+.stack__cell-meta {
+  display: block;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack__cell-name {
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  color: var(--charcoal);
+}
+
+.stack__cell-meta {
+  margin-top: 0.15rem;
+  font-size: var(--text-xs);
+  line-height: 1.3;
 }
 
 /* Undo fades with grid lines (same 0.32s window on close) */
@@ -10276,6 +10336,8 @@ onBeforeUnmount(() => {
 
 .stack__toolbar .stack__close {
   justify-self: start;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .stack__toolbar-center {
@@ -10403,41 +10465,6 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.stack__send-note {
-  position: absolute;
-  top: calc(100% + 30px);
-  right: 0;
-  bottom: auto;
-  z-index: 1;
-  margin: 0;
-  overflow: visible;
-  pointer-events: auto;
-  opacity: 1;
-  transition: opacity 0.16s ease;
-}
-
-.stack__send-note--leaving {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.stack__send-dissolve {
-  overflow: visible;
-  font-family: var(--lacquer);
-  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
-  font-weight: 400;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-  color: var(--charcoal);
-  white-space: nowrap;
-}
-
-.stack__send-dissolve :deep(.dissolve-text__measure) {
-  font: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-}
-
 .stack__toolbar-create {
   position: static;
   display: flex;
@@ -10466,6 +10493,16 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
+.stack__toolbar-create--close {
+  background: color-mix(in srgb, var(--charcoal) 16%, var(--background-color, var(--cream)));
+  color: var(--charcoal);
+}
+
+.stack__toolbar-create--close:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--charcoal) 24%, var(--background-color, var(--cream)));
+  color: var(--charcoal);
+}
+
 .stack__toolbar-create-short {
   display: none;
 }
@@ -10478,7 +10515,7 @@ onBeforeUnmount(() => {
 .stack__view-toggle {
   position: fixed;
   left: 50%;
-  bottom: 60px;
+  bottom: calc(20px + var(--stack-enquiry-bar, 3.25rem));
   z-index: 430;
   transform: translateX(-50%) translateY(8px);
   opacity: 0;
@@ -10602,7 +10639,7 @@ onBeforeUnmount(() => {
 
 .stack__close-global {
   position: fixed;
-  bottom: 60px;
+  bottom: calc(20px + var(--stack-enquiry-bar, 3.25rem));
   left: 60px;
   z-index: 430;
   margin: 0;
@@ -10626,7 +10663,7 @@ onBeforeUnmount(() => {
 .stack__corner {
   position: fixed;
   right: 60px;
-  bottom: 60px;
+  bottom: calc(20px + var(--stack-enquiry-bar, 3.25rem));
   z-index: 430;
   display: flex;
   align-items: center;
@@ -10724,11 +10761,37 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 9px;
   color: var(--text-color);
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.stack__tidy-global {
+  position: fixed;
+  left: 60px;
+  bottom: calc(20px + var(--stack-enquiry-bar, 3.25rem));
+  z-index: 430;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.stack__tidy-global--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
 }
 
 .stack__tidy-global:disabled {
-  opacity: 0.4;
   cursor: default;
+}
+
+.stack__tidy-global--visible:disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .stack__upload-global svg {
@@ -10974,7 +11037,7 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 420;
+  z-index: 435;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11171,12 +11234,17 @@ onBeforeUnmount(() => {
 
   .stack__toolbar {
     --stack-toolbar-pad: var(--gutter);
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: 1fr auto 1fr;
     gap: 0.45rem;
   }
 
+  .stack__toolbar .stack__close {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   .stack__toolbar-center {
-    justify-self: stretch;
+    justify-self: center;
     max-width: none;
   }
 
@@ -11185,86 +11253,103 @@ onBeforeUnmount(() => {
   }
 
   .stack__toolbar-create {
-    padding: 0.4rem 0.55rem;
-  }
-
-  .stack__toolbar-create-long {
-    display: none;
-  }
-
-  .stack__toolbar-create-short {
-    display: inline;
+    padding: 0.4rem 0.75rem;
   }
 
   .stack__dock {
-    display: flex;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 430;
+    display: none;
+  }
+
+  .stack__grid--list {
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .stack__grid--list .stack__grid-track {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .stack__grid--list .stack__grid-track::before {
+    content: none;
+  }
+
+  .stack__grid--list .stack__cell {
+    display: grid;
+    grid-template-columns: 4.75rem minmax(0, 1fr) 2.75rem;
     align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    padding: 8px var(--gutter) calc(8px + env(safe-area-inset-bottom, 0px));
+    column-gap: 0.75rem;
+    width: 100%;
+    height: 4.75rem;
+    aspect-ratio: auto;
+    overflow: visible;
+    padding: 0 var(--gutter);
+    border-right: 0;
+    border-left: 0;
+    border-bottom-color: var(--grid-line);
     box-sizing: border-box;
-    pointer-events: none;
   }
 
-  .stack__dock > .stack__close-global,
-  .stack__dock > .stack__view-toggle,
-  .stack__dock > .stack__corner {
-    position: static;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    flex: 0 1 auto;
+  .stack__grid--list .stack__cell-media {
+    position: relative;
+    inset: auto;
+    width: 3.5rem;
+    height: 3.5rem;
+    justify-self: start;
+  }
+
+  .stack__grid--list .stack__cell-frame {
+    inset: 0;
+  }
+
+  .stack__grid--list .stack__cell-copy {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     min-width: 0;
-    margin: 0;
-    opacity: 0;
-    pointer-events: none;
-    transform: none;
   }
 
-  .stack__dock > .stack__close-global--visible,
-  .stack__dock > .stack__view-toggle--visible,
-  .stack__dock > .stack__corner--visible {
+  .stack__grid--list .stack__cell-minus {
+    display: grid;
+    position: relative;
+    justify-self: center;
     opacity: 1;
     pointer-events: auto;
-    transform: none;
   }
 
-  .stack__dock > .stack__corner {
-    gap: 6px;
-  }
-
-  .stack__dock .stack__close-global,
-  .stack__dock .stack__undo-global,
-  .stack__dock .stack__tidy-global,
-  .stack__dock .stack__upload-global {
-    padding: 0.35rem 0.6rem;
-  }
-
-  .stack__dock .stack__upload-global span,
-  .stack__upload-note,
-  .stack__send-note {
+  .stack__grid--list .stack__cell-ctrl {
     display: none;
   }
 
-  .stack__dock :deep(.sliding-pill button) {
-    padding: 0.35rem 0.55rem;
-  }
-
-  .stack__undo-global {
-    padding: 0.55rem;
-  }
-
-  .stack__undo-global-label {
+  .stack__grid--list .stack__cell--undo .stack__undo:not(.stack__undo--list) {
     display: none;
   }
 
-  .stack__undo-global-icon {
+  .stack__grid--list .stack__undo--list {
     display: block;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .stack__grid--list .stack__cell--undo-leaving .stack__undo--list {
+    opacity: 0;
+  }
+
+  .stack__grid--list .stack__cell--upload {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    border-bottom-color: var(--grid-line);
+  }
+
+  .stack__grid--list .stack__cell--upload span {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .stack__upload-note {
+    display: none;
   }
 
   .stack__lightbox-remove {

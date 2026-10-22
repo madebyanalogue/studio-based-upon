@@ -2621,10 +2621,7 @@ const playArrival = async () => {
   if (reduced || !targets.length) {
     pageClipping.value = false
     arrivalAnimating = false
-    if (!pageLeaving) {
-      metaReady.value = true
-      revealOnboard()
-    }
+    if (!pageLeaving) metaReady.value = true
     showScrollHint()
     return
   }
@@ -2640,7 +2637,6 @@ const playArrival = async () => {
   pageClipping.value = false
   arrivalAnimating = false
   metaReady.value = true
-  revealOnboard()
   showScrollHint()
 }
 

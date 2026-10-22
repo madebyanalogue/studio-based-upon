@@ -10,16 +10,16 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="enquiry-header-title"
-      data-cursor="default"
+      data-cursor="native"
     >
             <div
               class="enquiry__backdrop"
               data-lenis-prevent
-              :data-cursor-label="formShown ? 'Close' : undefined"
+              data-cursor="pointer"
               @click="formShown && close()"
             />
 
-      <div class="enquiry__panel" data-cursor="default">
+      <div class="enquiry__panel" data-cursor="native">
         <div class="enquiry__body">
           <div
             ref="previewRef"
@@ -83,6 +83,7 @@
             <header class="enquiry__header" data-lenis-prevent>
               <h2 id="enquiry-header-title" class="enquiry__title">{{ headerTitle }}</h2>
               <button type="button" class="enquiry__close" aria-label="Close" @click="close">
+                <span class="enquiry__close-label interface">Close</span>
                 <span class="enquiry__close-icon" aria-hidden="true" />
               </button>
             </header>
@@ -164,9 +165,11 @@
                           accept="image/*,.pdf,.doc,.docx"
                           @change="onFilesSelected"
                         />
-                        <span class="enquire__drop-title">Drop files here</span>
-                        <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
-                      </label>
+                <span class="enquire__drop-title">Drop files here</span>
+                <span class="enquire__drop-note">or click to browse. Add several at once — images, PDF or Word, up to 10MB each.</span>
+                <span class="enquire__file-pick">Add files</span>
+                <span class="enquire__file-pick-note">Images, PDF or Word · up to 10MB each</span>
+              </label>
                       <ul v-if="attachments.length" class="enquire__files">
                         <li v-for="file in attachments" :key="file.id" class="enquire__file">
                           <span class="enquire__file-name">{{ file.name }}</span>
@@ -269,6 +272,10 @@ import type { EnquiryFlyRect } from '~/composables/useEnquiryForm'
 const GATHER_S = 0.85
 const SPREAD_S = 0.72
 const FORM_FADE_MS = 420
+const MOBILE_ENQUIRE_MQ = '(max-width: 767px)'
+const isMobileEnquire = () =>
+  import.meta.client && window.matchMedia(MOBILE_ENQUIRE_MQ).matches
+const formFadeMs = () => (isMobileEnquire() ? 0 : FORM_FADE_MS)
 
 const {
   isOpen,
@@ -433,7 +440,7 @@ const returnToStack = async (id: number) => {
     // Keep the pile in front so the form fades out from underneath it.
     setEnquiryFlyFront(true)
     formShown.value = false
-    await wait(FORM_FADE_MS)
+    await wait(formFadeMs())
     if (id !== runId) return
   }
 
@@ -466,7 +473,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
     phase = 'covered'
     clipFlyersToPreview()
     formShown.value = true
-    await wait(FORM_FADE_MS)
+    await wait(formFadeMs())
     if (id !== runId) return
     await frames(2)
     if (id !== runId) return
@@ -493,7 +500,7 @@ const gatherIntoGrid = async (id: number, origins: EnquiryFlyRect[]) => {
     // Form fades in under the pile. The layer starts behind the dialog.
     setEnquiryFlyFront(true)
     formShown.value = true
-    await wait(FORM_FADE_MS)
+    await wait(formFadeMs())
     if (id !== runId) return
 
     phase = 'spread'
@@ -773,8 +780,8 @@ onUnmounted(() => {
 .enquiry {
   position: fixed;
   inset: 0;
-  /* Above the open-stack toolbar and enquiry bar (420 / 430) */
-  z-index: 460;
+  /* Above the header (500) and cart chrome (420 / 430) */
+  z-index: 540;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -875,6 +882,10 @@ onUnmounted(() => {
   color: #111;
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.enquiry__close-label {
+  display: none;
 }
 
 .enquiry__close:hover {
@@ -1214,14 +1225,67 @@ onUnmounted(() => {
 }
 
 @media (max-width: 767px) {
+  .enquiry {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .enquiry__backdrop,
+  .enquiry__panel {
+    transition: none;
+  }
+
+  .enquiry--concealed .enquiry__backdrop,
+  .enquiry--concealed .enquiry__panel {
+    opacity: 1;
+  }
+
+  .enquiry__panel {
+    width: 100%;
+    max-height: 100dvh;
+    height: 100dvh;
+  }
+
   .enquiry__body {
     grid-template-columns: 1fr;
+    height: 100%;
+    max-height: none;
   }
 
   .enquiry__preview,
   .enquiry__fields {
     grid-column: auto;
     min-height: 0;
+  }
+
+  .enquiry__header {
+    min-height: var(--header-height);
+    padding: 0 var(--gutter);
+  }
+
+  .enquiry__title {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .enquiry__close {
+    width: auto;
+    height: auto;
+    padding: 0.4rem 0.65rem;
+    border-radius: var(--ui-border-radius);
+    background: #e6e6e6;
+    color: #111;
+  }
+
+  .enquiry__close-icon {
+    display: none;
+  }
+
+  .enquiry__close-label {
+    display: block;
+    font-size: var(--text-sm);
+    line-height: 1.2;
   }
 }
 </style>
