@@ -461,6 +461,9 @@ export const useProductOverlay = () => {
     // Thumb stays hidden until close flyer finishes; restore here as final handoff
     restoreFlipSource()
     clearFlipSource()
+    if (import.meta.client) {
+      document.querySelectorAll('[data-pdp-open-flyer]').forEach((el) => el.remove())
+    }
     clearFlipOpenGate()
     backdropReady.value = false
     pendingGridSwap.value = null

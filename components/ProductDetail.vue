@@ -2220,6 +2220,8 @@ const runFlipOpen = async () => {
 const runFlipClose = async () => {
   if (!import.meta.client || flipCloseStarted.value) return
   flipCloseStarted.value = true
+  abortFlipOpenMotion()
+  hideGalleryForFlip()
   if (imageExpanded.value || imageZooming) collapseImage()
   if (flipSourceIsArchiveGrid() && isFrameSaved(selectedIndex.value)) {
     heartOut.value = true
@@ -2232,6 +2234,8 @@ const runFlipClose = async () => {
     finishClose()
     return
   }
+
+  const stolen = takeOpenFlyer()
 
   const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
   const FLYER_FADE_MS = PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
@@ -2283,7 +2287,7 @@ const runFlipClose = async () => {
   pendingFlip.value = true
   await nextTick()
 
-  const from = hero.getBoundingClientRect()
+  const from = stolen?.from ?? hero.getBoundingClientRect()
   const to = source.getBoundingClientRect()
 
   /** Non-interactive cream veil so we can unmount the overlay (clicks work) while fading */
@@ -2360,31 +2364,36 @@ const runFlipClose = async () => {
     return
   }
 
-  const flyer = document.createElement('img')
-  flyer.src = hero.currentSrc || hero.src
-  flyer.alt = ''
-  flyer.setAttribute('aria-hidden', 'true')
-  flyer.setAttribute('data-pdp-close-flyer', '')
   const heroFit = getComputedStyle(hero).objectFit || 'contain'
   const sourceFit = getComputedStyle(source).objectFit || 'cover'
-  Object.assign(flyer.style, {
-    position: 'fixed',
-    top: `${from.top}px`,
-    left: `${from.left}px`,
-    width: `${from.width}px`,
-    height: `${from.height}px`,
-    margin: '0',
-    objectFit: heroFit,
-    zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
-    pointerEvents: 'none',
-    overflow: 'hidden',
-    borderRadius: `${frameRadiusPx(hero)}px`,
-  })
-  // Decode before the hero is hidden — an empty flyer leaves a frame of background.
-  if (!flyer.complete) await waitForImage(flyer)
+  let flyer: HTMLElement
+  if (stolen?.el) {
+    flyer = stolen.el
+  } else {
+    flyer = document.createElement('img')
+    flyer.src = hero.currentSrc || hero.src
+    flyer.alt = ''
+    flyer.setAttribute('aria-hidden', 'true')
+    flyer.setAttribute('data-pdp-close-flyer', '')
+    Object.assign(flyer.style, {
+      position: 'fixed',
+      top: `${from.top}px`,
+      left: `${from.left}px`,
+      width: `${from.width}px`,
+      height: `${from.height}px`,
+      margin: '0',
+      objectFit: heroFit,
+      zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
+      pointerEvents: 'none',
+      overflow: 'hidden',
+      borderRadius: `${frameRadiusPx(hero)}px`,
+    })
+    // Decode before the hero is hidden — an empty flyer leaves a frame of background.
+    if (!(flyer as HTMLImageElement).complete) await waitForImage(flyer as HTMLImageElement)
+    document.body.appendChild(flyer)
+  }
   gsap.set(hero, { visibility: 'hidden' })
   hideFlipSource(source)
-  document.body.appendChild(flyer)
   // Cream leaves behind the flyer, once the picture is actually covering it.
   if (startImmediate) setBackdropReady(false)
 
