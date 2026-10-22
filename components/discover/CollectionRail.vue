@@ -129,7 +129,7 @@ const isClosing = ref(false)
 const cardCursorLabel = (index: number, _title: string) => {
   if (index !== 0) return ''
   if (isActive.value || isClosing.value || typologyActiveRailId.value === myId) return ''
-  return 'Explore'
+  return ''
 }
 
 let railLenis: Lenis | null = null
