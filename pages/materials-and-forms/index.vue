@@ -1537,7 +1537,7 @@ const archiveMeta = (item: LibraryItem, index: number) => {
   const size = item.gridSize || fallbackSize
   const ratioKey = item.gridRatio || 'square'
   const ar = evenGrid.value
-    ? 0.7
+    ? 1.3
     : (GRID_RATIO_AR[ratioKey] ?? GRID_RATIO_AR.square)
 
   return {
@@ -2301,7 +2301,7 @@ useHead(() => ({
 
 <style scoped>
 .products {
-  padding-bottom: 5rem;
+  padding-bottom: 0rem;
   --products-grid-gap: 5px;
 }
 
@@ -2623,7 +2623,8 @@ useHead(() => ({
   position: relative;
   z-index: 1;
   padding-top: 1.5rem;
-  padding-bottom: calc(7.5rem + var(--bucket-push, 0px));
+  /* padding-bottom: calc(7.5rem + var(--bucket-push, 0px)); */
+  padding-bottom: 0;
 }
 
 @media (max-width: 767px) {
@@ -2662,8 +2663,9 @@ useHead(() => ({
   }
 
   .products__grid--even {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     grid-auto-flow: row;
+    row-gap: 1.75rem;
   }
 }
 @media (min-width: 2080px) {
@@ -2838,11 +2840,11 @@ useHead(() => ({
 @media (min-width: 768px) {
   .products__grid--even :deep(.product-card__media) {
     height: auto;
-    aspect-ratio: 0.8 !important;
+    aspect-ratio: 1.3 !important;
   }
 
   .products__grid--even .products__spacer {
-    aspect-ratio: 0.8 !important;
+    aspect-ratio: 1.3 !important;
   }
 }
 
@@ -2930,7 +2932,7 @@ useHead(() => ({
   }
 
   .products__grid-wrap {
-    padding-bottom: 2rem;
+    /* padding-bottom: 2rem; */
   }
 }
 </style>

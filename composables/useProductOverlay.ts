@@ -58,13 +58,13 @@ export const isInstantProductOverlay = () =>
 export const PRODUCT_OVERLAY_BACKDROP_OPEN_MS = 180
 /** Brief hold after the cream is in, before the thumbnail flies. */
 export const PRODUCT_OVERLAY_FLYER_PAUSE_MS = 0
-export const PRODUCT_OVERLAY_FLIP_OPEN_S = 0.42
-export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 0.4
+export const PRODUCT_OVERLAY_FLIP_OPEN_S = 1.5
+export const PRODUCT_OVERLAY_FLIP_CLOSE_S = 1.5
 /** Materials & Forms grid — same flight as MWG 119. */
-export const ARCHIVE_PDP_OPEN_S = 0.6
-export const ARCHIVE_PDP_OPEN_EASE = 'power4.out'
-export const ARCHIVE_PDP_CLOSE_S = 0.4
-export const ARCHIVE_PDP_CLOSE_EASE = 'power3.out'
+export const ARCHIVE_PDP_OPEN_S = 0.78
+export const ARCHIVE_PDP_OPEN_EASE = 'power4.inOut'
+export const ARCHIVE_PDP_CLOSE_S = 0.78
+export const ARCHIVE_PDP_CLOSE_EASE = 'power4.inOut'
 /** PDP chrome fade — keep in sync with ProductDetail CSS. */
 /** PDP chrome (index / aside / sibling frames) exit duration. */
 export const PRODUCT_OVERLAY_CHROME_EXIT_MS = 350

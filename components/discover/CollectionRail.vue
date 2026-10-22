@@ -147,6 +147,32 @@ let restScroll = 0
 /** Card to park on the center column when the row opens. */
 let alignIndex = 0
 const MOTION_MS = 700
+/** Same curve as `--rail-open` so close-scroll and scale stay in step. */
+const easeRailOpen = (() => {
+  const x1 = 0.22
+  const y1 = 1
+  const x2 = 0.36
+  const y2 = 1
+  const cx = 3 * x1
+  const bx = 3 * (x2 - x1) - cx
+  const ax = 1 - cx - bx
+  const cy = 3 * y1
+  const by = 3 * (y2 - y1) - cy
+  const ay = 1 - cy - by
+  const sampleX = (t: number) => ((ax * t + bx) * t + cx) * t
+  const sampleY = (t: number) => ((ay * t + by) * t + cy) * t
+  const slopeX = (t: number) => (3 * ax * t + 2 * bx) * t + cx
+  return (x: number) => {
+    let t = x
+    for (let i = 0; i < 8; i += 1) {
+      const z = sampleX(t) - x
+      const d = slopeX(t)
+      if (Math.abs(z) < 1e-6 || Math.abs(d) < 1e-6) break
+      t -= z / d
+    }
+    return sampleY(Math.min(1, Math.max(0, t)))
+  }
+})()
 /** Glide a later item into the first cell's column. Slower than the row grow. */
 const ALIGN_SCROLL_MS = 1400
 let alignFrom = 0
@@ -282,8 +308,7 @@ const scrollRailTo = (left: number, immediate = false) =>
         return
       }
       const t = Math.min(1, (now - start) / MOTION_MS)
-      const eased = 1 - Math.pow(1 - t, 3)
-      applyRailScroll(from + (target - from) * eased)
+      applyRailScroll(from + (target - from) * easeRailOpen(t))
       if (t < 1) requestAnimationFrame(step)
       else resolve()
     }
@@ -342,7 +367,6 @@ const holdRowCentered = (ms: number, align = true) =>
       if (settled) return
       settled = true
       pinRowCenter()
-      if (!align) applyRailScroll(restScroll)
       resolve()
     }
     const start = performance.now()
@@ -350,7 +374,6 @@ const holdRowCentered = (ms: number, align = true) =>
       if (settled) return
       pinRowCenter()
       if (align) alignClickedCard()
-      else applyRailScroll(restScroll)
       if (now - start < ms) requestAnimationFrame(step)
       else finish()
     }
@@ -424,9 +447,12 @@ const waitForGrow = () =>
   })
 
 const finishClose = async (gen: number) => {
-  applyRailScroll(restScroll)
   const ms = prefersReducedMotion() ? 0 : MOTION_MS
-  await Promise.all([holdRowCentered(ms, false), waitForGrow()])
+  await Promise.all([
+    holdRowCentered(ms, false),
+    waitForGrow(),
+    scrollRailTo(restScroll, ms === 0),
+  ])
   if (gen !== activateGen) return
   applyRailScroll(restScroll)
   if (gen !== activateGen) return
@@ -456,7 +482,6 @@ const deactivate = () => {
   isClosing.value = true
   engaged = false
   controlsReady.value = false
-  applyRailScroll(restScroll)
   isActive.value = false
   isPreview.value = false
   dismissRailScrollHint()

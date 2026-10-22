@@ -408,12 +408,12 @@ const onToggle = (event?: MouseEvent) => {
   }
 
   .product-card--saved {
-    --gathered-thumb-opacity: 0.1;
+    --gathered-thumb-opacity: 1;
   }
 
   .product-card--saved .product-card__image,
   .product-card--saved .product-card__placeholder {
-    opacity: 0.1;
+    opacity: 1;
     filter: none;
   }
 

@@ -1657,6 +1657,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  abortFlipOpenMotion()
+  document.querySelectorAll('[data-pdp-open-flyer]').forEach((el) => el.remove())
   stopEnquiryFlyWatch?.()
   stopEnquiryFlyWatch = null
   enquiryFlyTeardown?.()
@@ -1930,27 +1932,20 @@ const abortFlipOpenMotion = () => {
   })
 }
 
-/** Stop an in-flight open flyer and pin it so close can reverse from here. */
+/** Drop the open flyer only if close has not already claimed it. */
+const discardOpenFlyer = (el: HTMLElement) => {
+  if (el.hasAttribute('data-pdp-open-flyer')) el.remove()
+}
+
+/** Stop an in-flight open flyer so close can reverse from its current box. */
 const takeOpenFlyer = () => {
   if (!import.meta.client) return null
   const el = document.querySelector<HTMLElement>('[data-pdp-open-flyer]')
   if (!el) return null
   gsap.killTweensOf(el)
-  const from = el.getBoundingClientRect()
-  gsap.set(el, { clearProps: 'transform,x,y,top,left,width,height' })
-  Object.assign(el.style, {
-    position: 'fixed',
-    top: `${from.top}px`,
-    left: `${from.left}px`,
-    width: `${from.width}px`,
-    height: `${from.height}px`,
-    transform: 'none',
-    zIndex: String(PRODUCT_OVERLAY_FLYER_Z),
-    pointerEvents: 'none',
-  })
   el.setAttribute('data-pdp-close-flyer', '')
   el.removeAttribute('data-pdp-open-flyer')
-  return { el, from }
+  return el
 }
 
 /** After the flyer lands, type Close in letter by letter. */
@@ -2073,7 +2068,7 @@ const runFlipOpen = async () => {
   flyer.setAttribute('data-pdp-open-flyer', '')
   if (!flyer.complete) await waitForImage(flyer)
   if (flipOpenWasAborted(gen)) {
-    flyer.remove()
+    discardOpenFlyer(flyer)
     return
   }
 
@@ -2082,7 +2077,7 @@ const runFlipOpen = async () => {
 
   if (from.width < 2 || to.width < 2) {
     gsap.set(flipHero, { visibility: 'visible' })
-    flyer.remove()
+    discardOpenFlyer(flyer)
     revealWithoutFlip()
     return
   }
@@ -2117,7 +2112,7 @@ const runFlipOpen = async () => {
   setBackdropReady(true)
   await nextTick()
   if (flipOpenWasAborted(gen)) {
-    flyer.remove()
+    discardOpenFlyer(flyer)
     return
   }
   if (fromPrecrafted && !(flipHero.complete && flipHero.naturalWidth > 0)) {
@@ -2129,7 +2124,7 @@ const runFlipOpen = async () => {
     let stable = 0
     for (let i = 0; i < 24; i++) {
       if (flipOpenWasAborted(gen)) {
-        flyer.remove()
+        discardOpenFlyer(flyer)
         return
       }
       await new Promise<void>((resolve) => {
@@ -2142,7 +2137,7 @@ const runFlipOpen = async () => {
     }
   }
   if (flipOpenWasAborted(gen)) {
-    flyer.remove()
+    discardOpenFlyer(flyer)
     return
   }
 
@@ -2165,8 +2160,8 @@ const runFlipOpen = async () => {
   const openEase = fromArchive
     ? ARCHIVE_PDP_OPEN_EASE
     : flipSourceIsCart()
-      ? 'power3.out'
-      : 'power2.out'
+      ? 'power3.inOut'
+      : 'power2.inOut'
 
   // Animate width/height (not scale) so the bitmap isn’t stretched — the
   // cover crop simply reveals more of the image as the box finds its ratio.
@@ -2178,12 +2173,12 @@ const runFlipOpen = async () => {
     onComplete: () => {
       flipOpenTween = null
       if (flipOpenWasAborted(gen)) {
-        flyer.remove()
+        discardOpenFlyer(flyer)
         return
       }
       const reveal = () => {
         if (flipOpenWasAborted(gen)) {
-          flyer.remove()
+          discardOpenFlyer(flyer)
           return
         }
         // Reveal strip + hero under the flyer before removing it — avoids a
@@ -2199,10 +2194,10 @@ const runFlipOpen = async () => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (flipOpenWasAborted(gen)) {
-              flyer.remove()
+              discardOpenFlyer(flyer)
               return
             }
-            flyer.remove()
+            discardOpenFlyer(flyer)
             cuePdpCloseCursor()
           })
         })
@@ -2221,11 +2216,8 @@ const runFlipClose = async () => {
   if (!import.meta.client || flipCloseStarted.value) return
   flipCloseStarted.value = true
   abortFlipOpenMotion()
-  hideGalleryForFlip()
   if (imageExpanded.value || imageZooming) collapseImage()
-  if (flipSourceIsArchiveGrid() && isFrameSaved(selectedIndex.value)) {
-    heartOut.value = true
-  }
+  heartOut.value = true
 
   const source = getFlipSource()
   const hero = heroRef.value
@@ -2236,6 +2228,10 @@ const runFlipClose = async () => {
   }
 
   const stolen = takeOpenFlyer()
+  // Open flyer already covers the picture — drop the gallery so it can't
+  // reappear under the reverse flight.
+  if (stolen) hideGalleryForFlip()
+  hideFlipSource(source)
 
   const FLYER_HOLD_MS = PRODUCT_OVERLAY_CLOSE_FLYER_HOLD_MS
   const FLYER_FADE_MS = PRODUCT_OVERLAY_CLOSE_FLYER_FADE_MS
@@ -2274,7 +2270,6 @@ const runFlipClose = async () => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
   })
 
-  const fromArchive = flipSourceIsArchiveGrid()
   const startImmediate = flipSourceStartsImmediately()
 
   contentReady.value = false
@@ -2287,7 +2282,7 @@ const runFlipClose = async () => {
   pendingFlip.value = true
   await nextTick()
 
-  const from = stolen?.from ?? hero.getBoundingClientRect()
+  const from = (stolen ?? hero).getBoundingClientRect()
   const to = source.getBoundingClientRect()
 
   /** Non-interactive cream veil so we can unmount the overlay (clicks work) while fading */
@@ -2358,6 +2353,7 @@ const runFlipClose = async () => {
   }
 
   if (from.width < 2 || to.width < 2) {
+    stolen?.remove()
     const veil = spawnCloseVeil()
     finishClose()
     fadeVeilAndCleanup(veil)
@@ -2367,8 +2363,8 @@ const runFlipClose = async () => {
   const heroFit = getComputedStyle(hero).objectFit || 'contain'
   const sourceFit = getComputedStyle(source).objectFit || 'cover'
   let flyer: HTMLElement
-  if (stolen?.el) {
-    flyer = stolen.el
+  if (stolen) {
+    flyer = stolen
   } else {
     flyer = document.createElement('img')
     flyer.src = hero.currentSrc || hero.src
@@ -2392,6 +2388,7 @@ const runFlipClose = async () => {
     if (!(flyer as HTMLImageElement).complete) await waitForImage(flyer as HTMLImageElement)
     document.body.appendChild(flyer)
   }
+  hideGalleryForFlip()
   gsap.set(hero, { visibility: 'hidden' })
   hideFlipSource(source)
   // Cream leaves behind the flyer, once the picture is actually covering it.
@@ -2868,11 +2865,15 @@ watch(
   pointer-events: none;
 }
 
-/* Close: the heart on the active gallery frame leaves before the image. */
-.pdp--heart-out .pdp__strip-item--active .pdp__frame-add {
+/* Close: gallery hearts drop immediately — including a saved heart on hover. */
+.pdp--closing .pdp__frame-add,
+.pdp--heart-out .pdp__frame-add,
+.pdp--closing .pdp__hero-frame--ready .pdp__frame-add,
+.pdp--closing .pdp__hero-frame--ready .pdp__frame-add.add-btn--active,
+.pdp--heart-out .pdp__hero-frame--ready .pdp__frame-add.add-btn--active {
   opacity: 0;
   pointer-events: none;
-  transition-duration: 0.12s;
+  transition: none;
 }
 
 .pdp__frame-add :deep(.add-btn__icon) {

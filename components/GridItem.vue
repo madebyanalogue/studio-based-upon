@@ -452,12 +452,12 @@ onMounted(() => {
 /* Desktop: an added thumb fades back dim, and returns to full while hovered. */
 @media (hover: hover) and (pointer: fine) {
   .grid-item--saved {
-    --gathered-thumb-opacity: 0.1;
+    --gathered-thumb-opacity: 1;
   }
 
   .grid-item--saved .grid-item__image,
   .grid-item--saved .grid-item__placeholder {
-    opacity: 0.1;
+    opacity: 1;
   }
 
   .grid-item--saved:hover .grid-item__image,
