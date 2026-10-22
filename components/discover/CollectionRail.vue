@@ -342,6 +342,7 @@ const holdRowCentered = (ms: number, align = true) =>
       if (settled) return
       settled = true
       pinRowCenter()
+      if (!align) applyRailScroll(restScroll)
       resolve()
     }
     const start = performance.now()
@@ -349,6 +350,7 @@ const holdRowCentered = (ms: number, align = true) =>
       if (settled) return
       pinRowCenter()
       if (align) alignClickedCard()
+      else applyRailScroll(restScroll)
       if (now - start < ms) requestAnimationFrame(step)
       else finish()
     }
@@ -422,10 +424,11 @@ const waitForGrow = () =>
   })
 
 const finishClose = async (gen: number) => {
+  applyRailScroll(restScroll)
   const ms = prefersReducedMotion() ? 0 : MOTION_MS
   await Promise.all([holdRowCentered(ms, false), waitForGrow()])
   if (gen !== activateGen) return
-  await scrollRailTo(restScroll, ms === 0)
+  applyRailScroll(restScroll)
   if (gen !== activateGen) return
   isClosing.value = false
   controlsReady.value = false
@@ -453,6 +456,7 @@ const deactivate = () => {
   isClosing.value = true
   engaged = false
   controlsReady.value = false
+  applyRailScroll(restScroll)
   isActive.value = false
   isPreview.value = false
   dismissRailScrollHint()
